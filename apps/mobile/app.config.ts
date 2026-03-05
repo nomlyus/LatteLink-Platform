@@ -15,7 +15,7 @@ const config: ExpoConfig = {
   experiments: {
     typedRoutes: true
   },
-  plugins: ["expo-router", "expo-secure-store"]
+  plugins: ["expo-router", "expo-secure-store", "expo-font"]
 };
 
 export default config;
