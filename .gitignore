@@ -36,4 +36,3 @@ crash.log
 
 # misc
 openapi/*.json
-pnpm-lock.yaml
