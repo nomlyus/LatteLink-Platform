@@ -10,10 +10,11 @@ permissions:
   contents: read
 
 env:
-  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
 
 jobs:
   deploy:
+    if: ${{ secrets.AWS_ROLE_ARN != '' }}
     runs-on: ubuntu-latest
     environment: dev
     steps:
@@ -26,3 +27,9 @@ jobs:
       - run: terraform -chdir=infra/terraform/envs/dev init
       - run: terraform -chdir=infra/terraform/envs/dev apply -auto-approve
       - run: ./infra/terraform/scripts/smoke-check.sh dev
+
+  deploy-skipped:
+    if: ${{ secrets.AWS_ROLE_ARN == '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Skipping deploy-dev because dev environment secret AWS_ROLE_ARN is not configured."
