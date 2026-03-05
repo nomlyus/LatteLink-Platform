@@ -1,5 +1,5 @@
 {
-  "extends": "@gazelle/config-typescript/node-service.json",
+  "extends": "../../../packages/config-typescript/node-service.json",
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src"
