@@ -1,5 +1,6 @@
 import { Pressable, Text, View } from "react-native";
 import { useMemo } from "react";
+import { Link } from "expo-router";
 import { GazelleApiClient } from "@gazelle/sdk-mobile";
 import { colorTokens } from "@gazelle/design-tokens";
 
@@ -23,6 +24,14 @@ export default function HomeScreen() {
           Test Gateway
         </Text>
       </Pressable>
+
+      <Link href="/auth" asChild>
+        <Pressable className="mt-3 rounded-full border border-foreground px-6 py-4">
+          <Text className="text-center text-xs font-semibold uppercase tracking-[2px] text-foreground">
+            Open Auth Flows
+          </Text>
+        </Pressable>
+      </Link>
 
       <Text className="mt-8 text-sm text-foreground/60">Palette anchor: {colorTokens.beigeLight}</Text>
     </View>

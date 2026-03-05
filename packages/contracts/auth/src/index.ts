@@ -17,12 +17,22 @@ export const passkeyChallengeResponseSchema = z.object({
   timeoutMs: z.number().int().positive()
 });
 
+export const passkeyVerifyRequestSchema = z.record(z.unknown());
+
 export const magicLinkRequestSchema = z.object({
   email: z.string().email()
 });
 
 export const magicLinkVerifySchema = z.object({
   token: z.string().min(1)
+});
+
+export const refreshRequestSchema = z.object({
+  refreshToken: z.string().min(1)
+});
+
+export const logoutRequestSchema = z.object({
+  refreshToken: z.string().min(1)
 });
 
 export const meResponseSchema = z.object({
@@ -49,7 +59,7 @@ export const authContract = {
     passkeyRegisterVerify: {
       method: "POST",
       path: "/passkey/register/verify",
-      request: z.record(z.unknown()),
+      request: passkeyVerifyRequestSchema,
       response: authSessionSchema
     },
     passkeyAuthChallenge: {
@@ -61,7 +71,7 @@ export const authContract = {
     passkeyAuthVerify: {
       method: "POST",
       path: "/passkey/auth/verify",
-      request: z.record(z.unknown()),
+      request: passkeyVerifyRequestSchema,
       response: authSessionSchema
     },
     magicLinkRequest: {
@@ -79,13 +89,13 @@ export const authContract = {
     refresh: {
       method: "POST",
       path: "/refresh",
-      request: z.object({ refreshToken: z.string().min(1) }),
+      request: refreshRequestSchema,
       response: authSessionSchema
     },
     logout: {
       method: "POST",
       path: "/logout",
-      request: z.object({ refreshToken: z.string().min(1) }),
+      request: logoutRequestSchema,
       response: z.object({ success: z.literal(true) })
     },
     me: {

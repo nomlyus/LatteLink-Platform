@@ -1,7 +1,18 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { apiErrorSchema } from "@gazelle/contracts-core";
-import { authContract, appleExchangeRequestSchema, meResponseSchema } from "@gazelle/contracts-auth";
+import {
+  appleExchangeRequestSchema,
+  authContract,
+  logoutRequestSchema,
+  magicLinkRequestSchema,
+  magicLinkVerifySchema,
+  meResponseSchema,
+  passkeyChallengeRequestSchema,
+  passkeyChallengeResponseSchema,
+  passkeyVerifyRequestSchema,
+  refreshRequestSchema
+} from "@gazelle/contracts-auth";
 import { catalogContract, menuResponseSchema, storeConfigResponseSchema } from "@gazelle/contracts-catalog";
 import { ordersContract, createOrderRequestSchema, orderQuoteSchema, orderSchema, payOrderRequestSchema, quoteRequestSchema } from "@gazelle/contracts-orders";
 import { loyaltyBalanceSchema, loyaltyContract, loyaltyLedgerEntrySchema } from "@gazelle/contracts-loyalty";
@@ -15,6 +26,25 @@ function unauthorized() {
   return apiErrorSchema.parse({
     code: "UNAUTHORIZED",
     message: "Missing or invalid auth token"
+  });
+}
+
+const defaultUserId = "123e4567-e89b-12d3-a456-426614174000";
+
+function buildSession(seed: string) {
+  return {
+    accessToken: `access-${seed}`,
+    refreshToken: `refresh-${seed}`,
+    expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    userId: defaultUserId
+  };
+}
+
+function buildPasskeyChallenge() {
+  return passkeyChallengeResponseSchema.parse({
+    challenge: crypto.randomUUID(),
+    rpId: process.env.PASSKEY_RP_ID ?? "gazellecoffee.com",
+    timeoutMs: 60_000
   });
 }
 
@@ -32,12 +62,60 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.post("/v1/auth/apple/exchange", async (request, reply) => {
     const input = appleExchangeRequestSchema.parse(request.body);
+    return reply.send(buildSession(input.nonce));
+  });
 
-    return reply.send({
-      accessToken: `access-${input.nonce}`,
-      refreshToken: `refresh-${input.authorizationCode}`,
-      expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-      userId: "123e4567-e89b-12d3-a456-426614174000"
+  app.post("/v1/auth/passkey/register/challenge", async (request) => {
+    passkeyChallengeRequestSchema.parse(request.body ?? {});
+    return buildPasskeyChallenge();
+  });
+
+  app.post("/v1/auth/passkey/register/verify", async (request) => {
+    passkeyVerifyRequestSchema.parse(request.body);
+    return buildSession("passkey-register");
+  });
+
+  app.post("/v1/auth/passkey/auth/challenge", async (request) => {
+    passkeyChallengeRequestSchema.parse(request.body ?? {});
+    return buildPasskeyChallenge();
+  });
+
+  app.post("/v1/auth/passkey/auth/verify", async (request) => {
+    passkeyVerifyRequestSchema.parse(request.body);
+    return buildSession("passkey-auth");
+  });
+
+  app.post("/v1/auth/magic-link/request", async (request) => {
+    const input = magicLinkRequestSchema.parse(request.body);
+    app.log.info({ email: input.email }, "magic link requested");
+    return { success: true as const };
+  });
+
+  app.post("/v1/auth/magic-link/verify", async (request) => {
+    const input = magicLinkVerifySchema.parse(request.body);
+    return buildSession(input.token);
+  });
+
+  app.post("/v1/auth/refresh", async (request) => {
+    const input = refreshRequestSchema.parse(request.body);
+    return buildSession(input.refreshToken);
+  });
+
+  app.post("/v1/auth/logout", async (request) => {
+    logoutRequestSchema.parse(request.body);
+    return { success: true as const };
+  });
+
+  app.get("/v1/auth/me", async (request, reply) => {
+    const parsed = authHeaderSchema.safeParse(request.headers);
+    if (!parsed.success || !parsed.data.authorization) {
+      return reply.status(401).send(unauthorized());
+    }
+
+    return meResponseSchema.parse({
+      userId: defaultUserId,
+      email: "owner@gazellecoffee.com",
+      methods: ["apple", "passkey", "magic-link"]
     });
   });
 
@@ -48,9 +126,9 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     return meResponseSchema.parse({
-      userId: "123e4567-e89b-12d3-a456-426614174000",
+      userId: defaultUserId,
       email: "owner@gazellecoffee.com",
-      methods: ["apple", "magic-link"]
+      methods: ["apple", "passkey", "magic-link"]
     });
   });
 

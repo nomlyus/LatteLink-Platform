@@ -18,7 +18,8 @@
     "@gazelle/contracts-core": "workspace:*",
     "@gazelle/contracts-loyalty": "workspace:*",
     "@gazelle/contracts-notifications": "workspace:*",
-    "@gazelle/contracts-orders": "workspace:*"
+    "@gazelle/contracts-orders": "workspace:*",
+    "zod": "^3.24.2"
   },
   "devDependencies": {
     "@gazelle/config-eslint": "workspace:*",
