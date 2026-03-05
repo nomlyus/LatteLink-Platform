@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@fastify/cors": "^8.5.0",
-    "@fastify/swagger": "^8.15.0",
+    "@fastify/swagger": "^9.7.0",
     "@fastify/swagger-ui": "^3.1.0",
     "@gazelle/contracts-auth": "workspace:*",
     "@gazelle/contracts-catalog": "workspace:*",
