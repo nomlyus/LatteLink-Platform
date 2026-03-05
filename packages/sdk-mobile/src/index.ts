@@ -1,4 +1,4 @@
-export type { Paths } from "./generated/types.js";
+export type { paths as Paths } from "./generated/types.js";
 import {
   appleExchangeRequestSchema,
   logoutRequestSchema,
