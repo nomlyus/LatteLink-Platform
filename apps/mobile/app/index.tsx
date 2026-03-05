@@ -1,11 +1,11 @@
 import { Pressable, Text, View } from "react-native";
-import { useMemo } from "react";
+import { useState } from "react";
 import { Link } from "expo-router";
-import { GazelleApiClient } from "@gazelle/sdk-mobile";
 import { colorTokens } from "@gazelle/design-tokens";
+import { API_BASE_URL, apiClient } from "../src/api/client";
 
 export default function HomeScreen() {
-  const client = useMemo(() => new GazelleApiClient({ baseUrl: "https://api.gazellecoffee.com/v1" }), []);
+  const [gatewayStatus, setGatewayStatus] = useState<string>("");
 
   return (
     <View className="flex-1 bg-background px-6 pt-24">
@@ -17,13 +17,22 @@ export default function HomeScreen() {
       <Pressable
         className="mt-10 rounded-full bg-foreground px-6 py-4"
         onPress={async () => {
-          await client.get("/health");
+          setGatewayStatus("Checking gateway...");
+          try {
+            await apiClient.get("/meta/contracts");
+            setGatewayStatus("Gateway is reachable.");
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "Unknown error";
+            setGatewayStatus(`Gateway failed (${API_BASE_URL}): ${message}`);
+          }
         }}
       >
         <Text className="text-center text-xs font-semibold uppercase tracking-[2px] text-background">
           Test Gateway
         </Text>
       </Pressable>
+
+      {gatewayStatus ? <Text className="mt-2 text-xs text-foreground/70">{gatewayStatus}</Text> : null}
 
       <Link href="/auth" asChild>
         <Pressable className="mt-3 rounded-full border border-foreground px-6 py-4">
