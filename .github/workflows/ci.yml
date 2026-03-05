@@ -91,7 +91,7 @@ jobs:
       - run: pnpm turbo run test --filter=@gazelle/contracts-*
       - name: verify generated gateway openapi + mobile sdk types
         run: |
-          pnpm --filter @gazelle/gateway openapi
+          pnpm exec turbo run openapi --filter=@gazelle/gateway
           pnpm --filter @gazelle/sdk-mobile generate
           git diff --exit-code -- services/gateway/openapi/openapi.json packages/sdk-mobile/src/generated/types.ts
 
