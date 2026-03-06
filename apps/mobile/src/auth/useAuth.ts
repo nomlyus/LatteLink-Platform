@@ -1,12 +1,15 @@
 import { useMutation } from "@tanstack/react-query";
 import { apiClient } from "../api/client";
+import { useAuthSession } from "./session";
 
 export function useAppleExchangeMutation() {
+  const { signIn } = useAuthSession();
+
   return useMutation({
     mutationFn: (input: { identityToken: string; authorizationCode: string; nonce: string }) =>
       apiClient.appleExchange(input),
     onSuccess: (session) => {
-      apiClient.setAccessToken(session.accessToken);
+      signIn(session);
     }
   });
 }

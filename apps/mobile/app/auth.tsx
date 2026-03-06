@@ -1,9 +1,15 @@
-import { useState } from "react";
-import { Link } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useLocalSearchParams, useRouter } from "expo-router";
 import { Pressable, Text, TextInput, View } from "react-native";
 import { useAppleExchangeMutation, useMagicLinkRequestMutation, useMeQueryMutation } from "../src/auth/useAuth";
+import { useAuthSession } from "../src/auth/session";
+
+type ReturnToPath = "/(tabs)/cart" | "/(tabs)/home" | "/(tabs)/account";
 
 export default function AuthScreen() {
+  const router = useRouter();
+  const params = useLocalSearchParams<{ returnTo?: string | string[] }>();
+  const { isAuthenticated } = useAuthSession();
   const [identityToken, setIdentityToken] = useState("demo-identity-token");
   const [authorizationCode, setAuthorizationCode] = useState("demo-auth-code");
   const [nonce, setNonce] = useState("mobile-auth");
@@ -12,6 +18,25 @@ export default function AuthScreen() {
   const appleExchange = useAppleExchangeMutation();
   const magicLinkRequest = useMagicLinkRequestMutation();
   const meQuery = useMeQueryMutation();
+  const returnTo = useMemo<ReturnToPath | null>(() => {
+    if (params.returnTo === "/(tabs)/cart") {
+      return "/(tabs)/cart";
+    }
+    if (params.returnTo === "/(tabs)/home") {
+      return "/(tabs)/home";
+    }
+    if (params.returnTo === "/(tabs)/account") {
+      return "/(tabs)/account";
+    }
+
+    return null;
+  }, [params.returnTo]);
+
+  useEffect(() => {
+    if (isAuthenticated && returnTo) {
+      router.replace(returnTo);
+    }
+  }, [isAuthenticated, returnTo, router]);
 
   return (
     <View className="flex-1 bg-background px-6 pt-20">
