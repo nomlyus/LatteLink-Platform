@@ -5,6 +5,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 echo "[contracts:drift] verifying gateway OpenAPI coverage against published contracts"
+pnpm exec turbo run build --filter=@gazelle/gateway
 pnpm --filter @gazelle/gateway test -- test/contracts-compat.test.ts
 
 echo "[contracts:drift] regenerating gateway OpenAPI and SDK types"
