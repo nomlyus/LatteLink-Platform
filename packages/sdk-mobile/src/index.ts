@@ -10,6 +10,7 @@ import {
   passkeyVerifyRequestSchema,
   refreshRequestSchema
 } from "@gazelle/contracts-auth";
+import { menuResponseSchema, storeConfigResponseSchema } from "@gazelle/contracts-catalog";
 import { authSessionSchema } from "@gazelle/contracts-core";
 import { z } from "zod";
 
@@ -104,6 +105,16 @@ export class GazelleApiClient {
   async me(): Promise<z.output<typeof meResponseSchema>> {
     const data = await this.get<unknown>("/auth/me");
     return meResponseSchema.parse(data);
+  }
+
+  async menu(): Promise<z.output<typeof menuResponseSchema>> {
+    const data = await this.get<unknown>("/menu");
+    return menuResponseSchema.parse(data);
+  }
+
+  async storeConfig(): Promise<z.output<typeof storeConfigResponseSchema>> {
+    const data = await this.get<unknown>("/store/config");
+    return storeConfigResponseSchema.parse(data);
   }
 
   private async request<T>(method: "GET" | "POST" | "PUT", path: string, body?: unknown): Promise<T> {
