@@ -27,6 +27,11 @@ pnpm build
 ## Workspace Scripts
 
 - `pnpm dev`
+- `pnpm dev:services`
+- `pnpm dev:services:lan`
+- `pnpm dev:mobile:local`
+- `pnpm dev:mobile:lan`
+- `pnpm dev:worker:menu-sync`
 - `pnpm lint`
 - `pnpm typecheck`
 - `pnpm test`
@@ -35,6 +40,11 @@ pnpm build
 - `pnpm contracts:openapi`
 - `pnpm contracts:drift`
 - `pnpm sdk:generate`
+
+## Local E2E App + API Testing
+
+Use the local stack runbook:
+- [local-dev-stack.md](docs/runbooks/local-dev-stack.md)
 
 ## Governance and GitHub Setup
 
