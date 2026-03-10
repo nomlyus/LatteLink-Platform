@@ -1,10 +1,10 @@
+import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import type { FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { orderQuoteSchema, orderSchema } from "@gazelle/contracts-orders";
 import { buildApp as buildOrdersApp } from "../src/app.js";
 import { buildApp as buildPaymentsApp } from "../../payments/src/app.js";
-import { buildApp as buildLoyaltyApp } from "../../loyalty/src/app.js";
 
 const sampleQuotePayload = {
   locationId: "flagship-01",
@@ -14,6 +14,163 @@ const sampleQuotePayload = {
   ],
   pointsToRedeem: 0
 };
+
+type LoyaltyBalance = {
+  userId: string;
+  availablePoints: number;
+  pendingPoints: number;
+  lifetimeEarned: number;
+};
+
+type LoyaltyLedgerEntry = {
+  id: string;
+  type: "EARN" | "REDEEM" | "REFUND" | "ADJUSTMENT";
+  points: number;
+  orderId?: string;
+  createdAt: string;
+};
+
+function buildLoyaltyHarnessApp() {
+  const app = Fastify();
+  const defaultUserId = "123e4567-e89b-12d3-a456-426614174000";
+  const balancesByUserId = new Map<string, LoyaltyBalance>();
+  const ledgerByUserId = new Map<string, LoyaltyLedgerEntry[]>();
+  const idempotencyByUserId = new Map<string, Map<string, { fingerprint: string; response: unknown }>>();
+
+  function resolveUserId(headers: Record<string, unknown>) {
+    const headerValue = headers["x-user-id"];
+    return typeof headerValue === "string" ? headerValue : defaultUserId;
+  }
+
+  function ensureBalance(userId: string) {
+    const existing = balancesByUserId.get(userId);
+    if (existing) {
+      return existing;
+    }
+
+    const created: LoyaltyBalance = {
+      userId,
+      availablePoints: 0,
+      pendingPoints: 0,
+      lifetimeEarned: 0
+    };
+    balancesByUserId.set(userId, created);
+    return created;
+  }
+
+  function ensureLedger(userId: string) {
+    const existing = ledgerByUserId.get(userId);
+    if (existing) {
+      return existing;
+    }
+
+    const created: LoyaltyLedgerEntry[] = [];
+    ledgerByUserId.set(userId, created);
+    return created;
+  }
+
+  function ensureIdempotencyStore(userId: string) {
+    const existing = idempotencyByUserId.get(userId);
+    if (existing) {
+      return existing;
+    }
+
+    const created = new Map<string, { fingerprint: string; response: unknown }>();
+    idempotencyByUserId.set(userId, created);
+    return created;
+  }
+
+  app.get("/v1/loyalty/balance", async (request) => {
+    const userId = resolveUserId(request.headers as Record<string, unknown>);
+    return ensureBalance(userId);
+  });
+
+  app.get("/v1/loyalty/ledger", async (request) => {
+    const userId = resolveUserId(request.headers as Record<string, unknown>);
+    return [...ensureLedger(userId)].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
+  });
+
+  app.post("/v1/loyalty/internal/ledger/apply", async (request, reply) => {
+    const body = (request.body ?? {}) as Record<string, unknown>;
+    const userId = String(body.userId ?? defaultUserId);
+    const orderId = String(body.orderId ?? "");
+    const idempotencyKey = String(body.idempotencyKey ?? "");
+    const mutationType = String(body.type ?? "");
+
+    if (!orderId || !idempotencyKey) {
+      return reply.status(400).send({ code: "INVALID_LOYALTY_MUTATION" });
+    }
+
+    const idempotencyStore = ensureIdempotencyStore(userId);
+    const idempotencyScope = `${userId}:${idempotencyKey}`;
+    const fingerprint = JSON.stringify({
+      type: mutationType,
+      orderId,
+      amountCents: body.amountCents ?? null,
+      points: body.points ?? null
+    });
+    const existingMutation = idempotencyStore.get(idempotencyScope);
+    if (existingMutation) {
+      if (existingMutation.fingerprint !== fingerprint) {
+        return reply.status(409).send({ code: "IDEMPOTENCY_KEY_REUSE" });
+      }
+
+      return existingMutation.response;
+    }
+
+    const balance = ensureBalance(userId);
+    let deltaPoints = 0;
+    let lifetimeDelta = 0;
+    if (mutationType === "EARN") {
+      const amountCents = Number(body.amountCents ?? 0);
+      deltaPoints = amountCents;
+      lifetimeDelta = amountCents;
+    } else if (mutationType === "REDEEM") {
+      deltaPoints = -Number(body.amountCents ?? 0);
+    } else if (mutationType === "REFUND") {
+      deltaPoints = Number(body.amountCents ?? 0);
+    } else if (mutationType === "ADJUSTMENT") {
+      deltaPoints = Number(body.points ?? 0);
+    } else {
+      return reply.status(400).send({ code: "INVALID_LOYALTY_MUTATION" });
+    }
+
+    if (balance.availablePoints + deltaPoints < 0) {
+      return reply.status(409).send({ code: "INSUFFICIENT_POINTS" });
+    }
+
+    const nextBalance: LoyaltyBalance = {
+      userId,
+      availablePoints: balance.availablePoints + deltaPoints,
+      pendingPoints: balance.pendingPoints,
+      lifetimeEarned: balance.lifetimeEarned + lifetimeDelta
+    };
+    balancesByUserId.set(userId, nextBalance);
+
+    const entry: LoyaltyLedgerEntry = {
+      id: randomUUID(),
+      type: mutationType as LoyaltyLedgerEntry["type"],
+      points: deltaPoints,
+      orderId,
+      createdAt: new Date().toISOString()
+    };
+    const ledger = ensureLedger(userId);
+    ledger.push(entry);
+
+    const response = {
+      entry,
+      balance: nextBalance
+    };
+    idempotencyStore.set(idempotencyScope, {
+      fingerprint,
+      response
+    });
+
+    return response;
+  });
+
+  return app;
+}
 
 describe.sequential("orders + payments e2e", () => {
   let ordersApp: FastifyInstance | undefined;
@@ -64,7 +221,7 @@ describe.sequential("orders + payments e2e", () => {
       throw new Error("Failed to resolve payments test port");
     }
 
-    loyaltyApp = await buildLoyaltyApp();
+    loyaltyApp = buildLoyaltyHarnessApp();
     await loyaltyApp.listen({ host: "127.0.0.1", port: 0 });
     const loyaltyAddress = loyaltyApp.server.address() as AddressInfo | null;
     if (!loyaltyAddress || typeof loyaltyAddress.port !== "number") {
