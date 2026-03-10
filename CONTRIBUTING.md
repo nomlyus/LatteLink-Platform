@@ -27,3 +27,9 @@ PRs must include:
 - `security / codeql`
 - `security / dependency-review`
 - `security / secret-scan`
+
+## Contract Drift Guardrail
+
+Run this before opening PRs that touch contracts, gateway routes, or SDK generation:
+
+- `pnpm contracts:drift`

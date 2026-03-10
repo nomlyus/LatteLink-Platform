@@ -16,6 +16,7 @@
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "dev": "turbo run dev --parallel",
     "contracts:openapi": "turbo run openapi --filter=@gazelle/gateway --filter=@gazelle/contracts-*",
+    "contracts:drift": "./scripts/verify-contract-drift.sh",
     "sdk:generate": "pnpm --filter @gazelle/sdk-mobile generate",
     "terraform:fmt": "terraform -chdir=infra/terraform/envs/dev fmt -recursive -check",
     "terraform:validate": "pnpm -r --filter ./infra/terraform/envs/* run validate"

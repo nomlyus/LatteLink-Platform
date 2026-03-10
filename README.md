@@ -33,6 +33,7 @@ pnpm build
 - `pnpm build`
 - `pnpm verify`
 - `pnpm contracts:openapi`
+- `pnpm contracts:drift`
 - `pnpm sdk:generate`
 
 ## Governance and GitHub Setup

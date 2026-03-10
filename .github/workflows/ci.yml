@@ -89,11 +89,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --no-frozen-lockfile
       - run: pnpm turbo run test --filter=@gazelle/contracts-*
-      - name: verify generated gateway openapi + mobile sdk types
-        run: |
-          pnpm exec turbo run openapi --filter=@gazelle/gateway
-          pnpm --filter @gazelle/sdk-mobile generate
-          git diff --exit-code -- services/gateway/openapi/openapi.json packages/sdk-mobile/src/generated/types.ts
+      - name: verify contract compatibility and generation drift
+        run: pnpm contracts:drift
 
   build:
     name: build
