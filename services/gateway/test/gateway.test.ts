@@ -470,4 +470,51 @@ describe("gateway", () => {
 
     await app.close();
   });
+
+  it("propagates x-request-id upstream and exposes metrics counters", async () => {
+    const app = await buildApp();
+    const requestId = "trace-request-123";
+
+    const quoteResponse = await app.inject({
+      method: "POST",
+      url: "/v1/orders/quote",
+      headers: {
+        "x-request-id": requestId
+      },
+      payload: {
+        locationId: "flagship-01",
+        items: [{ itemId: "latte", quantity: 1 }],
+        pointsToRedeem: 0
+      }
+    });
+    expect(quoteResponse.statusCode).toBe(200);
+    expect(quoteResponse.headers["x-request-id"]).toBe(requestId);
+
+    const quoteCall = fetchMock.mock.calls.find(([input]) =>
+      (typeof input === "string" ? input : input.url).endsWith("/v1/orders/quote")
+    );
+    expect(quoteCall).toBeDefined();
+    if (quoteCall) {
+      const upstreamHeaders = new Headers((quoteCall[1]?.headers ?? {}) as HeadersInit);
+      expect(upstreamHeaders.get("x-request-id")).toBe(requestId);
+    }
+
+    const metricsResponse = await app.inject({
+      method: "GET",
+      url: "/metrics"
+    });
+    expect(metricsResponse.statusCode).toBe(200);
+    expect(metricsResponse.json()).toMatchObject({
+      service: "gateway",
+      requests: expect.objectContaining({
+        total: expect.any(Number),
+        status2xx: expect.any(Number),
+        status4xx: expect.any(Number),
+        status5xx: expect.any(Number)
+      })
+    });
+    expect(metricsResponse.json().requests.total).toBeGreaterThanOrEqual(1);
+
+    await app.close();
+  });
 });

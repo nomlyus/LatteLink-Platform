@@ -42,6 +42,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.put("/v1/devices/push-token", async (request, reply) => {
     const userId = resolveUserId(request.headers);
     if (!userId) {
+      request.log.warn({ requestId: request.id }, "invalid x-user-id header");
       return reply.status(400).send({
         code: "INVALID_USER_CONTEXT",
         message: "x-user-id header must be a UUID when provided",

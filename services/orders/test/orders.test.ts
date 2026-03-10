@@ -626,4 +626,49 @@ describe("orders service", () => {
 
     await app.close();
   });
+
+  it("rejects invalid x-user-id header and exposes metrics counters", async () => {
+    const app = await buildApp();
+    const quoteResponse = await app.inject({
+      method: "POST",
+      url: "/v1/orders/quote",
+      payload: sampleQuotePayload
+    });
+    expect(quoteResponse.statusCode).toBe(200);
+    const quote = orderQuoteSchema.parse(quoteResponse.json());
+
+    const createWithInvalidUser = await app.inject({
+      method: "POST",
+      url: "/v1/orders",
+      headers: {
+        "x-user-id": "not-a-uuid"
+      },
+      payload: {
+        quoteId: quote.quoteId,
+        quoteHash: quote.quoteHash
+      }
+    });
+    expect(createWithInvalidUser.statusCode).toBe(400);
+    expect(createWithInvalidUser.json()).toMatchObject({
+      code: "INVALID_USER_CONTEXT"
+    });
+
+    const metricsResponse = await app.inject({
+      method: "GET",
+      url: "/metrics"
+    });
+    expect(metricsResponse.statusCode).toBe(200);
+    expect(metricsResponse.json()).toMatchObject({
+      service: "orders",
+      requests: expect.objectContaining({
+        total: expect.any(Number),
+        status2xx: expect.any(Number),
+        status4xx: expect.any(Number),
+        status5xx: expect.any(Number)
+      })
+    });
+    expect(metricsResponse.json().requests.total).toBeGreaterThanOrEqual(2);
+
+    await app.close();
+  });
 });

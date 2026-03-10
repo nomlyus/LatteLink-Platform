@@ -412,6 +412,9 @@ importers:
       '@gazelle/contracts-loyalty':
         specifier: workspace:*
         version: link:../../packages/contracts/loyalty
+      '@gazelle/contracts-notifications':
+        specifier: workspace:*
+        version: link:../../packages/contracts/notifications
       '@gazelle/contracts-orders':
         specifier: workspace:*
         version: link:../../packages/contracts/orders

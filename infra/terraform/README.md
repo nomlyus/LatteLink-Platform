@@ -9,7 +9,7 @@ Modules:
 - `modules/networking`
 - `modules/data`
 - `modules/compute`
-- `modules/observability`
+- `modules/observability` (CloudWatch dashboard + ECS CPU/memory/running-task alarms)
 - `modules/edge`
 
 ## Commands

@@ -218,6 +218,13 @@ function parseJsonSafely(rawBody: string): unknown {
 function resolveRequestUserId(request: FastifyRequest, reply: FastifyReply) {
   const parsedHeaders = userHeadersSchema.safeParse(request.headers);
   if (!parsedHeaders.success) {
+    request.log.warn(
+      {
+        requestId: request.id,
+        details: parsedHeaders.error.flatten()
+      },
+      "invalid x-user-id header"
+    );
     sendError(reply, {
       statusCode: 400,
       code: "INVALID_USER_CONTEXT",

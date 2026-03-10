@@ -91,4 +91,43 @@ describe("notifications service", () => {
 
     await app.close();
   });
+
+  it("rejects invalid x-user-id and exposes metrics counters", async () => {
+    const app = await buildApp();
+
+    const invalidUserResponse = await app.inject({
+      method: "PUT",
+      url: "/v1/devices/push-token",
+      headers: {
+        "x-user-id": "not-a-uuid"
+      },
+      payload: {
+        deviceId: "ios-2",
+        platform: "ios",
+        expoPushToken: "ExponentPushToken[dev-token-2]"
+      }
+    });
+    expect(invalidUserResponse.statusCode).toBe(400);
+    expect(invalidUserResponse.json()).toMatchObject({
+      code: "INVALID_USER_CONTEXT"
+    });
+
+    const metricsResponse = await app.inject({
+      method: "GET",
+      url: "/metrics"
+    });
+    expect(metricsResponse.statusCode).toBe(200);
+    expect(metricsResponse.json()).toMatchObject({
+      service: "notifications",
+      requests: expect.objectContaining({
+        total: expect.any(Number),
+        status2xx: expect.any(Number),
+        status4xx: expect.any(Number),
+        status5xx: expect.any(Number)
+      })
+    });
+    expect(metricsResponse.json().requests.total).toBeGreaterThanOrEqual(1);
+
+    await app.close();
+  });
 });

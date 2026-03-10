@@ -41,4 +41,5 @@ Every service exposes:
 
 - `GET /health`
 - `GET /ready`
+- `GET /metrics` (service-level request counters)
 - structured request logs with request IDs
