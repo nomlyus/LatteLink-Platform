@@ -5,13 +5,16 @@ describe("gateway", () => {
   const fetchMock = vi.fn<typeof fetch>();
   let previousIdentityBaseUrl: string | undefined;
   let previousOrdersBaseUrl: string | undefined;
+  let previousLoyaltyBaseUrl: string | undefined;
 
   beforeEach(() => {
     fetchMock.mockReset();
     previousIdentityBaseUrl = process.env.IDENTITY_SERVICE_BASE_URL;
     previousOrdersBaseUrl = process.env.ORDERS_SERVICE_BASE_URL;
+    previousLoyaltyBaseUrl = process.env.LOYALTY_SERVICE_BASE_URL;
     process.env.IDENTITY_SERVICE_BASE_URL = "http://identity.internal";
     process.env.ORDERS_SERVICE_BASE_URL = "http://orders.internal";
+    process.env.LOYALTY_SERVICE_BASE_URL = "http://loyalty.internal";
     vi.stubGlobal("fetch", fetchMock);
 
     fetchMock.mockImplementation(async (input, init) => {
@@ -206,6 +209,40 @@ describe("gateway", () => {
         );
       }
 
+      if (url.endsWith("/v1/loyalty/balance") && method === "GET") {
+        return new Response(
+          JSON.stringify({
+            userId: "123e4567-e89b-12d3-a456-426614174000",
+            availablePoints: 240,
+            pendingPoints: 0,
+            lifetimeEarned: 600
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      if (url.endsWith("/v1/loyalty/ledger") && method === "GET") {
+        return new Response(
+          JSON.stringify([
+            {
+              id: "123e4567-e89b-12d3-a456-426614174210",
+              type: "EARN",
+              points: 240,
+              orderId: "123e4567-e89b-12d3-a456-426614174211",
+              createdAt: "2026-03-10T15:00:00.000Z"
+            },
+            {
+              id: "123e4567-e89b-12d3-a456-426614174212",
+              type: "REDEEM",
+              points: -120,
+              orderId: "123e4567-e89b-12d3-a456-426614174213",
+              createdAt: "2026-03-10T14:00:00.000Z"
+            }
+          ]),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
       return new Response(JSON.stringify({ code: "NOT_IMPLEMENTED" }), { status: 500 });
     });
   });
@@ -222,6 +259,12 @@ describe("gateway", () => {
       delete process.env.ORDERS_SERVICE_BASE_URL;
     } else {
       process.env.ORDERS_SERVICE_BASE_URL = previousOrdersBaseUrl;
+    }
+
+    if (previousLoyaltyBaseUrl === undefined) {
+      delete process.env.LOYALTY_SERVICE_BASE_URL;
+    } else {
+      process.env.LOYALTY_SERVICE_BASE_URL = previousLoyaltyBaseUrl;
     }
   });
 
@@ -345,6 +388,38 @@ describe("gateway", () => {
     });
     expect(cancelResponse.statusCode).toBe(200);
     expect(cancelResponse.json()).toMatchObject({ id: orderId, status: "CANCELED" });
+
+    await app.close();
+  });
+
+  it("forwards loyalty balance and ledger routes", async () => {
+    const app = await buildApp();
+
+    const balanceResponse = await app.inject({
+      method: "GET",
+      url: "/v1/loyalty/balance"
+    });
+    expect(balanceResponse.statusCode).toBe(200);
+    expect(balanceResponse.json()).toMatchObject({
+      availablePoints: 240,
+      lifetimeEarned: 600
+    });
+
+    const ledgerResponse = await app.inject({
+      method: "GET",
+      url: "/v1/loyalty/ledger"
+    });
+    expect(ledgerResponse.statusCode).toBe(200);
+    expect(ledgerResponse.json()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "EARN", points: 240 }),
+        expect.objectContaining({ type: "REDEEM", points: -120 })
+      ])
+    );
+
+    const requestedUrls = fetchMock.mock.calls.map(([input]) => (typeof input === "string" ? input : input.url));
+    expect(requestedUrls).toContain("http://loyalty.internal/v1/loyalty/balance");
+    expect(requestedUrls).toContain("http://loyalty.internal/v1/loyalty/ledger");
 
     await app.close();
   });

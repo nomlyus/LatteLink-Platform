@@ -4,7 +4,7 @@ Last reviewed: `2026-03-10`
 
 ## Purpose
 
-Bring up all currently implemented local APIs so the mobile app can exercise auth, gateway reachability, menu/cart, and order lifecycle endpoints from:
+Bring up all currently implemented local APIs so the mobile app can exercise auth, gateway reachability, menu/cart, order lifecycle, and loyalty endpoints from:
 - localhost (simulator / same machine)
 - LAN (Expo Go on a physical device)
 
@@ -40,6 +40,7 @@ This starts:
 Gateway upstream config is set in-process:
 - `IDENTITY_SERVICE_BASE_URL=http://127.0.0.1:3000`
 - `ORDERS_SERVICE_BASE_URL=http://127.0.0.1:3001`
+- `LOYALTY_SERVICE_BASE_URL=http://127.0.0.1:3004`
 
 Optional worker:
 
@@ -97,6 +98,7 @@ DEV_MACHINE_IP=192.168.1.25 pnpm dev:mobile:lan
 curl -s http://127.0.0.1:8080/health
 curl -s http://127.0.0.1:3000/health
 curl -s http://127.0.0.1:3001/health
+curl -s http://127.0.0.1:3004/health
 ```
 
 From phone browser (LAN mode):
@@ -130,10 +132,14 @@ If unreachable:
   - Retry recovery behavior:
     - retry with same payment key keeps idempotent response
     - retry with a new key can recover timeout/decline paths
+- Loyalty APIs:
+  - `GET /v1/loyalty/balance`
+  - `GET /v1/loyalty/ledger`
+  - `POST /v1/loyalty/internal/ledger/apply` (service-level internal endpoint for local testing)
 
 ## Current Limits (Expected)
 
 - Gateway menu route currently returns an empty category payload, so the app may use fallback catalog UI.
-- Loyalty and notifications services remain scaffold-level endpoints.
+- Notifications service remains scaffold-level endpoints.
 - Payments currently uses simulated Clover outcomes (not a live Clover merchant integration).
 - Apple Pay token collection in mobile is currently dev-mode input (not native Apple Pay sheet yet).

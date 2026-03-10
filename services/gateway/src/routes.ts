@@ -146,6 +146,7 @@ async function proxyUpstream<TResponse>(params: {
 export async function registerRoutes(app: FastifyInstance) {
   const identityBaseUrl = process.env.IDENTITY_SERVICE_BASE_URL ?? "http://127.0.0.1:3000";
   const ordersBaseUrl = process.env.ORDERS_SERVICE_BASE_URL ?? "http://127.0.0.1:3001";
+  const loyaltyBaseUrl = process.env.LOYALTY_SERVICE_BASE_URL ?? "http://127.0.0.1:3004";
 
   app.get("/health", async () => ({ status: "ok", service: "gateway" }));
   app.get("/ready", async () => ({ status: "ready", service: "gateway" }));
@@ -432,26 +433,29 @@ export async function registerRoutes(app: FastifyInstance) {
     });
   });
 
-  app.get("/v1/loyalty/balance", async () => {
-    return loyaltyBalanceSchema.parse({
-      userId: "123e4567-e89b-12d3-a456-426614174000",
-      availablePoints: 120,
-      pendingPoints: 10,
-      lifetimeEarned: 130
-    });
-  });
+  app.get("/v1/loyalty/balance", async (request, reply) =>
+    proxyUpstream({
+      request,
+      reply,
+      baseUrl: loyaltyBaseUrl,
+      serviceLabel: "Loyalty",
+      method: "GET",
+      path: "/v1/loyalty/balance",
+      responseSchema: loyaltyBalanceSchema
+    })
+  );
 
-  app.get("/v1/loyalty/ledger", async () => {
-    return z.array(loyaltyLedgerEntrySchema).parse([
-      {
-        id: "123e4567-e89b-12d3-a456-426614174010",
-        type: "EARN",
-        points: 10,
-        orderId: "123e4567-e89b-12d3-a456-426614174002",
-        createdAt: new Date().toISOString()
-      }
-    ]);
-  });
+  app.get("/v1/loyalty/ledger", async (request, reply) =>
+    proxyUpstream({
+      request,
+      reply,
+      baseUrl: loyaltyBaseUrl,
+      serviceLabel: "Loyalty",
+      method: "GET",
+      path: "/v1/loyalty/ledger",
+      responseSchema: z.array(loyaltyLedgerEntrySchema)
+    })
+  );
 
   app.put("/v1/devices/push-token", async (request) => {
     pushTokenUpsertSchema.parse(request.body);

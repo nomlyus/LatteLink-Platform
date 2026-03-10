@@ -46,6 +46,9 @@ pnpm build
 Use the local stack runbook:
 - [local-dev-stack.md](docs/runbooks/local-dev-stack.md)
 
+Service-specific validation:
+- [loyalty-balance-ledger.md](docs/runbooks/loyalty-balance-ledger.md)
+
 ## Governance and GitHub Setup
 
 Manual GitHub UI tasks are documented in [github-setup-checklist.md](docs/github/github-setup-checklist.md).
