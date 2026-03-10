@@ -9,14 +9,24 @@ import {
 } from "../src/auth/useAuth";
 import { useAuthSession } from "../src/auth/session";
 
-type ReturnToPath = "/";
+type ReturnToPath = "/(tabs)/cart" | "/(tabs)/home" | "/(tabs)/account";
 
 function resolveReturnToPath(input: string | string[] | undefined): ReturnToPath | null {
   if (Array.isArray(input)) {
     return resolveReturnToPath(input[0]);
   }
 
-  return input === "/" ? "/" : null;
+  if (input === "/(tabs)/cart") {
+    return "/(tabs)/cart";
+  }
+  if (input === "/(tabs)/home") {
+    return "/(tabs)/home";
+  }
+  if (input === "/(tabs)/account") {
+    return "/(tabs)/account";
+  }
+
+  return null;
 }
 
 function toErrorMessage(error: unknown): string {
@@ -237,7 +247,7 @@ export default function AuthScreen() {
       {sessionActionMessage ? <Text className="mt-2 text-xs text-foreground/70">{sessionActionMessage}</Text> : null}
       {meStatus ? <Text className="mt-2 text-xs text-foreground/70">{meStatus}</Text> : null}
 
-      <Link href="/" asChild>
+      <Link href="/(tabs)/home" asChild>
         <Pressable className="mt-10 self-start">
           <Text className="text-sm text-foreground underline">Back to home</Text>
         </Pressable>
