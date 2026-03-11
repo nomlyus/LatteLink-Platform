@@ -43,6 +43,16 @@ function unauthorized(requestId: string) {
   });
 }
 
+function ensureBearerAuth(request: FastifyRequest, reply: FastifyReply) {
+  const parsed = authHeaderSchema.safeParse(request.headers);
+  if (!parsed.success || !parsed.data.authorization) {
+    reply.status(401).send(unauthorized(request.id));
+    return false;
+  }
+
+  return true;
+}
+
 const authSuccessSchema = z.object({ success: z.literal(true) });
 
 function parseJsonSafely(rawBody: string): unknown {
@@ -305,9 +315,8 @@ export async function registerRoutes(app: FastifyInstance) {
   });
 
   app.get("/v1/auth/me", async (request, reply) => {
-    const parsed = authHeaderSchema.safeParse(request.headers);
-    if (!parsed.success || !parsed.data.authorization) {
-      return reply.status(401).send(unauthorized(request.id));
+    if (!ensureBearerAuth(request, reply)) {
+      return;
     }
 
     return proxyUpstream({
@@ -322,9 +331,8 @@ export async function registerRoutes(app: FastifyInstance) {
   });
 
   app.get("/v1/me", async (request, reply) => {
-    const parsed = authHeaderSchema.safeParse(request.headers);
-    if (!parsed.success || !parsed.data.authorization) {
-      return reply.status(401).send(unauthorized(request.id));
+    if (!ensureBearerAuth(request, reply)) {
+      return;
     }
 
     return proxyUpstream({
@@ -363,6 +371,9 @@ export async function registerRoutes(app: FastifyInstance) {
   );
 
   app.post("/v1/orders/quote", async (request, reply) => {
+    if (!ensureBearerAuth(request, reply)) {
+      return;
+    }
     const input = quoteRequestSchema.parse(request.body);
 
     return proxyUpstream({
@@ -378,6 +389,9 @@ export async function registerRoutes(app: FastifyInstance) {
   });
 
   app.post("/v1/orders", async (request, reply) => {
+    if (!ensureBearerAuth(request, reply)) {
+      return;
+    }
     const input = createOrderRequestSchema.parse(request.body);
 
     return proxyUpstream({
@@ -393,6 +407,9 @@ export async function registerRoutes(app: FastifyInstance) {
   });
 
   app.post("/v1/orders/:orderId/pay", async (request, reply) => {
+    if (!ensureBearerAuth(request, reply)) {
+      return;
+    }
     const { orderId } = orderIdParamsSchema.parse(request.params);
     const input = payOrderRequestSchema.parse(request.body);
 
@@ -408,8 +425,12 @@ export async function registerRoutes(app: FastifyInstance) {
     });
   });
 
-  app.get("/v1/orders", async (request, reply) =>
-    proxyUpstream({
+  app.get("/v1/orders", async (request, reply) => {
+    if (!ensureBearerAuth(request, reply)) {
+      return;
+    }
+
+    return proxyUpstream({
       request,
       reply,
       baseUrl: ordersBaseUrl,
@@ -417,10 +438,13 @@ export async function registerRoutes(app: FastifyInstance) {
       method: "GET",
       path: "/v1/orders",
       responseSchema: z.array(orderSchema)
-    })
-  );
+    });
+  });
 
   app.get("/v1/orders/:orderId", async (request, reply) => {
+    if (!ensureBearerAuth(request, reply)) {
+      return;
+    }
     const { orderId } = orderIdParamsSchema.parse(request.params);
 
     return proxyUpstream({
@@ -435,6 +459,9 @@ export async function registerRoutes(app: FastifyInstance) {
   });
 
   app.post("/v1/orders/:orderId/cancel", async (request, reply) => {
+    if (!ensureBearerAuth(request, reply)) {
+      return;
+    }
     const { orderId } = orderIdParamsSchema.parse(request.params);
     const input = cancelOrderRequestSchema.parse(request.body);
 
@@ -450,8 +477,12 @@ export async function registerRoutes(app: FastifyInstance) {
     });
   });
 
-  app.get("/v1/loyalty/balance", async (request, reply) =>
-    proxyUpstream({
+  app.get("/v1/loyalty/balance", async (request, reply) => {
+    if (!ensureBearerAuth(request, reply)) {
+      return;
+    }
+
+    return proxyUpstream({
       request,
       reply,
       baseUrl: loyaltyBaseUrl,
@@ -459,11 +490,15 @@ export async function registerRoutes(app: FastifyInstance) {
       method: "GET",
       path: "/v1/loyalty/balance",
       responseSchema: loyaltyBalanceSchema
-    })
-  );
+    });
+  });
 
-  app.get("/v1/loyalty/ledger", async (request, reply) =>
-    proxyUpstream({
+  app.get("/v1/loyalty/ledger", async (request, reply) => {
+    if (!ensureBearerAuth(request, reply)) {
+      return;
+    }
+
+    return proxyUpstream({
       request,
       reply,
       baseUrl: loyaltyBaseUrl,
@@ -471,10 +506,13 @@ export async function registerRoutes(app: FastifyInstance) {
       method: "GET",
       path: "/v1/loyalty/ledger",
       responseSchema: z.array(loyaltyLedgerEntrySchema)
-    })
-  );
+    });
+  });
 
   app.put("/v1/devices/push-token", async (request, reply) => {
+    if (!ensureBearerAuth(request, reply)) {
+      return;
+    }
     const input = pushTokenUpsertSchema.parse(request.body);
 
     return proxyUpstream({
