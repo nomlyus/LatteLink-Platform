@@ -14,22 +14,34 @@ env:
 
 jobs:
   deploy:
-    if: ${{ secrets.AWS_ROLE_ARN != '' }}
     runs-on: ubuntu-latest
     environment: dev
     steps:
       - uses: actions/checkout@v4
+      - name: Check deploy prerequisites
+        id: deploy-check
+        env:
+          AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+        run: |
+          if [ -n "${AWS_ROLE_ARN}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "AWS_ROLE_ARN is not configured; deploy will be skipped."
+          fi
       - uses: aws-actions/configure-aws-credentials@v4
+        if: steps.deploy-check.outputs.enabled == 'true'
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
       - uses: hashicorp/setup-terraform@v3
-      - run: terraform -chdir=infra/terraform/envs/dev init
-      - run: terraform -chdir=infra/terraform/envs/dev apply -auto-approve
-      - run: ./infra/terraform/scripts/smoke-check.sh dev
-
-  deploy-skipped:
-    if: ${{ secrets.AWS_ROLE_ARN == '' }}
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "Skipping deploy-dev because dev environment secret AWS_ROLE_ARN is not configured."
+        if: steps.deploy-check.outputs.enabled == 'true'
+      - if: steps.deploy-check.outputs.enabled == 'true'
+        run: terraform -chdir=infra/terraform/envs/dev init
+      - if: steps.deploy-check.outputs.enabled == 'true'
+        run: terraform -chdir=infra/terraform/envs/dev apply -auto-approve
+      - if: steps.deploy-check.outputs.enabled == 'true'
+        run: ./infra/terraform/scripts/smoke-check.sh dev
+      - name: Skip deploy (AWS_ROLE_ARN missing)
+        if: steps.deploy-check.outputs.enabled != 'true'
+        run: echo "Skipping deploy-dev because dev environment secret AWS_ROLE_ARN is not configured."

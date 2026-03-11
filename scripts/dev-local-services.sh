@@ -9,6 +9,7 @@ BIND_HOST="${BIND_HOST:-127.0.0.1}"
 GATEWAY_PUBLIC_HOST="${GATEWAY_PUBLIC_HOST:-127.0.0.1}"
 IDENTITY_UPSTREAM_HOST="${IDENTITY_UPSTREAM_HOST:-127.0.0.1}"
 ORDERS_UPSTREAM_HOST="${ORDERS_UPSTREAM_HOST:-127.0.0.1}"
+CATALOG_UPSTREAM_HOST="${CATALOG_UPSTREAM_HOST:-127.0.0.1}"
 LOYALTY_UPSTREAM_HOST="${LOYALTY_UPSTREAM_HOST:-127.0.0.1}"
 NOTIFICATIONS_UPSTREAM_HOST="${NOTIFICATIONS_UPSTREAM_HOST:-127.0.0.1}"
 
@@ -50,12 +51,17 @@ start_service \
   HOST="${BIND_HOST}" \
   IDENTITY_SERVICE_BASE_URL="http://${IDENTITY_UPSTREAM_HOST}:3000" \
   ORDERS_SERVICE_BASE_URL="http://${ORDERS_UPSTREAM_HOST}:3001" \
+  CATALOG_SERVICE_BASE_URL="http://${CATALOG_UPSTREAM_HOST}:3002" \
   LOYALTY_SERVICE_BASE_URL="http://${LOYALTY_UPSTREAM_HOST}:3004" \
   NOTIFICATIONS_SERVICE_BASE_URL="http://${NOTIFICATIONS_UPSTREAM_HOST}:3005" \
   pnpm -C "${ROOT_DIR}" --filter @gazelle/gateway dev
 
 if [[ "${START_MENU_SYNC_WORKER:-0}" == "1" ]]; then
   start_service "menu-sync-worker" env MENU_SYNC_INTERVAL_MS=60000 pnpm -C "${ROOT_DIR}" --filter @gazelle/menu-sync-worker dev
+fi
+
+if [[ "${START_NOTIFICATIONS_DISPATCH_WORKER:-0}" == "1" ]]; then
+  start_service "notifications-dispatch-worker" env NOTIFICATIONS_SERVICE_BASE_URL="http://127.0.0.1:3005" pnpm -C "${ROOT_DIR}" --filter @gazelle/notifications-dispatch-worker dev
 fi
 
 echo "[dev-services] all services started"

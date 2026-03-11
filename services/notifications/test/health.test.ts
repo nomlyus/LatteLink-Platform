@@ -2,15 +2,22 @@ import { describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
 
 describe("notifications service", () => {
-  it("responds on /health", async () => {
+  it("responds on /health and /ready", async () => {
     const app = await buildApp();
-    const response = await app.inject({ method: "GET", url: "/health" });
+    const healthResponse = await app.inject({ method: "GET", url: "/health" });
+    const readyResponse = await app.inject({ method: "GET", url: "/ready" });
 
-    expect(response.statusCode).toBe(200);
+    expect(healthResponse.statusCode).toBe(200);
+    expect(readyResponse.statusCode).toBe(200);
+    expect(readyResponse.json()).toMatchObject({
+      status: "ready",
+      service: "notifications",
+      persistence: expect.stringMatching(/^(memory|postgres)$/)
+    });
     await app.close();
   });
 
-  it("upserts a push token and dispatches an order-state notification", async () => {
+  it("upserts a push token, enqueues order-state notifications, and processes outbox", async () => {
     const app = await buildApp();
     const userId = "123e4567-e89b-12d3-a456-426614174910";
 
@@ -50,6 +57,22 @@ describe("notifications service", () => {
       deduplicated: false
     });
 
+    const processOutbox = await app.inject({
+      method: "POST",
+      url: "/v1/notifications/internal/outbox/process",
+      payload: {
+        batchSize: 10
+      }
+    });
+
+    expect(processOutbox.statusCode).toBe(200);
+    expect(processOutbox.json()).toEqual({
+      processed: 1,
+      dispatched: 1,
+      retried: 0,
+      failed: 0
+    });
+
     await app.close();
   });
 
@@ -87,6 +110,103 @@ describe("notifications service", () => {
       accepted: true,
       enqueued: 0,
       deduplicated: true
+    });
+
+    const processOutbox = await app.inject({
+      method: "POST",
+      url: "/v1/notifications/internal/outbox/process",
+      payload: {
+        batchSize: 10
+      }
+    });
+    expect(processOutbox.statusCode).toBe(200);
+    expect(processOutbox.json()).toEqual({
+      processed: 0,
+      dispatched: 0,
+      retried: 0,
+      failed: 0
+    });
+
+    await app.close();
+  });
+
+  it("retries and eventually fails outbox entries for failing push tokens", async () => {
+    const app = await buildApp();
+    const userId = "123e4567-e89b-12d3-a456-426614174930";
+    const baseNow = "2030-01-01T00:00:00.000Z";
+
+    await app.inject({
+      method: "PUT",
+      url: "/v1/devices/push-token",
+      headers: {
+        "x-user-id": userId
+      },
+      payload: {
+        deviceId: "ios-failing",
+        platform: "ios",
+        expoPushToken: "ExponentPushToken[fail-token]"
+      }
+    });
+
+    await app.inject({
+      method: "POST",
+      url: "/v1/notifications/internal/order-state",
+      payload: {
+        userId,
+        orderId: "123e4567-e89b-12d3-a456-426614174931",
+        status: "PAID",
+        pickupCode: "FAIL01",
+        locationId: "flagship-01",
+        occurredAt: "2026-03-11T12:00:00.000Z"
+      }
+    });
+
+    const firstAttempt = await app.inject({
+      method: "POST",
+      url: "/v1/notifications/internal/outbox/process",
+      payload: {
+        batchSize: 10,
+        nowIso: baseNow
+      }
+    });
+    expect(firstAttempt.statusCode).toBe(200);
+    expect(firstAttempt.json()).toEqual({
+      processed: 1,
+      dispatched: 0,
+      retried: 1,
+      failed: 0
+    });
+
+    const secondAttempt = await app.inject({
+      method: "POST",
+      url: "/v1/notifications/internal/outbox/process",
+      payload: {
+        batchSize: 10,
+        nowIso: "2030-01-01T00:00:01.000Z"
+      }
+    });
+    expect(secondAttempt.statusCode).toBe(200);
+    expect(secondAttempt.json()).toEqual({
+      processed: 1,
+      dispatched: 0,
+      retried: 1,
+      failed: 0
+    });
+
+    const thirdAttempt = await app.inject({
+      method: "POST",
+      url: "/v1/notifications/internal/outbox/process",
+      payload: {
+        batchSize: 10,
+        nowIso: "2030-01-01T00:00:03.000Z"
+      }
+    });
+    expect(thirdAttempt.statusCode).toBe(200);
+    expect(thirdAttempt.json()).toEqual({
+      processed: 1,
+      dispatched: 0,
+      retried: 0,
+      failed: 1
     });
 
     await app.close();

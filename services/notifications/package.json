@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@gazelle/contracts-notifications": "workspace:*",
+    "@gazelle/persistence": "workspace:*",
     "@fastify/swagger": "^8.15.0",
     "@fastify/swagger-ui": "^3.1.0",
     "fastify": "^4.28.1",

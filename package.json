@@ -20,6 +20,7 @@
     "dev:mobile:local": "EXPO_PUBLIC_API_BASE_URL=http://127.0.0.1:8080/v1 pnpm --filter @gazelle/mobile dev",
     "dev:mobile:lan": "./scripts/dev-mobile-lan.sh",
     "dev:worker:menu-sync": "pnpm --filter @gazelle/menu-sync-worker dev",
+    "dev:worker:notifications-dispatch": "pnpm --filter @gazelle/notifications-dispatch-worker dev",
     "contracts:openapi": "turbo run openapi --filter=@gazelle/gateway --filter=@gazelle/contracts-*",
     "contracts:drift": "./scripts/verify-contract-drift.sh",
     "sdk:generate": "pnpm --filter @gazelle/sdk-mobile generate",

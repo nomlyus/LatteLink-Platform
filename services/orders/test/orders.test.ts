@@ -222,11 +222,18 @@ describe("orders service", () => {
     vi.unstubAllGlobals();
   });
 
-  it("responds on /health", async () => {
+  it("responds on /health and /ready", async () => {
     const app = await buildApp();
-    const response = await app.inject({ method: "GET", url: "/health" });
+    const healthResponse = await app.inject({ method: "GET", url: "/health" });
+    const readyResponse = await app.inject({ method: "GET", url: "/ready" });
 
-    expect(response.statusCode).toBe(200);
+    expect(healthResponse.statusCode).toBe(200);
+    expect(readyResponse.statusCode).toBe(200);
+    expect(readyResponse.json()).toMatchObject({
+      status: "ready",
+      service: "orders",
+      persistence: expect.stringMatching(/^(memory|postgres)$/)
+    });
     await app.close();
   });
 

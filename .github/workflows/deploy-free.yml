@@ -1,0 +1,115 @@
+name: deploy-free
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "infra/free/**"
+      - ".github/workflows/deploy-free.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check deploy prerequisites
+        id: free-check
+        env:
+          DEPLOY_HOST: ${{ secrets.FREE_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.FREE_DEPLOY_USER }}
+          DEPLOY_KEY: ${{ secrets.FREE_DEPLOY_SSH_KEY }}
+          POSTGRES_PASSWORD: ${{ secrets.FREE_POSTGRES_PASSWORD }}
+          LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL }}
+          API_DOMAIN: ${{ vars.FREE_API_DOMAIN }}
+        run: |
+          missing=0
+          for required in DEPLOY_HOST DEPLOY_USER DEPLOY_KEY POSTGRES_PASSWORD LETSENCRYPT_EMAIL API_DOMAIN; do
+            if [ -z "${!required}" ]; then
+              echo "missing: ${required}"
+              missing=1
+            fi
+          done
+
+          if [ "${missing}" -eq 0 ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping free deploy because one or more required secrets/variables are missing."
+          fi
+
+      - name: Setup SSH key
+        if: steps.free-check.outputs.enabled == 'true'
+        env:
+          DEPLOY_KEY: ${{ secrets.FREE_DEPLOY_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${DEPLOY_KEY}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: Copy deployment bundle to server
+        if: steps.free-check.outputs.enabled == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.FREE_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.FREE_DEPLOY_USER }}
+          FREE_DEPLOY_PATH: ${{ vars.FREE_DEPLOY_PATH }}
+        run: |
+          DEPLOY_PATH="${FREE_DEPLOY_PATH:-/opt/gazelle-free}"
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p '${DEPLOY_PATH}'"
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 -r infra/free/* "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"
+
+      - name: Deploy compose stack
+        if: steps.free-check.outputs.enabled == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.FREE_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.FREE_DEPLOY_USER }}
+          FREE_DEPLOY_PATH: ${{ vars.FREE_DEPLOY_PATH }}
+          FREE_API_DOMAIN: ${{ vars.FREE_API_DOMAIN }}
+          FREE_IMAGE_TAG: ${{ vars.FREE_IMAGE_TAG }}
+          FREE_PASSKEY_RP_ID: ${{ vars.FREE_PASSKEY_RP_ID }}
+          LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL }}
+          FREE_POSTGRES_PASSWORD: ${{ secrets.FREE_POSTGRES_PASSWORD }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          DEPLOY_PATH="${FREE_DEPLOY_PATH:-/opt/gazelle-free}"
+
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "export DEPLOY_PATH='${DEPLOY_PATH}' FREE_API_DOMAIN='${FREE_API_DOMAIN}' FREE_IMAGE_TAG='${FREE_IMAGE_TAG}' FREE_PASSKEY_RP_ID='${FREE_PASSKEY_RP_ID}' LETSENCRYPT_EMAIL='${LETSENCRYPT_EMAIL}' FREE_POSTGRES_PASSWORD='${FREE_POSTGRES_PASSWORD}' GHCR_USERNAME='${GHCR_USERNAME}' GHCR_TOKEN='${GHCR_TOKEN}'; bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          cd "${DEPLOY_PATH}"
+
+          cat > .env <<ENVVARS
+          API_DOMAIN=${FREE_API_DOMAIN}
+          LETSENCRYPT_EMAIL=${LETSENCRYPT_EMAIL}
+          IMAGE_TAG=${FREE_IMAGE_TAG:-latest}
+          POSTGRES_PASSWORD=${FREE_POSTGRES_PASSWORD}
+          PASSKEY_RP_ID=${FREE_PASSKEY_RP_ID:-${FREE_API_DOMAIN}}
+          ENVVARS
+
+          if [ -n "${GHCR_USERNAME}" ] && [ -n "${GHCR_TOKEN}" ]; then
+            echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USERNAME}" --password-stdin
+          fi
+
+          docker compose --env-file .env pull
+          docker compose --env-file .env up -d --remove-orphans
+          docker compose --env-file .env ps
+          REMOTE
+
+      - name: Smoke check deployed gateway
+        if: steps.free-check.outputs.enabled == 'true'
+        env:
+          FREE_API_DOMAIN: ${{ vars.FREE_API_DOMAIN }}
+        run: |
+          curl --fail --silent --show-error "https://${FREE_API_DOMAIN}/health"
+          curl --fail --silent --show-error "https://${FREE_API_DOMAIN}/ready"
+
+      - name: Skip free deploy (prerequisites missing)
+        if: steps.free-check.outputs.enabled != 'true'
+        run: echo "deploy-free skipped due to missing required secrets/variables."

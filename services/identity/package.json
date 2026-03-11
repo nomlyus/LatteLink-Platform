@@ -16,6 +16,8 @@
   "dependencies": {
     "@gazelle/contracts-auth": "workspace:*",
     "@gazelle/contracts-core": "workspace:*",
+    "@gazelle/persistence": "workspace:*",
+    "@simplewebauthn/server": "^13.2.2",
     "@fastify/swagger": "^8.15.0",
     "@fastify/swagger-ui": "^3.1.0",
     "fastify": "^4.28.1",

@@ -1,0 +1,101 @@
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - gateway
+
+  gateway:
+    image: ghcr.io/gazelledev/gazellemobileplatform/gateway:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8080
+      - IDENTITY_SERVICE_BASE_URL=http://identity:3000
+      - ORDERS_SERVICE_BASE_URL=http://orders:3001
+      - CATALOG_SERVICE_BASE_URL=http://catalog:3002
+      - LOYALTY_SERVICE_BASE_URL=http://loyalty:3004
+      - NOTIFICATIONS_SERVICE_BASE_URL=http://notifications:3005
+    depends_on:
+      - identity
+      - orders
+      - catalog
+      - loyalty
+      - notifications
+
+  identity:
+    image: ghcr.io/gazelledev/gazellemobileplatform/identity:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      - HOST=0.0.0.0
+      - PORT=3000
+      - PASSKEY_RP_ID=${PASSKEY_RP_ID:-localhost}
+
+  orders:
+    image: ghcr.io/gazelledev/gazellemobileplatform/orders:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      - HOST=0.0.0.0
+      - PORT=3001
+      - PAYMENTS_SERVICE_BASE_URL=http://payments:3003
+      - LOYALTY_SERVICE_BASE_URL=http://loyalty:3004
+      - NOTIFICATIONS_SERVICE_BASE_URL=http://notifications:3005
+
+  catalog:
+    image: ghcr.io/gazelledev/gazellemobileplatform/catalog:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      - HOST=0.0.0.0
+      - PORT=3002
+
+  payments:
+    image: ghcr.io/gazelledev/gazellemobileplatform/payments:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      - HOST=0.0.0.0
+      - PORT=3003
+
+  loyalty:
+    image: ghcr.io/gazelledev/gazellemobileplatform/loyalty:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      - HOST=0.0.0.0
+      - PORT=3004
+
+  notifications:
+    image: ghcr.io/gazelledev/gazellemobileplatform/notifications:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      - HOST=0.0.0.0
+      - PORT=3005
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: gazelle-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=gazelle
+      - POSTGRES_DB=gazelle
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: gazelle-valkey
+    restart: unless-stopped
+    volumes:
+      - valkey_data:/data
+
+volumes:
+  postgres_data:
+  valkey_data:
+  caddy_data:
+  caddy_config:

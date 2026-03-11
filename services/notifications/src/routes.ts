@@ -6,6 +6,7 @@ import {
   pushTokenUpsertSchema
 } from "@gazelle/contracts-notifications";
 import { z } from "zod";
+import { createNotificationsRepository, type OutboxEntry } from "./repository.js";
 
 const payloadSchema = z.object({
   id: z.string().uuid().optional()
@@ -16,15 +17,22 @@ const userHeadersSchema = z.object({
 });
 
 const defaultUserId = "123e4567-e89b-12d3-a456-426614174000";
+const outboxBatchMax = 200;
+const outboxDefaultBatch = 50;
+const outboxMaxAttempts = 3;
+const outboxRetryBaseMs = 1_000;
 
-type RegisteredPushToken = z.output<typeof pushTokenUpsertSchema> & {
-  userId: string;
-  createdAt: string;
-  updatedAt: string;
-};
+const outboxProcessRequestSchema = z.object({
+  batchSize: z.number().int().positive().max(outboxBatchMax).optional(),
+  nowIso: z.string().datetime().optional()
+});
 
-const pushTokensByUserId = new Map<string, Map<string, RegisteredPushToken>>();
-const dispatchedOrderStates = new Set<string>();
+const outboxProcessResponseSchema = z.object({
+  processed: z.number().int().nonnegative(),
+  dispatched: z.number().int().nonnegative(),
+  retried: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative()
+});
 
 function resolveUserId(headers: unknown) {
   const parsed = userHeadersSchema.safeParse(headers);
@@ -35,9 +43,30 @@ function resolveUserId(headers: unknown) {
   return parsed.data["x-user-id"] ?? defaultUserId;
 }
 
+function computeRetryDelayMs(nextAttempt: number) {
+  return outboxRetryBaseMs * 2 ** Math.max(nextAttempt - 1, 0);
+}
+
+function simulatePushDispatch(entry: OutboxEntry) {
+  const token = entry.expoPushToken.toLowerCase();
+  if (token.includes("fail")) {
+    throw new Error("simulated push provider failure");
+  }
+}
+
 export async function registerRoutes(app: FastifyInstance) {
+  const repository = await createNotificationsRepository(app.log);
+
+  app.addHook("onClose", async () => {
+    await repository.close();
+  });
+
   app.get("/health", async () => ({ status: "ok", service: "notifications" }));
-  app.get("/ready", async () => ({ status: "ready", service: "notifications" }));
+  app.get("/ready", async () => ({
+    status: "ready",
+    service: "notifications",
+    persistence: repository.backend
+  }));
 
   app.put("/v1/devices/push-token", async (request, reply) => {
     const userId = resolveUserId(request.headers);
@@ -51,17 +80,7 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     const input = pushTokenUpsertSchema.parse(request.body);
-    const now = new Date().toISOString();
-    const userTokens = pushTokensByUserId.get(userId) ?? new Map<string, RegisteredPushToken>();
-    const existing = userTokens.get(input.deviceId);
-
-    userTokens.set(input.deviceId, {
-      ...input,
-      userId,
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now
-    });
-    pushTokensByUserId.set(userId, userTokens);
+    await repository.upsertPushToken(userId, input);
 
     return pushTokenUpsertResponseSchema.parse({ success: true });
   });
@@ -70,7 +89,12 @@ export async function registerRoutes(app: FastifyInstance) {
     const input = orderStateNotificationSchema.parse(request.body);
     const dispatchKey = `${input.userId}:${input.orderId}:${input.status}`;
 
-    if (dispatchedOrderStates.has(dispatchKey)) {
+    const isNewDispatch = await repository.markOrderStateDispatchIfNew({
+      dispatchKey,
+      payload: input
+    });
+
+    if (!isNewDispatch) {
       return orderStateDispatchResponseSchema.parse({
         accepted: true,
         enqueued: 0,
@@ -78,9 +102,7 @@ export async function registerRoutes(app: FastifyInstance) {
       });
     }
 
-    dispatchedOrderStates.add(dispatchKey);
-
-    const recipients = pushTokensByUserId.get(input.userId)?.size ?? 0;
+    const recipients = await repository.enqueueOrderStateOutbox(input);
     request.log.info(
       {
         orderId: input.orderId,
@@ -95,6 +117,49 @@ export async function registerRoutes(app: FastifyInstance) {
       accepted: true,
       enqueued: recipients,
       deduplicated: false
+    });
+  });
+
+  app.post("/v1/notifications/internal/outbox/process", async (request) => {
+    const input = outboxProcessRequestSchema.parse(request.body ?? {});
+    const batchSize = input.batchSize ?? outboxDefaultBatch;
+    const nowIso = input.nowIso ?? new Date().toISOString();
+    const cycleNowMs = Date.parse(nowIso);
+    const entries = await repository.listPendingOutbox(batchSize, nowIso);
+
+    let dispatched = 0;
+    let retried = 0;
+    let failed = 0;
+
+    for (const entry of entries) {
+      try {
+        simulatePushDispatch(entry);
+        await repository.markOutboxDispatched(entry.id);
+        dispatched += 1;
+      } catch (error) {
+        const normalizedError = error instanceof Error ? error.message : "unknown push dispatch error";
+        const nextAttempt = entry.attempts + 1;
+
+        if (nextAttempt >= outboxMaxAttempts) {
+          await repository.markOutboxFailed(entry.id, normalizedError);
+          failed += 1;
+          continue;
+        }
+
+        const retryAtIso = new Date(cycleNowMs + computeRetryDelayMs(nextAttempt)).toISOString();
+        await repository.markOutboxRetry(entry.id, {
+          retryAtIso,
+          error: normalizedError
+        });
+        retried += 1;
+      }
+    }
+
+    return outboxProcessResponseSchema.parse({
+      processed: entries.length,
+      dispatched,
+      retried,
+      failed
     });
   });
 
