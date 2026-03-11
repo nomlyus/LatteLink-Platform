@@ -3,6 +3,7 @@ import { buildApp } from "../src/app.js";
 
 describe("gateway", () => {
   const fetchMock = vi.fn<typeof fetch>();
+  const authHeader = { authorization: "Bearer access-token" } as const;
   let previousIdentityBaseUrl: string | undefined;
   let previousOrdersBaseUrl: string | undefined;
   let previousCatalogBaseUrl: string | undefined;
@@ -414,6 +415,7 @@ describe("gateway", () => {
     const response = await app.inject({
       method: "POST",
       url: "/v1/orders/quote",
+      headers: authHeader,
       payload: {
         locationId: "flagship-01",
         items: [{ itemId: "latte", quantity: 1 }],
@@ -435,6 +437,7 @@ describe("gateway", () => {
     const payResponse = await app.inject({
       method: "POST",
       url: `/v1/orders/${orderId}/pay`,
+      headers: authHeader,
       payload: {
         applePayWallet: {
           version: "EC_v1",
@@ -454,7 +457,8 @@ describe("gateway", () => {
 
     const getResponse = await app.inject({
       method: "GET",
-      url: `/v1/orders/${orderId}`
+      url: `/v1/orders/${orderId}`,
+      headers: authHeader
     });
     expect(getResponse.statusCode).toBe(200);
     expect(getResponse.json()).toMatchObject({ id: orderId, status: "IN_PREP" });
@@ -462,6 +466,7 @@ describe("gateway", () => {
     const cancelResponse = await app.inject({
       method: "POST",
       url: `/v1/orders/${orderId}/cancel`,
+      headers: authHeader,
       payload: { reason: "changed mind" }
     });
     expect(cancelResponse.statusCode).toBe(200);
@@ -475,7 +480,8 @@ describe("gateway", () => {
 
     const balanceResponse = await app.inject({
       method: "GET",
-      url: "/v1/loyalty/balance"
+      url: "/v1/loyalty/balance",
+      headers: authHeader
     });
     expect(balanceResponse.statusCode).toBe(200);
     expect(balanceResponse.json()).toMatchObject({
@@ -485,7 +491,8 @@ describe("gateway", () => {
 
     const ledgerResponse = await app.inject({
       method: "GET",
-      url: "/v1/loyalty/ledger"
+      url: "/v1/loyalty/ledger",
+      headers: authHeader
     });
     expect(ledgerResponse.statusCode).toBe(200);
     expect(ledgerResponse.json()).toEqual(
@@ -508,6 +515,7 @@ describe("gateway", () => {
       method: "PUT",
       url: "/v1/devices/push-token",
       headers: {
+        ...authHeader,
         "x-user-id": "123e4567-e89b-12d3-a456-426614174000"
       },
       payload: {
@@ -541,6 +549,7 @@ describe("gateway", () => {
       method: "POST",
       url: "/v1/orders/quote",
       headers: {
+        ...authHeader,
         "x-request-id": requestId
       },
       payload: {
@@ -577,6 +586,23 @@ describe("gateway", () => {
     });
     expect(metricsResponse.json().requests.total).toBeGreaterThanOrEqual(1);
 
+    await app.close();
+  });
+
+  it("returns unauthorized on protected orders route without bearer token", async () => {
+    const app = await buildApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/orders/quote",
+      payload: {
+        locationId: "flagship-01",
+        items: [{ itemId: "latte", quantity: 1 }],
+        pointsToRedeem: 0
+      }
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({ code: "UNAUTHORIZED" });
     await app.close();
   });
 });
