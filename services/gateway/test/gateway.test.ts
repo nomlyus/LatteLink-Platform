@@ -436,7 +436,16 @@ describe("gateway", () => {
       method: "POST",
       url: `/v1/orders/${orderId}/pay`,
       payload: {
-        applePayToken: "apple-pay-token",
+        applePayWallet: {
+          version: "EC_v1",
+          data: "wallet-success-token",
+          signature: "signature-value",
+          header: {
+            ephemeralPublicKey: "ephemeral-key",
+            publicKeyHash: "public-key-hash",
+            transactionId: "transaction-id"
+          }
+        },
         idempotencyKey: "pay-1"
       }
     });

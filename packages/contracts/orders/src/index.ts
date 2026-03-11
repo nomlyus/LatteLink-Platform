@@ -55,9 +55,43 @@ export const createOrderRequestSchema = z.object({
   quoteHash: z.string().min(1)
 });
 
+export const applePayWalletHeaderSchema = z.object({
+  ephemeralPublicKey: z.string().min(1),
+  publicKeyHash: z.string().min(1),
+  transactionId: z.string().min(1),
+  applicationData: z.string().min(1).optional()
+});
+
+export const applePayWalletSchema = z.object({
+  version: z.string().min(1),
+  data: z.string().min(1),
+  signature: z.string().min(1),
+  header: applePayWalletHeaderSchema
+});
+
 export const payOrderRequestSchema = z.object({
-  applePayToken: z.string().min(1),
+  applePayToken: z.string().min(1).optional(),
+  applePayWallet: applePayWalletSchema.optional(),
   idempotencyKey: z.string().min(1)
+}).superRefine((input, context) => {
+  const hasToken = Boolean(input.applePayToken);
+  const hasWallet = Boolean(input.applePayWallet);
+
+  if (!hasToken && !hasWallet) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["applePayToken"],
+      message: "Either applePayToken or applePayWallet is required."
+    });
+  }
+
+  if (hasToken && hasWallet) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["applePayWallet"],
+      message: "Provide either applePayToken or applePayWallet, but not both."
+    });
+  }
 });
 
 export const ordersContract = {

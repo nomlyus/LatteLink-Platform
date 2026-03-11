@@ -51,8 +51,12 @@ describe("orders service", () => {
           : {};
 
       if (url.endsWith("/v1/payments/charges") && method === "POST") {
-        const applePayToken = String(body.applePayToken ?? "").toLowerCase();
-        if (applePayToken.includes("decline")) {
+        const walletData =
+          typeof body.applePayWallet === "object" && body.applePayWallet !== null && "data" in body.applePayWallet
+            ? (body.applePayWallet as { data?: unknown }).data
+            : undefined;
+        const simulationSignal = String(body.applePayToken ?? walletData ?? "").toLowerCase();
+        if (simulationSignal.includes("decline")) {
           return paymentsResponse({
             paymentId: "123e4567-e89b-12d3-a456-426614174101",
             provider: "CLOVER",
@@ -67,7 +71,7 @@ describe("orders service", () => {
           });
         }
 
-        if (applePayToken.includes("timeout")) {
+        if (simulationSignal.includes("timeout")) {
           return paymentsResponse({
             paymentId: "123e4567-e89b-12d3-a456-426614174102",
             provider: "CLOVER",
@@ -345,6 +349,62 @@ describe("orders service", () => {
       (typeof input === "string" ? input : input.toString()).endsWith("/v1/loyalty/internal/ledger/apply")
     );
     expect(loyaltyMutationCalls).toHaveLength(2);
+
+    await app.close();
+  });
+
+  it("accepts structured Apple Pay wallet payloads for payment", async () => {
+    const app = await buildApp();
+    const quoteResponse = await app.inject({
+      method: "POST",
+      url: "/v1/orders/quote",
+      payload: sampleQuotePayload
+    });
+    const quote = orderQuoteSchema.parse(quoteResponse.json());
+
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/v1/orders",
+      payload: {
+        quoteId: quote.quoteId,
+        quoteHash: quote.quoteHash
+      }
+    });
+    const createdOrder = orderSchema.parse(createResponse.json());
+
+    const payResponse = await app.inject({
+      method: "POST",
+      url: `/v1/orders/${createdOrder.id}/pay`,
+      payload: {
+        applePayWallet: {
+          version: "EC_v1",
+          data: "wallet-success-token",
+          signature: "signature-value",
+          header: {
+            ephemeralPublicKey: "ephemeral-key",
+            publicKeyHash: "public-key-hash",
+            transactionId: "transaction-id"
+          }
+        },
+        idempotencyKey: "wallet-pay-1"
+      }
+    });
+
+    expect(payResponse.statusCode).toBe(200);
+    expect(orderSchema.parse(payResponse.json()).status).toBe("PAID");
+
+    const paymentChargeCalls = fetchMock.mock.calls.filter(([input]) =>
+      (typeof input === "string" ? input : input.toString()).endsWith("/v1/payments/charges")
+    );
+    expect(paymentChargeCalls).toHaveLength(1);
+    const chargeBody = JSON.parse(String(paymentChargeCalls[0]?.[1]?.body ?? "{}")) as Record<string, unknown>;
+    expect(chargeBody).toMatchObject({
+      idempotencyKey: "wallet-pay-1",
+      applePayWallet: {
+        version: "EC_v1"
+      }
+    });
+    expect(chargeBody.applePayToken).toBeUndefined();
 
     await app.close();
   });

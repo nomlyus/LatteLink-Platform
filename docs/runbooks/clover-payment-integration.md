@@ -1,6 +1,6 @@
 # Clover Payment Integration Path
 
-Last reviewed: `2026-03-10`
+Last reviewed: `2026-03-11`
 
 ## Scope
 
@@ -15,11 +15,12 @@ M4.3 introduces Clover charge and refund paths across `orders` and `payments`:
 
 ## Charge Outcomes
 
-`payments` simulates Clover outcomes based on token content:
+`payments` simulates Clover outcomes based on payment payload content:
 
-- token includes `decline` -> `DECLINED`
-- token includes `timeout` -> `TIMEOUT`
-- any other token -> `SUCCEEDED`
+- `applePayToken` includes `decline` -> `DECLINED`
+- `applePayToken` includes `timeout` -> `TIMEOUT`
+- if using structured `applePayWallet`, its `data` value is used for the same simulation rules
+- any other signal -> `SUCCEEDED`
 
 `orders` maps these outcomes to API behavior:
 

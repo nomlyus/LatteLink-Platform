@@ -2,12 +2,18 @@ import { useMutation } from "@tanstack/react-query";
 import { apiClient } from "../api/client";
 import type { CartItem } from "../cart/model";
 
+type PayOrderInput = Parameters<(typeof apiClient)["payOrder"]>[1];
+type ApplePayWalletInput = NonNullable<PayOrderInput["applePayWallet"]>;
+
+type CheckoutPaymentInput =
+  | { applePayToken: string; applePayWallet?: never }
+  | { applePayWallet: ApplePayWalletInput; applePayToken?: never };
+
 export type CheckoutInput = {
   locationId: string;
   items: CartItem[];
-  applePayToken: string;
   pointsToRedeem?: number;
-};
+} & CheckoutPaymentInput;
 
 export function toQuoteItems(items: CartItem[]): Array<{ itemId: string; quantity: number }> {
   const quantityByItemId = new Map<string, number>();
@@ -35,10 +41,23 @@ export function useApplePayCheckoutMutation() {
         throw new Error("Cart is empty.");
       }
 
-      const applePayToken = input.applePayToken.trim();
-      if (!applePayToken) {
-        throw new Error("Apple Pay token is required.");
+      const hasToken = typeof (input as { applePayToken?: string }).applePayToken === "string";
+      const hasWallet = typeof (input as { applePayWallet?: ApplePayWalletInput }).applePayWallet !== "undefined";
+
+      if (hasToken === hasWallet) {
+        throw new Error("Provide exactly one Apple Pay payment payload.");
       }
+
+      const paymentPayload: Pick<PayOrderInput, "applePayToken" | "applePayWallet"> = hasToken
+        ? (() => {
+            const applePayToken = (input as { applePayToken: string }).applePayToken.trim();
+            if (!applePayToken) {
+              throw new Error("Apple Pay token is required.");
+            }
+
+            return { applePayToken };
+          })()
+        : { applePayWallet: (input as { applePayWallet: ApplePayWalletInput }).applePayWallet };
 
       const quote = await apiClient.quoteOrder({
         locationId: input.locationId,
@@ -52,7 +71,7 @@ export function useApplePayCheckoutMutation() {
       });
 
       return apiClient.payOrder(order.id, {
-        applePayToken,
+        ...paymentPayload,
         idempotencyKey: createCheckoutIdempotencyKey()
       });
     }

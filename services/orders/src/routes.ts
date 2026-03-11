@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
+  applePayWalletSchema,
   createOrderRequestSchema,
   orderQuoteSchema,
   orderSchema,
@@ -62,8 +63,28 @@ const paymentsChargeRequestSchema = z.object({
   orderId: z.string().uuid(),
   amountCents: z.number().int().positive(),
   currency: z.literal("USD"),
-  applePayToken: z.string().min(1),
+  applePayToken: z.string().min(1).optional(),
+  applePayWallet: applePayWalletSchema.optional(),
   idempotencyKey: z.string().min(1)
+}).superRefine((input, context) => {
+  const hasToken = Boolean(input.applePayToken);
+  const hasWallet = Boolean(input.applePayWallet);
+
+  if (!hasToken && !hasWallet) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["applePayToken"],
+      message: "Either applePayToken or applePayWallet is required."
+    });
+  }
+
+  if (hasToken && hasWallet) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["applePayWallet"],
+      message: "Provide either applePayToken or applePayWallet, but not both."
+    });
+  }
 });
 
 const paymentsChargeStatusSchema = z.enum(["SUCCEEDED", "DECLINED", "TIMEOUT"]);
@@ -597,6 +618,7 @@ export async function registerRoutes(app: FastifyInstance) {
         amountCents: existingOrder.total.amountCents,
         currency: existingOrder.total.currency,
         applePayToken: input.applePayToken,
+        applePayWallet: input.applePayWallet,
         idempotencyKey: input.idempotencyKey
       });
 

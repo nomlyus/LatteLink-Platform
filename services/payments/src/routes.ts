@@ -2,6 +2,7 @@ import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { createPostgresDb, ensurePersistenceTables, getDatabaseUrl } from "@gazelle/persistence";
+import { applePayWalletSchema } from "@gazelle/contracts-orders";
 
 const payloadSchema = z.object({
   id: z.string().uuid().optional()
@@ -11,8 +12,28 @@ const chargeRequestSchema = z.object({
   orderId: z.string().uuid(),
   amountCents: z.number().int().positive(),
   currency: z.literal("USD"),
-  applePayToken: z.string().min(1),
+  applePayToken: z.string().min(1).optional(),
+  applePayWallet: applePayWalletSchema.optional(),
   idempotencyKey: z.string().min(1)
+}).superRefine((input, context) => {
+  const hasToken = Boolean(input.applePayToken);
+  const hasWallet = Boolean(input.applePayWallet);
+
+  if (!hasToken && !hasWallet) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["applePayToken"],
+      message: "Either applePayToken or applePayWallet is required."
+    });
+  }
+
+  if (hasToken && hasWallet) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["applePayWallet"],
+      message: "Provide either applePayToken or applePayWallet, but not both."
+    });
+  }
 });
 
 const chargeStatusSchema = z.enum(["SUCCEEDED", "DECLINED", "TIMEOUT"]);
@@ -279,9 +300,9 @@ async function createPaymentsRepository(logger: FastifyBaseLogger): Promise<Paym
 }
 
 function createChargeResponse(input: ChargeRequest): ChargeResponse {
-  const token = input.applePayToken.toLowerCase();
+  const simulationSignal = (input.applePayToken ?? input.applePayWallet?.data ?? "").toLowerCase();
 
-  if (token.includes("decline")) {
+  if (simulationSignal.includes("decline")) {
     return chargeResponseSchema.parse({
       paymentId: randomUUID(),
       provider: "CLOVER",
@@ -296,7 +317,7 @@ function createChargeResponse(input: ChargeRequest): ChargeResponse {
     });
   }
 
-  if (token.includes("timeout")) {
+  if (simulationSignal.includes("timeout")) {
     return chargeResponseSchema.parse({
       paymentId: randomUUID(),
       provider: "CLOVER",

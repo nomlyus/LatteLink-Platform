@@ -16,6 +16,7 @@ The flow is available for signed-in users from the cart screen.
 - Apple Pay token is entered in the cart checkout form (`secureTextEntry`).
 - A `Use Demo Token` shortcut generates a local testing token.
 - Token value is trimmed and cleared from UI state when checkout is submitted.
+- Orders and payments APIs now also accept a structured `applePayWallet` payload for native-sheet integration work.
 
 This is a development integration path and does not yet invoke a native Apple Pay sheet.
 

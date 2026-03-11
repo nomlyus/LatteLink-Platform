@@ -73,6 +73,33 @@ describe("payments service", () => {
       approved: false
     });
 
+    const walletCharge = await app.inject({
+      method: "POST",
+      url: "/v1/payments/charges",
+      payload: {
+        orderId: "123e4567-e89b-12d3-a456-426614174027",
+        amountCents: 825,
+        currency: "USD",
+        applePayWallet: {
+          version: "EC_v1",
+          data: "wallet-success-token",
+          signature: "signature-value",
+          header: {
+            ephemeralPublicKey: "ephemeral-key",
+            publicKeyHash: "public-key-hash",
+            transactionId: "transaction-id"
+          }
+        },
+        idempotencyKey: "charge-4"
+      }
+    });
+    expect(walletCharge.statusCode).toBe(200);
+    expect(walletCharge.json()).toMatchObject({
+      provider: "CLOVER",
+      status: "SUCCEEDED",
+      approved: true
+    });
+
     await app.close();
   });
 
