@@ -1,16 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocalSearchParams, useRouter } from "expo-router";
-import { Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import * as AppleAuthentication from "expo-apple-authentication";
 import {
   useAppleExchangeMutation,
-  usePasskeyAuthVerifyMutation,
-  usePasskeyRegisterVerifyMutation,
   useMagicLinkRequestMutation,
   useMagicLinkVerifyMutation,
   useMeQueryMutation
 } from "../src/auth/useAuth";
-import { apiClient } from "../src/api/client";
 import { useAuthSession } from "../src/auth/session";
 
 type ReturnToPath = "/(tabs)/cart" | "/(tabs)/home" | "/(tabs)/account";
@@ -42,53 +39,6 @@ function formatExpiresAt(expiresAt: string): string {
   return Number.isNaN(date.getTime()) ? expiresAt : date.toLocaleString();
 }
 
-const defaultPasskeyUserId = "123e4567-e89b-12d3-a456-426614174000";
-const defaultPasskeyRpName = "Gazelle";
-
-type PasskeyRegistrationResult = {
-  id: string;
-  rawId: string;
-  authenticatorAttachment?: "platform" | "cross-platform" | null;
-  response: {
-    clientDataJSON: string;
-    attestationObject: string;
-    transports?: string[];
-  };
-  clientExtensionResults?: Record<string, unknown>;
-};
-
-type PasskeyAssertionResult = {
-  id: string;
-  rawId: string;
-  authenticatorAttachment?: "platform" | "cross-platform" | null;
-  response: {
-    clientDataJSON: string;
-    authenticatorData: string;
-    signature: string;
-    userHandle?: string | null;
-  };
-  clientExtensionResults?: Record<string, unknown>;
-};
-
-type PasskeysModule = {
-  isSupported(): boolean;
-  create(options: Record<string, unknown>): Promise<PasskeyRegistrationResult | null>;
-  get(options: Record<string, unknown>): Promise<PasskeyAssertionResult | null>;
-};
-
-function resolvePasskeysModule(): PasskeysModule | null {
-  if (Platform.OS !== "ios" && Platform.OS !== "android") {
-    return null;
-  }
-
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return require("react-native-passkeys") as PasskeysModule;
-  } catch {
-    return null;
-  }
-}
-
 export default function AuthScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ returnTo?: string | string[] }>();
@@ -100,19 +50,12 @@ export default function AuthScreen() {
   const [appleAvailable, setAppleAvailable] = useState(false);
   const [appleAvailabilityResolved, setAppleAvailabilityResolved] = useState(false);
   const [appleNativeStatus, setAppleNativeStatus] = useState("");
-  const [passkeyAvailable, setPasskeyAvailable] = useState(false);
-  const [passkeyAvailabilityResolved, setPasskeyAvailabilityResolved] = useState(false);
-  const [passkeyUserId, setPasskeyUserId] = useState(defaultPasskeyUserId);
-  const [passkeyActionStatus, setPasskeyActionStatus] = useState("");
 
   const appleExchange = useAppleExchangeMutation();
-  const passkeyRegisterVerify = usePasskeyRegisterVerifyMutation();
-  const passkeyAuthVerify = usePasskeyAuthVerifyMutation();
   const magicLinkRequest = useMagicLinkRequestMutation();
   const magicLinkVerify = useMagicLinkVerifyMutation();
   const meQuery = useMeQueryMutation();
   const returnTo = useMemo(() => resolveReturnToPath(params.returnTo), [params.returnTo]);
-  const passkeys = useMemo(() => resolvePasskeysModule(), []);
 
   useEffect(() => {
     if (isAuthenticated && returnTo) {
@@ -138,22 +81,6 @@ export default function AuthScreen() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!passkeys) {
-      setPasskeyAvailable(false);
-      setPasskeyAvailabilityResolved(true);
-      return;
-    }
-
-    try {
-      setPasskeyAvailable(passkeys.isSupported());
-    } catch {
-      setPasskeyAvailable(false);
-    } finally {
-      setPasskeyAvailabilityResolved(true);
-    }
-  }, [passkeys]);
-
   const requestStatus = magicLinkRequest.isSuccess
     ? "Magic link requested successfully. Enter the token to verify session."
     : magicLinkRequest.error
@@ -169,15 +96,6 @@ export default function AuthScreen() {
     : appleExchange.error
       ? toErrorMessage(appleExchange.error)
       : appleNativeStatus;
-  const passkeyStatus = passkeyRegisterVerify.isSuccess
-    ? `Passkey registered and signed in as ${passkeyRegisterVerify.data.userId}`
-    : passkeyRegisterVerify.error
-      ? toErrorMessage(passkeyRegisterVerify.error)
-      : passkeyAuthVerify.isSuccess
-        ? `Passkey sign-in completed for ${passkeyAuthVerify.data.userId}`
-        : passkeyAuthVerify.error
-          ? toErrorMessage(passkeyAuthVerify.error)
-          : passkeyActionStatus;
   const meStatus = meQuery.data
     ? `me: ${meQuery.data.email ?? "No email on file"} (${meQuery.data.methods.join(", ")})`
     : meQuery.error
@@ -260,143 +178,6 @@ export default function AuthScreen() {
     }
   }
 
-  function toPasskeyErrorMessage(error: unknown) {
-    const value = error as { name?: string; code?: string; message?: string } | null;
-    if (value?.name === "NotSupportedError") {
-      return "Passkeys are not supported on this device.";
-    }
-    if (value?.name === "AbortError" || value?.name === "NotAllowedError" || value?.code === "ERR_REQUEST_CANCELED") {
-      return "Passkey prompt canceled.";
-    }
-
-    return toErrorMessage(error);
-  }
-
-  async function handlePasskeyRegister() {
-    if (passkeyRegisterVerify.isPending || passkeyAuthVerify.isPending) {
-      return;
-    }
-
-    if (!passkeyAvailabilityResolved) {
-      setPasskeyActionStatus("Checking passkey availability...");
-      return;
-    }
-
-    if (!passkeyAvailable) {
-      setPasskeyActionStatus("Passkeys are unavailable on this device/build.");
-      return;
-    }
-    if (!passkeys) {
-      setPasskeyActionStatus("Passkeys native module is unavailable in this build.");
-      return;
-    }
-
-    const userId = passkeyUserId.trim().length > 0 ? passkeyUserId.trim() : defaultPasskeyUserId;
-    setPasskeyActionStatus("Requesting passkey registration challenge...");
-
-    try {
-      const challenge = await apiClient.passkeyRegisterChallenge({ userId });
-      const registration = await passkeys.create({
-        challenge: challenge.challenge,
-        rp: {
-          id: challenge.rpId,
-          name: defaultPasskeyRpName
-        },
-        user: {
-          id: challenge.challenge,
-          name: `${userId}@gazelle.local`,
-          displayName: "Gazelle User"
-        },
-        pubKeyCredParams: [
-          { alg: -7, type: "public-key" },
-          { alg: -257, type: "public-key" }
-        ],
-        timeout: challenge.timeoutMs,
-        attestation: "none",
-        authenticatorSelection: {
-          residentKey: "preferred",
-          userVerification: "preferred"
-        }
-      });
-
-      if (!registration) {
-        setPasskeyActionStatus("Passkey registration canceled.");
-        return;
-      }
-
-      setPasskeyActionStatus("Verifying passkey registration...");
-      passkeyRegisterVerify.mutate({
-        id: registration.id,
-        rawId: registration.rawId,
-        type: "public-key",
-        authenticatorAttachment: registration.authenticatorAttachment ?? undefined,
-        response: {
-          clientDataJSON: registration.response.clientDataJSON,
-          attestationObject: registration.response.attestationObject,
-          transports: registration.response.transports
-        },
-        clientExtensionResults: registration.clientExtensionResults ?? {}
-      });
-    } catch (error) {
-      setPasskeyActionStatus(toPasskeyErrorMessage(error));
-    }
-  }
-
-  async function handlePasskeySignIn() {
-    if (passkeyRegisterVerify.isPending || passkeyAuthVerify.isPending) {
-      return;
-    }
-
-    if (!passkeyAvailabilityResolved) {
-      setPasskeyActionStatus("Checking passkey availability...");
-      return;
-    }
-
-    if (!passkeyAvailable) {
-      setPasskeyActionStatus("Passkeys are unavailable on this device/build.");
-      return;
-    }
-    if (!passkeys) {
-      setPasskeyActionStatus("Passkeys native module is unavailable in this build.");
-      return;
-    }
-
-    const userId = passkeyUserId.trim().length > 0 ? passkeyUserId.trim() : defaultPasskeyUserId;
-    setPasskeyActionStatus("Requesting passkey sign-in challenge...");
-
-    try {
-      const challenge = await apiClient.passkeyAuthChallenge({ userId });
-      const assertion = await passkeys.get({
-        challenge: challenge.challenge,
-        rpId: challenge.rpId,
-        timeout: challenge.timeoutMs,
-        userVerification: "preferred"
-      });
-
-      if (!assertion) {
-        setPasskeyActionStatus("Passkey sign-in canceled.");
-        return;
-      }
-
-      setPasskeyActionStatus("Verifying passkey sign-in...");
-      passkeyAuthVerify.mutate({
-        id: assertion.id,
-        rawId: assertion.rawId,
-        type: "public-key",
-        authenticatorAttachment: assertion.authenticatorAttachment ?? undefined,
-        response: {
-          clientDataJSON: assertion.response.clientDataJSON,
-          authenticatorData: assertion.response.authenticatorData,
-          signature: assertion.response.signature,
-          userHandle: assertion.response.userHandle ?? null
-        },
-        clientExtensionResults: assertion.clientExtensionResults ?? {}
-      });
-    } catch (error) {
-      setPasskeyActionStatus(toPasskeyErrorMessage(error));
-    }
-  }
-
   return (
     <ScrollView className="flex-1 bg-background" contentContainerClassName="px-6 pb-12 pt-20">
       <Text className="text-[34px] font-semibold text-foreground">Auth</Text>
@@ -427,7 +208,7 @@ export default function AuthScreen() {
             placeholder="Nonce (optional)"
           />
           <Text className="mt-2 text-xs text-foreground/70">
-            Uses native Apple credential APIs; manual token input has been removed from this screen.
+            Uses native Apple credential APIs; passkey auth has been removed from this build.
           </Text>
 
           <View className="mt-4">
@@ -454,48 +235,6 @@ export default function AuthScreen() {
           ) : null}
 
           {appleStatus ? <Text className="mt-2 text-xs text-foreground/70">{appleStatus}</Text> : null}
-
-          <Text className="mt-8 text-xs uppercase tracking-[1.5px] text-foreground/70">Passkeys (native)</Text>
-          <TextInput
-            value={passkeyUserId}
-            onChangeText={setPasskeyUserId}
-            autoCapitalize="none"
-            className="mt-2 rounded-xl border border-foreground/20 bg-white px-4 py-3 text-foreground"
-            placeholder="User ID (uuid)"
-          />
-          <Text className="mt-2 text-xs text-foreground/70">
-            Requires device support and a custom dev client build (Expo Go does not support passkeys).
-          </Text>
-          <View className="mt-4 flex-row gap-3">
-            <Pressable
-              className={`flex-1 rounded-full border px-4 py-4 ${passkeyRegisterVerify.isPending ? "border-foreground/40" : "border-foreground"}`}
-              disabled={passkeyRegisterVerify.isPending}
-              onPress={() => {
-                void handlePasskeyRegister();
-              }}
-            >
-              <Text className="text-center text-[11px] font-semibold uppercase tracking-[1.4px] text-foreground">
-                {passkeyRegisterVerify.isPending ? "Registering..." : "Register Passkey"}
-              </Text>
-            </Pressable>
-            <Pressable
-              className={`flex-1 rounded-full border px-4 py-4 ${passkeyAuthVerify.isPending ? "border-foreground/40" : "border-foreground"}`}
-              disabled={passkeyAuthVerify.isPending}
-              onPress={() => {
-                void handlePasskeySignIn();
-              }}
-            >
-              <Text className="text-center text-[11px] font-semibold uppercase tracking-[1.4px] text-foreground">
-                {passkeyAuthVerify.isPending ? "Signing In..." : "Sign In With Passkey"}
-              </Text>
-            </Pressable>
-          </View>
-          {passkeyAvailabilityResolved && !passkeyAvailable ? (
-            <Text className="mt-2 text-xs text-foreground/70">
-              Passkeys are unavailable here. Use a dev client on a real device with associated domains configured.
-            </Text>
-          ) : null}
-          {passkeyStatus ? <Text className="mt-2 text-xs text-foreground/70">{passkeyStatus}</Text> : null}
 
           <Text className="mt-8 text-xs uppercase tracking-[1.5px] text-foreground/70">Magic link request</Text>
           <TextInput
