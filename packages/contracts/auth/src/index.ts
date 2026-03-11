@@ -17,7 +17,36 @@ export const passkeyChallengeResponseSchema = z.object({
   timeoutMs: z.number().int().positive()
 });
 
-export const passkeyVerifyRequestSchema = z.record(z.unknown());
+const passkeyCredentialResponseSchema = z
+  .object({
+    clientDataJSON: z.string().min(1),
+    attestationObject: z.string().min(1).optional(),
+    authenticatorData: z.string().min(1).optional(),
+    signature: z.string().min(1).optional(),
+    userHandle: z.string().nullable().optional(),
+    transports: z.array(z.string().min(1)).optional()
+  })
+  .superRefine((input, context) => {
+    const hasRegistrationPayload = input.attestationObject !== undefined;
+    const hasAuthenticationPayload = input.authenticatorData !== undefined && input.signature !== undefined;
+
+    if (!hasRegistrationPayload && !hasAuthenticationPayload) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "response must include attestationObject (register verify) or authenticatorData + signature (auth verify)"
+      });
+    }
+  });
+
+export const passkeyVerifyRequestSchema = z.object({
+  id: z.string().min(1),
+  rawId: z.string().min(1),
+  type: z.literal("public-key"),
+  authenticatorAttachment: z.enum(["platform", "cross-platform"]).optional(),
+  response: passkeyCredentialResponseSchema,
+  clientExtensionResults: z.record(z.unknown()).optional()
+});
 
 export const magicLinkRequestSchema = z.object({
   email: z.string().email()

@@ -1,6 +1,6 @@
 # GitHub Setup Checklist
 
-Last reviewed: `2026-03-09`
+Last reviewed: `2026-03-11`
 
 ## Repository
 - [x] org: `GazelleDev`
@@ -63,6 +63,10 @@ Create project board columns:
 - [x] `API_BASE_URL_DEV`
 - [x] `API_BASE_URL_STAGING`
 - [x] `API_BASE_URL_PROD`
+- [ ] `FREE_API_DOMAIN`
+- [ ] `FREE_DEPLOY_PATH`
+- [ ] `FREE_IMAGE_TAG`
+- [ ] `FREE_PASSKEY_RP_ID`
 
 ## Environment Secrets
 - [ ] `AWS_ROLE_ARN`
@@ -79,6 +83,13 @@ Create project board columns:
 - [ ] `EXPO_TOKEN`
 - [ ] `JWT_PRIVATE_KEY`
 - [ ] `JWT_PUBLIC_KEY`
+- [ ] `FREE_DEPLOY_HOST`
+- [ ] `FREE_DEPLOY_USER`
+- [ ] `FREE_DEPLOY_SSH_KEY`
+- [ ] `FREE_POSTGRES_PASSWORD`
+- [ ] `LETSENCRYPT_EMAIL`
+- [ ] `GHCR_USERNAME` (if GHCR images are private)
+- [ ] `GHCR_TOKEN` (if GHCR images are private)
 
 Notes:
 - `gh secret list --repo GazelleDev/GazelleMobilePlatform` and per-environment secret list commands returned no configured secrets on `2026-03-09`.

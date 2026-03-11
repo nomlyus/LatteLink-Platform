@@ -10,12 +10,13 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: false,
     bundleIdentifier: "com.gazellecoffee.mobile",
+    usesAppleSignIn: true,
     associatedDomains: ["webcredentials:api.gazellecoffee.com"]
   },
   experiments: {
     typedRoutes: true
   },
-  plugins: ["expo-router", "expo-secure-store", "expo-font"]
+  plugins: ["expo-router", "expo-secure-store", "expo-font", "expo-apple-authentication"]
 };
 
 export default config;

@@ -19,6 +19,7 @@
     "@gazelle/design-tokens": "workspace:*",
     "@gazelle/sdk-mobile": "workspace:*",
     "@tanstack/react-query": "^5.66.11",
+    "expo-apple-authentication": "^8.0.8",
     "expo": "^54.0.33",
     "expo-blur": "~15.0.8",
     "expo-constants": "~18.0.13",

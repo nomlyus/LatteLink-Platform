@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyBaseLogger, FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { loyaltyBalanceSchema, loyaltyLedgerEntrySchema } from "@gazelle/contracts-loyalty";
+import { createPostgresDb, ensurePersistenceTables, getDatabaseUrl } from "@gazelle/persistence";
 import { z } from "zod";
 
 const defaultUserId = "123e4567-e89b-12d3-a456-426614174000";
@@ -107,9 +108,29 @@ type IdempotencyRecord = {
   response: ApplyLedgerMutationResponse;
 };
 
-const balancesByUserId = new Map<string, LoyaltyBalance>();
-const ledgerByUserId = new Map<string, LoyaltyLedgerEntry[]>();
-const idempotencyByUserId = new Map<string, Map<string, IdempotencyRecord>>();
+type LoyaltyLedgerRow = {
+  id: string;
+  type: "EARN" | "REDEEM" | "REFUND" | "ADJUSTMENT";
+  points: number;
+  order_id: string | null;
+  created_at: string | Date;
+};
+
+type LoyaltyIdempotencyRow = {
+  request_fingerprint: string;
+  response_json: unknown;
+};
+
+type LoyaltyRepository = {
+  backend: "memory" | "postgres";
+  getBalance(userId: string): Promise<LoyaltyBalance>;
+  saveBalance(balance: LoyaltyBalance): Promise<void>;
+  getLedger(userId: string): Promise<LoyaltyLedgerEntry[]>;
+  appendLedgerEntry(userId: string, entry: LoyaltyLedgerEntry): Promise<void>;
+  getIdempotencyRecord(userId: string, idempotencyKey: string): Promise<IdempotencyRecord | undefined>;
+  saveIdempotencyRecord(userId: string, idempotencyKey: string, record: IdempotencyRecord): Promise<IdempotencyRecord>;
+  close(): Promise<void>;
+};
 
 function sendError(
   reply: FastifyReply,
@@ -129,44 +150,6 @@ function sendError(
       details: input.details
     })
   );
-}
-
-function ensureUserBalance(userId: string) {
-  const existing = balancesByUserId.get(userId);
-  if (existing) {
-    return existing;
-  }
-
-  const created = loyaltyBalanceSchema.parse({
-    userId,
-    availablePoints: 0,
-    pendingPoints: 0,
-    lifetimeEarned: 0
-  });
-  balancesByUserId.set(userId, created);
-  return created;
-}
-
-function ensureLedger(userId: string) {
-  const existing = ledgerByUserId.get(userId);
-  if (existing) {
-    return existing;
-  }
-
-  const created: LoyaltyLedgerEntry[] = [];
-  ledgerByUserId.set(userId, created);
-  return created;
-}
-
-function ensureIdempotencyStore(userId: string) {
-  const existing = idempotencyByUserId.get(userId);
-  if (existing) {
-    return existing;
-  }
-
-  const created = new Map<string, IdempotencyRecord>();
-  idempotencyByUserId.set(userId, created);
-  return created;
 }
 
 function resolveUserId(request: FastifyRequest, reply: FastifyReply) {
@@ -235,9 +218,247 @@ function toSortedLedger(entries: LoyaltyLedgerEntry[]) {
     .parse([...entries].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt)));
 }
 
+function parseIsoDate(value: unknown) {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  return new Date(String(value)).toISOString();
+}
+
+function createInMemoryRepository(): LoyaltyRepository {
+  const balancesByUserId = new Map<string, LoyaltyBalance>();
+  const ledgerByUserId = new Map<string, LoyaltyLedgerEntry[]>();
+  const idempotencyByUserId = new Map<string, Map<string, IdempotencyRecord>>();
+
+  return {
+    backend: "memory",
+    async getBalance(userId) {
+      const existing = balancesByUserId.get(userId);
+      if (existing) {
+        return existing;
+      }
+
+      const created = loyaltyBalanceSchema.parse({
+        userId,
+        availablePoints: 0,
+        pendingPoints: 0,
+        lifetimeEarned: 0
+      });
+      balancesByUserId.set(userId, created);
+      return created;
+    },
+    async saveBalance(balance) {
+      balancesByUserId.set(balance.userId, balance);
+    },
+    async getLedger(userId) {
+      return ledgerByUserId.get(userId) ?? [];
+    },
+    async appendLedgerEntry(userId, entry) {
+      const existing = ledgerByUserId.get(userId) ?? [];
+      existing.push(entry);
+      ledgerByUserId.set(userId, existing);
+    },
+    async getIdempotencyRecord(userId, idempotencyKey) {
+      return idempotencyByUserId.get(userId)?.get(idempotencyKey);
+    },
+    async saveIdempotencyRecord(userId, idempotencyKey, record) {
+      const userStore = idempotencyByUserId.get(userId) ?? new Map<string, IdempotencyRecord>();
+      const existing = userStore.get(idempotencyKey);
+      if (existing) {
+        return existing;
+      }
+
+      userStore.set(idempotencyKey, record);
+      idempotencyByUserId.set(userId, userStore);
+      return record;
+    },
+    async close() {
+      // no-op
+    }
+  };
+}
+
+async function createPostgresRepository(connectionString: string): Promise<LoyaltyRepository> {
+  const db = createPostgresDb(connectionString);
+  await ensurePersistenceTables(db);
+
+  return {
+    backend: "postgres",
+    async getBalance(userId) {
+      try {
+        await db
+          .insertInto("loyalty_balances")
+          .values({
+            user_id: userId,
+            available_points: 0,
+            pending_points: 0,
+            lifetime_earned: 0
+          })
+          .execute();
+      } catch {
+        // ignore duplicate key races; we read authoritative row below
+      }
+
+      const row = await db
+        .selectFrom("loyalty_balances")
+        .selectAll()
+        .where("user_id", "=", userId)
+        .executeTakeFirstOrThrow();
+
+      return loyaltyBalanceSchema.parse({
+        userId: row.user_id,
+        availablePoints: row.available_points,
+        pendingPoints: row.pending_points,
+        lifetimeEarned: row.lifetime_earned
+      });
+    },
+    async saveBalance(balance) {
+      const updated = await db
+        .updateTable("loyalty_balances")
+        .set({
+          available_points: balance.availablePoints,
+          pending_points: balance.pendingPoints,
+          lifetime_earned: balance.lifetimeEarned,
+          updated_at: new Date().toISOString()
+        })
+        .where("user_id", "=", balance.userId)
+        .executeTakeFirst();
+
+      if (Number(updated.numUpdatedRows ?? 0) > 0) {
+        return;
+      }
+
+      try {
+        await db
+          .insertInto("loyalty_balances")
+          .values({
+            user_id: balance.userId,
+            available_points: balance.availablePoints,
+            pending_points: balance.pendingPoints,
+            lifetime_earned: balance.lifetimeEarned
+          })
+          .execute();
+      } catch {
+        await db
+          .updateTable("loyalty_balances")
+          .set({
+            available_points: balance.availablePoints,
+            pending_points: balance.pendingPoints,
+            lifetime_earned: balance.lifetimeEarned,
+            updated_at: new Date().toISOString()
+          })
+          .where("user_id", "=", balance.userId)
+          .execute();
+      }
+    },
+    async getLedger(userId) {
+      const rows = (await db
+        .selectFrom("loyalty_ledger_entries")
+        .selectAll()
+        .where("user_id", "=", userId)
+        .orderBy("created_at", "desc")
+        .execute()) as LoyaltyLedgerRow[];
+
+      return rows.map((row) =>
+        loyaltyLedgerEntrySchema.parse({
+          id: row.id,
+          type: row.type,
+          points: row.points,
+          orderId: row.order_id ?? undefined,
+          createdAt: parseIsoDate(row.created_at)
+        })
+      );
+    },
+    async appendLedgerEntry(userId, entry) {
+      await db
+        .insertInto("loyalty_ledger_entries")
+        .values({
+          id: entry.id,
+          user_id: userId,
+          type: entry.type,
+          points: entry.points,
+          order_id: entry.orderId ?? null,
+          created_at: entry.createdAt
+        })
+        .execute();
+    },
+    async getIdempotencyRecord(userId, idempotencyKey) {
+      const row = await db
+        .selectFrom("loyalty_idempotency_keys")
+        .selectAll()
+        .where("user_id", "=", userId)
+        .where("idempotency_key", "=", idempotencyKey)
+        .executeTakeFirst();
+
+      if (!row) {
+        return undefined;
+      }
+
+      return {
+        requestFingerprint: row.request_fingerprint,
+        response: applyLedgerMutationResponseSchema.parse(row.response_json)
+      };
+    },
+    async saveIdempotencyRecord(userId, idempotencyKey, record) {
+      try {
+        await db
+          .insertInto("loyalty_idempotency_keys")
+          .values({
+            user_id: userId,
+            idempotency_key: idempotencyKey,
+            request_fingerprint: record.requestFingerprint,
+            response_json: record.response
+          })
+          .execute();
+      } catch {
+        // ignore duplicate key races; we read authoritative row below
+      }
+
+      const persisted = (await db
+        .selectFrom("loyalty_idempotency_keys")
+        .selectAll()
+        .where("user_id", "=", userId)
+        .where("idempotency_key", "=", idempotencyKey)
+        .executeTakeFirstOrThrow()) as LoyaltyIdempotencyRow;
+
+      return {
+        requestFingerprint: persisted.request_fingerprint,
+        response: applyLedgerMutationResponseSchema.parse(persisted.response_json)
+      };
+    },
+    async close() {
+      await db.destroy();
+    }
+  };
+}
+
+async function createLoyaltyRepository(logger: FastifyBaseLogger): Promise<LoyaltyRepository> {
+  const databaseUrl = getDatabaseUrl();
+  if (!databaseUrl) {
+    logger.info({ backend: "memory" }, "loyalty persistence backend selected");
+    return createInMemoryRepository();
+  }
+
+  try {
+    const repository = await createPostgresRepository(databaseUrl);
+    logger.info({ backend: "postgres" }, "loyalty persistence backend selected");
+    return repository;
+  } catch (error) {
+    logger.error({ error }, "failed to initialize postgres persistence; falling back to in-memory");
+    return createInMemoryRepository();
+  }
+}
+
 export async function registerRoutes(app: FastifyInstance) {
+  const repository = await createLoyaltyRepository(app.log);
+
+  app.addHook("onClose", async () => {
+    await repository.close();
+  });
+
   app.get("/health", async () => ({ status: "ok", service: "loyalty" }));
-  app.get("/ready", async () => ({ status: "ready", service: "loyalty" }));
+  app.get("/ready", async () => ({ status: "ready", service: "loyalty", persistence: repository.backend }));
 
   app.get("/v1/loyalty/balance", async (request, reply) => {
     const userId = resolveUserId(request, reply);
@@ -245,7 +466,7 @@ export async function registerRoutes(app: FastifyInstance) {
       return;
     }
 
-    return ensureUserBalance(userId);
+    return repository.getBalance(userId);
   });
 
   app.get("/v1/loyalty/ledger", async (request, reply) => {
@@ -254,7 +475,8 @@ export async function registerRoutes(app: FastifyInstance) {
       return;
     }
 
-    return toSortedLedger(ensureLedger(userId));
+    const ledger = await repository.getLedger(userId);
+    return toSortedLedger(ledger);
   });
 
   app.post("/v1/loyalty/internal/ledger/apply", async (request, reply) => {
@@ -270,13 +492,11 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     const input = parsedMutation.data;
-    const balance = ensureUserBalance(input.userId);
-    const ledger = ensureLedger(input.userId);
-    const idempotencyStore = ensureIdempotencyStore(input.userId);
+    const balance = await repository.getBalance(input.userId);
     const deltaPoints = toLedgerDeltaPoints(input);
     const resolvedPoints = resolveMutationPoints(input);
     const mutationFingerprint = toMutationFingerprint(input, deltaPoints, resolvedPoints);
-    const existingMutation = idempotencyStore.get(input.idempotencyKey);
+    const existingMutation = await repository.getIdempotencyRecord(input.userId, input.idempotencyKey);
 
     if (existingMutation) {
       if (existingMutation.requestFingerprint !== mutationFingerprint) {
@@ -326,20 +546,33 @@ export async function registerRoutes(app: FastifyInstance) {
       createdAt: input.occurredAt ?? new Date().toISOString()
     });
 
-    ledger.push(entry);
-    balancesByUserId.set(input.userId, nextBalance);
+    await repository.appendLedgerEntry(input.userId, entry);
+    await repository.saveBalance(nextBalance);
 
     const response = applyLedgerMutationResponseSchema.parse({
       entry,
       balance: nextBalance
     });
 
-    idempotencyStore.set(input.idempotencyKey, {
+    const persistedRecord = await repository.saveIdempotencyRecord(input.userId, input.idempotencyKey, {
       requestFingerprint: mutationFingerprint,
       response
     });
 
-    return response;
+    if (persistedRecord.requestFingerprint !== mutationFingerprint) {
+      return sendError(reply, {
+        statusCode: 409,
+        code: "IDEMPOTENCY_KEY_REUSE",
+        message: "idempotencyKey was already used with a different mutation payload",
+        requestId: request.id,
+        details: {
+          userId: input.userId,
+          idempotencyKey: input.idempotencyKey
+        }
+      });
+    }
+
+    return persistedRecord.response;
   });
 
   app.post("/v1/loyalty/internal/ping", async (request) => {

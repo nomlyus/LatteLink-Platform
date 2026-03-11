@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "./packages/design-tokens" },
+    { "path": "./packages/persistence" },
     { "path": "./packages/sdk-mobile" },
     { "path": "./packages/contracts/core" },
     { "path": "./packages/contracts/auth" },
@@ -17,6 +18,7 @@
     { "path": "./services/loyalty" },
     { "path": "./services/notifications" },
     { "path": "./services/workers/menu-sync" },
+    { "path": "./services/workers/notifications-dispatch" },
     { "path": "./apps/mobile" }
   ]
 }

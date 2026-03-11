@@ -154,6 +154,7 @@ async function proxyUpstream<TResponse>(params: {
 export async function registerRoutes(app: FastifyInstance) {
   const identityBaseUrl = process.env.IDENTITY_SERVICE_BASE_URL ?? "http://127.0.0.1:3000";
   const ordersBaseUrl = process.env.ORDERS_SERVICE_BASE_URL ?? "http://127.0.0.1:3001";
+  const catalogBaseUrl = process.env.CATALOG_SERVICE_BASE_URL ?? "http://127.0.0.1:3002";
   const loyaltyBaseUrl = process.env.LOYALTY_SERVICE_BASE_URL ?? "http://127.0.0.1:3004";
   const notificationsBaseUrl = process.env.NOTIFICATIONS_SERVICE_BASE_URL ?? "http://127.0.0.1:3005";
 
@@ -337,22 +338,29 @@ export async function registerRoutes(app: FastifyInstance) {
     });
   });
 
-  app.get("/v1/menu", async () => {
-    return menuResponseSchema.parse({
-      locationId: "flagship-01",
-      currency: "USD",
-      categories: []
-    });
-  });
+  app.get("/v1/menu", async (request, reply) =>
+    proxyUpstream({
+      request,
+      reply,
+      baseUrl: catalogBaseUrl,
+      serviceLabel: "Catalog",
+      method: "GET",
+      path: "/v1/menu",
+      responseSchema: menuResponseSchema
+    })
+  );
 
-  app.get("/v1/store/config", async () => {
-    return storeConfigResponseSchema.parse({
-      locationId: "flagship-01",
-      prepEtaMinutes: 12,
-      taxRateBasisPoints: 600,
-      pickupInstructions: "Pickup at the flagship order counter."
-    });
-  });
+  app.get("/v1/store/config", async (request, reply) =>
+    proxyUpstream({
+      request,
+      reply,
+      baseUrl: catalogBaseUrl,
+      serviceLabel: "Catalog",
+      method: "GET",
+      path: "/v1/store/config",
+      responseSchema: storeConfigResponseSchema
+    })
+  );
 
   app.post("/v1/orders/quote", async (request, reply) => {
     const input = quoteRequestSchema.parse(request.body);

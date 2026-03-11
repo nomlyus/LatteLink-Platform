@@ -5,6 +5,7 @@ describe("gateway", () => {
   const fetchMock = vi.fn<typeof fetch>();
   let previousIdentityBaseUrl: string | undefined;
   let previousOrdersBaseUrl: string | undefined;
+  let previousCatalogBaseUrl: string | undefined;
   let previousLoyaltyBaseUrl: string | undefined;
   let previousNotificationsBaseUrl: string | undefined;
 
@@ -12,10 +13,12 @@ describe("gateway", () => {
     fetchMock.mockReset();
     previousIdentityBaseUrl = process.env.IDENTITY_SERVICE_BASE_URL;
     previousOrdersBaseUrl = process.env.ORDERS_SERVICE_BASE_URL;
+    previousCatalogBaseUrl = process.env.CATALOG_SERVICE_BASE_URL;
     previousLoyaltyBaseUrl = process.env.LOYALTY_SERVICE_BASE_URL;
     previousNotificationsBaseUrl = process.env.NOTIFICATIONS_SERVICE_BASE_URL;
     process.env.IDENTITY_SERVICE_BASE_URL = "http://identity.internal";
     process.env.ORDERS_SERVICE_BASE_URL = "http://orders.internal";
+    process.env.CATALOG_SERVICE_BASE_URL = "http://catalog.internal";
     process.env.LOYALTY_SERVICE_BASE_URL = "http://loyalty.internal";
     process.env.NOTIFICATIONS_SERVICE_BASE_URL = "http://notifications.internal";
     vi.stubGlobal("fetch", fetchMock);
@@ -62,6 +65,44 @@ describe("gateway", () => {
             userId: "123e4567-e89b-12d3-a456-426614174000",
             email: "owner@gazellecoffee.com",
             methods: ["apple", "passkey", "magic-link"]
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      if (url.endsWith("/v1/menu") && method === "GET") {
+        return new Response(
+          JSON.stringify({
+            locationId: "flagship-01",
+            currency: "USD",
+            categories: [
+              {
+                id: "espresso",
+                title: "Espresso Bar",
+                items: [
+                  {
+                    id: "cortado",
+                    name: "Cortado",
+                    description: "Double espresso cut with steamed milk.",
+                    priceCents: 475,
+                    badgeCodes: ["new"],
+                    visible: true
+                  }
+                ]
+              }
+            ]
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      if (url.endsWith("/v1/store/config") && method === "GET") {
+        return new Response(
+          JSON.stringify({
+            locationId: "flagship-01",
+            prepEtaMinutes: 12,
+            taxRateBasisPoints: 600,
+            pickupInstructions: "Pickup at the flagship order counter."
           }),
           { status: 200, headers: { "content-type": "application/json" } }
         );
@@ -271,6 +312,12 @@ describe("gateway", () => {
       process.env.ORDERS_SERVICE_BASE_URL = previousOrdersBaseUrl;
     }
 
+    if (previousCatalogBaseUrl === undefined) {
+      delete process.env.CATALOG_SERVICE_BASE_URL;
+    } else {
+      process.env.CATALOG_SERVICE_BASE_URL = previousCatalogBaseUrl;
+    }
+
     if (previousLoyaltyBaseUrl === undefined) {
       delete process.env.LOYALTY_SERVICE_BASE_URL;
     } else {
@@ -297,6 +344,12 @@ describe("gateway", () => {
     const response = await app.inject({ method: "GET", url: "/v1/menu" });
 
     expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      locationId: "flagship-01",
+      categories: expect.arrayContaining([expect.objectContaining({ id: "espresso" })])
+    });
+    const requestedUrls = fetchMock.mock.calls.map(([input]) => (typeof input === "string" ? input : input.url));
+    expect(requestedUrls).toContain("http://catalog.internal/v1/menu");
     await app.close();
   });
 

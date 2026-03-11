@@ -1,6 +1,6 @@
 # Observability and Security Regression Runbook
 
-Last reviewed: `2026-03-10`
+Last reviewed: `2026-03-11`
 
 ## Purpose
 
@@ -33,7 +33,11 @@ Check metrics endpoints:
 
 ```bash
 curl -s http://127.0.0.1:8080/metrics
+curl -s http://127.0.0.1:3000/metrics
+curl -s http://127.0.0.1:3002/metrics
 curl -s http://127.0.0.1:3001/metrics
+curl -s http://127.0.0.1:3003/metrics
+curl -s http://127.0.0.1:3004/metrics
 curl -s http://127.0.0.1:3005/metrics
 ```
 

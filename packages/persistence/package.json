@@ -1,0 +1,27 @@
+{
+  "name": "@gazelle/persistence",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src test --max-warnings=0",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "kysely": "^0.28.8",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@gazelle/config-eslint": "workspace:*",
+    "@gazelle/config-typescript": "workspace:*",
+    "@types/node": "^22.13.8",
+    "@types/pg": "^8.15.6",
+    "eslint": "^9.21.0",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.8"
+  }
+}

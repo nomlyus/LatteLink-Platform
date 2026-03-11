@@ -48,6 +48,10 @@ Use the local stack runbook:
 
 Service-specific validation:
 - [loyalty-balance-ledger.md](docs/runbooks/loyalty-balance-ledger.md)
+- [production-button-up-checklist.md](docs/runbooks/production-button-up-checklist.md)
+- [production-prerequisites.md](docs/runbooks/production-prerequisites.md)
+- [free-first-deployment.md](docs/runbooks/free-first-deployment.md)
+- [persistence-foundation.md](docs/runbooks/persistence-foundation.md)
 
 ## Governance and GitHub Setup
 

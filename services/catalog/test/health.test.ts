@@ -30,4 +30,38 @@ describe("catalog service", () => {
     expect(parsed.prepEtaMinutes).toBeGreaterThan(0);
     await app.close();
   });
+
+  it("propagates x-request-id and exposes metrics counters", async () => {
+    const app = await buildApp();
+    const requestId = "catalog-trace-1";
+
+    const menuResponse = await app.inject({
+      method: "GET",
+      url: "/v1/menu",
+      headers: {
+        "x-request-id": requestId
+      }
+    });
+
+    expect(menuResponse.statusCode).toBe(200);
+    expect(menuResponse.headers["x-request-id"]).toBe(requestId);
+
+    const metricsResponse = await app.inject({
+      method: "GET",
+      url: "/metrics"
+    });
+    expect(metricsResponse.statusCode).toBe(200);
+    expect(metricsResponse.json()).toMatchObject({
+      service: "catalog",
+      requests: expect.objectContaining({
+        total: expect.any(Number),
+        status2xx: expect.any(Number),
+        status4xx: expect.any(Number),
+        status5xx: expect.any(Number)
+      })
+    });
+    expect(metricsResponse.json().requests.total).toBeGreaterThanOrEqual(1);
+
+    await app.close();
+  });
 });

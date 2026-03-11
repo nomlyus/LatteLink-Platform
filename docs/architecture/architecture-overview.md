@@ -16,10 +16,12 @@
 - `loyalty`: points ledger and balances
 - `notifications`: push token registration and notification dispatch
 - `workers/menu-sync`: synchronization from existing `WebApp` content API
+- `workers/notifications-dispatch`: drains notifications outbox and simulates provider dispatch
 
 ## Shared Packages
 
 - `contracts/*`: domain request/response schemas (Zod)
+- `persistence`: shared persistence bootstrap and table provisioning helpers
 - `design-tokens`: Gazelle design language tokens
 - `sdk-mobile`: generated typed SDK for mobile app
 - `config-eslint`, `config-typescript`: shared tooling

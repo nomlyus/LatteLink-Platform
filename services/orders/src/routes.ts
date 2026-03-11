@@ -8,6 +8,7 @@ import {
   quoteRequestSchema
 } from "@gazelle/contracts-orders";
 import { z } from "zod";
+import { createOrdersRepository } from "./repository.js";
 
 const payloadSchema = z.object({
   id: z.string().uuid().optional()
@@ -160,16 +161,6 @@ const taxRateBasisPoints = 600;
 
 type OrderQuote = z.output<typeof orderQuoteSchema>;
 type Order = z.output<typeof orderSchema>;
-
-const quotesById = new Map<string, OrderQuote>();
-const ordersById = new Map<string, Order>();
-const orderQuoteByOrderId = new Map<string, OrderQuote>();
-const orderUserIdByOrderId = new Map<string, string>();
-const createOrderIdempotencyMap = new Map<string, string>();
-const paymentIdempotencyMap = new Map<string, Order>();
-const paymentIdByOrderId = new Map<string, string>();
-const successfulChargeByOrderId = new Map<string, z.output<typeof paymentsChargeResponseSchema>>();
-const successfulRefundByOrderId = new Map<string, z.output<typeof paymentsRefundResponseSchema>>();
 
 const defaultLoyaltyUserId = "123e4567-e89b-12d3-a456-426614174000";
 
@@ -464,37 +455,30 @@ function createOrderFromQuote(quote: OrderQuote): Order {
   });
 }
 
-function getOrderList() {
-  return z
-    .array(orderSchema)
-    .parse(
-      [...ordersById.values()].sort((left, right) => {
-        const leftCreatedAt = Date.parse(left.timeline[0]?.occurredAt ?? "1970-01-01T00:00:00.000Z");
-        const rightCreatedAt = Date.parse(right.timeline[0]?.occurredAt ?? "1970-01-01T00:00:00.000Z");
-        return rightCreatedAt - leftCreatedAt;
-      })
-    );
-}
-
 export async function registerRoutes(app: FastifyInstance) {
   const paymentsBaseUrl = process.env.PAYMENTS_SERVICE_BASE_URL ?? "http://127.0.0.1:3003";
   const loyaltyBaseUrl = process.env.LOYALTY_SERVICE_BASE_URL ?? "http://127.0.0.1:3004";
   const notificationsBaseUrl = process.env.NOTIFICATIONS_SERVICE_BASE_URL ?? "http://127.0.0.1:3005";
+  const repository = await createOrdersRepository(app.log);
+
+  app.addHook("onClose", async () => {
+    await repository.close();
+  });
 
   app.get("/health", async () => ({ status: "ok", service: "orders" }));
-  app.get("/ready", async () => ({ status: "ready", service: "orders" }));
+  app.get("/ready", async () => ({ status: "ready", service: "orders", persistence: repository.backend }));
 
   app.post("/v1/orders/quote", async (request) => {
     const input = quoteRequestSchema.parse(request.body);
     const quote = createQuote(input);
 
-    quotesById.set(quote.quoteId, quote);
+    await repository.saveQuote(quote);
     return quote;
   });
 
   app.post("/v1/orders", async (request, reply) => {
     const input = createOrderRequestSchema.parse(request.body);
-    const quote = quotesById.get(input.quoteId);
+    const quote = await repository.getQuote(input.quoteId);
 
     if (!quote) {
       return sendError(reply, {
@@ -521,27 +505,18 @@ export async function registerRoutes(app: FastifyInstance) {
       return;
     }
 
-    const createOrderKey = `${input.quoteId}:${input.quoteHash}`;
-    const existingOrderId = createOrderIdempotencyMap.get(createOrderKey);
-
-    if (existingOrderId) {
-      const existingOrder = ordersById.get(existingOrderId);
-      if (existingOrder) {
-        if (!orderQuoteByOrderId.has(existingOrder.id)) {
-          orderQuoteByOrderId.set(existingOrder.id, quote);
-        }
-        if (!orderUserIdByOrderId.has(existingOrder.id)) {
-          orderUserIdByOrderId.set(existingOrder.id, requestUserId);
-        }
-        return existingOrder;
-      }
+    const existingOrder = await repository.getOrderForCreateIdempotency(input.quoteId, input.quoteHash);
+    if (existingOrder) {
+      return existingOrder;
     }
 
     const order = createOrderFromQuote(quote);
-    ordersById.set(order.id, order);
-    orderQuoteByOrderId.set(order.id, quote);
-    orderUserIdByOrderId.set(order.id, requestUserId);
-    createOrderIdempotencyMap.set(createOrderKey, order.id);
+    await repository.createOrder({
+      order,
+      quoteId: quote.quoteId,
+      userId: requestUserId
+    });
+    await repository.saveCreateOrderIdempotency(input.quoteId, input.quoteHash, order.id);
     await sendOrderStateNotification({
       request,
       notificationsBaseUrl,
@@ -555,7 +530,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post("/v1/orders/:orderId/pay", async (request, reply) => {
     const { orderId } = orderIdParamsSchema.parse(request.params);
     const input = payOrderRequestSchema.parse(request.body);
-    const existingOrder = ordersById.get(orderId);
+    const existingOrder = await repository.getOrder(orderId);
 
     if (!existingOrder) {
       return sendError(reply, {
@@ -577,8 +552,7 @@ export async function registerRoutes(app: FastifyInstance) {
       });
     }
 
-    const idempotencyKey = `${orderId}:${input.idempotencyKey}`;
-    const existingPaymentResult = paymentIdempotencyMap.get(idempotencyKey);
+    const existingPaymentResult = await repository.getPaymentOrderByIdempotency(orderId, input.idempotencyKey);
 
     if (existingPaymentResult) {
       return existingPaymentResult;
@@ -588,7 +562,7 @@ export async function registerRoutes(app: FastifyInstance) {
       return existingOrder;
     }
 
-    const orderQuote = orderQuoteByOrderId.get(orderId);
+    const orderQuote = await repository.getOrderQuote(orderId);
     if (!orderQuote) {
       return sendError(reply, {
         statusCode: 409,
@@ -599,17 +573,24 @@ export async function registerRoutes(app: FastifyInstance) {
       });
     }
 
-    let orderUserId = orderUserIdByOrderId.get(orderId);
+    let orderUserId = await repository.getOrderUserId(orderId);
     if (!orderUserId) {
       const fallbackUserId = resolveRequestUserId(request, reply);
       if (!fallbackUserId) {
         return;
       }
       orderUserId = fallbackUserId;
-      orderUserIdByOrderId.set(orderId, fallbackUserId);
+      await repository.setOrderUserId(orderId, fallbackUserId);
     }
 
-    let successfulCharge = successfulChargeByOrderId.get(orderId);
+    const persistedCharge = await repository.getSuccessfulCharge(orderId);
+    let successfulCharge: z.output<typeof paymentsChargeResponseSchema> | undefined;
+    if (persistedCharge !== undefined) {
+      const parsedPersistedCharge = paymentsChargeResponseSchema.safeParse(persistedCharge);
+      if (parsedPersistedCharge.success) {
+        successfulCharge = parsedPersistedCharge.data;
+      }
+    }
     if (!successfulCharge) {
       const chargeRequestPayload = paymentsChargeRequestSchema.parse({
         orderId,
@@ -689,7 +670,7 @@ export async function registerRoutes(app: FastifyInstance) {
       }
 
       successfulCharge = parsedCharge.data;
-      successfulChargeByOrderId.set(orderId, successfulCharge);
+      await repository.setSuccessfulCharge(orderId, successfulCharge);
     }
 
     if (orderQuote.pointsToRedeem > 0) {
@@ -738,9 +719,9 @@ export async function registerRoutes(app: FastifyInstance) {
     ].filter((value): value is string => Boolean(value));
 
     const paidOrder = appendOrderStatus(existingOrder, "PAID", `Clover payment accepted; ${loyaltyParts.join("; ")}.`);
-    ordersById.set(orderId, paidOrder);
-    paymentIdByOrderId.set(orderId, successfulCharge.paymentId);
-    paymentIdempotencyMap.set(idempotencyKey, paidOrder);
+    await repository.updateOrder(orderId, paidOrder);
+    await repository.setPaymentId(orderId, successfulCharge.paymentId);
+    await repository.savePaymentIdempotency(orderId, input.idempotencyKey);
     await sendOrderStateNotification({
       request,
       notificationsBaseUrl,
@@ -751,11 +732,14 @@ export async function registerRoutes(app: FastifyInstance) {
     return paidOrder;
   });
 
-  app.get("/v1/orders", async () => getOrderList());
+  app.get("/v1/orders", async () => {
+    const orders = await repository.listOrders();
+    return z.array(orderSchema).parse(orders);
+  });
 
   app.get("/v1/orders/:orderId", async (request, reply) => {
     const { orderId } = orderIdParamsSchema.parse(request.params);
-    const order = ordersById.get(orderId);
+    const order = await repository.getOrder(orderId);
 
     if (!order) {
       return sendError(reply, {
@@ -773,7 +757,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post("/v1/orders/:orderId/cancel", async (request, reply) => {
     const { orderId } = orderIdParamsSchema.parse(request.params);
     const input = cancelOrderRequestSchema.parse(request.body);
-    const existingOrder = ordersById.get(orderId);
+    const existingOrder = await repository.getOrder(orderId);
 
     if (!existingOrder) {
       return sendError(reply, {
@@ -801,7 +785,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
     let refundNote = "";
     if (existingOrder.status === "PAID") {
-      const paymentId = paymentIdByOrderId.get(orderId);
+      const paymentId = await repository.getPaymentId(orderId);
       if (!paymentId) {
         return sendError(reply, {
           statusCode: 409,
@@ -812,7 +796,7 @@ export async function registerRoutes(app: FastifyInstance) {
         });
       }
 
-      const orderQuote = orderQuoteByOrderId.get(orderId);
+      const orderQuote = await repository.getOrderQuote(orderId);
       if (!orderQuote) {
         return sendError(reply, {
           statusCode: 409,
@@ -823,17 +807,24 @@ export async function registerRoutes(app: FastifyInstance) {
         });
       }
 
-      let orderUserId = orderUserIdByOrderId.get(orderId);
+      let orderUserId = await repository.getOrderUserId(orderId);
       if (!orderUserId) {
         const fallbackUserId = resolveRequestUserId(request, reply);
         if (!fallbackUserId) {
           return;
         }
         orderUserId = fallbackUserId;
-        orderUserIdByOrderId.set(orderId, fallbackUserId);
+        await repository.setOrderUserId(orderId, fallbackUserId);
       }
 
-      let successfulRefund = successfulRefundByOrderId.get(orderId);
+      const persistedRefund = await repository.getSuccessfulRefund(orderId);
+      let successfulRefund: z.output<typeof paymentsRefundResponseSchema> | undefined;
+      if (persistedRefund !== undefined) {
+        const parsedPersistedRefund = paymentsRefundResponseSchema.safeParse(persistedRefund);
+        if (parsedPersistedRefund.success) {
+          successfulRefund = parsedPersistedRefund.data;
+        }
+      }
       if (!successfulRefund) {
         const refundPayload = paymentsRefundRequestSchema.parse({
           orderId,
@@ -900,7 +891,7 @@ export async function registerRoutes(app: FastifyInstance) {
         }
 
         successfulRefund = parsedRefund.data;
-        successfulRefundByOrderId.set(orderId, parsedRefund.data);
+        await repository.setSuccessfulRefund(orderId, parsedRefund.data);
       }
 
       const reverseEarnMutation = loyaltyMutationRequestSchema.parse({
@@ -956,15 +947,15 @@ export async function registerRoutes(app: FastifyInstance) {
       "CANCELED",
       `Canceled by customer: ${input.reason}.${refundNote}`
     );
-    ordersById.set(orderId, canceledOrder);
-    let notificationUserId = orderUserIdByOrderId.get(orderId);
+    await repository.updateOrder(orderId, canceledOrder);
+    let notificationUserId = await repository.getOrderUserId(orderId);
     if (!notificationUserId) {
       const fallbackUserId = resolveRequestUserId(request, reply);
       if (!fallbackUserId) {
         return;
       }
       notificationUserId = fallbackUserId;
-      orderUserIdByOrderId.set(orderId, fallbackUserId);
+      await repository.setOrderUserId(orderId, fallbackUserId);
     }
     await sendOrderStateNotification({
       request,

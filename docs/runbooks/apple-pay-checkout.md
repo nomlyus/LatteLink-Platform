@@ -1,6 +1,6 @@
 # Apple Pay Checkout (Mobile Dev Path)
 
-Last reviewed: `2026-03-10`
+Last reviewed: `2026-03-11`
 
 ## Scope
 
