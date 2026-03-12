@@ -11,6 +11,10 @@ on:
           - dev
           - staging
           - prod
+      image_tag:
+        description: "Previous container image tag to rollback to"
+        required: true
+        type: string
 
 permissions:
   id-token: write
@@ -18,15 +22,43 @@ permissions:
 
 env:
   AWS_REGION: ${{ vars.AWS_REGION }}
+  API_BASE_URL_DEV: ${{ vars.API_BASE_URL_DEV }}
+  API_BASE_URL_STAGING: ${{ vars.API_BASE_URL_STAGING }}
+  API_BASE_URL_PROD: ${{ vars.API_BASE_URL_PROD }}
 
 jobs:
   rollback:
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
+    env:
+      IMAGE_TAG: ${{ inputs.image_tag }}
     steps:
       - uses: actions/checkout@v4
+      - name: Check rollback prerequisites
+        id: rollback-check
+        env:
+          AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+        run: |
+          if [ -z "${AWS_ROLE_ARN}" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "AWS_ROLE_ARN is not configured; rollback will be skipped."
+            exit 0
+          fi
+
+          if [ -z "${IMAGE_TAG}" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "image_tag is required."
+            exit 0
+          fi
+
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
       - uses: aws-actions/configure-aws-credentials@v4
+        if: steps.rollback-check.outputs.enabled == 'true'
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-      - run: echo "Implement rollback strategy for ${{ inputs.environment }} in infra/terraform/scripts/rollback.sh"
+      - if: steps.rollback-check.outputs.enabled == 'true'
+        run: ./infra/terraform/scripts/rollback.sh "${{ inputs.environment }}" "${IMAGE_TAG}"
+      - name: Skip rollback (missing prerequisites)
+        if: steps.rollback-check.outputs.enabled != 'true'
+        run: echo "Skipping rollback because required secrets/inputs are not configured."

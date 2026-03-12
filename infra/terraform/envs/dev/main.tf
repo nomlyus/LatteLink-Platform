@@ -3,43 +3,43 @@ locals {
 
   services = {
     gateway = {
-      image          = "ghcr.io/gazelledev/gazellemobileplatform/gateway:latest"
+      image          = "ghcr.io/gazelledev/gazellemobileplatform/gateway:${var.image_tag}"
       cpu            = 256
       memory         = 512
       container_port = 8080
     }
     identity = {
-      image          = "ghcr.io/gazelledev/gazellemobileplatform/identity:latest"
+      image          = "ghcr.io/gazelledev/gazellemobileplatform/identity:${var.image_tag}"
       cpu            = 256
       memory         = 512
       container_port = 3000
     }
     catalog = {
-      image          = "ghcr.io/gazelledev/gazellemobileplatform/catalog:latest"
+      image          = "ghcr.io/gazelledev/gazellemobileplatform/catalog:${var.image_tag}"
       cpu            = 256
       memory         = 512
       container_port = 3000
     }
     orders = {
-      image          = "ghcr.io/gazelledev/gazellemobileplatform/orders:latest"
+      image          = "ghcr.io/gazelledev/gazellemobileplatform/orders:${var.image_tag}"
       cpu            = 512
       memory         = 1024
       container_port = 3000
     }
     payments = {
-      image          = "ghcr.io/gazelledev/gazellemobileplatform/payments:latest"
+      image          = "ghcr.io/gazelledev/gazellemobileplatform/payments:${var.image_tag}"
       cpu            = 512
       memory         = 1024
       container_port = 3000
     }
     loyalty = {
-      image          = "ghcr.io/gazelledev/gazellemobileplatform/loyalty:latest"
+      image          = "ghcr.io/gazelledev/gazellemobileplatform/loyalty:${var.image_tag}"
       cpu            = 256
       memory         = 512
       container_port = 3000
     }
     notifications = {
-      image          = "ghcr.io/gazelledev/gazellemobileplatform/notifications:latest"
+      image          = "ghcr.io/gazelledev/gazellemobileplatform/notifications:${var.image_tag}"
       cpu            = 256
       memory         = 512
       container_port = 3000

@@ -29,15 +29,15 @@ Last updated: `2026-03-11`
 
 ## Phase 3: Real Apple Pay + Clover
 
-- [ ] Implement native Apple Pay sheet and wallet token handling.
-- [ ] Implement real Clover sandbox charge/refund with webhook reconciliation.
-- [ ] Persist payment states and webhook events.
+- [x] Implement native Apple Pay sheet and wallet token handling.
+- [x] Implement real Clover sandbox charge/refund with webhook reconciliation.
+- [x] Persist payment states and webhook events.
 
 ## Phase 4: UI/UX Production Baseline
 
-- [ ] Build production account, history, loyalty, and notification settings surfaces.
-- [ ] Complete loading/error/offline/retry states across auth/cart/checkout/order tracking.
-- [ ] Accessibility completion pass (dynamic type, labels, contrast, safe areas).
+- [x] Build production account, history, loyalty, and notification settings surfaces.
+- [x] Complete loading/error/offline/retry states across auth/cart/checkout/order tracking.
+- [x] Accessibility completion pass (dynamic type, labels, contrast, safe areas).
 
 ## Phase 5: Free-First Deployment
 
@@ -48,5 +48,5 @@ Last updated: `2026-03-11`
 
 ## Phase 6: AWS Cutover
 
-- [ ] Create compose -> ECS mapping runbook.
-- [ ] Implement cutover + rollback rehearsal.
+- [x] Create compose -> ECS mapping runbook.
+- [x] Implement cutover + rollback rehearsal.

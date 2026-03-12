@@ -16,6 +16,12 @@ Modules:
 
 ```bash
 terraform -chdir=infra/terraform/envs/dev init
-terraform -chdir=infra/terraform/envs/dev plan
-terraform -chdir=infra/terraform/envs/dev apply
+terraform -chdir=infra/terraform/envs/dev plan -var "image_tag=latest"
+terraform -chdir=infra/terraform/envs/dev apply -var "image_tag=latest"
+```
+
+Rollback to a prior image tag:
+
+```bash
+./infra/terraform/scripts/rollback.sh staging <previous-image-tag>
 ```

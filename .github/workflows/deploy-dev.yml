@@ -11,6 +11,8 @@ permissions:
 
 env:
   AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  API_BASE_URL_DEV: ${{ vars.API_BASE_URL_DEV }}
+  IMAGE_TAG: ${{ github.sha }}
 
 jobs:
   deploy:
@@ -23,12 +25,18 @@ jobs:
         env:
           AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
         run: |
-          if [ -n "${AWS_ROLE_ARN}" ]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          else
+          if [ -z "${AWS_ROLE_ARN}" ]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             echo "AWS_ROLE_ARN is not configured; deploy will be skipped."
+            exit 0
           fi
+
+          if [ -z "${API_BASE_URL_DEV}" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "API_BASE_URL_DEV is not configured; deploy will be skipped."
+            exit 0
+          fi
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
       - uses: aws-actions/configure-aws-credentials@v4
         if: steps.deploy-check.outputs.enabled == 'true'
         with:
@@ -39,7 +47,7 @@ jobs:
       - if: steps.deploy-check.outputs.enabled == 'true'
         run: terraform -chdir=infra/terraform/envs/dev init
       - if: steps.deploy-check.outputs.enabled == 'true'
-        run: terraform -chdir=infra/terraform/envs/dev apply -auto-approve
+        run: terraform -chdir=infra/terraform/envs/dev apply -auto-approve -var "image_tag=${IMAGE_TAG}"
       - if: steps.deploy-check.outputs.enabled == 'true'
         run: ./infra/terraform/scripts/smoke-check.sh dev
       - name: Skip deploy (AWS_ROLE_ARN missing)

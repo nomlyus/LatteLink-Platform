@@ -40,3 +40,8 @@ variable "alb_zone_id" {
   type    = string
   default = ""
 }
+
+variable "image_tag" {
+  type    = string
+  default = "latest"
+}

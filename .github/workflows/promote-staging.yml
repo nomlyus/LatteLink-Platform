@@ -2,6 +2,11 @@ name: promote-staging
 
 on:
   workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Container image tag to promote"
+        required: false
+        default: latest
 
 permissions:
   id-token: write
@@ -9,18 +14,47 @@ permissions:
 
 env:
   AWS_REGION: ${{ vars.AWS_REGION }}
+  API_BASE_URL_STAGING: ${{ vars.API_BASE_URL_STAGING }}
 
 jobs:
   promote:
     runs-on: ubuntu-latest
     environment: staging
+    env:
+      IMAGE_TAG: ${{ inputs.image_tag || 'latest' }}
     steps:
       - uses: actions/checkout@v4
+      - name: Check promotion prerequisites
+        id: promote-check
+        env:
+          AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+        run: |
+          if [ -z "${AWS_ROLE_ARN}" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "AWS_ROLE_ARN is not configured; staging promotion will be skipped."
+            exit 0
+          fi
+
+          if [ -z "${API_BASE_URL_STAGING}" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "API_BASE_URL_STAGING is not configured; staging promotion will be skipped."
+            exit 0
+          fi
+
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
       - uses: aws-actions/configure-aws-credentials@v4
+        if: steps.promote-check.outputs.enabled == 'true'
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
       - uses: hashicorp/setup-terraform@v3
-      - run: terraform -chdir=infra/terraform/envs/staging init
-      - run: terraform -chdir=infra/terraform/envs/staging apply -auto-approve
-      - run: ./infra/terraform/scripts/smoke-check.sh staging
+        if: steps.promote-check.outputs.enabled == 'true'
+      - if: steps.promote-check.outputs.enabled == 'true'
+        run: terraform -chdir=infra/terraform/envs/staging init
+      - if: steps.promote-check.outputs.enabled == 'true'
+        run: terraform -chdir=infra/terraform/envs/staging apply -auto-approve -var "image_tag=${IMAGE_TAG}"
+      - if: steps.promote-check.outputs.enabled == 'true'
+        run: ./infra/terraform/scripts/smoke-check.sh staging
+      - name: Skip promotion (missing prerequisites)
+        if: steps.promote-check.outputs.enabled != 'true'
+        run: echo "Skipping promote-staging because required secrets/vars are not configured."
