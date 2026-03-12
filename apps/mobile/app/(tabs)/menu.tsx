@@ -40,6 +40,7 @@ const CATEGORY_SELECTOR_INSET = 3;
 function renderGlassPill(children: ReactNode) {
   if (Platform.OS === "ios" && !isExpoGo) {
     try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { LiquidGlassView, isLiquidGlassSupported } = require("@callstack/liquid-glass") as {
         LiquidGlassView: ComponentType<LiquidGlassViewProps>;
         isLiquidGlassSupported: boolean;
@@ -51,7 +52,9 @@ function renderGlassPill(children: ReactNode) {
           </LiquidGlassView>
         );
       }
-    } catch {}
+    } catch (error) {
+      void error;
+    }
   }
   return (
     <BlurView tint="light" intensity={Platform.OS === "ios" ? 66 : 56} style={styles.customizeBlurFallback}>
@@ -160,7 +163,7 @@ function CategorySelector({ options, selectedCategoryId, onSelect }: { options: 
   // Build virtual item list: SIDE_COPIES copies before + real items + SIDE_COPIES copies after
   const virtualItems = Array.from({ length: totalItems }, (_, vIdx) => {
     const realIndex = ((vIdx % count) + count) % count;
-    return { vIdx, realIndex, option: options[realIndex] };
+    return { vIdx, option: options[realIndex] };
   });
 
   return (
@@ -175,7 +178,7 @@ function CategorySelector({ options, selectedCategoryId, onSelect }: { options: 
         style={[styles.categorySelectorStrip, { width: totalItems * ITEM_WIDTH, transform: [{ translateX }] }]}
         {...panResponder.panHandlers}
       >
-        {virtualItems.map(({ vIdx, realIndex, option }) => {
+        {virtualItems.map(({ vIdx, option }) => {
           const isActive = option.id === selectedCategoryId;
           return (
             <Pressable
