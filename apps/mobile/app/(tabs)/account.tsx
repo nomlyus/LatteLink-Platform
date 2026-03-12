@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { Link, useRouter } from "expo-router";
+import { Link } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthSession } from "../../src/auth/session";
 import {
@@ -31,13 +31,16 @@ function formatOrderStatus(status: string) {
 
 export default function AccountScreen() {
   const insets = useSafeAreaInsets();
-  const router = useRouter();
   const { isAuthenticated, session, signOut } = useAuthSession();
   const ordersQuery = useOrderHistoryQuery(isAuthenticated);
   const loyaltyBalanceQuery = useLoyaltyBalanceQuery(isAuthenticated);
   const loyaltyLedgerQuery = useLoyaltyLedgerQuery(isAuthenticated);
   const pushTokenMutation = usePushTokenRegistrationMutation();
   const [notificationStatus, setNotificationStatus] = useState("");
+  const orders = ordersQuery.data ?? [];
+  const activeOrder = findActiveOrder(orders);
+  const loyaltyBalance = loyaltyBalanceQuery.data;
+  const loyaltyLedger = loyaltyLedgerQuery.data ?? [];
 
   if (!isAuthenticated) {
     return (
@@ -59,11 +62,6 @@ export default function AccountScreen() {
     );
   }
 
-  const orders = ordersQuery.data ?? [];
-  const activeOrder = useMemo(() => findActiveOrder(orders), [orders]);
-  const loyaltyBalance = loyaltyBalanceQuery.data;
-  const loyaltyLedger = loyaltyLedgerQuery.data ?? [];
-
   const isRefreshing =
     ordersQuery.isFetching ||
     loyaltyBalanceQuery.isFetching ||
@@ -72,7 +70,6 @@ export default function AccountScreen() {
 
   async function handleSignOut() {
     await signOut();
-    router.replace("/(tabs)/home");
   }
 
   function handleRefresh() {
