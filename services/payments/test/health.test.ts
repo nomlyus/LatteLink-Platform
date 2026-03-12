@@ -277,6 +277,44 @@ describe("payments service", () => {
     await app.close();
   });
 
+  it("rate limits write endpoints when configured threshold is reached", async () => {
+    vi.stubEnv("PAYMENTS_RATE_LIMIT_WRITE_MAX", "1");
+    vi.stubEnv("PAYMENTS_RATE_LIMIT_WINDOW_MS", "60000");
+
+    const app = await buildApp();
+    try {
+      const firstCharge = await app.inject({
+        method: "POST",
+        url: "/v1/payments/charges",
+        payload: {
+          orderId: "123e4567-e89b-12d3-a456-426614174099",
+          amountCents: 825,
+          currency: "USD",
+          applePayToken: "apple-pay-success-token",
+          idempotencyKey: "rate-limit-charge-1"
+        }
+      });
+      expect(firstCharge.statusCode).toBe(200);
+
+      const secondCharge = await app.inject({
+        method: "POST",
+        url: "/v1/payments/charges",
+        payload: {
+          orderId: "123e4567-e89b-12d3-a456-426614174098",
+          amountCents: 825,
+          currency: "USD",
+          applePayToken: "apple-pay-success-token",
+          idempotencyKey: "rate-limit-charge-2"
+        }
+      });
+      expect(secondCharge.statusCode).toBe(429);
+      expect(secondCharge.json()).toMatchObject({ statusCode: 429 });
+    } finally {
+      await app.close();
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("supports live Clover charge + refund via configured endpoints", async () => {
     vi.stubEnv("CLOVER_PROVIDER_MODE", "live");
     vi.stubEnv("CLOVER_API_KEY", "test-key");

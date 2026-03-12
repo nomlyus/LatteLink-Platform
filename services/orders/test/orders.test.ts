@@ -837,6 +837,30 @@ describe("orders service", () => {
     await app.close();
   });
 
+  it("rate limits order write endpoints when configured threshold is reached", async () => {
+    vi.stubEnv("ORDERS_RATE_LIMIT_WRITE_MAX", "1");
+    vi.stubEnv("ORDERS_RATE_LIMIT_WINDOW_MS", "60000");
+    const app = await buildApp();
+
+    try {
+      const firstQuote = await app.inject({
+        method: "POST",
+        url: "/v1/orders/quote",
+        payload: sampleQuotePayload
+      });
+      expect(firstQuote.statusCode).toBe(200);
+
+      const secondQuote = await app.inject({
+        method: "POST",
+        url: "/v1/orders/quote",
+        payload: sampleQuotePayload
+      });
+      expect(secondQuote.statusCode).toBe(429);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("rejects invalid x-user-id header and exposes metrics counters", async () => {
     const app = await buildApp();
     const quoteResponse = await app.inject({

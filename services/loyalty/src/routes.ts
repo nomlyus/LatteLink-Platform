@@ -5,6 +5,8 @@ import { createPostgresDb, ensurePersistenceTables, getDatabaseUrl } from "@gaze
 import { z } from "zod";
 
 const defaultUserId = "123e4567-e89b-12d3-a456-426614174000";
+const defaultRateLimitWindowMs = 60_000;
+const defaultLoyaltyMutationRateLimitMax = 180;
 
 const payloadSchema = z.object({
   id: z.string().uuid().optional()
@@ -216,6 +218,15 @@ function toSortedLedger(entries: LoyaltyLedgerEntry[]) {
   return z
     .array(loyaltyLedgerEntrySchema)
     .parse([...entries].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt)));
+}
+
+function toPositiveInteger(value: string | undefined, fallback: number) {
+  const parsed = Number.parseInt(value ?? "", 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return parsed;
 }
 
 function parseIsoDate(value: unknown) {
@@ -452,6 +463,11 @@ async function createLoyaltyRepository(logger: FastifyBaseLogger): Promise<Loyal
 
 export async function registerRoutes(app: FastifyInstance) {
   const repository = await createLoyaltyRepository(app.log);
+  const loyaltyRateLimitWindowMs = toPositiveInteger(process.env.LOYALTY_RATE_LIMIT_WINDOW_MS, defaultRateLimitWindowMs);
+  const loyaltyMutationRateLimit = {
+    max: toPositiveInteger(process.env.LOYALTY_RATE_LIMIT_MUTATION_MAX, defaultLoyaltyMutationRateLimitMax),
+    timeWindow: loyaltyRateLimitWindowMs
+  };
 
   app.addHook("onClose", async () => {
     await repository.close();
@@ -479,27 +495,92 @@ export async function registerRoutes(app: FastifyInstance) {
     return toSortedLedger(ledger);
   });
 
-  app.post("/v1/loyalty/internal/ledger/apply", async (request, reply) => {
-    const parsedMutation = applyLedgerMutationSchema.safeParse(request.body);
-    if (!parsedMutation.success) {
-      return sendError(reply, {
-        statusCode: 400,
-        code: "INVALID_LOYALTY_MUTATION",
-        message: "Loyalty ledger mutation payload is invalid",
-        requestId: request.id,
-        details: parsedMutation.error.flatten()
+  app.post(
+    "/v1/loyalty/internal/ledger/apply",
+    {
+      preHandler: app.rateLimit(loyaltyMutationRateLimit)
+    },
+    async (request, reply) => {
+      const parsedMutation = applyLedgerMutationSchema.safeParse(request.body);
+      if (!parsedMutation.success) {
+        return sendError(reply, {
+          statusCode: 400,
+          code: "INVALID_LOYALTY_MUTATION",
+          message: "Loyalty ledger mutation payload is invalid",
+          requestId: request.id,
+          details: parsedMutation.error.flatten()
+        });
+      }
+
+      const input = parsedMutation.data;
+      const balance = await repository.getBalance(input.userId);
+      const deltaPoints = toLedgerDeltaPoints(input);
+      const resolvedPoints = resolveMutationPoints(input);
+      const mutationFingerprint = toMutationFingerprint(input, deltaPoints, resolvedPoints);
+      const existingMutation = await repository.getIdempotencyRecord(input.userId, input.idempotencyKey);
+
+      if (existingMutation) {
+        if (existingMutation.requestFingerprint !== mutationFingerprint) {
+          return sendError(reply, {
+            statusCode: 409,
+            code: "IDEMPOTENCY_KEY_REUSE",
+            message: "idempotencyKey was already used with a different mutation payload",
+            requestId: request.id,
+            details: {
+              userId: input.userId,
+              idempotencyKey: input.idempotencyKey
+            }
+          });
+        }
+
+        return existingMutation.response;
+      }
+
+      const availableAfterMutation = balance.availablePoints + deltaPoints;
+      if (availableAfterMutation < 0) {
+        return sendError(reply, {
+          statusCode: 409,
+          code: "INSUFFICIENT_POINTS",
+          message: "Mutation would result in a negative availablePoints balance",
+          requestId: request.id,
+          details: {
+            userId: input.userId,
+            availablePoints: balance.availablePoints,
+            requestedPoints: resolvedPoints,
+            type: input.type
+          }
+        });
+      }
+
+      const nextBalance = loyaltyBalanceSchema.parse({
+        ...balance,
+        availablePoints: availableAfterMutation,
+        pendingPoints: balance.pendingPoints,
+        lifetimeEarned: balance.lifetimeEarned + toLifetimeEarnedDelta(input)
       });
-    }
 
-    const input = parsedMutation.data;
-    const balance = await repository.getBalance(input.userId);
-    const deltaPoints = toLedgerDeltaPoints(input);
-    const resolvedPoints = resolveMutationPoints(input);
-    const mutationFingerprint = toMutationFingerprint(input, deltaPoints, resolvedPoints);
-    const existingMutation = await repository.getIdempotencyRecord(input.userId, input.idempotencyKey);
+      const entry = loyaltyLedgerEntrySchema.parse({
+        id: randomUUID(),
+        type: input.type,
+        points: deltaPoints,
+        orderId: input.orderId,
+        createdAt: input.occurredAt ?? new Date().toISOString()
+      });
 
-    if (existingMutation) {
-      if (existingMutation.requestFingerprint !== mutationFingerprint) {
+      await repository.appendLedgerEntry(input.userId, entry);
+      await repository.saveBalance(nextBalance);
+
+      const response = applyLedgerMutationResponseSchema.parse({
+        entry,
+        balance: nextBalance
+      });
+
+      const persistedRecord = await repository.saveIdempotencyRecord(input.userId, input.idempotencyKey, {
+        requestFingerprint: mutationFingerprint,
+        response
+      });
+
+      if (persistedRecord.requestFingerprint !== mutationFingerprint) {
         return sendError(reply, {
           statusCode: 409,
           code: "IDEMPOTENCY_KEY_REUSE",
@@ -512,68 +593,9 @@ export async function registerRoutes(app: FastifyInstance) {
         });
       }
 
-      return existingMutation.response;
+      return persistedRecord.response;
     }
-
-    const availableAfterMutation = balance.availablePoints + deltaPoints;
-    if (availableAfterMutation < 0) {
-      return sendError(reply, {
-        statusCode: 409,
-        code: "INSUFFICIENT_POINTS",
-        message: "Mutation would result in a negative availablePoints balance",
-        requestId: request.id,
-        details: {
-          userId: input.userId,
-          availablePoints: balance.availablePoints,
-          requestedPoints: resolvedPoints,
-          type: input.type
-        }
-      });
-    }
-
-    const nextBalance = loyaltyBalanceSchema.parse({
-      ...balance,
-      availablePoints: availableAfterMutation,
-      pendingPoints: balance.pendingPoints,
-      lifetimeEarned: balance.lifetimeEarned + toLifetimeEarnedDelta(input)
-    });
-
-    const entry = loyaltyLedgerEntrySchema.parse({
-      id: randomUUID(),
-      type: input.type,
-      points: deltaPoints,
-      orderId: input.orderId,
-      createdAt: input.occurredAt ?? new Date().toISOString()
-    });
-
-    await repository.appendLedgerEntry(input.userId, entry);
-    await repository.saveBalance(nextBalance);
-
-    const response = applyLedgerMutationResponseSchema.parse({
-      entry,
-      balance: nextBalance
-    });
-
-    const persistedRecord = await repository.saveIdempotencyRecord(input.userId, input.idempotencyKey, {
-      requestFingerprint: mutationFingerprint,
-      response
-    });
-
-    if (persistedRecord.requestFingerprint !== mutationFingerprint) {
-      return sendError(reply, {
-        statusCode: 409,
-        code: "IDEMPOTENCY_KEY_REUSE",
-        message: "idempotencyKey was already used with a different mutation payload",
-        requestId: request.id,
-        details: {
-          userId: input.userId,
-          idempotencyKey: input.idempotencyKey
-        }
-      });
-    }
-
-    return persistedRecord.response;
-  });
+  );
 
   app.post("/v1/loyalty/internal/ping", async (request) => {
     const parsed = payloadSchema.parse(request.body ?? {});

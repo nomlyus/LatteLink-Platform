@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { loyaltyBalanceSchema, loyaltyLedgerEntrySchema } from "@gazelle/contracts-loyalty";
 import { z } from "zod";
 import { buildApp } from "../src/app.js";
@@ -235,5 +235,41 @@ describe("loyalty service", () => {
     });
 
     await app.close();
+  });
+
+  it("rate limits internal ledger mutations when configured threshold is reached", async () => {
+    vi.stubEnv("LOYALTY_RATE_LIMIT_MUTATION_MAX", "1");
+    vi.stubEnv("LOYALTY_RATE_LIMIT_WINDOW_MS", "60000");
+    const app = await buildApp();
+    const userId = "123e4567-e89b-12d3-a456-426614174406";
+
+    try {
+      const firstMutation = await app.inject({
+        method: "POST",
+        url: "/v1/loyalty/internal/ledger/apply",
+        payload: {
+          userId,
+          type: "EARN",
+          amountCents: 100,
+          idempotencyKey: "evt-rate-limit-1"
+        }
+      });
+      expect(firstMutation.statusCode).toBe(200);
+
+      const secondMutation = await app.inject({
+        method: "POST",
+        url: "/v1/loyalty/internal/ledger/apply",
+        payload: {
+          userId,
+          type: "EARN",
+          amountCents: 100,
+          idempotencyKey: "evt-rate-limit-2"
+        }
+      });
+      expect(secondMutation.statusCode).toBe(429);
+    } finally {
+      vi.unstubAllEnvs();
+      await app.close();
+    }
   });
 });

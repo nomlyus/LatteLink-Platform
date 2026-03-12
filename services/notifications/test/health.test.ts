@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
 
 describe("notifications service", () => {
@@ -249,5 +249,44 @@ describe("notifications service", () => {
     expect(metricsResponse.json().requests.total).toBeGreaterThanOrEqual(1);
 
     await app.close();
+  });
+
+  it("rate limits push-token writes when configured threshold is reached", async () => {
+    vi.stubEnv("NOTIFICATIONS_RATE_LIMIT_DEVICE_WRITE_MAX", "1");
+    vi.stubEnv("NOTIFICATIONS_RATE_LIMIT_WINDOW_MS", "60000");
+    const app = await buildApp();
+
+    try {
+      const firstUpsert = await app.inject({
+        method: "PUT",
+        url: "/v1/devices/push-token",
+        headers: {
+          "x-user-id": "123e4567-e89b-12d3-a456-426614174930"
+        },
+        payload: {
+          deviceId: "ios-rate-limit",
+          platform: "ios",
+          expoPushToken: "ExponentPushToken[rate-limit-1]"
+        }
+      });
+      expect(firstUpsert.statusCode).toBe(200);
+
+      const secondUpsert = await app.inject({
+        method: "PUT",
+        url: "/v1/devices/push-token",
+        headers: {
+          "x-user-id": "123e4567-e89b-12d3-a456-426614174930"
+        },
+        payload: {
+          deviceId: "ios-rate-limit",
+          platform: "ios",
+          expoPushToken: "ExponentPushToken[rate-limit-1]"
+        }
+      });
+      expect(secondUpsert.statusCode).toBe(429);
+    } finally {
+      vi.unstubAllEnvs();
+      await app.close();
+    }
   });
 });

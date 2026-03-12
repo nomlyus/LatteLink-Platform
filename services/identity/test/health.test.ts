@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
 
 describe("identity service", () => {
@@ -256,5 +256,38 @@ describe("identity service", () => {
     expect(metricsResponse.json().requests.status4xx).toBeGreaterThanOrEqual(1);
 
     await app.close();
+  });
+
+  it("rate limits apple exchange when configured threshold is reached", async () => {
+    vi.stubEnv("IDENTITY_RATE_LIMIT_APPLE_EXCHANGE_MAX", "1");
+    vi.stubEnv("IDENTITY_RATE_LIMIT_WINDOW_MS", "60000");
+    const app = await buildApp();
+
+    try {
+      const firstExchange = await app.inject({
+        method: "POST",
+        url: "/v1/auth/apple/exchange",
+        payload: {
+          identityToken: "identity-token",
+          authorizationCode: "auth-code",
+          nonce: "limit-1"
+        }
+      });
+      expect(firstExchange.statusCode).toBe(200);
+
+      const secondExchange = await app.inject({
+        method: "POST",
+        url: "/v1/auth/apple/exchange",
+        payload: {
+          identityToken: "identity-token",
+          authorizationCode: "auth-code",
+          nonce: "limit-2"
+        }
+      });
+      expect(secondExchange.statusCode).toBe(429);
+    } finally {
+      vi.unstubAllEnvs();
+      await app.close();
+    }
   });
 });

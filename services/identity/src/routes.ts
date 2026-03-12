@@ -38,6 +38,11 @@ const defaultUserId = "123e4567-e89b-12d3-a456-426614174000";
 const defaultPasskeyRpId = "localhost";
 const defaultPasskeyRpName = "Gazelle";
 const defaultPasskeyTimeoutMs = 60_000;
+const defaultRateLimitWindowMs = 60_000;
+const defaultAppleExchangeRateLimitMax = 60;
+const defaultMagicLinkRequestRateLimitMax = 20;
+const defaultMagicLinkVerifyRateLimitMax = 30;
+const defaultRefreshRateLimitMax = 90;
 const passkeyVerifyRateLimit = { max: 12, timeWindow: 60_000 };
 const passkeyChallengeRateLimit = { max: 24, timeWindow: 60_000 };
 
@@ -46,6 +51,15 @@ function parseCommaSeparatedEnv(value: string | undefined) {
     .split(",")
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0);
+}
+
+function toPositiveInteger(value: string | undefined, fallback: number) {
+  const parsed = Number.parseInt(value ?? "", 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return parsed;
 }
 
 function loadPasskeyConfig() {
@@ -124,6 +138,26 @@ function buildApiError(requestId: string, code: string, message: string) {
 export async function registerRoutes(app: FastifyInstance) {
   const repository = await createIdentityRepository(app.log);
   const passkeyConfig = loadPasskeyConfig();
+  const identityRateLimitWindowMs = toPositiveInteger(process.env.IDENTITY_RATE_LIMIT_WINDOW_MS, defaultRateLimitWindowMs);
+  const appleExchangeRateLimit = {
+    max: toPositiveInteger(process.env.IDENTITY_RATE_LIMIT_APPLE_EXCHANGE_MAX, defaultAppleExchangeRateLimitMax),
+    timeWindow: identityRateLimitWindowMs
+  };
+  const magicLinkRequestRateLimit = {
+    max: toPositiveInteger(
+      process.env.IDENTITY_RATE_LIMIT_MAGIC_LINK_REQUEST_MAX,
+      defaultMagicLinkRequestRateLimitMax
+    ),
+    timeWindow: identityRateLimitWindowMs
+  };
+  const magicLinkVerifyRateLimit = {
+    max: toPositiveInteger(process.env.IDENTITY_RATE_LIMIT_MAGIC_LINK_VERIFY_MAX, defaultMagicLinkVerifyRateLimitMax),
+    timeWindow: identityRateLimitWindowMs
+  };
+  const refreshRateLimit = {
+    max: toPositiveInteger(process.env.IDENTITY_RATE_LIMIT_REFRESH_MAX, defaultRefreshRateLimitMax),
+    timeWindow: identityRateLimitWindowMs
+  };
 
   app.addHook("onClose", async () => {
     await repository.close();
@@ -132,14 +166,20 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get("/health", async () => ({ status: "ok", service: "identity" }));
   app.get("/ready", async () => ({ status: "ready", service: "identity", persistence: repository.backend }));
 
-  app.post("/v1/auth/apple/exchange", async (request) => {
-    const input = appleExchangeRequestSchema.parse(request.body);
-    return issueSession({
-      repository,
-      seed: input.nonce,
-      authMethod: "apple"
-    });
-  });
+  app.post(
+    "/v1/auth/apple/exchange",
+    {
+      preHandler: app.rateLimit(appleExchangeRateLimit)
+    },
+    async (request) => {
+      const input = appleExchangeRequestSchema.parse(request.body);
+      return issueSession({
+        repository,
+        seed: input.nonce,
+        authMethod: "apple"
+      });
+    }
+  );
 
   app.post("/v1/auth/passkey/register/challenge", async (request) => {
     const input = passkeyChallengeRequestSchema.parse(request.body ?? {});
@@ -402,41 +442,59 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   );
 
-  app.post("/v1/auth/magic-link/request", async (request) => {
-    const input = magicLinkRequestSchema.parse(request.body);
-    app.log.info({ email: input.email }, "magic link requested");
-    return { success: true as const };
-  });
-
-  app.post("/v1/auth/magic-link/verify", async (request) => {
-    const input = magicLinkVerifySchema.parse(request.body);
-    return issueSession({
-      repository,
-      seed: input.token,
-      authMethod: "magic-link"
-    });
-  });
-
-  app.post("/v1/auth/refresh", async (request, reply) => {
-    const input = refreshRequestSchema.parse(request.body);
-    const currentSession = await repository.getSessionByRefreshToken(input.refreshToken);
-    if (!currentSession) {
-      return reply.status(401).send(
-        apiErrorSchema.parse({
-          code: "INVALID_REFRESH_TOKEN",
-          message: "Refresh token is invalid or expired",
-          requestId: request.id
-        })
-      );
+  app.post(
+    "/v1/auth/magic-link/request",
+    {
+      preHandler: app.rateLimit(magicLinkRequestRateLimit)
+    },
+    async (request) => {
+      const input = magicLinkRequestSchema.parse(request.body);
+      app.log.info({ email: input.email }, "magic link requested");
+      return { success: true as const };
     }
+  );
 
-    await repository.revokeByRefreshToken(input.refreshToken);
-    return issueSession({
-      repository,
-      seed: input.refreshToken,
-      authMethod: "refresh"
-    });
-  });
+  app.post(
+    "/v1/auth/magic-link/verify",
+    {
+      preHandler: app.rateLimit(magicLinkVerifyRateLimit)
+    },
+    async (request) => {
+      const input = magicLinkVerifySchema.parse(request.body);
+      return issueSession({
+        repository,
+        seed: input.token,
+        authMethod: "magic-link"
+      });
+    }
+  );
+
+  app.post(
+    "/v1/auth/refresh",
+    {
+      preHandler: app.rateLimit(refreshRateLimit)
+    },
+    async (request, reply) => {
+      const input = refreshRequestSchema.parse(request.body);
+      const currentSession = await repository.getSessionByRefreshToken(input.refreshToken);
+      if (!currentSession) {
+        return reply.status(401).send(
+          apiErrorSchema.parse({
+            code: "INVALID_REFRESH_TOKEN",
+            message: "Refresh token is invalid or expired",
+            requestId: request.id
+          })
+        );
+      }
+
+      await repository.revokeByRefreshToken(input.refreshToken);
+      return issueSession({
+        repository,
+        seed: input.refreshToken,
+        authMethod: "refresh"
+      });
+    }
+  );
 
   app.post("/v1/auth/logout", async (request) => {
     const input = logoutRequestSchema.parse(request.body);

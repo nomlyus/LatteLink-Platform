@@ -605,4 +605,64 @@ describe("gateway", () => {
     expect(response.json()).toMatchObject({ code: "UNAUTHORIZED" });
     await app.close();
   });
+
+  it("rate limits auth endpoints when configured threshold is reached", async () => {
+    vi.stubEnv("GATEWAY_RATE_LIMIT_AUTH_MAX", "1");
+    vi.stubEnv("GATEWAY_RATE_LIMIT_WINDOW_MS", "60000");
+    const app = await buildApp();
+
+    try {
+      const firstRequest = await app.inject({
+        method: "POST",
+        url: "/v1/auth/magic-link/request",
+        payload: { email: "owner@gazellecoffee.com" }
+      });
+      expect(firstRequest.statusCode).toBe(200);
+
+      const secondRequest = await app.inject({
+        method: "POST",
+        url: "/v1/auth/magic-link/request",
+        payload: { email: "owner@gazellecoffee.com" }
+      });
+      expect(secondRequest.statusCode).toBe(429);
+    } finally {
+      vi.unstubAllEnvs();
+      await app.close();
+    }
+  });
+
+  it("rate limits order write endpoints when configured threshold is reached", async () => {
+    vi.stubEnv("GATEWAY_RATE_LIMIT_ORDERS_WRITE_MAX", "1");
+    vi.stubEnv("GATEWAY_RATE_LIMIT_WINDOW_MS", "60000");
+    const app = await buildApp();
+
+    try {
+      const firstRequest = await app.inject({
+        method: "POST",
+        url: "/v1/orders/quote",
+        headers: authHeader,
+        payload: {
+          locationId: "flagship-01",
+          items: [{ itemId: "latte", quantity: 1 }],
+          pointsToRedeem: 0
+        }
+      });
+      expect(firstRequest.statusCode).toBe(200);
+
+      const secondRequest = await app.inject({
+        method: "POST",
+        url: "/v1/orders/quote",
+        headers: authHeader,
+        payload: {
+          locationId: "flagship-01",
+          items: [{ itemId: "latte", quantity: 1 }],
+          pointsToRedeem: 0
+        }
+      });
+      expect(secondRequest.statusCode).toBe(429);
+    } finally {
+      vi.unstubAllEnvs();
+      await app.close();
+    }
+  });
 });

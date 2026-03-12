@@ -11,6 +11,9 @@ import {
 const payloadSchema = z.object({
   id: z.string().uuid().optional()
 });
+const defaultRateLimitWindowMs = 60_000;
+const defaultPaymentsWriteRateLimitMax = 60;
+const defaultWebhookRateLimitMax = 120;
 
 const chargeRequestSchema = z.object({
   orderId: z.string().uuid(),
@@ -541,6 +544,15 @@ type CloverProviderConfig = {
 function trimToUndefined(value: string | undefined) {
   const next = value?.trim();
   return next && next.length > 0 ? next : undefined;
+}
+
+function toPositiveInteger(value: string | undefined, fallback: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return Math.floor(parsed);
 }
 
 function resolveProviderMode(rawMode: string | undefined): ProviderMode {
@@ -1321,6 +1333,15 @@ export async function registerRoutes(app: FastifyInstance) {
   const ordersBaseUrl = process.env.ORDERS_SERVICE_BASE_URL ?? "http://127.0.0.1:3001";
   const ordersInternalToken = trimToUndefined(process.env.ORDERS_INTERNAL_API_TOKEN);
   const cloverWebhookSharedSecret = trimToUndefined(process.env.CLOVER_WEBHOOK_SHARED_SECRET);
+  const rateLimitWindowMs = toPositiveInteger(process.env.PAYMENTS_RATE_LIMIT_WINDOW_MS, defaultRateLimitWindowMs);
+  const paymentsWriteRateLimit = {
+    max: toPositiveInteger(process.env.PAYMENTS_RATE_LIMIT_WRITE_MAX, defaultPaymentsWriteRateLimitMax),
+    timeWindow: rateLimitWindowMs
+  };
+  const paymentsWebhookRateLimit = {
+    max: toPositiveInteger(process.env.PAYMENTS_RATE_LIMIT_WEBHOOK_MAX, defaultWebhookRateLimitMax),
+    timeWindow: rateLimitWindowMs
+  };
 
   app.addHook("onClose", async () => {
     await repository.close();
@@ -1335,7 +1356,7 @@ export async function registerRoutes(app: FastifyInstance) {
     providerConfigured: cloverProvider.configured
   }));
 
-  app.post("/v1/payments/charges", async (request, reply) => {
+  app.post("/v1/payments/charges", { preHandler: app.rateLimit(paymentsWriteRateLimit) }, async (request, reply) => {
     const input = chargeRequestSchema.parse(request.body);
     const existing = await repository.findChargeByIdempotency(input.orderId, input.idempotencyKey);
 
@@ -1386,7 +1407,7 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   });
 
-  app.post("/v1/payments/refunds", async (request, reply) => {
+  app.post("/v1/payments/refunds", { preHandler: app.rateLimit(paymentsWriteRateLimit) }, async (request, reply) => {
     const input = refundRequestSchema.parse(request.body);
     const existingRefund = await repository.findRefundByIdempotency(input.orderId, input.idempotencyKey);
 
@@ -1453,7 +1474,7 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   });
 
-  app.post("/v1/payments/webhooks/clover", async (request, reply) => {
+  app.post("/v1/payments/webhooks/clover", { preHandler: app.rateLimit(paymentsWebhookRateLimit) }, async (request, reply) => {
     if (cloverWebhookSharedSecret) {
       const requestHeaders = request.headers as Record<string, unknown>;
       const providedSecret =

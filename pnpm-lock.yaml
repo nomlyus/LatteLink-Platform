@@ -428,6 +428,9 @@ importers:
       '@fastify/cors':
         specifier: ^8.5.0
         version: 8.5.0
+      '@fastify/rate-limit':
+        specifier: ^9.1.0
+        version: 9.1.0
       '@fastify/swagger':
         specifier: ^8.15.0
         version: 8.15.0
@@ -541,6 +544,9 @@ importers:
 
   services/loyalty:
     dependencies:
+      '@fastify/rate-limit':
+        specifier: ^9.1.0
+        version: 9.1.0
       '@fastify/swagger':
         specifier: ^8.15.0
         version: 8.15.0
@@ -587,6 +593,9 @@ importers:
 
   services/notifications:
     dependencies:
+      '@fastify/rate-limit':
+        specifier: ^9.1.0
+        version: 9.1.0
       '@fastify/swagger':
         specifier: ^8.15.0
         version: 8.15.0
@@ -633,6 +642,9 @@ importers:
 
   services/orders:
     dependencies:
+      '@fastify/rate-limit':
+        specifier: ^9.1.0
+        version: 9.1.0
       '@fastify/swagger':
         specifier: ^8.15.0
         version: 8.15.0
@@ -679,6 +691,9 @@ importers:
 
   services/payments:
     dependencies:
+      '@fastify/rate-limit':
+        specifier: ^9.1.0
+        version: 9.1.0
       '@fastify/swagger':
         specifier: ^8.15.0
         version: 8.15.0
