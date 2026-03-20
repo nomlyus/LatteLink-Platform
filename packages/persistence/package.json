@@ -12,7 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "kysely": "^0.28.8",
+    "kysely": "^0.28.14",
     "pg": "^8.16.3"
   },
   "devDependencies": {
