@@ -19,8 +19,8 @@
   "devDependencies": {
     "@gazelle/config-eslint": "workspace:*",
     "@gazelle/config-typescript": "workspace:*",
-    "@types/node": "^22.13.8",
-    "eslint": "^9.21.0",
+    "@types/node": "^22.19.15",
+    "eslint": "^9.39.4",
     "tsx": "^4.20.5",
     "typescript": "^5.8.2",
     "vitest": "^3.0.8"
