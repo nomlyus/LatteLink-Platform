@@ -24,7 +24,7 @@
     "@gazelle/contracts-loyalty": "workspace:*",
     "@gazelle/contracts-notifications": "workspace:*",
     "@gazelle/contracts-orders": "workspace:*",
-    "fastify": "^4.28.1",
+    "fastify": "^5.8.3",
     "pino-pretty": "^13.0.0",
     "zod": "^3.24.2"
   },
