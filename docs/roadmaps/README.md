@@ -16,6 +16,7 @@ These roadmaps are meant to align:
 ## Surfaces
 
 - [Execution Backlog](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/roadmaps/execution-backlog-v1-v5.md)
+- [V1 Implementation Tickets](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/roadmaps/v1-implementation-tickets.md)
 - [Customer Frontend (Mobile App)](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/roadmaps/customer-frontend-mobile-v1-v5.md)
 - [Backend Platform](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/roadmaps/backend-v1-v5.md)
 - [Client Dashboard](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/roadmaps/client-dashboard-v1-v5.md)
