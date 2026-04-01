@@ -65,6 +65,7 @@ export type OperatorUserCreateFormInput = {
   displayName?: string;
   email?: string;
   role?: string;
+  password?: string;
 };
 
 export type OperatorUserUpdateFormInput = {
@@ -72,6 +73,7 @@ export type OperatorUserUpdateFormInput = {
   email?: string;
   role?: string;
   active?: boolean | string;
+  password?: string;
 };
 
 export type OperatorMenuItemUpdate = z.output<typeof adminMenuItemUpdateSchema>;
@@ -337,7 +339,8 @@ export function normalizeOperatorUserCreateForm(input: OperatorUserCreateFormInp
   return operatorUserCreateSchema.parse({
     displayName: normalizeText(value.displayName),
     email: normalizeText(value.email),
-    role: normalizeText(value.role)
+    role: normalizeText(value.role),
+    password: normalizeText(value.password)
   });
 }
 
@@ -348,6 +351,7 @@ export function normalizeOperatorUserUpdateForm(input: OperatorUserUpdateFormInp
     ...(normalizeOptionalText(value.displayName) ? { displayName: normalizeOptionalText(value.displayName) } : {}),
     ...(normalizeOptionalText(value.email) ? { email: normalizeOptionalText(value.email) } : {}),
     ...(normalizeOptionalText(value.role) ? { role: normalizeOptionalText(value.role) } : {}),
+    ...(normalizeOptionalText(value.password) ? { password: normalizeOptionalText(value.password) } : {}),
     ...(value.active !== undefined ? { active: normalizeBoolean(value.active) } : {})
   });
 }

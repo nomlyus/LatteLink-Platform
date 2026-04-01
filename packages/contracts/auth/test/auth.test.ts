@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { appleExchangeRequestSchema, magicLinkRequestSchema, passkeyVerifyRequestSchema } from "../src";
+import {
+  appleExchangeRequestSchema,
+  magicLinkRequestSchema,
+  operatorPasswordSignInSchema,
+  operatorUserCreateSchema,
+  passkeyVerifyRequestSchema
+} from "../src";
 
 describe("contracts-auth", () => {
   it("validates apple exchange payload", () => {
@@ -69,5 +75,27 @@ describe("contracts-auth", () => {
     });
 
     expect(payload.email).toBe("owner@gazellecoffee.com");
+  });
+
+  it("accepts operator password sign-in payloads", () => {
+    const payload = operatorPasswordSignInSchema.parse({
+      email: " owner@gazellecoffee.com ",
+      password: "Password123!"
+    });
+
+    expect(payload.email).toBe("owner@gazellecoffee.com");
+    expect(payload.password).toBe("Password123!");
+  });
+
+  it("requires passwords when creating operator users", () => {
+    const payload = operatorUserCreateSchema.parse({
+      displayName: " Avery Quinn ",
+      email: " avery@store.com ",
+      role: "manager",
+      password: "Password123!"
+    });
+
+    expect(payload.displayName).toBe("Avery Quinn");
+    expect(payload.email).toBe("avery@store.com");
   });
 });

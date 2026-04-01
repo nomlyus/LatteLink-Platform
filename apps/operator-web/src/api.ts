@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   operatorDevAccessRequestSchema,
+  operatorPasswordSignInSchema,
   operatorSessionSchema,
   operatorUserListResponseSchema,
   operatorUserSchema
@@ -127,26 +128,15 @@ async function requestJson<TSchema extends z.ZodTypeAny>(params: {
   return schema.parse(parsedPayload);
 }
 
-export async function requestOperatorMagicLink(params: { apiBaseUrl: string; email: string }) {
-  return requestJson({
-    apiBaseUrl: params.apiBaseUrl,
-    path: "/operator/auth/magic-link/request",
-    method: "POST",
-    body: {
-      email: params.email.trim()
-    },
-    schema: z.object({ success: z.literal(true) })
-  });
-}
-
-export async function verifyOperatorMagicLink(params: { apiBaseUrl: string; token: string }) {
+export async function signInOperatorWithPassword(params: { apiBaseUrl: string; email: string; password: string }) {
   const session = await requestJson({
     apiBaseUrl: params.apiBaseUrl,
-    path: "/operator/auth/magic-link/verify",
+    path: "/operator/auth/sign-in",
     method: "POST",
-    body: {
-      token: params.token.trim()
-    },
+    body: operatorPasswordSignInSchema.parse({
+      email: params.email.trim(),
+      password: params.password
+    }),
     schema: operatorSessionSchema
   });
 

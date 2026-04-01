@@ -260,6 +260,56 @@ describe("magic link auth", () => {
     await app.close();
   });
 
+  it("issues a seeded operator session through password sign-in", async () => {
+    const repository = createInMemoryIdentityRepository();
+    const { sender } = createCapturingMailSender();
+    const app = await buildApp({ repository, mailSender: sender });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/operator/auth/sign-in",
+      payload: {
+        email: "owner@gazellecoffee.com",
+        password: "LatteLinkOwner123!"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      accessToken: expect.any(String),
+      refreshToken: expect.any(String),
+      operator: {
+        email: "owner@gazellecoffee.com",
+        role: "owner",
+        locationId: "flagship-01"
+      }
+    });
+
+    await app.close();
+  });
+
+  it("rejects invalid operator passwords", async () => {
+    const repository = createInMemoryIdentityRepository();
+    const { sender } = createCapturingMailSender();
+    const app = await buildApp({ repository, mailSender: sender });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/operator/auth/sign-in",
+      payload: {
+        email: "owner@gazellecoffee.com",
+        password: "WrongPassword123!"
+      }
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({
+      code: "INVALID_OPERATOR_CREDENTIALS"
+    });
+
+    await app.close();
+  });
+
   it("rejects the dev-access route when explicitly disabled", async () => {
     const repository = createInMemoryIdentityRepository();
     const { sender } = createCapturingMailSender();

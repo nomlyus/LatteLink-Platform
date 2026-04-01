@@ -136,10 +136,13 @@ export const operatorUserListResponseSchema = z.object({
   users: z.array(operatorUserSchema)
 });
 
+export const operatorPasswordSchema = z.string().min(8).max(128);
+
 export const operatorUserCreateSchema = z.object({
   displayName: z.string().trim().min(1),
   email: z.string().trim().email(),
-  role: operatorRoleSchema
+  role: operatorRoleSchema,
+  password: operatorPasswordSchema
 });
 
 export const operatorUserUpdateSchema = z
@@ -147,7 +150,8 @@ export const operatorUserUpdateSchema = z
     displayName: z.string().trim().min(1).optional(),
     email: z.string().trim().email().optional(),
     role: operatorRoleSchema.optional(),
-    active: z.boolean().optional()
+    active: z.boolean().optional(),
+    password: operatorPasswordSchema.optional()
   })
   .refine((value) => Object.values(value).some((entry) => entry !== undefined), {
     message: "At least one operator user field must be provided"
@@ -155,6 +159,11 @@ export const operatorUserUpdateSchema = z
 
 export const operatorUserParamsSchema = z.object({
   operatorUserId: z.string().uuid()
+});
+
+export const operatorPasswordSignInSchema = z.object({
+  email: z.string().trim().email(),
+  password: operatorPasswordSchema
 });
 
 export const operatorDevAccessRequestSchema = z.object({
@@ -240,6 +249,12 @@ export const operatorAuthContract = {
       method: "POST",
       path: "/magic-link/verify",
       request: magicLinkVerifySchema,
+      response: operatorSessionSchema
+    },
+    signIn: {
+      method: "POST",
+      path: "/sign-in",
+      request: operatorPasswordSignInSchema,
       response: operatorSessionSchema
     },
     devAccess: {

@@ -7,26 +7,21 @@ import {
   fetchOperatorSnapshot,
   logoutOperatorSession,
   refreshOperatorSession,
-  requestOperatorDevAccess,
-  requestOperatorMagicLink,
   resolveDefaultApiBaseUrl,
+  signInOperatorWithPassword,
   updateOperatorMenuItem,
   updateOperatorMenuItemVisibility,
   updateOperatorOrderStatus,
   updateOperatorStaffUser,
   updateOperatorStoreConfig,
-  verifyOperatorMagicLink,
   type OperatorSession,
   type OperatorUser
 } from "./api.js";
 import {
   canAccessCapability,
   canManageOrderStatus,
-  countHiddenMenuItems,
-  countVisibleMenuItems,
   filterOrdersByView,
   formatOrderStatus,
-  getAppConfigCapabilityLabels,
   getAvailableSections,
   getOperatorRoleLabel,
   getOrderActions,
@@ -53,11 +48,10 @@ type AppState = {
   session: OperatorSession | null;
   authApiBaseUrl: string;
   authEmail: string;
+  authPassword: string;
   initializing: boolean;
   loading: boolean;
-  requestingMagicLink: boolean;
-  requestingDevAccess: boolean;
-  verifyingMagicLink: boolean;
+  signingIn: boolean;
   errorMessage: string | null;
   notice: string | null;
   appConfig: AppConfig | null;
@@ -83,10 +77,10 @@ type AppState = {
 
 const ordersRefreshIntervalMs = 30_000;
 const cancelConfirmTimeoutMs = 10_000;
-const devAccessProfiles = [
-  { label: "Store owner", email: "owner@gazellecoffee.com" },
-  { label: "Manager", email: "manager@gazellecoffee.com" },
-  { label: "Staff", email: "staff@gazellecoffee.com" }
+const devCredentialProfiles = [
+  { label: "Store owner", email: "owner@gazellecoffee.com", password: "LatteLinkOwner123!" },
+  { label: "Manager", email: "manager@gazellecoffee.com", password: "LatteLinkManager123!" },
+  { label: "Staff", email: "staff@gazellecoffee.com", password: "LatteLinkStaff123!" }
 ] as const;
 
 const appRoot = document.querySelector<HTMLDivElement>("#app");
@@ -102,11 +96,10 @@ const state: AppState = {
   session: initialStoredSession,
   authApiBaseUrl: initialStoredSession?.apiBaseUrl ?? loadStoredApiBaseUrl(),
   authEmail: initialStoredSession?.operator.email ?? "",
+  authPassword: "",
   initializing: true,
   loading: false,
-  requestingMagicLink: false,
-  requestingDevAccess: false,
-  verifyingMagicLink: false,
+  signingIn: false,
   errorMessage: null,
   notice: null,
   appConfig: null,
@@ -256,6 +249,186 @@ function getAvailableDashboardSections() {
   return getAvailableSections(state.session?.operator ?? null, state.appConfig ?? undefined);
 }
 
+const dashboardSectionLabels: Record<DashboardSection, string> = {
+  overview: "Overview",
+  orders: "Orders",
+  menu: "Menu",
+  team: "Team",
+  store: "Settings"
+};
+
+type MetricTrendTone = "positive" | "neutral" | "negative";
+
+function getDashboardSectionLabel(section: DashboardSection) {
+  return dashboardSectionLabels[section];
+}
+
+function startOfLocalDay(value: Date) {
+  const next = new Date(value);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function addDays(value: Date, amount: number) {
+  const next = new Date(value);
+  next.setDate(next.getDate() + amount);
+  return next;
+}
+
+function getOrderPlacedAt(order: OperatorOrder) {
+  const timestamps = order.timeline
+    .map((entry) => Date.parse(entry.occurredAt))
+    .filter((value): value is number => Number.isFinite(value));
+
+  return timestamps.length > 0 ? Math.min(...timestamps) : Date.now();
+}
+
+function formatCompactCount(value: number) {
+  return new Intl.NumberFormat("en-US").format(value);
+}
+
+function formatCompactMoney(amountCents: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0
+  }).format(amountCents / 100);
+}
+
+function buildMetricTrend(params: {
+  current: number;
+  previous: number;
+  suffix: string;
+  formatter?: (value: number) => string;
+}): { text: string; tone: MetricTrendTone } {
+  const { current, previous, suffix, formatter = formatCompactCount } = params;
+  if (current === previous) {
+    return { text: `No change ${suffix}`, tone: "neutral" };
+  }
+
+  if (previous <= 0) {
+    const direction = current > previous ? "↑" : "↓";
+    return {
+      text: `${direction} ${formatter(Math.abs(current - previous))} ${suffix}`,
+      tone: current > previous ? "positive" : "negative"
+    };
+  }
+
+  const deltaRatio = Math.round((Math.abs(current - previous) / previous) * 100);
+  return {
+    text: `${current > previous ? "↑" : "↓"} ${deltaRatio}% ${suffix}`,
+    tone: current > previous ? "positive" : "negative"
+  };
+}
+
+function formatDashboardDate() {
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  }).format(new Date());
+}
+
+function getOperatorInitials(name: string | undefined) {
+  const tokens = (name ?? "Operator")
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0)
+    .slice(0, 2);
+
+  return tokens.map((token) => token[0]?.toUpperCase() ?? "").join("") || "OP";
+}
+
+function getOverviewSnapshot() {
+  const now = new Date();
+  const todayStart = startOfLocalDay(now);
+  const tomorrowStart = addDays(todayStart, 1);
+  const yesterdayStart = addDays(todayStart, -1);
+  const todayStartMs = todayStart.getTime();
+  const tomorrowStartMs = tomorrowStart.getTime();
+  const yesterdayStartMs = yesterdayStart.getTime();
+
+  const todayOrders = state.orders.filter((order) => {
+    const placedAt = getOrderPlacedAt(order);
+    return placedAt >= todayStartMs && placedAt < tomorrowStartMs;
+  });
+  const yesterdayOrders = state.orders.filter((order) => {
+    const placedAt = getOrderPlacedAt(order);
+    return placedAt >= yesterdayStartMs && placedAt < todayStartMs;
+  });
+  const todayRevenueCents = todayOrders
+    .filter((order) => order.status !== "PENDING_PAYMENT" && order.status !== "CANCELED")
+    .reduce((total, order) => total + order.total.amountCents, 0);
+  const yesterdayRevenueCents = yesterdayOrders
+    .filter((order) => order.status !== "PENDING_PAYMENT" && order.status !== "CANCELED")
+    .reduce((total, order) => total + order.total.amountCents, 0);
+
+  const activeMembers =
+    state.teamUsers.length > 0 ? state.teamUsers.filter((user) => user.active).length : state.session ? 1 : 0;
+  const totalMembers = state.teamUsers.length > 0 ? state.teamUsers.length : activeMembers;
+  const activeMemberTrend =
+    totalMembers > 0
+      ? {
+          text: `${formatCompactCount(totalMembers)} total on the roster`,
+          tone: "positive" as const
+        }
+      : {
+          text: "Add staff access to populate this workspace",
+          tone: "neutral" as const
+        };
+
+  const chartStart = addDays(todayStart, -6);
+  const rawChartBars = Array.from({ length: 7 }, (_, index) => {
+    const dayStart = addDays(chartStart, index);
+    const dayEnd = addDays(dayStart, 1);
+    const count = state.orders.filter((order) => {
+      const placedAt = getOrderPlacedAt(order);
+      return placedAt >= dayStart.getTime() && placedAt < dayEnd.getTime();
+    }).length;
+
+    return {
+      label: dayStart.toLocaleDateString("en-US", { weekday: "short" }),
+      count
+    };
+  });
+  const maxBarCount = Math.max(...rawChartBars.map((bar) => bar.count), 1);
+
+  return {
+    chartBars: rawChartBars.map((bar) => ({
+      ...bar,
+      height: Math.max(18, Math.round((bar.count / maxBarCount) * 100)),
+      highlighted: bar.count === maxBarCount && maxBarCount > 0
+    })),
+    metrics: [
+      {
+        label: "Today's orders",
+        value: formatCompactCount(todayOrders.length),
+        trend: buildMetricTrend({
+          current: todayOrders.length,
+          previous: yesterdayOrders.length,
+          suffix: "vs yesterday"
+        })
+      },
+      {
+        label: "Revenue",
+        value: formatCompactMoney(todayRevenueCents),
+        trend: buildMetricTrend({
+          current: todayRevenueCents,
+          previous: yesterdayRevenueCents,
+          suffix: "vs yesterday",
+          formatter: formatCompactMoney
+        })
+      },
+      {
+        label: "Active members",
+        value: formatCompactCount(activeMembers),
+        trend: activeMemberTrend
+      }
+    ]
+  };
+}
+
 function ensureSectionIsAvailable() {
   const availableSections = getAvailableDashboardSections();
   if (!availableSections.includes(state.section)) {
@@ -288,6 +461,7 @@ async function signOut(message = "Signed out of the operator workspace.") {
   const currentSession = state.session;
   clearStoredSession();
   state.session = null;
+  state.authPassword = "";
   resetDashboardData();
   setError(null);
   setNotice(message);
@@ -372,6 +546,7 @@ async function applyVerifiedSession(nextSession: OperatorSession, notice: string
   state.session = nextSession;
   state.authApiBaseUrl = nextSession.apiBaseUrl;
   state.authEmail = nextSession.operator.email;
+  state.authPassword = "";
   persistApiBaseUrl(nextSession.apiBaseUrl);
   persistSession(nextSession);
   setError(null);
@@ -381,53 +556,8 @@ async function applyVerifiedSession(nextSession: OperatorSession, notice: string
   await loadDashboard();
 }
 
-function getMagicLinkTokenFromUrl() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const url = new URL(window.location.href);
-  return url.searchParams.get("operator_token");
-}
-
-function clearMagicLinkTokenFromUrl() {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  const url = new URL(window.location.href);
-  url.searchParams.delete("operator_token");
-  window.history.replaceState({}, document.title, url.toString());
-}
-
 async function bootstrap() {
   render();
-
-  const urlToken = getMagicLinkTokenFromUrl();
-  if (urlToken) {
-    state.verifyingMagicLink = true;
-    state.initializing = false;
-    setNotice("Verifying operator magic link…");
-    render();
-
-    try {
-      const session = await verifyOperatorMagicLink({
-        apiBaseUrl: state.authApiBaseUrl,
-        token: urlToken
-      });
-      clearMagicLinkTokenFromUrl();
-      state.verifyingMagicLink = false;
-      await applyVerifiedSession(session, "Magic link accepted. Operator workspace unlocked.");
-      return;
-    } catch (error) {
-      clearMagicLinkTokenFromUrl();
-      state.verifyingMagicLink = false;
-      state.initializing = false;
-      setError(error instanceof Error ? error.message : "Unable to verify the operator magic link.");
-      render();
-      return;
-    }
-  }
 
   state.initializing = false;
   if (state.session) {
@@ -462,22 +592,17 @@ function renderBrandMark() {
 }
 
 function renderAuthScreen() {
-  const showDevAccess = isLocalDevAccessEnabled();
-  const ssoUnavailable = state.requestingMagicLink || state.requestingDevAccess || state.verifyingMagicLink;
-  const devAccessButtons = showDevAccess
-    ? devAccessProfiles
+  const showLocalDevHints = isLocalDevAccessEnabled();
+  const showApiField = showLocalDevHints;
+  const devCredentials = showLocalDevHints
+    ? devCredentialProfiles
         .map(
           (profile) => `
-            <button
-              class="dev-access-button"
-              type="button"
-              data-action="dev-access"
-              data-email="${escapeHtml(profile.email)}"
-              ${state.requestingDevAccess ? "disabled" : ""}
-            >
+            <div class="credential-row">
               <strong>${escapeHtml(profile.label)}</strong>
               <span>${escapeHtml(profile.email)}</span>
-            </button>
+              <code>${escapeHtml(profile.password)}</code>
+            </div>
           `
         )
         .join("")
@@ -500,55 +625,66 @@ function renderAuthScreen() {
           <div class="auth-card__header">
             <p class="eyebrow">Store access</p>
             <h1>Sign in to your operator workspace.</h1>
-            <p class="muted-copy">Use your assigned store email or continue with a staged SSO entry point.</p>
+            <p class="muted-copy">Use the email and password assigned to your store account.</p>
           </div>
 
           ${renderBanner()}
 
-          <form class="auth-stack" data-form="auth-request-link">
+          <form class="auth-stack" data-form="auth-sign-in">
             <label class="field">
               <span>Work email</span>
               <input name="email" type="email" value="${escapeHtml(state.authEmail)}" placeholder="owner@store.com" required />
             </label>
 
-            <label class="field field--compact">
-              <span>Gateway API</span>
-              <input name="apiBaseUrl" type="url" value="${escapeHtml(state.authApiBaseUrl)}" placeholder="http://127.0.0.1:8080/v1" required />
+            <label class="field">
+              <span>Password</span>
+              <input name="password" type="password" value="${escapeHtml(state.authPassword)}" placeholder="Enter your password" required />
             </label>
 
-            <button class="button button--primary" type="submit" ${state.requestingMagicLink ? "disabled" : ""}>
-              ${state.requestingMagicLink ? "Sending link…" : "Email me a magic link"}
+            ${
+              showApiField
+                ? `
+                    <label class="field field--compact">
+                      <span>Gateway API</span>
+                      <input name="apiBaseUrl" type="url" value="${escapeHtml(state.authApiBaseUrl)}" placeholder="http://127.0.0.1:8080/v1" required />
+                    </label>
+                  `
+                : ""
+            }
+
+            <button class="button button--primary" type="submit" ${state.signingIn ? "disabled" : ""}>
+              ${state.signingIn ? "Signing in…" : "Sign in"}
             </button>
           </form>
 
-          <div class="auth-divider"><span>or continue with</span></div>
+          <div class="auth-divider"><span>or continue with SSO</span></div>
 
           <div class="sso-stack">
-            <button class="sso-button" type="button" disabled ${ssoUnavailable ? "data-busy=true" : ""}>
+            <button class="sso-button" type="button" disabled>
               <span class="sso-button__icon">A</span>
               <span class="sso-button__meta">
                 <strong>Sign in with Apple</strong>
-                <small>Production flow not wired yet</small>
+                <small>Coming soon</small>
               </span>
             </button>
-            <button class="sso-button" type="button" disabled ${ssoUnavailable ? "data-busy=true" : ""}>
+            <button class="sso-button" type="button" disabled>
               <span class="sso-button__icon">G</span>
               <span class="sso-button__meta">
                 <strong>Sign in with Google</strong>
-                <small>Production flow not wired yet</small>
+                <small>Coming soon</small>
               </span>
             </button>
           </div>
 
           ${
-            showDevAccess
+            showLocalDevHints
               ? `
-                  <section class="dev-access">
-                    <div class="dev-access__header">
-                      <p class="eyebrow">Local dev access</p>
-                      <p class="muted-copy">Seeded operator sessions for the current store.</p>
+                  <section class="credential-hint">
+                    <div class="credential-hint__header">
+                      <p class="eyebrow">Local seeded credentials</p>
+                      <p class="muted-copy">Use these only for localhost development unless you overrode the defaults in env.</p>
                     </div>
-                    <div class="dev-access__grid">${devAccessButtons}</div>
+                    <div class="credential-list">${devCredentials}</div>
                   </section>
                 `
               : ""
@@ -561,149 +697,78 @@ function renderAuthScreen() {
 
 function renderNavItems() {
   const availableSections = getAvailableDashboardSections();
+  const activeOrders = filterOrdersByView(state.orders, "active").length;
   return availableSections
     .map(
-      (section) => `
+      (section) => {
+        const badge =
+          section === "orders" && activeOrders > 0
+            ? `<span class="dash-nav-badge">${activeOrders}</span>`
+            : "";
+
+        return `
         <button
-          class="nav-link ${state.section === section ? "nav-link--active" : ""}"
+          class="dash-nav-item ${state.section === section ? "dash-nav-item--active" : ""}"
           type="button"
           data-action="set-section"
           data-section="${section}"
         >
-          <span>${escapeHtml(section)}</span>
+          <span class="dash-nav-item__content">
+            <span class="dash-nav-dot" aria-hidden="true"></span>
+            <span>${escapeHtml(getDashboardSectionLabel(section))}</span>
+          </span>
+          ${badge}
         </button>
-      `
+      `;
+      }
     )
     .join("");
 }
 
 function renderTopMetrics() {
-  const activeOrders = filterOrdersByView(state.orders, "active").length;
-  const visibleItems = countVisibleMenuItems(state.menuCategories);
-  const hiddenItems = countHiddenMenuItems(state.menuCategories);
-  const teamCount = state.teamUsers.length;
+  const overview = getOverviewSnapshot();
 
   return `
-    <div class="hero-metrics">
-      <article class="metric-card">
-        <span class="metric-card__label">Active orders</span>
-        <strong>${activeOrders}</strong>
-      </article>
-      <article class="metric-card">
-        <span class="metric-card__label">Visible menu items</span>
-        <strong>${visibleItems}</strong>
-      </article>
-      <article class="metric-card">
-        <span class="metric-card__label">Hidden items</span>
-        <strong>${hiddenItems}</strong>
-      </article>
-      <article class="metric-card">
-        <span class="metric-card__label">Team members</span>
-        <strong>${teamCount}</strong>
-      </article>
+    <div class="dash-kpi-row">
+      ${overview.metrics
+        .map(
+          (metric) => `
+            <article class="dash-kpi-card">
+              <span class="dash-kpi-label">${escapeHtml(metric.label)}</span>
+              <strong class="dash-kpi-value">${escapeHtml(metric.value)}</strong>
+              <span class="dash-kpi-delta dash-kpi-delta--${metric.trend.tone}">${escapeHtml(metric.trend.text)}</span>
+            </article>
+          `
+        )
+        .join("")}
     </div>
   `;
 }
 
-function renderRuntimeSummary() {
-  if (!state.appConfig || !state.session) {
-    return "";
-  }
-
-  const labels = getAppConfigCapabilityLabels(state.appConfig);
-  const capabilityPills = state.session.operator.capabilities
-    .map((capability: string) => `<span class="pill pill--accent">${escapeHtml(capability)}</span>`)
-    .join("");
-  const runtimePills = labels.map((label) => `<span class="pill">${escapeHtml(label)}</span>`).join("");
-
-  return `
-    <section class="panel panel--runtime">
-      <div class="panel-header">
-        <div>
-          <p class="eyebrow">Runtime</p>
-          <h3>Store capabilities and feature flags</h3>
-        </div>
-        <span class="subtle-chip">${escapeHtml(formatRelativeRefresh(state.lastRefreshedAt))}</span>
-      </div>
-      <div class="pill-row">${capabilityPills}${runtimePills}</div>
-    </section>
-  `;
-}
-
 function renderOverviewSection() {
-  const storeName = state.storeConfig?.storeName ?? state.appConfig?.brand.locationName ?? "Operator workspace";
-  const liveOrdersEnabled = state.appConfig?.featureFlags.orderTracking ? "Enabled" : "Disabled";
-  const quickActions = getAvailableDashboardSections()
-    .filter((section) => section !== "overview")
+  const overview = getOverviewSnapshot();
+  const chartBars = overview.chartBars
     .map(
-      (section) => `
-        <button class="quick-action" type="button" data-action="set-section" data-section="${section}">
-          <strong>${escapeHtml(section)}</strong>
-          <span>Open ${escapeHtml(section)} workspace</span>
-        </button>
-      `
-    )
-    .join("");
-  const teamPreview = state.teamUsers
-    .slice(0, 4)
-    .map(
-      (user) => `
-        <div class="team-preview-row">
-          <span>
-            <strong>${escapeHtml(user.displayName)}</strong>
-            <small>${escapeHtml(getOperatorRoleLabel(user.role))}</small>
-          </span>
-          <span class="subtle-chip ${user.active ? "" : "subtle-chip--muted"}">${user.active ? "Active" : "Inactive"}</span>
+      (bar) => `
+        <div class="dash-bar-column">
+          <div class="dash-bar ${bar.highlighted ? "dash-bar--active" : ""}" style="height: ${bar.height}%"></div>
+          <span class="dash-bar-label">${escapeHtml(bar.label)}</span>
         </div>
       `
     )
     .join("");
 
   return `
-    <section class="content-grid content-grid--overview">
-      <article class="panel panel--spotlight">
-        <p class="eyebrow">Store pulse</p>
-        <h2>${escapeHtml(storeName)}</h2>
-        <p class="muted-copy">
-          Order tracking is <strong>${escapeHtml(liveOrdersEnabled)}</strong>. Menu editing is
-          <strong>${state.appConfig?.featureFlags.menuEditing ? " enabled" : " read only"}</strong>.
-        </p>
-        ${renderTopMetrics()}
-      </article>
-
-      <article class="panel">
-        <div class="panel-header">
-          <div>
-            <p class="eyebrow">Quick Actions</p>
-            <h3>Jump into the next task</h3>
-          </div>
+    <section class="dash-overview">
+      ${renderTopMetrics()}
+      <section class="dash-chart-panel">
+        <div class="dash-panel-header">
+          <div class="dash-panel-title">Orders — Last 7 Days</div>
         </div>
-        <div class="quick-action-grid">${quickActions || `<p class="muted-copy">No additional sections available for this role.</p>`}</div>
-      </article>
-
-      <article class="panel">
-        <div class="panel-header">
-          <div>
-            <p class="eyebrow">Store Settings</p>
-            <h3>Operations summary</h3>
-          </div>
+        <div class="dash-chart-body">
+          <div class="dash-bars">${chartBars}</div>
         </div>
-        <div class="detail-list">
-          <div class="detail-row"><span>Hours</span><strong>${escapeHtml(state.storeConfig?.hours ?? "Unavailable")}</strong></div>
-          <div class="detail-row"><span>Pickup</span><strong>${escapeHtml(state.storeConfig?.pickupInstructions ?? "Unavailable")}</strong></div>
-          <div class="detail-row"><span>Location</span><strong>${escapeHtml(state.session?.operator.locationId ?? "Unknown")}</strong></div>
-        </div>
-      </article>
-
-      <article class="panel">
-        <div class="panel-header">
-          <div>
-            <p class="eyebrow">Team</p>
-            <h3>Assigned operator access</h3>
-          </div>
-        </div>
-        <div class="team-preview">${teamPreview || `<p class="muted-copy">No team directory access for this role.</p>`}</div>
-      </article>
+      </section>
     </section>
   `;
 }
@@ -719,7 +784,7 @@ function renderOrderFilterRow(activeOrderCount: number, completedOrderCount: num
     .map(
       (filter) => `
         <button
-          class="filter-btn ${state.orderFilter === filter.key ? "filter-btn--active" : ""}"
+          class="dash-segment-button ${state.orderFilter === filter.key ? "dash-segment-button--active" : ""}"
           type="button"
           data-action="set-order-filter"
           data-order-filter="${filter.key}"
@@ -729,6 +794,43 @@ function renderOrderFilterRow(activeOrderCount: number, completedOrderCount: num
       `
     )
     .join("");
+}
+
+function getOrderStatusTone(status: OperatorOrder["status"]) {
+  switch (status) {
+    case "READY":
+    case "COMPLETED":
+      return "success";
+    case "CANCELED":
+      return "danger";
+    case "IN_PREP":
+      return "warning";
+    case "PENDING_PAYMENT":
+    default:
+      return "neutral";
+  }
+}
+
+function renderOrderStatusBadge(status: OperatorOrder["status"]) {
+  return `<span class="dash-status-badge dash-status-badge--${getOrderStatusTone(status)}">${escapeHtml(formatOrderStatus(status))}</span>`;
+}
+
+function renderSectionHeading(config: {
+  eyebrow: string;
+  title: string;
+  description: string;
+  actions?: string;
+}) {
+  return `
+    <div class="dash-section-heading">
+      <div>
+        <div class="dash-panel-title">${escapeHtml(config.eyebrow)}</div>
+        <h2 class="dash-section-title">${escapeHtml(config.title)}</h2>
+        <p class="muted-copy">${escapeHtml(config.description)}</p>
+      </div>
+      ${config.actions ? `<div class="dash-section-actions">${config.actions}</div>` : ""}
+    </div>
+  `;
 }
 
 function renderCancelButton(order: OperatorOrder, manualStatusControlsEnabled: boolean) {
@@ -805,34 +907,59 @@ function renderOrderDetail(order: OperatorOrder, appConfig: AppConfig | null) {
       `
     )
     .join("");
+  const latestTimelineEntry = order.timeline[order.timeline.length - 1];
 
   return `
-    <div class="panel-header">
+    <div class="dash-detail-header">
       <div>
-        <p class="eyebrow">Order Detail</p>
-        <h3>${escapeHtml(order.pickupCode)}</h3>
+        <div class="dash-panel-title">Order detail</div>
+        <h3 class="dash-surface-title">${escapeHtml(order.pickupCode)}</h3>
         <p class="muted-copy">${escapeHtml(getOrderCustomerLabel(order))}</p>
       </div>
-      <span class="subtle-chip">${escapeHtml(formatOrderStatus(order.status))}</span>
+      ${renderOrderStatusBadge(order.status)}
     </div>
-    <p class="muted-copy">${escapeHtml(order.locationId)} · ${formatMoney(order.total.amountCents)}</p>
-    <div class="detail-stack">${items || `<p class="muted-copy">No line items recorded for this order.</p>`}</div>
+    <div class="dash-detail-grid">
+      <div class="dash-detail-metric">
+        <span>Store</span>
+        <strong>${escapeHtml(order.locationId)}</strong>
+      </div>
+      <div class="dash-detail-metric">
+        <span>Total</span>
+        <strong>${formatMoney(order.total.amountCents)}</strong>
+      </div>
+      <div class="dash-detail-metric">
+        <span>Last update</span>
+        <strong>${escapeHtml(latestTimelineEntry ? formatDateTime(latestTimelineEntry.occurredAt) : "Just now")}</strong>
+      </div>
+    </div>
+    <div class="dash-detail-block">
+      <div class="dash-detail-block__label">Items</div>
+      <div class="detail-stack">${items || `<p class="muted-copy">No line items recorded for this order.</p>`}</div>
+    </div>
     ${
       manualStatusControlsEnabled
         ? `<div class="button-row">${actionButtons}${renderCancelButton(order, manualStatusControlsEnabled)}</div>`
         : `<p class="muted-copy">Time-based fulfillment is active, so manual order controls are disabled.</p>`
     }
-    <div class="timeline-stack">${timeline}</div>
+    <div class="dash-detail-block">
+      <div class="dash-detail-block__label">Timeline</div>
+      <div class="timeline-stack">${timeline}</div>
+    </div>
   `;
 }
 
 function renderOrdersSection() {
   if (!state.appConfig?.featureFlags.orderTracking) {
     return `
-      <section class="panel">
-        <p class="eyebrow">Orders</p>
-        <h3>Live order tracking is disabled for this store.</h3>
-        <p class="muted-copy">Enable the order-tracking feature flag before using the live operations board.</p>
+      <section class="dash-section">
+        ${renderSectionHeading({
+          eyebrow: "Orders",
+          title: "Live order tracking is paused.",
+          description: "Enable order tracking in store capabilities before using the operations board."
+        })}
+        <article class="dash-surface dash-empty-surface">
+          <p class="muted-copy">This workspace will show incoming orders, prep states, and fulfillment activity once the live order board is enabled for the store.</p>
+        </article>
       </section>
     `;
   }
@@ -846,12 +973,13 @@ function renderOrdersSection() {
       ? visibleOrders
           .map(
             (order) => `
-              <button class="list-row ${selectedOrder?.id === order.id ? "list-row--selected" : ""}" type="button" data-action="select-order" data-order-id="${order.id}">
-                <span>
+              <button class="dash-order-row ${selectedOrder?.id === order.id ? "dash-order-row--selected" : ""}" type="button" data-action="select-order" data-order-id="${order.id}">
+                <span class="dash-order-row__main">
                   <strong>${escapeHtml(order.pickupCode)}</strong>
-                  <span class="list-subtitle">${escapeHtml(formatOrderStatus(order.status))} · ${escapeHtml(getOrderCustomerLabel(order))}</span>
+                  <span class="dash-order-row__meta">${escapeHtml(getOrderCustomerLabel(order))}</span>
                 </span>
-                <span class="list-amount">${formatMoney(order.total.amountCents)}</span>
+                ${renderOrderStatusBadge(order.status)}
+                <span class="dash-order-row__amount">${formatMoney(order.total.amountCents)}</span>
               </button>
             `
           )
@@ -859,100 +987,118 @@ function renderOrdersSection() {
       : `<p class="muted-copy">No orders are loaded for the selected view.</p>`;
 
   return `
-    <section class="content-grid content-grid--orders">
-      <article class="panel">
-        <div class="panel-header">
-          <div>
-            <p class="eyebrow">Orders</p>
-            <h3>${visibleOrders.length} in view</h3>
+    <section class="dash-section">
+      ${renderSectionHeading({
+        eyebrow: "Orders",
+        title: "Live order operations",
+        description: "Track incoming orders and move drinks through prep without leaving the dashboard.",
+        actions: `
+          <div class="dash-segmented-control">
+            ${renderOrderFilterRow(activeOrders.length, completedOrders.length)}
           </div>
-          <span class="subtle-chip">${escapeHtml(formatRelativeRefresh(state.lastRefreshedAt))}</span>
-        </div>
-        <div class="filter-row">${renderOrderFilterRow(activeOrders.length, completedOrders.length)}</div>
-        <div class="list-stack">${orderRows}</div>
-      </article>
+          <button class="button button--ghost" type="button" data-action="refresh" ${state.loading ? "disabled" : ""}>
+            ${state.loading ? "Refreshing…" : "Refresh"}
+          </button>
+        `
+      })}
+      <div class="dash-split-layout dash-split-layout--orders">
+        <article class="dash-surface">
+          <div class="dash-surface-head">
+            <div>
+              <div class="dash-panel-title">Queue</div>
+              <h3 class="dash-surface-title">${visibleOrders.length} in view</h3>
+            </div>
+            <span class="dash-inline-note">${escapeHtml(formatRelativeRefresh(state.lastRefreshedAt))}</span>
+          </div>
+          <div class="dash-order-list">${orderRows}</div>
+        </article>
 
-      <article class="panel">
-        ${selectedOrder ? renderOrderDetail(selectedOrder, state.appConfig) : `<p class="muted-copy">Select an order to inspect its line items and timeline.</p>`}
-      </article>
+        <article class="dash-surface">
+          ${
+            selectedOrder
+              ? renderOrderDetail(selectedOrder, state.appConfig)
+              : `<div class="dash-empty-surface"><p class="muted-copy">Select an order to inspect its items and fulfillment timeline.</p></div>`
+          }
+        </article>
+      </div>
     </section>
   `;
 }
 
 function renderMenuCategory(category: OperatorMenuCategory, canWrite: boolean, canToggleVisibility: boolean) {
   return `
-    <article class="panel">
-      <div class="panel-header">
+    <section class="dash-data-group">
+      <div class="dash-data-group__header">
         <div>
-          <p class="eyebrow">Category</p>
-          <h3>${escapeHtml(category.title)}</h3>
+          <div class="dash-panel-title">Category</div>
+          <h3 class="dash-surface-title">${escapeHtml(category.title)}</h3>
         </div>
-        <span class="subtle-chip">${category.items.length} items</span>
+        <span class="dash-inline-note">${category.items.length} items</span>
       </div>
-      <div class="card-stack">
-        ${category.items
-          .map((item) => {
-            const visibilityButton = canToggleVisibility
-              ? `
-                  <button
-                    class="button ${item.visible ? "button--secondary" : "button--ghost"}"
-                    type="button"
-                    data-action="toggle-menu-visibility"
-                    data-item-id="${item.itemId}"
-                    data-visible="${item.visible ? "false" : "true"}"
-                    ${state.busyMenuVisibilityItemId === item.itemId ? "disabled" : ""}
-                  >
-                    ${state.busyMenuVisibilityItemId === item.itemId ? "Saving…" : item.visible ? "Hide item" : "Show item"}
-                  </button>
-                `
-              : "";
+      <div class="dash-data-group__rows">
+        ${
+          category.items.length > 0
+            ? category.items
+                .map((item) => {
+                  const visibilityButton = canToggleVisibility
+                    ? `
+                        <button
+                          class="button ${item.visible ? "button--secondary" : "button--ghost"}"
+                          type="button"
+                          data-action="toggle-menu-visibility"
+                          data-item-id="${item.itemId}"
+                          data-visible="${item.visible ? "false" : "true"}"
+                          ${state.busyMenuVisibilityItemId === item.itemId ? "disabled" : ""}
+                        >
+                          ${state.busyMenuVisibilityItemId === item.itemId ? "Saving…" : item.visible ? "Hide" : "Show"}
+                        </button>
+                      `
+                    : "";
 
-            return `
-              <form class="editor-card" data-form="menu-item" data-item-id="${item.itemId}">
-                <div class="editor-card__header">
-                  <div>
-                    <strong>${escapeHtml(item.name)}</strong>
-                    <p>${escapeHtml(item.description ?? item.itemId)}</p>
-                  </div>
-                  <span class="subtle-chip ${item.visible ? "" : "subtle-chip--muted"}">${item.visible ? "Visible" : "Hidden"}</span>
-                </div>
-
-                <label class="field">
-                  <span>Name</span>
-                  <input name="name" value="${escapeHtml(item.name)}" ${canWrite ? "" : "disabled"} required />
-                </label>
-
-                <label class="field">
-                  <span>Price (cents)</span>
-                  <input name="priceCents" type="number" min="0" step="1" value="${item.priceCents}" ${canWrite ? "" : "disabled"} required />
-                </label>
-
-                <label class="toggle toggle--inline">
-                  <input type="checkbox" name="visible" ${item.visible ? "checked" : ""} ${canWrite ? "" : "disabled"} />
-                  <span>${item.visible ? "Visible in app" : "Hidden from app"}</span>
-                </label>
-
-                <div class="button-row">
-                  ${
-                    canWrite
-                      ? `
-                          <button class="button button--secondary" type="submit" ${state.busyMenuItemId === item.itemId ? "disabled" : ""}>
-                            ${state.busyMenuItemId === item.itemId ? "Saving…" : "Save item"}
-                          </button>
-                          <button class="button button--ghost" type="button" data-action="delete-menu-item" data-item-id="${item.itemId}" ${state.busyDeleteMenuItemId === item.itemId ? "disabled" : ""}>
-                            ${state.busyDeleteMenuItemId === item.itemId ? "Removing…" : "Remove"}
-                          </button>
-                        `
-                      : ""
-                  }
-                  ${visibilityButton}
-                </div>
-              </form>
-            `;
-          })
-          .join("")}
+                  return `
+                    <form class="dash-data-row" data-form="menu-item" data-item-id="${item.itemId}">
+                      <div class="dash-data-row__identity">
+                        <strong>${escapeHtml(item.name)}</strong>
+                        <span>${escapeHtml(item.description ?? item.itemId)}</span>
+                      </div>
+                      <div class="dash-data-row__fields">
+                        <label class="field dash-field-inline">
+                          <span>Name</span>
+                          <input name="name" value="${escapeHtml(item.name)}" ${canWrite ? "" : "disabled"} required />
+                        </label>
+                        <label class="field dash-field-inline">
+                          <span>Price (cents)</span>
+                          <input name="priceCents" type="number" min="0" step="1" value="${item.priceCents}" ${canWrite ? "" : "disabled"} required />
+                        </label>
+                        <label class="toggle dash-toggle-inline">
+                          <input type="checkbox" name="visible" ${item.visible ? "checked" : ""} ${canWrite ? "" : "disabled"} />
+                          <span>${item.visible ? "Visible" : "Hidden"}</span>
+                        </label>
+                      </div>
+                      <div class="dash-data-row__actions">
+                        <span class="dash-status-badge dash-status-badge--${item.visible ? "success" : "neutral"}">${item.visible ? "Visible" : "Hidden"}</span>
+                        ${
+                          canWrite
+                            ? `
+                                <button class="button button--secondary" type="submit" ${state.busyMenuItemId === item.itemId ? "disabled" : ""}>
+                                  ${state.busyMenuItemId === item.itemId ? "Saving…" : "Save"}
+                                </button>
+                                <button class="button button--ghost" type="button" data-action="delete-menu-item" data-item-id="${item.itemId}" ${state.busyDeleteMenuItemId === item.itemId ? "disabled" : ""}>
+                                  ${state.busyDeleteMenuItemId === item.itemId ? "Removing…" : "Remove"}
+                                </button>
+                              `
+                            : ""
+                        }
+                        ${visibilityButton}
+                      </div>
+                    </form>
+                  `;
+                })
+                .join("")
+            : `<div class="dash-empty-surface"><p class="muted-copy">No items are in this category yet.</p></div>`
+        }
       </div>
-    </article>
+    </section>
   `;
 }
 
@@ -961,15 +1107,15 @@ function renderMenuSection() {
   const canToggleVisibility = Boolean(state.appConfig?.featureFlags.menuEditing) && canAccessCapability(state.session?.operator, "menu:visibility");
   const createForm = canWrite
     ? `
-        <article class="panel panel--create">
-          <div class="panel-header">
+        <article class="dash-surface">
+          <div class="dash-surface-head">
             <div>
-              <p class="eyebrow">Create item</p>
-              <h3>Add a menu item</h3>
+              <div class="dash-panel-title">Create item</div>
+              <h3 class="dash-surface-title">Add to the synced menu</h3>
             </div>
           </div>
-          <form class="form-grid" data-form="menu-create">
-            <label class="field">
+          <form class="dash-inline-form dash-inline-form--menu" data-form="menu-create">
+            <label class="field dash-field-inline">
               <span>Category</span>
               <select name="categoryId">
                 ${state.menuCategories
@@ -977,21 +1123,21 @@ function renderMenuSection() {
                   .join("")}
               </select>
             </label>
-            <label class="field">
+            <label class="field dash-field-inline">
               <span>Name</span>
               <input name="name" placeholder="Seasonal latte" required />
             </label>
-            <label class="field">
+            <label class="field dash-field-inline">
               <span>Description</span>
               <input name="description" placeholder="Short item description" />
             </label>
-            <label class="field">
+            <label class="field dash-field-inline">
               <span>Price (cents)</span>
               <input name="priceCents" type="number" min="0" step="1" value="675" required />
             </label>
-            <label class="toggle toggle--inline">
+            <label class="toggle dash-toggle-inline">
               <input type="checkbox" name="visible" checked />
-              <span>Visible in customer app</span>
+              <span>Visible</span>
             </label>
             <button class="button button--primary" type="submit" ${state.creatingMenuItem ? "disabled" : ""}>
               ${state.creatingMenuItem ? "Creating…" : "Create item"}
@@ -1002,66 +1148,101 @@ function renderMenuSection() {
     : "";
 
   return `
-    <section class="section-stack">
+    <section class="dash-section">
+      ${renderSectionHeading({
+        eyebrow: "Menu",
+        title: "Menu management",
+        description: "Keep the live customer menu clean, available, and accurate."
+      })}
       ${
         state.appConfig?.featureFlags.menuEditing
           ? ""
-          : `<section class="panel"><p class="muted-copy">Menu editing is disabled for this store. Operators can review the live menu but cannot mutate it.</p></section>`
+          : `<article class="dash-surface dash-empty-surface"><p class="muted-copy">Menu editing is disabled for this store. Operators can review the live menu but cannot change it.</p></article>`
       }
       ${createForm}
-      <section class="content-grid content-grid--menu">
-        ${state.menuCategories.length > 0 ? state.menuCategories.map((category) => renderMenuCategory(category, canWrite, canToggleVisibility)).join("") : `<article class="panel"><p class="muted-copy">No menu data is available yet.</p></article>`}
-      </section>
+      <article class="dash-surface">
+        ${
+          state.menuCategories.length > 0
+            ? state.menuCategories.map((category) => renderMenuCategory(category, canWrite, canToggleVisibility)).join("")
+            : `<div class="dash-empty-surface"><p class="muted-copy">No menu data is available yet.</p></div>`
+        }
+      </article>
     </section>
   `;
 }
 
 function renderStoreSection() {
   if (!state.storeConfig) {
-    return `<section class="panel"><p class="muted-copy">Loading store configuration…</p></section>`;
+    return `
+      <section class="dash-section">
+        ${renderSectionHeading({
+          eyebrow: "Settings",
+          title: "Store configuration",
+          description: "Loading the latest store configuration."
+        })}
+        <article class="dash-surface dash-empty-surface"><p class="muted-copy">Loading store configuration…</p></article>
+      </section>
+    `;
   }
 
   const canWrite = canAccessCapability(state.session?.operator, "store:write");
 
   return `
-    <section class="panel panel--store">
-      <div class="panel-header">
-        <div>
-          <p class="eyebrow">Store configuration</p>
-          <h3>${escapeHtml(state.storeConfig.storeName)}</h3>
+    <section class="dash-section">
+      ${renderSectionHeading({
+        eyebrow: "Settings",
+        title: state.storeConfig.storeName,
+        description: "Update store identity, hours, and customer pickup instructions."
+      })}
+      <article class="dash-surface">
+        <div class="dash-surface-head">
+          <div>
+            <div class="dash-panel-title">Store</div>
+            <h3 class="dash-surface-title">${escapeHtml(state.storeConfig.locationId)}</h3>
+          </div>
         </div>
-        <span class="subtle-chip">${escapeHtml(state.storeConfig.locationId)}</span>
-      </div>
 
-      ${
-        canWrite
-          ? `
-              <form class="form-stack" data-form="store-config">
-                <label class="field">
-                  <span>Store name</span>
-                  <input name="storeName" value="${escapeHtml(state.storeConfig.storeName)}" required />
-                </label>
-                <label class="field">
-                  <span>Hours</span>
-                  <input name="hours" value="${escapeHtml(state.storeConfig.hours)}" required />
-                </label>
-                <label class="field">
-                  <span>Pickup instructions</span>
-                  <textarea name="pickupInstructions" rows="4" required>${escapeHtml(state.storeConfig.pickupInstructions)}</textarea>
-                </label>
-                <button class="button button--primary" type="submit" ${state.savingStore ? "disabled" : ""}>
-                  ${state.savingStore ? "Saving…" : "Save store settings"}
-                </button>
-              </form>
-            `
-          : `
-              <div class="detail-list">
-                <div class="detail-row"><span>Store name</span><strong>${escapeHtml(state.storeConfig.storeName)}</strong></div>
-                <div class="detail-row"><span>Hours</span><strong>${escapeHtml(state.storeConfig.hours)}</strong></div>
-                <div class="detail-row"><span>Pickup instructions</span><strong>${escapeHtml(state.storeConfig.pickupInstructions)}</strong></div>
-              </div>
-            `
-      }
+        ${
+          canWrite
+            ? `
+                <form class="dash-store-form" data-form="store-config">
+                  <label class="field">
+                    <span>Store name</span>
+                    <input name="storeName" value="${escapeHtml(state.storeConfig.storeName)}" required />
+                  </label>
+                  <label class="field">
+                    <span>Hours</span>
+                    <input name="hours" value="${escapeHtml(state.storeConfig.hours)}" required />
+                  </label>
+                  <label class="field dash-store-form__wide">
+                    <span>Pickup instructions</span>
+                    <textarea name="pickupInstructions" rows="4" required>${escapeHtml(state.storeConfig.pickupInstructions)}</textarea>
+                  </label>
+                  <div class="dash-form-actions dash-store-form__wide">
+                    <button class="button button--primary" type="submit" ${state.savingStore ? "disabled" : ""}>
+                      ${state.savingStore ? "Saving…" : "Save store settings"}
+                    </button>
+                  </div>
+                </form>
+              `
+            : `
+                <div class="dash-detail-grid">
+                  <div class="dash-detail-metric">
+                    <span>Store name</span>
+                    <strong>${escapeHtml(state.storeConfig.storeName)}</strong>
+                  </div>
+                  <div class="dash-detail-metric">
+                    <span>Hours</span>
+                    <strong>${escapeHtml(state.storeConfig.hours)}</strong>
+                  </div>
+                  <div class="dash-detail-metric dash-detail-metric--wide">
+                    <span>Pickup instructions</span>
+                    <strong>${escapeHtml(state.storeConfig.pickupInstructions)}</strong>
+                  </div>
+                </div>
+              `
+        }
+      </article>
     </section>
   `;
 }
@@ -1069,33 +1250,42 @@ function renderStoreSection() {
 function renderTeamSection() {
   const canWrite = canAccessCapability(state.session?.operator, "staff:write");
   return `
-    <section class="section-stack">
+    <section class="dash-section">
+      ${renderSectionHeading({
+        eyebrow: "Team",
+        title: "Staff access",
+        description: "Control who can operate the store workspace and what level of access they have."
+      })}
       ${
         canWrite
           ? `
-              <article class="panel panel--create">
-                <div class="panel-header">
+              <article class="dash-surface">
+                <div class="dash-surface-head">
                   <div>
-                    <p class="eyebrow">Invite operator</p>
-                    <h3>Add a team member</h3>
+                    <div class="dash-panel-title">Create operator</div>
+                    <h3 class="dash-surface-title">Add a team member</h3>
                   </div>
                 </div>
-                <form class="form-grid" data-form="team-create">
-                  <label class="field">
+                <form class="dash-inline-form dash-inline-form--team" data-form="team-create">
+                  <label class="field dash-field-inline">
                     <span>Name</span>
                     <input name="displayName" placeholder="Avery Quinn" required />
                   </label>
-                  <label class="field">
+                  <label class="field dash-field-inline">
                     <span>Email</span>
                     <input name="email" type="email" placeholder="avery@store.com" required />
                   </label>
-                  <label class="field">
+                  <label class="field dash-field-inline">
                     <span>Role</span>
                     <select name="role">
                       <option value="staff">Staff</option>
                       <option value="manager">Manager</option>
                       <option value="owner">Owner</option>
                     </select>
+                  </label>
+                  <label class="field dash-field-inline">
+                    <span>Temporary password</span>
+                    <input name="password" type="password" placeholder="Minimum 8 characters" minlength="8" required />
                   </label>
                   <button class="button button--primary" type="submit" ${state.creatingTeamUser ? "disabled" : ""}>
                     ${state.creatingTeamUser ? "Creating…" : "Create operator"}
@@ -1106,58 +1296,80 @@ function renderTeamSection() {
           : ""
       }
 
-      <section class="content-grid content-grid--team">
+      <article class="dash-surface">
+        <div class="dash-surface-head">
+          <div>
+            <div class="dash-panel-title">Team</div>
+            <h3 class="dash-surface-title">${state.teamUsers.length} active accounts</h3>
+          </div>
+        </div>
+        <div class="dash-data-group__rows">
         ${
           state.teamUsers.length > 0
             ? state.teamUsers
                 .map(
                   (user) => `
-                    <form class="editor-card editor-card--team" data-form="team-user" data-operator-user-id="${user.operatorUserId}">
-                      <div class="editor-card__header">
+                    <form class="dash-data-row dash-data-row--team" data-form="team-user" data-operator-user-id="${user.operatorUserId}">
+                      <div class="dash-data-row__identity dash-data-row__identity--with-avatar">
+                        <span class="dash-avatar">${escapeHtml(getOperatorInitials(user.displayName))}</span>
                         <div>
                           <strong>${escapeHtml(user.displayName)}</strong>
-                          <p>${escapeHtml(user.email)}</p>
+                          <span>${escapeHtml(user.email)}</span>
                         </div>
-                        <span class="subtle-chip ${user.active ? "" : "subtle-chip--muted"}">${user.active ? "Active" : "Inactive"}</span>
                       </div>
-
-                      <label class="field">
-                        <span>Name</span>
-                        <input name="displayName" value="${escapeHtml(user.displayName)}" ${canWrite ? "" : "disabled"} />
-                      </label>
-                      <label class="field">
-                        <span>Email</span>
-                        <input name="email" type="email" value="${escapeHtml(user.email)}" ${canWrite ? "" : "disabled"} />
-                      </label>
-                      <label class="field">
-                        <span>Role</span>
-                        <select name="role" ${canWrite ? "" : "disabled"}>
-                          ${(["owner", "manager", "staff"] as const)
-                            .map((role) => `<option value="${role}" ${role === user.role ? "selected" : ""}>${escapeHtml(getOperatorRoleLabel(role))}</option>`)
-                            .join("")}
-                        </select>
-                      </label>
-                      <label class="toggle toggle--inline">
-                        <input type="checkbox" name="active" ${user.active ? "checked" : ""} ${canWrite ? "" : "disabled"} />
-                        <span>Account active</span>
-                      </label>
-
+                      <div class="dash-data-row__fields">
+                        <label class="field dash-field-inline">
+                          <span>Name</span>
+                          <input name="displayName" value="${escapeHtml(user.displayName)}" ${canWrite ? "" : "disabled"} />
+                        </label>
+                        <label class="field dash-field-inline">
+                          <span>Email</span>
+                          <input name="email" type="email" value="${escapeHtml(user.email)}" ${canWrite ? "" : "disabled"} />
+                        </label>
+                        <label class="field dash-field-inline">
+                          <span>Role</span>
+                          <select name="role" ${canWrite ? "" : "disabled"}>
+                            ${(["owner", "manager", "staff"] as const)
+                              .map((role) => `<option value="${role}" ${role === user.role ? "selected" : ""}>${escapeHtml(getOperatorRoleLabel(role))}</option>`)
+                              .join("")}
+                          </select>
+                        </label>
                       ${
                         canWrite
                           ? `
-                              <button class="button button--secondary" type="submit" ${state.busyTeamUserId === user.operatorUserId ? "disabled" : ""}>
-                                ${state.busyTeamUserId === user.operatorUserId ? "Saving…" : "Save operator"}
-                              </button>
+                              <label class="field dash-field-inline">
+                                <span>Reset password</span>
+                                <input name="password" type="password" placeholder="Leave blank to keep current password" minlength="8" />
+                              </label>
                             `
                           : ""
                       }
+                        <label class="toggle dash-toggle-inline">
+                          <input type="checkbox" name="active" ${user.active ? "checked" : ""} ${canWrite ? "" : "disabled"} />
+                          <span>${user.active ? "Active" : "Inactive"}</span>
+                        </label>
+                      </div>
+
+                      <div class="dash-data-row__actions">
+                        <span class="dash-status-badge dash-status-badge--${user.active ? "success" : "neutral"}">${user.active ? "Active" : "Inactive"}</span>
+                        ${
+                          canWrite
+                            ? `
+                                <button class="button button--secondary" type="submit" ${state.busyTeamUserId === user.operatorUserId ? "disabled" : ""}>
+                                  ${state.busyTeamUserId === user.operatorUserId ? "Saving…" : "Save"}
+                                </button>
+                              `
+                            : ""
+                        }
+                      </div>
                     </form>
                   `
                 )
                 .join("")
-            : `<article class="panel"><p class="muted-copy">No team members available for this store yet.</p></article>`
+            : `<div class="dash-empty-surface"><p class="muted-copy">No team members available for this store yet.</p></div>`
         }
-      </section>
+        </div>
+      </article>
     </section>
   `;
 }
@@ -1180,51 +1392,59 @@ function renderDashboardContent() {
 
 function renderDashboard() {
   ensureSectionIsAvailable();
+  const locationLabel = state.appConfig?.brand.locationName ?? state.storeConfig?.storeName ?? "Operator dashboard";
+  const marketLabel = state.appConfig?.brand.marketLabel ?? "Store operations";
+  const liveEnabled = state.appConfig?.featureFlags.orderTracking !== false;
 
   return `
-    <main class="app-shell">
-      <aside class="sidebar">
-        <div class="sidebar__brand">
-          <p class="eyebrow">LatteLink</p>
-          <h1>Operator</h1>
-          <p class="muted-copy">Premium control surface for each store team.</p>
+    <div class="dash-shell">
+      <aside class="dash-sidebar">
+        <div class="dash-logo-area">
+          <div class="dash-lockup">
+            <span class="dash-icon">${renderBrandMark()}</span>
+            <span class="dash-wordmark">Latte<span>Link</span></span>
+          </div>
+          <div class="dash-shop-block">
+            <div>
+              <div class="dash-shop-name">${escapeHtml(locationLabel)}</div>
+              <div class="dash-shop-sub">${escapeHtml(marketLabel)} · 1 location</div>
+            </div>
+            <div class="dash-chevron">▾</div>
+          </div>
         </div>
 
-        <nav class="sidebar__nav" aria-label="Operator sections">
+        <nav class="dash-nav" aria-label="Operator sections">
           ${renderNavItems()}
         </nav>
 
-        <div class="sidebar__footer">
-          <div>
-            <strong>${escapeHtml(state.session?.operator.displayName ?? "Operator")}</strong>
-            <p>${escapeHtml(getOperatorRoleLabel(state.session?.operator.role ?? "staff"))}</p>
+        <div class="dash-sidebar-footer">
+          <div class="dash-user-row">
+            <div class="dash-avatar">${escapeHtml(getOperatorInitials(state.session?.operator.displayName))}</div>
+            <div>
+              <div class="dash-user-name">${escapeHtml(state.session?.operator.displayName ?? "Operator")}</div>
+              <div class="dash-user-role">${escapeHtml(getOperatorRoleLabel(state.session?.operator.role ?? "staff"))}</div>
+            </div>
           </div>
-          <span class="subtle-chip">${escapeHtml(state.session?.operator.locationId ?? "")}</span>
+          <button class="dash-signout" type="button" data-action="sign-out">Sign out</button>
         </div>
       </aside>
 
-      <section class="workspace">
-        <header class="workspace-hero">
-          <div>
-            <p class="eyebrow">Client workspace</p>
-            <h2>${escapeHtml(state.appConfig?.brand.locationName ?? state.storeConfig?.storeName ?? "Operator dashboard")}</h2>
-            <p class="muted-copy">
-              ${escapeHtml(state.appConfig?.brand.marketLabel ?? "Store operations")} · ${escapeHtml(formatRelativeRefresh(state.lastRefreshedAt))}
-            </p>
+      <div class="dash-main">
+        <div class="dash-topbar">
+          <div class="dash-page-title">${escapeHtml(getDashboardSectionLabel(state.section))}</div>
+          <div class="dash-date">${escapeHtml(formatDashboardDate())}</div>
+          <div class="dash-live-pill ${liveEnabled ? "" : "dash-live-pill--muted"}">
+            <div class="dash-live-dot"></div>
+            ${liveEnabled ? "Live" : "Paused"}
           </div>
-          <div class="button-row">
-            <button class="button button--secondary" type="button" data-action="refresh" ${state.loading ? "disabled" : ""}>
-              ${state.loading ? "Refreshing…" : "Refresh"}
-            </button>
-            <button class="button button--ghost" type="button" data-action="sign-out">Sign out</button>
-          </div>
-        </header>
+        </div>
 
-        ${renderBanner()}
-        ${renderRuntimeSummary()}
-        ${renderDashboardContent()}
-      </section>
-    </main>
+        <div class="dash-content">
+          ${renderBanner()}
+          ${renderDashboardContent()}
+        </div>
+      </div>
+    </div>
   `;
 }
 
@@ -1232,10 +1452,11 @@ function render() {
   root.innerHTML = state.session ? renderDashboard() : renderAuthScreen();
 }
 
-async function handleMagicLinkRequest(form: HTMLFormElement) {
+async function handlePasswordSignIn(form: HTMLFormElement) {
   const formData = new FormData(form);
   const apiBaseUrl = String(formData.get("apiBaseUrl") ?? resolveDefaultApiBaseUrl());
   const email = String(formData.get("email") ?? "").trim();
+  const password = String(formData.get("password") ?? "");
 
   if (!email) {
     setError("A work email is required.");
@@ -1243,38 +1464,26 @@ async function handleMagicLinkRequest(form: HTMLFormElement) {
     return;
   }
 
+  if (!password) {
+    setError("A password is required.");
+    render();
+    return;
+  }
+
   try {
-    state.requestingMagicLink = true;
+    state.signingIn = true;
     state.authApiBaseUrl = apiBaseUrl;
     state.authEmail = email;
+    state.authPassword = password;
     persistApiBaseUrl(apiBaseUrl);
     setError(null);
     render();
-    await requestOperatorMagicLink({ apiBaseUrl, email });
-    setNotice(`Magic link sent to ${email}. Open the email on this device to finish sign-in.`);
+    const session = await signInOperatorWithPassword({ apiBaseUrl, email, password });
+    await applyVerifiedSession(session, `Signed in as ${session.operator.displayName}.`);
   } catch (error) {
-    setError(error instanceof Error ? error.message : "Unable to request a magic link.");
+    setError(error instanceof Error ? error.message : "Unable to sign in.");
   } finally {
-    state.requestingMagicLink = false;
-    render();
-  }
-}
-
-async function handleDevAccess(email: string) {
-  try {
-    state.requestingDevAccess = true;
-    state.authEmail = email;
-    setError(null);
-    render();
-    const session = await requestOperatorDevAccess({
-      apiBaseUrl: state.authApiBaseUrl,
-      email
-    });
-    await applyVerifiedSession(session, `Local dev access opened for ${email}.`);
-  } catch (error) {
-    setError(error instanceof Error ? error.message : "Unable to open local dev access.");
-  } finally {
-    state.requestingDevAccess = false;
+    state.signingIn = false;
     render();
   }
 }
@@ -1382,7 +1591,8 @@ async function handleTeamCreateSubmit(form: HTMLFormElement) {
     await createOperatorStaffUser(state.session, {
       displayName: formData.get("displayName"),
       email: formData.get("email"),
-      role: formData.get("role")
+      role: formData.get("role"),
+      password: formData.get("password")
     });
     setNotice("Created operator account.");
     form.reset();
@@ -1417,6 +1627,7 @@ async function handleTeamUserSubmit(form: HTMLFormElement) {
       displayName: formData.get("displayName"),
       email: formData.get("email"),
       role: formData.get("role"),
+      password: formData.get("password"),
       active
     });
     setNotice("Updated operator access.");
@@ -1508,8 +1719,8 @@ root.addEventListener("submit", (event) => {
 
   event.preventDefault();
   const formType = target.dataset.form;
-  if (formType === "auth-request-link") {
-    void handleMagicLinkRequest(target);
+  if (formType === "auth-sign-in") {
+    void handlePasswordSignIn(target);
     return;
   }
   if (formType === "menu-create") {
@@ -1552,14 +1763,6 @@ root.addEventListener("click", (event) => {
 
   if (action === "sign-out") {
     void signOut();
-    return;
-  }
-
-  if (action === "dev-access") {
-    const email = actionElement.dataset.email;
-    if (email) {
-      void handleDevAccess(email);
-    }
     return;
   }
 

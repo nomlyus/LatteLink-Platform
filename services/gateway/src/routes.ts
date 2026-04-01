@@ -12,6 +12,7 @@ import {
   operatorAuthContract,
   operatorDevAccessRequestSchema,
   operatorMeResponseSchema,
+  operatorPasswordSignInSchema,
   operatorUserCreateSchema,
   operatorUserListResponseSchema,
   operatorUserParamsSchema,
@@ -1141,6 +1142,27 @@ export async function registerRoutes(app: FastifyInstance) {
       path: "/v1/auth/me",
       responseSchema: meResponseSchema
     });
+    }
+  );
+
+  app.post(
+    "/v1/operator/auth/sign-in",
+    {
+      preHandler: app.rateLimit(authWriteRateLimit)
+    },
+    async (request, reply) => {
+      const input = operatorPasswordSignInSchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: identityBaseUrl,
+        serviceLabel: "Identity",
+        method: "POST",
+        path: "/v1/operator/auth/sign-in",
+        body: input,
+        responseSchema: operatorAuthContract.routes.signIn.response
+      });
     }
   );
 

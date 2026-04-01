@@ -261,21 +261,25 @@ describe("operator-web model", () => {
       normalizeOperatorUserCreateForm({
         displayName: "  Avery Quinn  ",
         email: "  avery@store.com  ",
-        role: "manager"
+        role: "manager",
+        password: "  Password123!  "
       })
     ).toEqual({
       displayName: "Avery Quinn",
       email: "avery@store.com",
-      role: "manager"
+      role: "manager",
+      password: "Password123!"
     });
 
     expect(
       normalizeOperatorUserUpdateForm({
         displayName: "  Avery Q.  ",
+        password: "  NewPassword123!  ",
         active: "false"
       })
     ).toEqual({
       displayName: "Avery Q.",
+      password: "NewPassword123!",
       active: false
     });
   });

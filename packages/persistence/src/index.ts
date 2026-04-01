@@ -172,6 +172,7 @@ export interface OperatorUserTable {
   operator_user_id: string;
   email: string;
   display_name: string;
+  password_hash: string | null;
   role: "owner" | "manager" | "staff";
   location_id: string;
   active: boolean;
@@ -195,7 +196,7 @@ export interface OperatorSessionTable {
   access_expires_at: string | null;
   expires_at: string;
   revoked_at: string | null;
-  auth_method: "magic-link" | "refresh";
+  auth_method: "magic-link" | "password" | "refresh";
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }

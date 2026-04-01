@@ -15,6 +15,7 @@ import {
   meResponseSchema,
   operatorDevAccessRequestSchema,
   operatorMeResponseSchema,
+  operatorPasswordSignInSchema,
   operatorSessionSchema,
   operatorUserCreateSchema,
   operatorUserListResponseSchema,
@@ -220,7 +221,7 @@ async function issueOperatorSession(params: {
   repository: IdentityRepository;
   seed: string;
   operatorUserId: string;
-  authMethod: "magic-link" | "refresh";
+  authMethod: "magic-link" | "password" | "refresh";
 }) {
   const session = buildStoredOperatorSession(params.seed, params.operatorUserId);
   await params.repository.saveOperatorSession(session, params.authMethod);
@@ -817,6 +818,30 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
   );
 
   app.post(
+    "/v1/operator/auth/sign-in",
+    {
+      preHandler: app.rateLimit(authWriteRateLimit)
+    },
+    async (request, reply) => {
+      const input = operatorPasswordSignInSchema.parse(request.body);
+      const operator = await repository.verifyOperatorPassword(input.email, input.password);
+
+      if (!operator) {
+        return reply
+          .status(401)
+          .send(buildApiError(request.id, "INVALID_OPERATOR_CREDENTIALS", "Email or password is incorrect"));
+      }
+
+      return issueOperatorSession({
+        repository,
+        seed: `password:${operator.operatorUserId}:${Date.now()}`,
+        operatorUserId: operator.operatorUserId,
+        authMethod: "password"
+      });
+    }
+  );
+
+  app.post(
     "/v1/operator/auth/magic-link/request",
     {
       preHandler: app.rateLimit(authWriteRateLimit)
@@ -922,7 +947,7 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
         repository,
         seed: `dev-access:${operator.email}:${Date.now()}`,
         operatorUserId: operator.operatorUserId,
-        authMethod: "magic-link"
+        authMethod: "password"
       });
     }
   );

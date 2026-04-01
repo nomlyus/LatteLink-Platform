@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
 import { authSessionSchema } from "@gazelle/contracts-core";
 import {
@@ -74,6 +74,7 @@ type PersistedOperatorUserRow = {
   operator_user_id: string;
   email: string;
   display_name: string;
+  password_hash: string | null;
   role: OperatorRole;
   location_id: string;
   active: boolean;
@@ -172,15 +173,22 @@ export type IdentityRepository = {
   listOperatorUsers(locationId?: string): Promise<OperatorUserRecord[]>;
   getOperatorUserById(operatorUserId: string): Promise<OperatorUserRecord | undefined>;
   getOperatorUserByEmail(email: string): Promise<OperatorUserRecord | undefined>;
-  createOperatorUser(input: { displayName: string; email: string; role: OperatorRole; locationId: string }): Promise<OperatorUserRecord>;
+  verifyOperatorPassword(email: string, password: string): Promise<OperatorUserRecord | undefined>;
+  createOperatorUser(input: {
+    displayName: string;
+    email: string;
+    role: OperatorRole;
+    locationId: string;
+    password: string;
+  }): Promise<OperatorUserRecord>;
   updateOperatorUser(
     operatorUserId: string,
-    input: { displayName?: string; email?: string; role?: OperatorRole; active?: boolean }
+    input: { displayName?: string; email?: string; role?: OperatorRole; active?: boolean; password?: string }
   ): Promise<OperatorUserRecord | undefined>;
   saveOperatorMagicLink(input: { token: string; email: string; expiresAt: string }): Promise<void>;
   getOperatorMagicLink(token: string): Promise<OperatorMagicLinkRecord | undefined>;
   consumeOperatorMagicLink(token: string, operatorUserId: string): Promise<void>;
-  saveOperatorSession(session: StoredOperatorSession, authMethod: "magic-link" | "refresh"): Promise<void>;
+  saveOperatorSession(session: StoredOperatorSession, authMethod: "magic-link" | "password" | "refresh"): Promise<void>;
   rotateOperatorRefreshSession(
     refreshToken: string,
     createNextSession: (operatorUserId: string) => StoredOperatorSession,
@@ -223,6 +231,27 @@ function toPublicSession(session: StoredSession): AuthSession {
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
+}
+
+function hashOperatorPassword(password: string) {
+  const salt = randomBytes(16).toString("hex");
+  const hash = scryptSync(password, salt, 64).toString("hex");
+  return `scrypt$${salt}$${hash}`;
+}
+
+function verifyOperatorPasswordHash(password: string, storedHash: string | null | undefined) {
+  if (!storedHash) {
+    return false;
+  }
+
+  const [algorithm, salt, hash] = storedHash.split("$");
+  if (algorithm !== "scrypt" || !salt || !hash) {
+    return false;
+  }
+
+  const expected = Buffer.from(hash, "hex");
+  const actual = Buffer.from(scryptSync(password, salt, expected.length).toString("hex"), "hex");
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
 function toPasskeyChallengeRecord(row: PersistedPasskeyChallengeRow): PasskeyChallengeRecord {
@@ -268,26 +297,47 @@ function getDefaultOperatorLocationId() {
   return configured && configured.length > 0 ? configured : "flagship-01";
 }
 
-function getDefaultOperatorSeeds(): Array<{ displayName: string; email: string; role: OperatorRole; locationId: string }> {
+function getDefaultOperatorPassword(role: OperatorRole) {
+  switch (role) {
+    case "owner":
+      return process.env.DEFAULT_OPERATOR_OWNER_PASSWORD?.trim() || "LatteLinkOwner123!";
+    case "manager":
+      return process.env.DEFAULT_OPERATOR_MANAGER_PASSWORD?.trim() || "LatteLinkManager123!";
+    case "staff":
+    default:
+      return process.env.DEFAULT_OPERATOR_STAFF_PASSWORD?.trim() || "LatteLinkStaff123!";
+  }
+}
+
+function getDefaultOperatorSeeds(): Array<{
+  displayName: string;
+  email: string;
+  role: OperatorRole;
+  locationId: string;
+  password: string;
+}> {
   const locationId = getDefaultOperatorLocationId();
   return [
     {
       displayName: process.env.DEFAULT_OPERATOR_OWNER_NAME?.trim() || "Store Owner",
       email: normalizeEmail(process.env.DEFAULT_OPERATOR_OWNER_EMAIL?.trim() || "owner@gazellecoffee.com"),
       role: "owner",
-      locationId
+      locationId,
+      password: getDefaultOperatorPassword("owner")
     },
     {
       displayName: process.env.DEFAULT_OPERATOR_MANAGER_NAME?.trim() || "Store Manager",
       email: normalizeEmail(process.env.DEFAULT_OPERATOR_MANAGER_EMAIL?.trim() || "manager@gazellecoffee.com"),
       role: "manager",
-      locationId
+      locationId,
+      password: getDefaultOperatorPassword("manager")
     },
     {
       displayName: process.env.DEFAULT_OPERATOR_STAFF_NAME?.trim() || "Lead Barista",
       email: normalizeEmail(process.env.DEFAULT_OPERATOR_STAFF_EMAIL?.trim() || "staff@gazellecoffee.com"),
       role: "staff",
-      locationId
+      locationId,
+      password: getDefaultOperatorPassword("staff")
     }
   ];
 }
@@ -339,6 +389,7 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
   const magicLinksByToken = new Map<string, MagicLinkRecord>();
   const operatorUsersById = new Map<string, OperatorUserRecord>();
   const operatorUserIdByEmail = new Map<string, string>();
+  const operatorPasswordHashByUserId = new Map<string, string>();
   const operatorMagicLinksByToken = new Map<string, OperatorMagicLinkRecord>();
 
   for (const seed of getDefaultOperatorSeeds()) {
@@ -357,6 +408,7 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
     };
     operatorUsersById.set(operatorUserId, record);
     operatorUserIdByEmail.set(record.email, operatorUserId);
+    operatorPasswordHashByUserId.set(operatorUserId, hashOperatorPassword(seed.password));
   }
 
   return {
@@ -552,6 +604,20 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
       const record = operatorUsersById.get(operatorUserId);
       return record ? { ...record } : undefined;
     },
+    async verifyOperatorPassword(email, password) {
+      const operatorUserId = operatorUserIdByEmail.get(normalizeEmail(email));
+      if (!operatorUserId) {
+        return undefined;
+      }
+
+      const record = operatorUsersById.get(operatorUserId);
+      const passwordHash = operatorPasswordHashByUserId.get(operatorUserId);
+      if (!record || !record.active || !verifyOperatorPasswordHash(password, passwordHash)) {
+        return undefined;
+      }
+
+      return { ...record };
+    },
     async createOperatorUser(input) {
       const normalizedEmail = normalizeEmail(input.email);
       const existingId = operatorUserIdByEmail.get(normalizedEmail);
@@ -577,6 +643,7 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
 
       operatorUsersById.set(record.operatorUserId, record);
       operatorUserIdByEmail.set(record.email, record.operatorUserId);
+      operatorPasswordHashByUserId.set(record.operatorUserId, hashOperatorPassword(input.password));
       return { ...record };
     },
     async updateOperatorUser(operatorUserId, input) {
@@ -608,6 +675,9 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
       };
 
       operatorUsersById.set(operatorUserId, updated);
+      if (input.password) {
+        operatorPasswordHashByUserId.set(operatorUserId, hashOperatorPassword(input.password));
+      }
       return { ...updated };
     },
     async saveOperatorMagicLink(input) {
@@ -727,6 +797,7 @@ async function ensureDefaultOperatorUsers(db: ReturnType<typeof createPostgresDb
         operator_user_id: randomUUID(),
         email: seed.email,
         display_name: seed.displayName,
+        password_hash: hashOperatorPassword(seed.password),
         role: seed.role,
         location_id: seed.locationId,
         active: true
@@ -740,6 +811,16 @@ async function ensureDefaultOperatorUsers(db: ReturnType<typeof createPostgresDb
           updated_at: new Date().toISOString()
         })
       )
+      .execute();
+
+    await db
+      .updateTable("operator_users")
+      .set({
+        password_hash: hashOperatorPassword(seed.password),
+        updated_at: new Date().toISOString()
+      })
+      .where("email", "=", seed.email)
+      .where("password_hash", "is", null)
       .execute();
   }
 }
@@ -1230,6 +1311,24 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
 
       return toOperatorUserRecord(row as PersistedOperatorUserRow);
     },
+    async verifyOperatorPassword(email, password) {
+      const row = await db
+        .selectFrom("operator_users")
+        .selectAll()
+        .where("email", "=", normalizeEmail(email))
+        .executeTakeFirst();
+
+      if (!row) {
+        return undefined;
+      }
+
+      const persisted = row as PersistedOperatorUserRow;
+      if (!persisted.active || !verifyOperatorPasswordHash(password, persisted.password_hash)) {
+        return undefined;
+      }
+
+      return toOperatorUserRecord(persisted);
+    },
     async createOperatorUser(input) {
       const normalizedEmail = normalizeEmail(input.email);
       const now = new Date().toISOString();
@@ -1242,6 +1341,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
             operator_user_id: operatorUserId,
             email: normalizedEmail,
             display_name: input.displayName.trim(),
+            password_hash: hashOperatorPassword(input.password),
             role: input.role,
             location_id: input.locationId,
             active: true
@@ -1261,6 +1361,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
           .updateTable("operator_users")
           .set({
             display_name: input.displayName.trim(),
+            password_hash: existing.password_hash ?? hashOperatorPassword(input.password),
             role: input.role,
             location_id: input.locationId,
             active: true,
@@ -1313,6 +1414,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         .set({
           email: nextEmail,
           display_name: input.displayName?.trim() ?? existing.display_name,
+          ...(input.password ? { password_hash: hashOperatorPassword(input.password) } : {}),
           role: input.role ?? existing.role,
           active: input.active ?? existing.active,
           updated_at: new Date().toISOString()
