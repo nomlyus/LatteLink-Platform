@@ -1,9 +1,13 @@
+import { randomUUID } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
 import {
+  adminMenuItemCreateSchema,
   adminMenuItemSchema,
+  adminMenuItemVisibilityUpdateSchema,
   adminMenuResponseSchema,
   adminStoreConfigSchema,
   appConfigSchema,
+  adminMutationSuccessSchema,
   type AdminMenuItem,
   type AdminMenuResponse,
   type AdminStoreConfig,
@@ -216,12 +220,18 @@ type CatalogRepository = {
   backend: "memory" | "postgres";
   getAppConfig(): Promise<AppConfig>;
   getAdminMenu(): Promise<AdminMenuResponse>;
+  createAdminMenuItem(input: z.output<typeof adminMenuItemCreateSchema>): Promise<AdminMenuItem | undefined>;
   updateAdminMenuItem(input: {
     itemId: string;
     name: string;
     priceCents: number;
     visible: boolean;
   }): Promise<AdminMenuItem | undefined>;
+  updateAdminMenuItemVisibility(input: {
+    itemId: string;
+    visible: boolean;
+  }): Promise<AdminMenuItem | undefined>;
+  deleteAdminMenuItem(itemId: string): Promise<z.output<typeof adminMutationSuccessSchema>>;
   getAdminStoreConfig(): Promise<AdminStoreConfig>;
   updateAdminStoreConfig(input: {
     storeName: string;
@@ -258,6 +268,20 @@ function toAdminMenuItem(input: {
   sortOrder: number;
 }) {
   return adminMenuItemSchema.parse(input);
+}
+
+function slugifyMenuItemName(name: string) {
+  const slug = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return slug.length > 0 ? slug : "item";
+}
+
+function createMenuItemId(name: string) {
+  return `${slugifyMenuItemName(name)}-${randomUUID().slice(0, 8)}`;
 }
 
 function buildAdminMenuResponse(params: {
@@ -337,6 +361,45 @@ function createInMemoryRepository(): CatalogRepository {
         }))
       });
     },
+    async createAdminMenuItem(input) {
+      const category = menu.categories.find((entry) => entry.id === input.categoryId);
+      if (!category) {
+        return undefined;
+      }
+
+      const nextItem = {
+        id: createMenuItemId(input.name),
+        name: input.name,
+        description: input.description ?? "",
+        priceCents: input.priceCents,
+        badgeCodes: [],
+        visible: input.visible,
+        customizationGroups: []
+      };
+
+      menu = menuResponseSchema.parse({
+        ...menu,
+        categories: menu.categories.map((entry) =>
+          entry.id === input.categoryId
+            ? {
+                ...entry,
+                items: [...entry.items, nextItem]
+              }
+            : entry
+        )
+      });
+
+      return toAdminMenuItem({
+        itemId: nextItem.id,
+        categoryId: category.id,
+        categoryTitle: category.title,
+        name: nextItem.name,
+        description: nextItem.description,
+        priceCents: nextItem.priceCents,
+        visible: nextItem.visible,
+        sortOrder: category.items.length
+      });
+    },
     async updateAdminMenuItem(input) {
       let updatedItem: AdminMenuItem | undefined;
       menu = menuResponseSchema.parse({
@@ -370,6 +433,49 @@ function createInMemoryRepository(): CatalogRepository {
       });
 
       return updatedItem;
+    },
+    async updateAdminMenuItemVisibility(input) {
+      let updatedItem: AdminMenuItem | undefined;
+      menu = menuResponseSchema.parse({
+        ...menu,
+        categories: menu.categories.map((category) => ({
+          ...category,
+          items: category.items.map((item, index) => {
+            if (item.id !== input.itemId) {
+              return item;
+            }
+
+            updatedItem = toAdminMenuItem({
+              itemId: item.id,
+              categoryId: category.id,
+              categoryTitle: category.title,
+              name: item.name,
+              description: item.description,
+              priceCents: item.priceCents,
+              visible: input.visible,
+              sortOrder: index
+            });
+
+            return {
+              ...item,
+              visible: input.visible
+            };
+          })
+        }))
+      });
+
+      return updatedItem;
+    },
+    async deleteAdminMenuItem(itemId) {
+      menu = menuResponseSchema.parse({
+        ...menu,
+        categories: menu.categories.map((category) => ({
+          ...category,
+          items: category.items.filter((item) => item.id !== itemId)
+        }))
+      });
+
+      return { success: true };
     },
     async getAdminStoreConfig() {
       return adminStoreConfig;
@@ -558,6 +664,58 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         }))
       });
     },
+    async createAdminMenuItem(input) {
+      const category = await db
+        .selectFrom("catalog_menu_categories")
+        .selectAll()
+        .where("brand_id", "=", DEFAULT_BRAND_ID)
+        .where("location_id", "=", defaultMenuPayload.locationId)
+        .where("category_id", "=", input.categoryId)
+        .executeTakeFirst();
+
+      if (!category) {
+        return undefined;
+      }
+
+      const nextSortOrderResult = await db
+        .selectFrom("catalog_menu_items")
+        .select((eb) => eb.fn.max<number>("sort_order").as("max_sort_order"))
+        .where("brand_id", "=", DEFAULT_BRAND_ID)
+        .where("location_id", "=", defaultMenuPayload.locationId)
+        .where("category_id", "=", input.categoryId)
+        .executeTakeFirst();
+      const nextSortOrder = (nextSortOrderResult?.max_sort_order ?? -1) + 1;
+      const itemId = createMenuItemId(input.name);
+
+      await db
+        .insertInto("catalog_menu_items")
+        .values({
+          brand_id: DEFAULT_BRAND_ID,
+          location_id: defaultMenuPayload.locationId,
+          item_id: itemId,
+          category_id: input.categoryId,
+          name: input.name,
+          description: input.description ?? "",
+          image_url: null,
+          price_cents: input.priceCents,
+          badge_codes_json: JSON.stringify([]),
+          customization_groups_json: JSON.stringify([]),
+          visible: input.visible,
+          sort_order: nextSortOrder
+        })
+        .execute();
+
+      return toAdminMenuItem({
+        itemId,
+        categoryId: input.categoryId,
+        categoryTitle: category.title,
+        name: input.name,
+        description: input.description ?? "",
+        priceCents: input.priceCents,
+        visible: input.visible,
+        sortOrder: nextSortOrder
+      });
+    },
     async updateAdminMenuItem(input) {
       const existingRow = await db
         .selectFrom("catalog_menu_items")
@@ -601,6 +759,58 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         visible: input.visible,
         sortOrder: existingRow.sort_order
       });
+    },
+    async updateAdminMenuItemVisibility(input) {
+      const existingRow = await db
+        .selectFrom("catalog_menu_items")
+        .selectAll()
+        .where("brand_id", "=", DEFAULT_BRAND_ID)
+        .where("location_id", "=", defaultMenuPayload.locationId)
+        .where("item_id", "=", input.itemId)
+        .executeTakeFirst();
+
+      if (!existingRow) {
+        return undefined;
+      }
+
+      await db
+        .updateTable("catalog_menu_items")
+        .set({
+          visible: input.visible
+        })
+        .where("brand_id", "=", DEFAULT_BRAND_ID)
+        .where("location_id", "=", defaultMenuPayload.locationId)
+        .where("item_id", "=", input.itemId)
+        .executeTakeFirst();
+
+      const category = await db
+        .selectFrom("catalog_menu_categories")
+        .selectAll()
+        .where("brand_id", "=", DEFAULT_BRAND_ID)
+        .where("location_id", "=", defaultMenuPayload.locationId)
+        .where("category_id", "=", existingRow.category_id)
+        .executeTakeFirst();
+
+      return toAdminMenuItem({
+        itemId: existingRow.item_id,
+        categoryId: existingRow.category_id,
+        categoryTitle: category?.title ?? existingRow.category_id,
+        name: existingRow.name,
+        description: existingRow.description,
+        priceCents: existingRow.price_cents,
+        visible: input.visible,
+        sortOrder: existingRow.sort_order
+      });
+    },
+    async deleteAdminMenuItem(itemId) {
+      await db
+        .deleteFrom("catalog_menu_items")
+        .where("brand_id", "=", DEFAULT_BRAND_ID)
+        .where("location_id", "=", defaultMenuPayload.locationId)
+        .where("item_id", "=", itemId)
+        .executeTakeFirst();
+
+      return { success: true };
     },
     async getMenu() {
       const categories = await db

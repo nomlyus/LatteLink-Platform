@@ -1,9 +1,15 @@
+import { z } from "zod";
+import { operatorSessionSchema } from "@gazelle/contracts-auth";
 import { normalizeApiBaseUrl, resolveDefaultApiBaseUrl, type OperatorSession } from "./api.js";
+import type { DashboardSection } from "./model.js";
 
-const API_BASE_URL_STORAGE_KEY = "gazelle.operator.api-base-url.v1";
-// Staff tokens are intentionally persisted in localStorage only for trusted internal operator devices.
-const STAFF_TOKEN_STORAGE_KEY = "gazelle.operator.staff-token.v1";
-const DASHBOARD_SECTION_STORAGE_KEY = "gazelle.operator.section.v1";
+const API_BASE_URL_STORAGE_KEY = "lattelink.operator.api-base-url.v2";
+const OPERATOR_SESSION_STORAGE_KEY = "lattelink.operator.session.v2";
+const DASHBOARD_SECTION_STORAGE_KEY = "lattelink.operator.section.v2";
+
+const storedSessionSchema = operatorSessionSchema.extend({
+  apiBaseUrl: z.string().min(1)
+});
 
 function getStorage() {
   if (typeof window === "undefined") {
@@ -13,26 +19,27 @@ function getStorage() {
   return window.localStorage;
 }
 
-function normalizeToken(value: string | null) {
-  const next = value?.trim();
-  return next && next.length > 0 ? next : null;
-}
-
 export function loadStoredSession(): OperatorSession | null {
   const storage = getStorage();
   if (!storage) {
     return null;
   }
 
-  const staffToken = normalizeToken(storage.getItem(STAFF_TOKEN_STORAGE_KEY));
-  if (!staffToken) {
+  const rawSession = storage.getItem(OPERATOR_SESSION_STORAGE_KEY);
+  if (!rawSession) {
     return null;
   }
 
-  return {
-    apiBaseUrl: normalizeApiBaseUrl(storage.getItem(API_BASE_URL_STORAGE_KEY) ?? resolveDefaultApiBaseUrl()),
-    staffToken
-  };
+  try {
+    const parsed = storedSessionSchema.parse(JSON.parse(rawSession));
+    return {
+      ...parsed,
+      apiBaseUrl: normalizeApiBaseUrl(parsed.apiBaseUrl)
+    };
+  } catch {
+    storage.removeItem(OPERATOR_SESSION_STORAGE_KEY);
+    return null;
+  }
 }
 
 export function persistSession(session: OperatorSession) {
@@ -41,8 +48,14 @@ export function persistSession(session: OperatorSession) {
     return;
   }
 
+  storage.setItem(
+    OPERATOR_SESSION_STORAGE_KEY,
+    JSON.stringify({
+      ...session,
+      apiBaseUrl: normalizeApiBaseUrl(session.apiBaseUrl)
+    })
+  );
   storage.setItem(API_BASE_URL_STORAGE_KEY, normalizeApiBaseUrl(session.apiBaseUrl));
-  storage.setItem(STAFF_TOKEN_STORAGE_KEY, session.staffToken.trim());
 }
 
 export function clearStoredSession() {
@@ -51,17 +64,36 @@ export function clearStoredSession() {
     return;
   }
 
-  storage.removeItem(API_BASE_URL_STORAGE_KEY);
-  storage.removeItem(STAFF_TOKEN_STORAGE_KEY);
+  storage.removeItem(OPERATOR_SESSION_STORAGE_KEY);
 }
 
-export function loadStoredSection(): "orders" | "menu" | "store" {
+export function loadStoredApiBaseUrl() {
+  const storage = getStorage();
+  if (!storage) {
+    return resolveDefaultApiBaseUrl();
+  }
+
+  return normalizeApiBaseUrl(storage.getItem(API_BASE_URL_STORAGE_KEY) ?? resolveDefaultApiBaseUrl());
+}
+
+export function persistApiBaseUrl(apiBaseUrl: string) {
+  const storage = getStorage();
+  if (!storage) {
+    return;
+  }
+
+  storage.setItem(API_BASE_URL_STORAGE_KEY, normalizeApiBaseUrl(apiBaseUrl));
+}
+
+export function loadStoredSection(): DashboardSection {
   const storage = getStorage();
   const nextSection = storage?.getItem(DASHBOARD_SECTION_STORAGE_KEY);
-  return nextSection === "menu" || nextSection === "store" ? nextSection : "orders";
+  return nextSection === "orders" || nextSection === "menu" || nextSection === "store" || nextSection === "team"
+    ? nextSection
+    : "overview";
 }
 
-export function persistSection(section: "orders" | "menu" | "store") {
+export function persistSection(section: DashboardSection) {
   const storage = getStorage();
   storage?.setItem(DASHBOARD_SECTION_STORAGE_KEY, section);
 }

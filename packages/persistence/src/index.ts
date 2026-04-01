@@ -168,6 +168,38 @@ export interface IdentityPasskeyCredentialTable {
   updated_at: Generated<string>;
 }
 
+export interface OperatorUserTable {
+  operator_user_id: string;
+  email: string;
+  display_name: string;
+  role: "owner" | "manager" | "staff";
+  location_id: string;
+  active: boolean;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
+export interface OperatorMagicLinkTable {
+  token: string;
+  email: string;
+  operator_user_id: string | null;
+  expires_at: string;
+  consumed_at: string | null;
+  created_at: Generated<string>;
+}
+
+export interface OperatorSessionTable {
+  access_token: string;
+  refresh_token: string;
+  operator_user_id: string;
+  access_expires_at: string | null;
+  expires_at: string;
+  revoked_at: string | null;
+  auth_method: "magic-link" | "refresh";
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
 export interface NotificationsPushTokenTable {
   user_id: string;
   device_id: string;
@@ -266,6 +298,9 @@ export interface PersistenceDatabase {
   identity_sessions: IdentitySessionTable;
   identity_passkey_challenges: IdentityPasskeyChallengeTable;
   identity_passkey_credentials: IdentityPasskeyCredentialTable;
+  operator_users: OperatorUserTable;
+  operator_magic_links: OperatorMagicLinkTable;
+  operator_sessions: OperatorSessionTable;
   notifications_push_tokens: NotificationsPushTokenTable;
   notifications_order_state_dispatches: NotificationsOrderStateDispatchTable;
   notifications_outbox: NotificationsOutboxTable;

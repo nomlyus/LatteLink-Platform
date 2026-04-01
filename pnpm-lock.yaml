@@ -184,6 +184,9 @@ importers:
 
   apps/operator-web:
     dependencies:
+      '@gazelle/contracts-auth':
+        specifier: workspace:*
+        version: link:../../packages/contracts/auth
       '@gazelle/contracts-catalog':
         specifier: workspace:*
         version: link:../../packages/contracts/catalog

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildStaffHeaders,
+  buildOperatorHeaders,
   extractApiErrorMessage,
   normalizeApiBaseUrl
 } from "../src/api";
@@ -12,11 +12,14 @@ describe("operator-web api helpers", () => {
     expect(normalizeApiBaseUrl("http://127.0.0.1:8080/v1")).toBe("http://127.0.0.1:8080/v1");
   });
 
-  it("builds the dual staff-token plus bearer headers", () => {
-    expect(buildStaffHeaders("operator-token", true)).toEqual({
-      authorization: "Bearer operator-token",
-      "x-staff-token": "operator-token",
+  it("builds bearer headers for authenticated operator requests", () => {
+    expect(buildOperatorHeaders("operator-access-token", true)).toEqual({
+      authorization: "Bearer operator-access-token",
       "content-type": "application/json"
+    });
+
+    expect(buildOperatorHeaders("operator-access-token", false)).toEqual({
+      authorization: "Bearer operator-access-token"
     });
   });
 

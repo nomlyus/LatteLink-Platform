@@ -9,14 +9,23 @@ import {
   magicLinkRequestSchema,
   magicLinkVerifySchema,
   meResponseSchema,
+  operatorAuthContract,
+  operatorMeResponseSchema,
+  operatorUserCreateSchema,
+  operatorUserListResponseSchema,
+  operatorUserParamsSchema,
+  operatorUserUpdateSchema,
   passkeyChallengeRequestSchema,
   passkeyChallengeResponseSchema,
   passkeyVerifyRequestSchema,
   refreshRequestSchema
 } from "@gazelle/contracts-auth";
 import {
+  adminMenuItemCreateSchema,
   adminMenuItemSchema,
   adminMenuItemUpdateSchema,
+  adminMenuItemVisibilityUpdateSchema,
+  adminMutationSuccessSchema,
   adminMenuResponseSchema,
   adminStoreConfigSchema,
   adminStoreConfigUpdateSchema,
@@ -43,6 +52,7 @@ import {
 declare module "fastify" {
   interface FastifyRequest {
     authenticatedUserId?: string;
+    authenticatedOperator?: z.output<typeof operatorMeResponseSchema>;
   }
 }
 
@@ -144,6 +154,173 @@ async function requireStaffAccess(request: FastifyRequest, reply: FastifyReply, 
   return undefined;
 }
 
+function forbidden(requestId: string, capability?: string) {
+  return apiErrorSchema.parse({
+    code: "FORBIDDEN",
+    message: capability
+      ? `Operator is missing required capability: ${capability}`
+      : "Operator is not authorized to access this resource",
+    requestId
+  });
+}
+
+async function resolveOperatorAccess(params: {
+  request: FastifyRequest;
+  reply: FastifyReply;
+  identityBaseUrl: string;
+  fallbackStaffToken?: string;
+  requiredCapability: z.output<typeof operatorMeResponseSchema>["capabilities"][number];
+}) {
+  const { request, reply, identityBaseUrl, fallbackStaffToken, requiredCapability } = params;
+  if (!ensureBearerAuth(request, reply)) {
+    return undefined;
+  }
+
+  if (fallbackStaffToken) {
+    const parsedStaffHeader = staffHeaderSchema.safeParse(request.headers);
+    const presentedStaffToken = parsedStaffHeader.success ? parsedStaffHeader.data["x-staff-token"] : undefined;
+    if (presentedStaffToken) {
+      if (presentedStaffToken !== fallbackStaffToken) {
+        reply.status(401).send(
+          apiErrorSchema.parse({
+            code: "UNAUTHORIZED_STAFF_REQUEST",
+            message: "Missing or invalid staff token",
+            requestId: request.id
+          })
+        );
+        return undefined;
+      }
+
+      request.authenticatedOperator = operatorMeResponseSchema.parse({
+        operatorUserId: "00000000-0000-4000-8000-000000000001",
+        displayName: "Fallback staff operator",
+        email: "staff-token@gazelle.local",
+        role: "owner",
+        locationId: "flagship-01",
+        active: true,
+        capabilities: [
+          "orders:read",
+          "orders:write",
+          "menu:read",
+          "menu:write",
+          "menu:visibility",
+          "store:read",
+          "store:write",
+          "staff:read",
+          "staff:write"
+        ],
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString()
+      });
+      return request.authenticatedOperator;
+    }
+
+    const authorizationHeader = typeof request.headers.authorization === "string" ? request.headers.authorization : "";
+    if (!authorizationHeader.startsWith("Bearer operator-access-")) {
+      reply.status(401).send(
+        apiErrorSchema.parse({
+          code: "UNAUTHORIZED_STAFF_REQUEST",
+          message: "Missing or invalid staff token",
+          requestId: request.id
+        })
+      );
+      return undefined;
+    }
+  }
+
+  if (request.authenticatedOperator) {
+    if (!request.authenticatedOperator.capabilities.includes(requiredCapability)) {
+      reply.status(403).send(forbidden(request.id, requiredCapability));
+      return undefined;
+    }
+
+    return request.authenticatedOperator;
+  }
+
+  const authorization = request.headers.authorization;
+  const timeoutMs = toPositiveInteger(process.env.GATEWAY_UPSTREAM_TIMEOUT_MS, defaultUpstreamTimeoutMs);
+  const timeoutController = new AbortController();
+  const timeoutHandle = setTimeout(() => timeoutController.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(`${identityBaseUrl}/v1/operator/auth/me`, {
+      method: "GET",
+      headers: {
+        authorization: String(authorization),
+        "x-request-id": request.id
+      },
+      signal: timeoutController.signal
+    });
+    const parsedPayload = parseJsonSafely(await response.text());
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        reply.status(401).send(unauthorized(request.id));
+        return undefined;
+      }
+
+      const upstreamError = apiErrorSchema.safeParse(parsedPayload);
+      if (upstreamError.success) {
+        reply.status(response.status).send(upstreamError.data);
+        return undefined;
+      }
+
+      reply.status(502).send(
+        apiErrorSchema.parse({
+          code: "UPSTREAM_INVALID_RESPONSE",
+          message: "Identity response did not match contract",
+          requestId: request.id
+        })
+      );
+      return undefined;
+    }
+
+    const operator = operatorMeResponseSchema.safeParse(parsedPayload);
+    if (!operator.success) {
+      reply.status(502).send(
+        apiErrorSchema.parse({
+          code: "UPSTREAM_INVALID_RESPONSE",
+          message: "Identity response did not match contract",
+          requestId: request.id,
+          details: operator.error.flatten()
+        })
+      );
+      return undefined;
+    }
+
+    request.authenticatedOperator = operator.data;
+    if (!operator.data.capabilities.includes(requiredCapability)) {
+      reply.status(403).send(forbidden(request.id, requiredCapability));
+      return undefined;
+    }
+
+    return operator.data;
+  } catch (error) {
+    if (isAbortError(error)) {
+      reply.status(504).send(
+        apiErrorSchema.parse({
+          code: "UPSTREAM_TIMEOUT",
+          message: "Identity service timed out",
+          requestId: request.id
+        })
+      );
+      return undefined;
+    }
+
+    request.log.error({ error, requestId: request.id }, "operator access check failed");
+    reply.status(502).send(
+      apiErrorSchema.parse({
+        code: "UPSTREAM_UNAVAILABLE",
+        message: "Identity service is unavailable",
+        requestId: request.id
+      })
+    );
+    return undefined;
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+}
+
 function trimToUndefined(value: string | undefined) {
   const next = value?.trim();
   return next && next.length > 0 ? next : undefined;
@@ -210,7 +387,9 @@ function toHeaderValue(value: string | string[] | undefined) {
 
 function userScopedRateLimitKey(request: FastifyRequest) {
   const userId =
-    trimToUndefined(request.authenticatedUserId) ?? trimToUndefined(toHeaderValue(request.headers["x-user-id"]));
+    trimToUndefined(request.authenticatedUserId) ??
+    trimToUndefined(request.authenticatedOperator?.operatorUserId) ??
+    trimToUndefined(toHeaderValue(request.headers["x-user-id"]));
   if (userId) {
     return `user:${userId.toLowerCase()}`;
   }
@@ -261,7 +440,7 @@ async function proxyUpstream<TResponse>(params: {
   reply: FastifyReply;
   baseUrl: string;
   serviceLabel: string;
-  method: "GET" | "POST" | "PUT";
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   path: string;
   body?: unknown;
   additionalHeaders?: Record<string, string | undefined>;
@@ -717,12 +896,22 @@ export async function registerRoutes(app: FastifyInstance) {
       identityBaseUrl,
       jwtSecret
     });
+  const requireOperatorCapability = (capability: z.output<typeof operatorMeResponseSchema>["capabilities"][number]) =>
+    async (request: FastifyRequest, reply: FastifyReply) =>
+      resolveOperatorAccess({
+        request,
+        reply,
+        identityBaseUrl,
+        fallbackStaffToken: gatewayStaffApiToken,
+        requiredCapability: capability
+      });
 
   app.get("/health", async () => ({ status: "ok", service: "gateway" }));
   app.get("/ready", async () => ({ status: "ready", service: "gateway" }));
 
   app.get("/v1/meta/contracts", async () => ({
     auth: authContract.basePath,
+    operatorAuth: operatorAuthContract.basePath,
     catalog: catalogContract.basePath,
     orders: ordersContract.basePath,
     loyalty: loyaltyContract.basePath,
@@ -952,6 +1141,107 @@ export async function registerRoutes(app: FastifyInstance) {
       responseSchema: meResponseSchema
     });
     }
+  );
+
+  app.post(
+    "/v1/operator/auth/magic-link/request",
+    {
+      preHandler: app.rateLimit(authWriteRateLimit)
+    },
+    async (request, reply) => {
+      const input = magicLinkRequestSchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: identityBaseUrl,
+        serviceLabel: "Identity",
+        method: "POST",
+        path: "/v1/operator/auth/magic-link/request",
+        body: input,
+        responseSchema: authSuccessSchema
+      });
+    }
+  );
+
+  app.post(
+    "/v1/operator/auth/magic-link/verify",
+    {
+      preHandler: app.rateLimit(authWriteRateLimit)
+    },
+    async (request, reply) => {
+      const input = magicLinkVerifySchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: identityBaseUrl,
+        serviceLabel: "Identity",
+        method: "POST",
+        path: "/v1/operator/auth/magic-link/verify",
+        body: input,
+        responseSchema: operatorAuthContract.routes.magicLinkVerify.response
+      });
+    }
+  );
+
+  app.post(
+    "/v1/operator/auth/refresh",
+    {
+      preHandler: app.rateLimit(authWriteRateLimit)
+    },
+    async (request, reply) => {
+      const input = refreshRequestSchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: identityBaseUrl,
+        serviceLabel: "Identity",
+        method: "POST",
+        path: "/v1/operator/auth/refresh",
+        body: input,
+        responseSchema: operatorAuthContract.routes.refresh.response
+      });
+    }
+  );
+
+  app.post(
+    "/v1/operator/auth/logout",
+    {
+      preHandler: app.rateLimit(authWriteRateLimit)
+    },
+    async (request, reply) => {
+      const input = logoutRequestSchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: identityBaseUrl,
+        serviceLabel: "Identity",
+        method: "POST",
+        path: "/v1/operator/auth/logout",
+        body: input,
+        responseSchema: authSuccessSchema
+      });
+    }
+  );
+
+  app.get(
+    "/v1/operator/auth/me",
+    {
+      preHandler: [app.rateLimit(authReadRateLimit), requireBearerAuth]
+    },
+    async (request, reply) =>
+      proxyUpstream({
+        request,
+        reply,
+        baseUrl: identityBaseUrl,
+        serviceLabel: "Identity",
+        method: "GET",
+        path: "/v1/operator/auth/me",
+        responseSchema: operatorMeResponseSchema
+      })
   );
 
   app.get("/v1/menu", { preHandler: app.rateLimit(catalogReadRateLimit) }, async (request, reply) =>
@@ -1287,10 +1577,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/admin/orders",
     {
-      preHandler: [
-        app.rateLimit(staffReadRateLimit),
-        async (request, reply) => requireStaffAccess(request, reply, gatewayStaffApiToken)
-      ]
+      preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("orders:read")]
     },
     async (request, reply) =>
       proxyUpstream({
@@ -1311,10 +1598,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/admin/orders/:orderId",
     {
-      preHandler: [
-        app.rateLimit(staffReadRateLimit),
-        async (request, reply) => requireStaffAccess(request, reply, gatewayStaffApiToken)
-      ]
+      preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("orders:read")]
     },
     async (request, reply) => {
       const { orderId } = orderIdParamsSchema.parse(request.params);
@@ -1338,10 +1622,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/admin/orders/:orderId/status",
     {
-      preHandler: [
-        app.rateLimit(staffWriteRateLimit),
-        async (request, reply) => requireStaffAccess(request, reply, gatewayStaffApiToken)
-      ]
+      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("orders:write")]
     },
     async (request, reply) => {
       const { orderId } = orderIdParamsSchema.parse(request.params);
@@ -1389,10 +1670,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/admin/menu",
     {
-      preHandler: [
-        app.rateLimit(staffReadRateLimit),
-        async (request, reply) => requireStaffAccess(request, reply, gatewayStaffApiToken)
-      ]
+      preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("menu:read")]
     },
     async (request, reply) =>
       proxyUpstream({
@@ -1412,10 +1690,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.put(
     "/v1/admin/menu/:itemId",
     {
-      preHandler: [
-        app.rateLimit(staffWriteRateLimit),
-        async (request, reply) => requireStaffAccess(request, reply, gatewayStaffApiToken)
-      ]
+      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("menu:write")]
     },
     async (request, reply) => {
       const { itemId } = menuItemParamsSchema.parse(request.params);
@@ -1437,13 +1712,82 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   );
 
+  app.post(
+    "/v1/admin/menu",
+    {
+      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("menu:write")]
+    },
+    async (request, reply) => {
+      const input = adminMenuItemCreateSchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "POST",
+        path: "/v1/catalog/admin/menu",
+        body: input,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken
+        },
+        responseSchema: adminMenuItemSchema
+      });
+    }
+  );
+
+  app.patch(
+    "/v1/admin/menu/:itemId/visibility",
+    {
+      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("menu:visibility")]
+    },
+    async (request, reply) => {
+      const { itemId } = menuItemParamsSchema.parse(request.params);
+      const input = adminMenuItemVisibilityUpdateSchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "PATCH",
+        path: `/v1/catalog/admin/menu/${itemId}/visibility`,
+        body: input,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken
+        },
+        responseSchema: adminMenuItemSchema
+      });
+    }
+  );
+
+  app.delete(
+    "/v1/admin/menu/:itemId",
+    {
+      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("menu:write")]
+    },
+    async (request, reply) => {
+      const { itemId } = menuItemParamsSchema.parse(request.params);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "DELETE",
+        path: `/v1/catalog/admin/menu/${itemId}`,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken
+        },
+        responseSchema: adminMutationSuccessSchema
+      });
+    }
+  );
+
   app.get(
     "/v1/admin/store/config",
     {
-      preHandler: [
-        app.rateLimit(staffReadRateLimit),
-        async (request, reply) => requireStaffAccess(request, reply, gatewayStaffApiToken)
-      ]
+      preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("store:read")]
     },
     async (request, reply) =>
       proxyUpstream({
@@ -1463,10 +1807,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.put(
     "/v1/admin/store/config",
     {
-      preHandler: [
-        app.rateLimit(staffWriteRateLimit),
-        async (request, reply) => requireStaffAccess(request, reply, gatewayStaffApiToken)
-      ]
+      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("store:write")]
     },
     async (request, reply) => {
       const input = adminStoreConfigUpdateSchema.parse(request.body);
@@ -1483,6 +1824,66 @@ export async function registerRoutes(app: FastifyInstance) {
           "x-gateway-token": gatewayInternalApiToken
         },
         responseSchema: adminStoreConfigSchema
+      });
+    }
+  );
+
+  app.get(
+    "/v1/admin/staff",
+    {
+      preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("staff:read")]
+    },
+    async (request, reply) =>
+      proxyUpstream({
+        request,
+        reply,
+        baseUrl: identityBaseUrl,
+        serviceLabel: "Identity",
+        method: "GET",
+        path: "/v1/operator/users",
+        responseSchema: operatorUserListResponseSchema
+      })
+  );
+
+  app.post(
+    "/v1/admin/staff",
+    {
+      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("staff:write")]
+    },
+    async (request, reply) => {
+      const input = operatorUserCreateSchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: identityBaseUrl,
+        serviceLabel: "Identity",
+        method: "POST",
+        path: "/v1/operator/users",
+        body: input,
+        responseSchema: operatorMeResponseSchema
+      });
+    }
+  );
+
+  app.patch(
+    "/v1/admin/staff/:operatorUserId",
+    {
+      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("staff:write")]
+    },
+    async (request, reply) => {
+      const { operatorUserId } = operatorUserParamsSchema.parse(request.params);
+      const input = operatorUserUpdateSchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: identityBaseUrl,
+        serviceLabel: "Identity",
+        method: "PATCH",
+        path: `/v1/operator/users/${operatorUserId}`,
+        body: input,
+        responseSchema: operatorMeResponseSchema
       });
     }
   );

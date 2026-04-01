@@ -1,7 +1,10 @@
 import { timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
+  adminMenuItemCreateSchema,
   adminMenuItemUpdateSchema,
+  adminMenuItemVisibilityUpdateSchema,
+  adminMutationSuccessSchema,
   adminStoreConfigUpdateSchema
 } from "@gazelle/contracts-catalog";
 import { z } from "zod";
@@ -143,6 +146,62 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     return updatedItem;
+  });
+
+  app.post("/v1/catalog/admin/menu", async (request, reply) => {
+    if (!authorizeGatewayRequest(request, reply, gatewayApiToken)) {
+      return;
+    }
+
+    const input = adminMenuItemCreateSchema.parse(request.body);
+    const createdItem = await repository.createAdminMenuItem(input);
+    if (!createdItem) {
+      return reply.status(404).send(
+        serviceErrorSchema.parse({
+          code: "MENU_CATEGORY_NOT_FOUND",
+          message: "Menu category not found",
+          requestId: request.id,
+          details: { categoryId: input.categoryId }
+        })
+      );
+    }
+
+    return createdItem;
+  });
+
+  app.patch("/v1/catalog/admin/menu/:itemId/visibility", async (request, reply) => {
+    if (!authorizeGatewayRequest(request, reply, gatewayApiToken)) {
+      return;
+    }
+
+    const { itemId } = menuItemParamsSchema.parse(request.params);
+    const input = adminMenuItemVisibilityUpdateSchema.parse(request.body);
+    const updatedItem = await repository.updateAdminMenuItemVisibility({
+      itemId,
+      ...input
+    });
+
+    if (!updatedItem) {
+      return reply.status(404).send(
+        serviceErrorSchema.parse({
+          code: "MENU_ITEM_NOT_FOUND",
+          message: "Menu item not found",
+          requestId: request.id,
+          details: { itemId }
+        })
+      );
+    }
+
+    return updatedItem;
+  });
+
+  app.delete("/v1/catalog/admin/menu/:itemId", async (request, reply) => {
+    if (!authorizeGatewayRequest(request, reply, gatewayApiToken)) {
+      return;
+    }
+
+    const { itemId } = menuItemParamsSchema.parse(request.params);
+    return adminMutationSuccessSchema.parse(await repository.deleteAdminMenuItem(itemId));
   });
 
   app.get("/v1/catalog/admin/store/config", async (request, reply) => {

@@ -1,5 +1,14 @@
 import { z } from "zod";
 import {
+  operatorCapabilitySchema,
+  operatorRoleSchema,
+  operatorUserCreateSchema,
+  operatorUserSchema,
+  operatorUserUpdateSchema
+} from "@gazelle/contracts-auth";
+import {
+  adminMenuCategorySchema,
+  adminMenuItemCreateSchema,
   adminMenuItemUpdateSchema,
   adminStoreConfigUpdateSchema,
   appConfigSchema,
@@ -20,6 +29,11 @@ const operatorOrderSchema = orderSchema.extend({
 export type OperatorOrder = z.output<typeof operatorOrderSchema>;
 export type OperatorOrderStatus = z.output<typeof orderStatusSchema>;
 export type OperatorOrderFilter = "all" | "active" | "completed";
+export type DashboardSection = "overview" | "orders" | "menu" | "store" | "team";
+export type OperatorCapability = z.output<typeof operatorCapabilitySchema>;
+export type OperatorUser = z.output<typeof operatorUserSchema>;
+export type OperatorMenuCategory = z.output<typeof adminMenuCategorySchema>;
+
 export type OperatorOrderAction = {
   status: "IN_PREP" | "READY" | "COMPLETED";
   label: string;
@@ -33,18 +47,45 @@ export type OperatorMenuItemFormInput = {
   visible?: boolean | string;
 };
 
+export type OperatorMenuItemCreateFormInput = {
+  categoryId?: string;
+  name?: string;
+  description?: string;
+  priceCents?: string | number;
+  visible?: boolean | string;
+};
+
 export type OperatorStoreConfigFormInput = {
   storeName?: string;
   hours?: string;
   pickupInstructions?: string;
 };
 
+export type OperatorUserCreateFormInput = {
+  displayName?: string;
+  email?: string;
+  role?: string;
+};
+
+export type OperatorUserUpdateFormInput = {
+  displayName?: string;
+  email?: string;
+  role?: string;
+  active?: boolean | string;
+};
+
 export type OperatorMenuItemUpdate = z.output<typeof adminMenuItemUpdateSchema>;
+export type OperatorMenuItemCreate = z.output<typeof adminMenuItemCreateSchema>;
 export type OperatorStoreConfigUpdate = z.output<typeof adminStoreConfigUpdateSchema>;
 export type OperatorAppConfig = AppConfig;
 
 function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeOptionalText(value: unknown) {
+  const next = normalizeText(value);
+  return next.length > 0 ? next : undefined;
 }
 
 function normalizeCents(value: unknown) {
@@ -92,6 +133,47 @@ export function formatOrderStatus(status: OperatorOrderStatus) {
   return status.replaceAll("_", " ");
 }
 
+export function getOperatorRoleLabel(role: z.output<typeof operatorRoleSchema>) {
+  switch (role) {
+    case "owner":
+      return "Store owner";
+    case "manager":
+      return "Manager";
+    case "staff":
+    default:
+      return "Staff";
+  }
+}
+
+export function canAccessCapability(
+  operator: Pick<OperatorUser, "capabilities"> | null | undefined,
+  capability: OperatorCapability
+) {
+  return operator?.capabilities.includes(capability) ?? false;
+}
+
+export function getAvailableSections(
+  operator: Pick<OperatorUser, "capabilities"> | null | undefined,
+  appConfig: Pick<AppConfig, "featureFlags"> | null | undefined
+) {
+  const sections: DashboardSection[] = ["overview"];
+
+  if (canAccessCapability(operator, "orders:read") && appConfig?.featureFlags.orderTracking !== false) {
+    sections.push("orders");
+  }
+  if (canAccessCapability(operator, "menu:read")) {
+    sections.push("menu");
+  }
+  if (canAccessCapability(operator, "store:read")) {
+    sections.push("store");
+  }
+  if (canAccessCapability(operator, "staff:read")) {
+    sections.push("team");
+  }
+
+  return sections;
+}
+
 export function canManageOrderStatus(config: Pick<AppConfig, "fulfillment"> | null | undefined) {
   return config?.fulfillment.mode === "staff";
 }
@@ -111,7 +193,7 @@ export function getOrderActions(
       return [
         {
           status: "IN_PREP",
-          label: "Start Prep",
+          label: "Start prep",
           tone: "primary",
           note: "Kitchen has started work on the order."
         }
@@ -120,7 +202,7 @@ export function getOrderActions(
       return [
         {
           status: "READY",
-          label: "Mark Ready",
+          label: "Mark ready",
           tone: "primary",
           note: "Order is ready at the pickup counter."
         }
@@ -225,6 +307,18 @@ export function normalizeMenuItemForm(input: OperatorMenuItemFormInput | unknown
   });
 }
 
+export function normalizeMenuItemCreateForm(input: OperatorMenuItemCreateFormInput | unknown): OperatorMenuItemCreate {
+  const value = toRecord(input);
+
+  return adminMenuItemCreateSchema.parse({
+    categoryId: normalizeText(value.categoryId),
+    name: normalizeText(value.name),
+    description: normalizeOptionalText(value.description),
+    priceCents: normalizeCents(value.priceCents),
+    visible: normalizeBoolean(value.visible)
+  });
+}
+
 export function normalizeStoreConfigForm(
   input: OperatorStoreConfigFormInput | unknown
 ): OperatorStoreConfigUpdate {
@@ -237,10 +331,43 @@ export function normalizeStoreConfigForm(
   });
 }
 
+export function normalizeOperatorUserCreateForm(input: OperatorUserCreateFormInput | unknown) {
+  const value = toRecord(input);
+
+  return operatorUserCreateSchema.parse({
+    displayName: normalizeText(value.displayName),
+    email: normalizeText(value.email),
+    role: normalizeText(value.role)
+  });
+}
+
+export function normalizeOperatorUserUpdateForm(input: OperatorUserUpdateFormInput | unknown) {
+  const value = toRecord(input);
+
+  return operatorUserUpdateSchema.parse({
+    ...(normalizeOptionalText(value.displayName) ? { displayName: normalizeOptionalText(value.displayName) } : {}),
+    ...(normalizeOptionalText(value.email) ? { email: normalizeOptionalText(value.email) } : {}),
+    ...(normalizeOptionalText(value.role) ? { role: normalizeOptionalText(value.role) } : {}),
+    ...(value.active !== undefined ? { active: normalizeBoolean(value.active) } : {})
+  });
+}
+
 export function resolveAppConfig(input: unknown): AppConfig {
   return appConfigSchema.parse(input);
 }
 
 export function resolveOrder(input: unknown): OperatorOrder {
   return operatorOrderSchema.parse(input);
+}
+
+export function countVisibleMenuItems(categories: readonly OperatorMenuCategory[]) {
+  return categories.reduce((count, category) => count + category.items.filter((item) => item.visible).length, 0);
+}
+
+export function countHiddenMenuItems(categories: readonly OperatorMenuCategory[]) {
+  return categories.reduce((count, category) => count + category.items.filter((item) => !item.visible).length, 0);
+}
+
+export function sessionNeedsRefresh(expiresAt: string, bufferMs = 60_000) {
+  return Date.parse(expiresAt) - Date.now() <= bufferMs;
 }

@@ -1,17 +1,28 @@
 import { describe, expect, it } from "vitest";
 import {
+  canAccessCapability,
   canManageOrderStatus,
+  countHiddenMenuItems,
+  countVisibleMenuItems,
   filterActiveOrders,
   filterOrdersByView,
   formatOrderStatus,
   getAppConfigCapabilityLabels,
+  getAvailableSections,
+  getOperatorRoleLabel,
   getOrderActions,
   getOrderCustomerLabel,
   isActiveOrder,
+  normalizeMenuItemCreateForm,
   normalizeMenuItemForm,
+  normalizeOperatorUserCreateForm,
+  normalizeOperatorUserUpdateForm,
   normalizeStoreConfigForm,
   resolveAppConfig,
-  resolveOrder
+  resolveOrder,
+  sessionNeedsRefresh,
+  type OperatorMenuCategory,
+  type OperatorUser
 } from "../src/model";
 
 const sampleOrder = resolveOrder({
@@ -31,25 +42,25 @@ const sampleOrder = resolveOrder({
 
 const sampleAppConfig = resolveAppConfig({
   brand: {
-    brandId: "gazelle-default",
-    brandName: "Gazelle Coffee",
+    brandId: "lattelink-default",
+    brandName: "LatteLink",
     locationId: "flagship-01",
-    locationName: "Gazelle Coffee Flagship",
+    locationName: "LatteLink Flagship",
     marketLabel: "Ann Arbor, MI"
   },
   theme: {
-    background: "#F7F4ED",
-    backgroundAlt: "#F0ECE4",
-    surface: "#FFFDF8",
-    surfaceMuted: "#F3EFE7",
-    foreground: "#171513",
-    foregroundMuted: "#605B55",
-    muted: "#9B9389",
-    border: "rgba(23, 21, 19, 0.08)",
-    primary: "#1E1B18",
-    accent: "#2D2823",
-    fontFamily: "System",
-    displayFontFamily: "Fraunces"
+    background: "#09090f",
+    backgroundAlt: "#0d0e16",
+    surface: "#111320",
+    surfaceMuted: "#181a28",
+    foreground: "#f0f2f8",
+    foregroundMuted: "#8892aa",
+    muted: "#5a6278",
+    border: "rgba(240, 242, 248, 0.08)",
+    primary: "#2a5fff",
+    accent: "#4a7eff",
+    fontFamily: "DM Sans",
+    displayFontFamily: "Syne"
   },
   enabledTabs: ["home", "orders"],
   featureFlags: {
@@ -81,8 +92,49 @@ const sampleAppConfig = resolveAppConfig({
   }
 });
 
+const sampleOperator: OperatorUser = {
+  operatorUserId: "11111111-1111-4111-8111-111111111111",
+  displayName: "Avery Quinn",
+  email: "avery@store.com",
+  role: "manager",
+  locationId: "flagship-01",
+  active: true,
+  capabilities: ["orders:read", "orders:write", "menu:read", "menu:visibility", "store:read", "staff:read"],
+  createdAt: "2026-03-20T00:00:00.000Z",
+  updatedAt: "2026-03-20T00:00:00.000Z"
+};
+
+const sampleMenuCategories: OperatorMenuCategory[] = [
+  {
+    categoryId: "featured",
+    title: "Featured",
+    items: [
+      {
+        itemId: "drink-1",
+        categoryId: "featured",
+        categoryTitle: "Featured",
+        name: "Brown Sugar Latte",
+        description: "Sweet espresso latte",
+        priceCents: 675,
+        sortOrder: 0,
+        visible: true
+      },
+      {
+        itemId: "drink-2",
+        categoryId: "featured",
+        categoryTitle: "Featured",
+        name: "Honey Cortado",
+        description: "Short milk coffee",
+        priceCents: 550,
+        sortOrder: 1,
+        visible: false
+      }
+    ]
+  }
+];
+
 describe("operator-web model", () => {
-  it("derives staff actions and active-order filtering from status", () => {
+  it("derives order actions and active-order filtering from status", () => {
     expect(getOrderActions(sampleOrder, "staff").map((action) => action.status)).toEqual(["IN_PREP"]);
     expect(getOrderActions({ ...sampleOrder, status: "IN_PREP" }, "staff").map((action) => action.status)).toEqual([
       "READY"
@@ -107,50 +159,24 @@ describe("operator-web model", () => {
     expect(filterActiveOrders([sampleOrder, { ...sampleOrder, status: "COMPLETED" }]).map((order) => order.status)).toEqual([
       "PAID"
     ]);
-    expect(
-      filterOrdersByView([sampleOrder, { ...sampleOrder, status: "COMPLETED" }, { ...sampleOrder, status: "CANCELED" }], "completed").map(
-        (order) => order.status
-      )
-    ).toEqual(["COMPLETED", "CANCELED"]);
   });
 
-  it("filters active orders with filterOrdersByView", () => {
-    expect(
-      filterOrdersByView([sampleOrder, { ...sampleOrder, status: "COMPLETED" }, { ...sampleOrder, status: "CANCELED" }], "active").map(
-        (order) => order.status
-      )
-    ).toEqual(["PAID"]);
-  });
+  it("filters orders by active, completed, and all views", () => {
+    const orders = [sampleOrder, { ...sampleOrder, status: "COMPLETED" }, { ...sampleOrder, status: "CANCELED" }] as const;
 
-  it("filters completed orders with filterOrdersByView", () => {
-    expect(
-      filterOrdersByView([sampleOrder, { ...sampleOrder, status: "COMPLETED" }, { ...sampleOrder, status: "CANCELED" }], "completed").map(
-        (order) => order.status
-      )
-    ).toEqual(["COMPLETED", "CANCELED"]);
-  });
-
-  it("returns all orders with filterOrdersByView", () => {
-    expect(
-      filterOrdersByView([sampleOrder, { ...sampleOrder, status: "COMPLETED" }, { ...sampleOrder, status: "CANCELED" }], "all").map(
-        (order) => order.status
-      )
-    ).toEqual(["PAID", "COMPLETED", "CANCELED"]);
-  });
-
-  it("returns an empty array when filtering an empty order list", () => {
+    expect(filterOrdersByView(orders, "active").map((order) => order.status)).toEqual(["PAID"]);
+    expect(filterOrdersByView(orders, "completed").map((order) => order.status)).toEqual(["COMPLETED", "CANCELED"]);
+    expect(filterOrdersByView(orders, "all").map((order) => order.status)).toEqual(["PAID", "COMPLETED", "CANCELED"]);
     expect(filterOrdersByView([], "active")).toEqual([]);
-    expect(filterOrdersByView([], "completed")).toEqual([]);
-    expect(filterOrdersByView([], "all")).toEqual([]);
   });
 
-  it("formats order statuses and customer labels", () => {
+  it("formats statuses and customer labels for the dashboard", () => {
     expect(formatOrderStatus("IN_PREP")).toBe("IN PREP");
     expect(getOrderCustomerLabel(sampleOrder)).toBe("Jordan Lee · jordan@example.com · 555-0101");
     expect(getOrderCustomerLabel({ ...sampleOrder, customer: undefined })).toBe("Customer details unavailable");
   });
 
-  it("derives capability labels from runtime app config", () => {
+  it("derives capability labels and available sections from runtime config", () => {
     expect(getAppConfigCapabilityLabels(sampleAppConfig)).toEqual([
       "Apple Pay",
       "Card",
@@ -164,9 +190,33 @@ describe("operator-web model", () => {
       "home tab",
       "orders tab"
     ]);
+
+    expect(getAvailableSections(sampleOperator, sampleAppConfig)).toEqual(["overview", "orders", "menu", "store", "team"]);
+    expect(
+      getAvailableSections(
+        { ...sampleOperator, capabilities: ["menu:read"] },
+        {
+          ...sampleAppConfig,
+          featureFlags: {
+            ...sampleAppConfig.featureFlags,
+            orderTracking: false
+          }
+        }
+      )
+    ).toEqual(["overview", "menu"]);
   });
 
-  it("normalizes menu and store form inputs before submission", () => {
+  it("resolves role labels and capability access", () => {
+    expect(getOperatorRoleLabel("owner")).toBe("Store owner");
+    expect(getOperatorRoleLabel("manager")).toBe("Manager");
+    expect(getOperatorRoleLabel("staff")).toBe("Staff");
+
+    expect(canAccessCapability(sampleOperator, "orders:write")).toBe(true);
+    expect(canAccessCapability(sampleOperator, "staff:write")).toBe(false);
+    expect(canAccessCapability(null, "orders:read")).toBe(false);
+  });
+
+  it("normalizes menu, store, and team form inputs before submission", () => {
     expect(
       normalizeMenuItemForm({
         name: "  Brown Sugar Latte  ",
@@ -180,15 +230,61 @@ describe("operator-web model", () => {
     });
 
     expect(
+      normalizeMenuItemCreateForm({
+        categoryId: " featured ",
+        name: "  Honey Cortado  ",
+        description: "  Bright and sweet  ",
+        priceCents: "550",
+        visible: "false"
+      })
+    ).toEqual({
+      categoryId: "featured",
+      name: "Honey Cortado",
+      description: "Bright and sweet",
+      priceCents: 550,
+      visible: false
+    });
+
+    expect(
       normalizeStoreConfigForm({
-        storeName: "  Gazelle Coffee Flagship  ",
+        storeName: "  LatteLink Flagship  ",
         hours: "  Daily · 7:00 AM - 6:00 PM  ",
         pickupInstructions: "  Pickup at the front counter.  "
       })
     ).toEqual({
-      storeName: "Gazelle Coffee Flagship",
+      storeName: "LatteLink Flagship",
       hours: "Daily · 7:00 AM - 6:00 PM",
       pickupInstructions: "Pickup at the front counter."
     });
+
+    expect(
+      normalizeOperatorUserCreateForm({
+        displayName: "  Avery Quinn  ",
+        email: "  avery@store.com  ",
+        role: "manager"
+      })
+    ).toEqual({
+      displayName: "Avery Quinn",
+      email: "avery@store.com",
+      role: "manager"
+    });
+
+    expect(
+      normalizeOperatorUserUpdateForm({
+        displayName: "  Avery Q.  ",
+        active: "false"
+      })
+    ).toEqual({
+      displayName: "Avery Q.",
+      active: false
+    });
+  });
+
+  it("counts menu visibility and refresh windows correctly", () => {
+    expect(countVisibleMenuItems(sampleMenuCategories)).toBe(1);
+    expect(countHiddenMenuItems(sampleMenuCategories)).toBe(1);
+
+    expect(sessionNeedsRefresh(new Date(Date.now() + 30_000).toISOString())).toBe(true);
+    expect(sessionNeedsRefresh(new Date(Date.now() + 5 * 60_000).toISOString())).toBe(false);
   });
 });

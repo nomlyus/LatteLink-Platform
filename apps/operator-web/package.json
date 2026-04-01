@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@gazelle/contracts-auth": "workspace:*",
     "@gazelle/contracts-catalog": "workspace:*",
     "@gazelle/contracts-orders": "workspace:*",
     "zod": "^3.24.2"

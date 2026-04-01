@@ -13,6 +13,12 @@ import {
   magicLinkRequestSchema,
   magicLinkVerifySchema,
   meResponseSchema,
+  operatorMeResponseSchema,
+  operatorSessionSchema,
+  operatorUserCreateSchema,
+  operatorUserListResponseSchema,
+  operatorUserParamsSchema,
+  operatorUserUpdateSchema,
   passkeyChallengeRequestSchema,
   passkeyChallengeResponseSchema,
   passkeyVerifyRequestSchema,
@@ -44,6 +50,7 @@ const defaultAuthReadRateLimitMax = 120;
 const defaultPasskeyVerifyRateLimitMax = 12;
 const defaultPasskeyChallengeRateLimitMax = 24;
 const defaultAccessTokenTtlMs = 30 * 60 * 1000;
+const defaultOperatorLocationId = "flagship-01";
 // Successful refresh rotation extends the session's idle lifetime by issuing a new refresh token.
 // We intentionally keep this as an idle timeout for now; absolute session caps are a future policy choice.
 const defaultRefreshSessionTtlMs = 30 * 24 * 60 * 60 * 1000;
@@ -85,6 +92,12 @@ function extractAppleTokenClaims(identityToken: string): { sub?: string; email?:
 function buildMagicLinkUrl(baseUrl: string, token: string) {
   const url = new URL("/auth/magic-link", baseUrl);
   url.searchParams.set("token", token);
+  return url.toString();
+}
+
+function buildOperatorMagicLinkUrl(baseUrl: string, token: string) {
+  const url = new URL("/", baseUrl);
+  url.searchParams.set("operator_token", token);
   return url.toString();
 }
 
@@ -151,6 +164,20 @@ function buildStoredSession(seed: string, userId: string) {
   };
 }
 
+function buildStoredOperatorSession(seed: string, operatorUserId: string) {
+  const tokenSuffix = `${seed}-${randomUUID()}`;
+  const accessExpiresAt = new Date(Date.now() + defaultAccessTokenTtlMs).toISOString();
+  const refreshExpiresAt = new Date(Date.now() + defaultRefreshSessionTtlMs).toISOString();
+
+  return {
+    accessToken: `operator-access-${tokenSuffix}`,
+    refreshToken: `operator-refresh-${tokenSuffix}`,
+    operatorUserId,
+    expiresAt: accessExpiresAt,
+    refreshExpiresAt
+  };
+}
+
 function extractChallengeFromClientData(clientDataJSON: string) {
   try {
     const decodedClientData = Buffer.from(clientDataJSON, "base64url").toString("utf8");
@@ -188,12 +215,55 @@ async function issueSession(params: {
   return authSessionSchema.parse(session);
 }
 
+async function issueOperatorSession(params: {
+  repository: IdentityRepository;
+  seed: string;
+  operatorUserId: string;
+  authMethod: "magic-link" | "refresh";
+}) {
+  const session = buildStoredOperatorSession(params.seed, params.operatorUserId);
+  await params.repository.saveOperatorSession(session, params.authMethod);
+  const operator = await params.repository.getOperatorUserById(params.operatorUserId);
+  if (!operator || !operator.active) {
+    throw new Error("Operator user is not active");
+  }
+
+  return operatorSessionSchema.parse({
+    accessToken: session.accessToken,
+    refreshToken: session.refreshToken,
+    expiresAt: session.expiresAt,
+    operator
+  });
+}
+
 function buildApiError(requestId: string, code: string, message: string) {
   return apiErrorSchema.parse({
     code,
     message,
     requestId
   });
+}
+
+async function resolveOperatorFromBearer(params: {
+  repository: IdentityRepository;
+  authorizationHeader: string | undefined;
+}) {
+  if (!params.authorizationHeader?.startsWith("Bearer ")) {
+    return undefined;
+  }
+
+  const accessToken = params.authorizationHeader.slice("Bearer ".length);
+  const session = await params.repository.getOperatorSessionByAccessToken(accessToken);
+  if (!session) {
+    return undefined;
+  }
+
+  const operator = await params.repository.getOperatorUserById(session.operatorUserId);
+  if (!operator || !operator.active) {
+    return undefined;
+  }
+
+  return operator;
 }
 
 export type RegisterRoutesOptions = {
@@ -208,6 +278,7 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
   const rateLimitWindowMs = toPositiveInteger(process.env.IDENTITY_RATE_LIMIT_WINDOW_MS, defaultRateLimitWindowMs);
   const magicLinkExpiryMinutes = toPositiveInteger(process.env.MAGIC_LINK_EXPIRY_MINUTES, 15);
   const magicLinkBaseUrl = process.env.MAGIC_LINK_BASE_URL?.trim() || "http://localhost:8080";
+  const operatorMagicLinkBaseUrl = process.env.OPERATOR_MAGIC_LINK_BASE_URL?.trim() || "http://localhost:5173";
   const appleSignInVerificationEnabled = process.env.APPLE_SIGN_IN_VERIFY === "true";
   const authWriteRateLimit = {
     max: toPositiveInteger(process.env.IDENTITY_RATE_LIMIT_AUTH_WRITE_MAX, defaultAuthWriteRateLimitMax),
@@ -737,6 +808,244 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
         email: "owner@gazellecoffee.com",
         methods: ["apple", "passkey", "magic-link"]
       });
+    }
+  );
+
+  app.post(
+    "/v1/operator/auth/magic-link/request",
+    {
+      preHandler: app.rateLimit(authWriteRateLimit)
+    },
+    async (request, reply) => {
+      const input = magicLinkRequestSchema.parse(request.body);
+      const operator = await repository.getOperatorUserByEmail(input.email);
+      if (!operator || !operator.active) {
+        return reply.status(404).send(
+          buildApiError(request.id, "OPERATOR_ACCESS_NOT_GRANTED", "No operator access exists for that email address")
+        );
+      }
+
+      const token = randomUUID();
+      const expiresAt = new Date(Date.now() + magicLinkExpiryMinutes * 60 * 1000).toISOString();
+      const magicLinkUrl = buildOperatorMagicLinkUrl(operatorMagicLinkBaseUrl, token);
+
+      await repository.saveOperatorMagicLink({
+        token,
+        email: operator.email,
+        expiresAt
+      });
+
+      try {
+        await mailSender.sendMagicLink({
+          to: operator.email,
+          magicLinkUrl
+        });
+      } catch (error) {
+        app.log.error({ error, email: operator.email, requestId: request.id }, "operator magic link delivery failed");
+        return reply
+          .status(503)
+          .send(buildApiError(request.id, "MAGIC_LINK_DELIVERY_FAILED", "Unable to deliver magic link at this time"));
+      }
+
+      return { success: true as const };
+    }
+  );
+
+  app.post(
+    "/v1/operator/auth/magic-link/verify",
+    {
+      preHandler: app.rateLimit(authWriteRateLimit)
+    },
+    async (request, reply) => {
+      const input = magicLinkVerifySchema.parse(request.body);
+      const magicLink = await repository.getOperatorMagicLink(input.token);
+
+      if (!magicLink) {
+        return reply
+          .status(401)
+          .send(buildApiError(request.id, "INVALID_MAGIC_LINK", "Magic link is invalid or unavailable"));
+      }
+
+      if (magicLink.consumedAt || Date.parse(magicLink.expiresAt) <= Date.now()) {
+        return reply
+          .status(401)
+          .send(buildApiError(request.id, "MAGIC_LINK_EXPIRED", "Magic link has expired or was already used"));
+      }
+
+      const operator = magicLink.operatorUserId
+        ? await repository.getOperatorUserById(magicLink.operatorUserId)
+        : await repository.getOperatorUserByEmail(magicLink.email);
+
+      if (!operator || !operator.active) {
+        return reply
+          .status(404)
+          .send(buildApiError(request.id, "OPERATOR_ACCESS_NOT_GRANTED", "Operator access is not active"));
+      }
+
+      await repository.consumeOperatorMagicLink(input.token, operator.operatorUserId);
+      return issueOperatorSession({
+        repository,
+        seed: input.token,
+        operatorUserId: operator.operatorUserId,
+        authMethod: "magic-link"
+      });
+    }
+  );
+
+  app.post(
+    "/v1/operator/auth/refresh",
+    {
+      preHandler: app.rateLimit(authWriteRateLimit)
+    },
+    async (request, reply) => {
+      const input = refreshRequestSchema.parse(request.body);
+      const rotatedSession = await repository.rotateOperatorRefreshSession(
+        input.refreshToken,
+        (operatorUserId) => buildStoredOperatorSession(input.refreshToken, operatorUserId),
+        "refresh"
+      );
+
+      if (!rotatedSession) {
+        return reply
+          .status(401)
+          .send(buildApiError(request.id, "INVALID_REFRESH_TOKEN", "Refresh token is invalid or expired"));
+      }
+
+      const operator = await repository.getOperatorUserById(rotatedSession.operatorUserId);
+      if (!operator || !operator.active) {
+        return reply
+          .status(401)
+          .send(buildApiError(request.id, "OPERATOR_ACCESS_NOT_GRANTED", "Operator access is not active"));
+      }
+
+      return operatorSessionSchema.parse({
+        accessToken: rotatedSession.accessToken,
+        refreshToken: rotatedSession.refreshToken,
+        expiresAt: rotatedSession.expiresAt,
+        operator
+      });
+    }
+  );
+
+  app.post(
+    "/v1/operator/auth/logout",
+    {
+      preHandler: app.rateLimit(authWriteRateLimit)
+    },
+    async (request) => {
+      const input = logoutRequestSchema.parse(request.body);
+      await repository.revokeOperatorByRefreshToken(input.refreshToken);
+      return { success: true as const };
+    }
+  );
+
+  app.get(
+    "/v1/operator/auth/me",
+    {
+      preHandler: app.rateLimit(authReadRateLimit)
+    },
+    async (request, reply) => {
+      const parsed = authHeaderSchema.safeParse(request.headers);
+      const operator = await resolveOperatorFromBearer({
+        repository,
+        authorizationHeader: parsed.success ? parsed.data.authorization : undefined
+      });
+
+      if (!operator) {
+        return reply.status(401).send(buildApiError(request.id, "UNAUTHORIZED", "Missing or invalid auth token"));
+      }
+
+      return operatorMeResponseSchema.parse(operator);
+    }
+  );
+
+  app.get(
+    "/v1/operator/users",
+    {
+      preHandler: app.rateLimit(authReadRateLimit)
+    },
+    async (request, reply) => {
+      const parsed = authHeaderSchema.safeParse(request.headers);
+      const operator = await resolveOperatorFromBearer({
+        repository,
+        authorizationHeader: parsed.success ? parsed.data.authorization : undefined
+      });
+
+      if (!operator) {
+        return reply.status(401).send(buildApiError(request.id, "UNAUTHORIZED", "Missing or invalid auth token"));
+      }
+
+      if (!operator.capabilities.includes("staff:read")) {
+        return reply.status(403).send(buildApiError(request.id, "FORBIDDEN", "Operator is missing required capability"));
+      }
+
+      return operatorUserListResponseSchema.parse({
+        users: await repository.listOperatorUsers(operator.locationId)
+      });
+    }
+  );
+
+  app.post(
+    "/v1/operator/users",
+    {
+      preHandler: app.rateLimit(authWriteRateLimit)
+    },
+    async (request, reply) => {
+      const parsed = authHeaderSchema.safeParse(request.headers);
+      const operator = await resolveOperatorFromBearer({
+        repository,
+        authorizationHeader: parsed.success ? parsed.data.authorization : undefined
+      });
+
+      if (!operator) {
+        return reply.status(401).send(buildApiError(request.id, "UNAUTHORIZED", "Missing or invalid auth token"));
+      }
+
+      if (!operator.capabilities.includes("staff:write")) {
+        return reply.status(403).send(buildApiError(request.id, "FORBIDDEN", "Operator is missing required capability"));
+      }
+
+      const input = operatorUserCreateSchema.parse(request.body);
+      const created = await repository.createOperatorUser({
+        ...input,
+        locationId: operator.locationId || defaultOperatorLocationId
+      });
+      return created;
+    }
+  );
+
+  app.patch(
+    "/v1/operator/users/:operatorUserId",
+    {
+      preHandler: app.rateLimit(authWriteRateLimit)
+    },
+    async (request, reply) => {
+      const parsed = authHeaderSchema.safeParse(request.headers);
+      const operator = await resolveOperatorFromBearer({
+        repository,
+        authorizationHeader: parsed.success ? parsed.data.authorization : undefined
+      });
+
+      if (!operator) {
+        return reply.status(401).send(buildApiError(request.id, "UNAUTHORIZED", "Missing or invalid auth token"));
+      }
+
+      if (!operator.capabilities.includes("staff:write")) {
+        return reply.status(403).send(buildApiError(request.id, "FORBIDDEN", "Operator is missing required capability"));
+      }
+
+      const { operatorUserId } = operatorUserParamsSchema.parse(request.params);
+      const input = operatorUserUpdateSchema.parse(request.body);
+      if (operator.operatorUserId === operatorUserId && input.active === false) {
+        return reply.status(400).send(buildApiError(request.id, "INVALID_OPERATOR_UPDATE", "You cannot deactivate your own account"));
+      }
+
+      const updated = await repository.updateOperatorUser(operatorUserId, input);
+      if (!updated) {
+        return reply.status(404).send(buildApiError(request.id, "OPERATOR_NOT_FOUND", "Operator user was not found"));
+      }
+
+      return updated;
     }
   );
 

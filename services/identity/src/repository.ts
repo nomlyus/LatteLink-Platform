@@ -2,6 +2,12 @@ import { randomUUID } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
 import { authSessionSchema } from "@gazelle/contracts-core";
 import {
+  operatorSessionSchema,
+  resolveOperatorCapabilities,
+  type OperatorRole,
+  type OperatorUser
+} from "@gazelle/contracts-auth";
+import {
   allowsInMemoryPersistence,
   buildPersistenceStartupError,
   createPostgresDb,
@@ -12,6 +18,7 @@ import {
 import { z } from "zod";
 
 type AuthSession = z.output<typeof authSessionSchema>;
+type OperatorSession = z.output<typeof operatorSessionSchema>;
 
 type PersistedSessionRow = {
   access_token: string;
@@ -23,6 +30,14 @@ type PersistedSessionRow = {
 };
 
 type StoredSession = AuthSession & {
+  refreshExpiresAt: string;
+};
+
+type StoredOperatorSession = {
+  accessToken: string;
+  refreshToken: string;
+  operatorUserId: string;
+  expiresAt: string;
   refreshExpiresAt: string;
 };
 
@@ -53,6 +68,34 @@ type PersistedMagicLinkRow = {
   user_id: string | null;
   expires_at: string | Date;
   consumed_at: string | Date | null;
+};
+
+type PersistedOperatorUserRow = {
+  operator_user_id: string;
+  email: string;
+  display_name: string;
+  role: OperatorRole;
+  location_id: string;
+  active: boolean;
+  created_at: string | Date;
+  updated_at: string | Date;
+};
+
+type PersistedOperatorMagicLinkRow = {
+  token: string;
+  email: string;
+  operator_user_id: string | null;
+  expires_at: string | Date;
+  consumed_at: string | Date | null;
+};
+
+type PersistedOperatorSessionRow = {
+  access_token: string;
+  refresh_token: string;
+  operator_user_id: string;
+  access_expires_at: string | Date | null;
+  expires_at: string | Date;
+  revoked_at: string | Date | null;
 };
 
 export type PasskeyChallengeRecord = {
@@ -90,6 +133,16 @@ export type MagicLinkRecord = {
   consumedAt: string | null;
 };
 
+export type OperatorUserRecord = OperatorUser;
+
+export type OperatorMagicLinkRecord = {
+  token: string;
+  email: string;
+  operatorUserId: string | null;
+  expiresAt: string;
+  consumedAt: string | null;
+};
+
 export type IdentityRepository = {
   backend: "memory" | "postgres";
   saveSession(
@@ -116,6 +169,26 @@ export type IdentityRepository = {
   saveMagicLink(input: { token: string; email: string; expiresAt: string }): Promise<void>;
   getMagicLink(token: string): Promise<MagicLinkRecord | undefined>;
   consumeMagicLink(token: string, userId: string): Promise<void>;
+  listOperatorUsers(locationId?: string): Promise<OperatorUserRecord[]>;
+  getOperatorUserById(operatorUserId: string): Promise<OperatorUserRecord | undefined>;
+  getOperatorUserByEmail(email: string): Promise<OperatorUserRecord | undefined>;
+  createOperatorUser(input: { displayName: string; email: string; role: OperatorRole; locationId: string }): Promise<OperatorUserRecord>;
+  updateOperatorUser(
+    operatorUserId: string,
+    input: { displayName?: string; email?: string; role?: OperatorRole; active?: boolean }
+  ): Promise<OperatorUserRecord | undefined>;
+  saveOperatorMagicLink(input: { token: string; email: string; expiresAt: string }): Promise<void>;
+  getOperatorMagicLink(token: string): Promise<OperatorMagicLinkRecord | undefined>;
+  consumeOperatorMagicLink(token: string, operatorUserId: string): Promise<void>;
+  saveOperatorSession(session: StoredOperatorSession, authMethod: "magic-link" | "refresh"): Promise<void>;
+  rotateOperatorRefreshSession(
+    refreshToken: string,
+    createNextSession: (operatorUserId: string) => StoredOperatorSession,
+    authMethod: "refresh"
+  ): Promise<StoredOperatorSession | undefined>;
+  getOperatorSessionByAccessToken(accessToken: string): Promise<StoredOperatorSession | undefined>;
+  getOperatorSessionByRefreshToken(refreshToken: string): Promise<StoredOperatorSession | undefined>;
+  revokeOperatorByRefreshToken(refreshToken: string): Promise<void>;
   pingDb(): Promise<void>;
   close(): Promise<void>;
 };
@@ -190,15 +263,101 @@ function toMagicLinkRecord(row: PersistedMagicLinkRow): MagicLinkRecord {
   };
 }
 
+function getDefaultOperatorLocationId() {
+  const configured = process.env.DEFAULT_OPERATOR_LOCATION_ID?.trim();
+  return configured && configured.length > 0 ? configured : "flagship-01";
+}
+
+function getDefaultOperatorSeeds(): Array<{ displayName: string; email: string; role: OperatorRole; locationId: string }> {
+  const locationId = getDefaultOperatorLocationId();
+  return [
+    {
+      displayName: process.env.DEFAULT_OPERATOR_OWNER_NAME?.trim() || "Store Owner",
+      email: normalizeEmail(process.env.DEFAULT_OPERATOR_OWNER_EMAIL?.trim() || "owner@gazellecoffee.com"),
+      role: "owner",
+      locationId
+    },
+    {
+      displayName: process.env.DEFAULT_OPERATOR_MANAGER_NAME?.trim() || "Store Manager",
+      email: normalizeEmail(process.env.DEFAULT_OPERATOR_MANAGER_EMAIL?.trim() || "manager@gazellecoffee.com"),
+      role: "manager",
+      locationId
+    },
+    {
+      displayName: process.env.DEFAULT_OPERATOR_STAFF_NAME?.trim() || "Lead Barista",
+      email: normalizeEmail(process.env.DEFAULT_OPERATOR_STAFF_EMAIL?.trim() || "staff@gazellecoffee.com"),
+      role: "staff",
+      locationId
+    }
+  ];
+}
+
+function toOperatorUserRecord(row: PersistedOperatorUserRow): OperatorUserRecord {
+  return {
+    operatorUserId: row.operator_user_id,
+    displayName: row.display_name,
+    email: normalizeEmail(row.email),
+    role: row.role,
+    locationId: row.location_id,
+    active: row.active,
+    capabilities: resolveOperatorCapabilities(row.role),
+    createdAt: parseIsoDate(row.created_at),
+    updatedAt: parseIsoDate(row.updated_at)
+  };
+}
+
+function toOperatorMagicLinkRecord(row: PersistedOperatorMagicLinkRow): OperatorMagicLinkRecord {
+  return {
+    token: row.token,
+    email: normalizeEmail(row.email),
+    operatorUserId: row.operator_user_id ?? null,
+    expiresAt: parseIsoDate(row.expires_at),
+    consumedAt: row.consumed_at ? parseIsoDate(row.consumed_at) : null
+  };
+}
+
+function toStoredOperatorSession(row: PersistedOperatorSessionRow): StoredOperatorSession {
+  return {
+    accessToken: row.access_token,
+    refreshToken: row.refresh_token,
+    operatorUserId: row.operator_user_id,
+    expiresAt: parseIsoDate(row.access_expires_at ?? row.expires_at),
+    refreshExpiresAt: parseIsoDate(row.expires_at)
+  };
+}
+
 export function createInMemoryIdentityRepository(): IdentityRepository {
   const sessionsByAccessToken = new Map<string, { session: StoredSession; revokedAt?: string }>();
   const accessTokenByRefreshToken = new Map<string, string>();
+  const operatorSessionsByAccessToken = new Map<string, { session: StoredOperatorSession; revokedAt?: string }>();
+  const operatorAccessTokenByRefreshToken = new Map<string, string>();
   const passkeyChallengesByFlow = new Map<"register" | "auth", PasskeyChallengeRecord[]>();
   const passkeyCredentialsById = new Map<string, PasskeyCredentialRecord>();
   const usersById = new Map<string, IdentityUserRecord>();
   const userIdByAppleSub = new Map<string, string>();
   const userIdByEmail = new Map<string, string>();
   const magicLinksByToken = new Map<string, MagicLinkRecord>();
+  const operatorUsersById = new Map<string, OperatorUserRecord>();
+  const operatorUserIdByEmail = new Map<string, string>();
+  const operatorMagicLinksByToken = new Map<string, OperatorMagicLinkRecord>();
+
+  for (const seed of getDefaultOperatorSeeds()) {
+    const now = new Date().toISOString();
+    const operatorUserId = randomUUID();
+    const record: OperatorUserRecord = {
+      operatorUserId,
+      displayName: seed.displayName,
+      email: seed.email,
+      role: seed.role,
+      locationId: seed.locationId,
+      active: true,
+      capabilities: resolveOperatorCapabilities(seed.role),
+      createdAt: now,
+      updatedAt: now
+    };
+    operatorUsersById.set(operatorUserId, record);
+    operatorUserIdByEmail.set(record.email, operatorUserId);
+  }
 
   return {
     backend: "memory",
@@ -375,6 +534,182 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
         consumedAt: new Date().toISOString()
       });
     },
+    async listOperatorUsers(locationId) {
+      return Array.from(operatorUsersById.values())
+        .filter((user) => (locationId ? user.locationId === locationId : true))
+        .sort((left, right) => left.displayName.localeCompare(right.displayName));
+    },
+    async getOperatorUserById(operatorUserId) {
+      const record = operatorUsersById.get(operatorUserId);
+      return record ? { ...record } : undefined;
+    },
+    async getOperatorUserByEmail(email) {
+      const operatorUserId = operatorUserIdByEmail.get(normalizeEmail(email));
+      if (!operatorUserId) {
+        return undefined;
+      }
+
+      const record = operatorUsersById.get(operatorUserId);
+      return record ? { ...record } : undefined;
+    },
+    async createOperatorUser(input) {
+      const normalizedEmail = normalizeEmail(input.email);
+      const existingId = operatorUserIdByEmail.get(normalizedEmail);
+      if (existingId) {
+        const existing = operatorUsersById.get(existingId);
+        if (existing) {
+          return existing;
+        }
+      }
+
+      const now = new Date().toISOString();
+      const record: OperatorUserRecord = {
+        operatorUserId: randomUUID(),
+        displayName: input.displayName.trim(),
+        email: normalizedEmail,
+        role: input.role,
+        locationId: input.locationId,
+        active: true,
+        capabilities: resolveOperatorCapabilities(input.role),
+        createdAt: now,
+        updatedAt: now
+      };
+
+      operatorUsersById.set(record.operatorUserId, record);
+      operatorUserIdByEmail.set(record.email, record.operatorUserId);
+      return { ...record };
+    },
+    async updateOperatorUser(operatorUserId, input) {
+      const existing = operatorUsersById.get(operatorUserId);
+      if (!existing) {
+        return undefined;
+      }
+
+      const nextEmail = input.email ? normalizeEmail(input.email) : existing.email;
+      const conflictingId = operatorUserIdByEmail.get(nextEmail);
+      if (conflictingId && conflictingId !== operatorUserId) {
+        throw new Error("OPERATOR_EMAIL_ALREADY_EXISTS");
+      }
+
+      if (nextEmail !== existing.email) {
+        operatorUserIdByEmail.delete(existing.email);
+        operatorUserIdByEmail.set(nextEmail, operatorUserId);
+      }
+
+      const nextRole = input.role ?? existing.role;
+      const updated: OperatorUserRecord = {
+        ...existing,
+        displayName: input.displayName?.trim() || existing.displayName,
+        email: nextEmail,
+        role: nextRole,
+        active: input.active ?? existing.active,
+        capabilities: resolveOperatorCapabilities(nextRole),
+        updatedAt: new Date().toISOString()
+      };
+
+      operatorUsersById.set(operatorUserId, updated);
+      return { ...updated };
+    },
+    async saveOperatorMagicLink(input) {
+      const operator = Array.from(operatorUsersById.values()).find((user) => user.email === normalizeEmail(input.email));
+      operatorMagicLinksByToken.set(input.token, {
+        token: input.token,
+        email: normalizeEmail(input.email),
+        operatorUserId: operator?.operatorUserId ?? null,
+        expiresAt: input.expiresAt,
+        consumedAt: null
+      });
+    },
+    async getOperatorMagicLink(token) {
+      const record = operatorMagicLinksByToken.get(token);
+      return record ? { ...record } : undefined;
+    },
+    async consumeOperatorMagicLink(token, operatorUserId) {
+      const record = operatorMagicLinksByToken.get(token);
+      if (!record) {
+        return;
+      }
+
+      operatorMagicLinksByToken.set(token, {
+        ...record,
+        operatorUserId,
+        consumedAt: new Date().toISOString()
+      });
+    },
+    async saveOperatorSession(session) {
+      operatorSessionsByAccessToken.set(session.accessToken, { session });
+      operatorAccessTokenByRefreshToken.set(session.refreshToken, session.accessToken);
+    },
+    async rotateOperatorRefreshSession(refreshToken, createNextSession) {
+      const accessToken = operatorAccessTokenByRefreshToken.get(refreshToken);
+      if (!accessToken) {
+        return undefined;
+      }
+
+      const entry = operatorSessionsByAccessToken.get(accessToken);
+      if (!entry || !isRefreshSessionActive(entry.session.refreshExpiresAt, entry.revokedAt)) {
+        return undefined;
+      }
+
+      operatorSessionsByAccessToken.set(accessToken, {
+        ...entry,
+        revokedAt: new Date().toISOString()
+      });
+      operatorAccessTokenByRefreshToken.delete(refreshToken);
+
+      const nextSession = createNextSession(entry.session.operatorUserId);
+      operatorSessionsByAccessToken.set(nextSession.accessToken, { session: nextSession });
+      operatorAccessTokenByRefreshToken.set(nextSession.refreshToken, nextSession.accessToken);
+      return nextSession;
+    },
+    async getOperatorSessionByAccessToken(accessToken) {
+      const entry = operatorSessionsByAccessToken.get(accessToken);
+      if (!entry) {
+        return undefined;
+      }
+
+      const candidate = {
+        accessToken: entry.session.accessToken,
+        refreshToken: entry.session.refreshToken,
+        expiresAt: entry.session.expiresAt,
+        userId: entry.session.operatorUserId
+      };
+      if (!isAccessSessionActive(authSessionSchema.parse(candidate), entry.revokedAt)) {
+        return undefined;
+      }
+
+      return entry.session;
+    },
+    async getOperatorSessionByRefreshToken(refreshToken) {
+      const accessToken = operatorAccessTokenByRefreshToken.get(refreshToken);
+      if (!accessToken) {
+        return undefined;
+      }
+
+      const entry = operatorSessionsByAccessToken.get(accessToken);
+      if (!entry || !isRefreshSessionActive(entry.session.refreshExpiresAt, entry.revokedAt)) {
+        return undefined;
+      }
+
+      return entry.session;
+    },
+    async revokeOperatorByRefreshToken(refreshToken) {
+      const accessToken = operatorAccessTokenByRefreshToken.get(refreshToken);
+      if (!accessToken) {
+        return;
+      }
+
+      const entry = operatorSessionsByAccessToken.get(accessToken);
+      if (!entry) {
+        return;
+      }
+
+      operatorSessionsByAccessToken.set(accessToken, {
+        ...entry,
+        revokedAt: new Date().toISOString()
+      });
+      operatorAccessTokenByRefreshToken.delete(refreshToken);
+    },
     async pingDb() {
       // no-op for in-memory
     },
@@ -384,9 +719,35 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
   };
 }
 
+async function ensureDefaultOperatorUsers(db: ReturnType<typeof createPostgresDb>) {
+  for (const seed of getDefaultOperatorSeeds()) {
+    await db
+      .insertInto("operator_users")
+      .values({
+        operator_user_id: randomUUID(),
+        email: seed.email,
+        display_name: seed.displayName,
+        role: seed.role,
+        location_id: seed.locationId,
+        active: true
+      })
+      .onConflict((oc) =>
+        oc.column("email").doUpdateSet({
+          display_name: seed.displayName,
+          role: seed.role,
+          location_id: seed.locationId,
+          active: true,
+          updated_at: new Date().toISOString()
+        })
+      )
+      .execute();
+  }
+}
+
 async function createPostgresRepository(connectionString: string): Promise<IdentityRepository> {
   const db = createPostgresDb(connectionString);
   await runMigrations(db);
+  await ensureDefaultOperatorUsers(db);
 
   return {
     backend: "postgres",
@@ -836,6 +1197,307 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
           consumed_at: new Date().toISOString()
         })
         .where("token", "=", token)
+        .execute();
+    },
+    async listOperatorUsers(locationId) {
+      const query = db.selectFrom("operator_users").selectAll().orderBy("display_name", "asc");
+      const rows = locationId ? await query.where("location_id", "=", locationId).execute() : await query.execute();
+      return rows.map((row) => toOperatorUserRecord(row as PersistedOperatorUserRow));
+    },
+    async getOperatorUserById(operatorUserId) {
+      const row = await db
+        .selectFrom("operator_users")
+        .selectAll()
+        .where("operator_user_id", "=", operatorUserId)
+        .executeTakeFirst();
+
+      if (!row) {
+        return undefined;
+      }
+
+      return toOperatorUserRecord(row as PersistedOperatorUserRow);
+    },
+    async getOperatorUserByEmail(email) {
+      const row = await db
+        .selectFrom("operator_users")
+        .selectAll()
+        .where("email", "=", normalizeEmail(email))
+        .executeTakeFirst();
+
+      if (!row) {
+        return undefined;
+      }
+
+      return toOperatorUserRecord(row as PersistedOperatorUserRow);
+    },
+    async createOperatorUser(input) {
+      const normalizedEmail = normalizeEmail(input.email);
+      const now = new Date().toISOString();
+      const operatorUserId = randomUUID();
+
+      try {
+        await db
+          .insertInto("operator_users")
+          .values({
+            operator_user_id: operatorUserId,
+            email: normalizedEmail,
+            display_name: input.displayName.trim(),
+            role: input.role,
+            location_id: input.locationId,
+            active: true
+          })
+          .execute();
+      } catch {
+        const existing = await db
+          .selectFrom("operator_users")
+          .selectAll()
+          .where("email", "=", normalizedEmail)
+          .executeTakeFirst();
+        if (!existing) {
+          throw new Error("Failed to create operator user");
+        }
+
+        await db
+          .updateTable("operator_users")
+          .set({
+            display_name: input.displayName.trim(),
+            role: input.role,
+            location_id: input.locationId,
+            active: true,
+            updated_at: now
+          })
+          .where("operator_user_id", "=", existing.operator_user_id)
+          .execute();
+
+        const updated = await db
+          .selectFrom("operator_users")
+          .selectAll()
+          .where("operator_user_id", "=", existing.operator_user_id)
+          .executeTakeFirstOrThrow();
+
+        return toOperatorUserRecord(updated as PersistedOperatorUserRow);
+      }
+
+      const created = await db
+        .selectFrom("operator_users")
+        .selectAll()
+        .where("operator_user_id", "=", operatorUserId)
+        .executeTakeFirstOrThrow();
+      return toOperatorUserRecord(created as PersistedOperatorUserRow);
+    },
+    async updateOperatorUser(operatorUserId, input) {
+      const existing = await db
+        .selectFrom("operator_users")
+        .selectAll()
+        .where("operator_user_id", "=", operatorUserId)
+        .executeTakeFirst();
+
+      if (!existing) {
+        return undefined;
+      }
+
+      const nextEmail = input.email ? normalizeEmail(input.email) : existing.email;
+      if (nextEmail !== existing.email) {
+        const conflicting = await db
+          .selectFrom("operator_users")
+          .select("operator_user_id")
+          .where("email", "=", nextEmail)
+          .executeTakeFirst();
+        if (conflicting && conflicting.operator_user_id !== operatorUserId) {
+          throw new Error("OPERATOR_EMAIL_ALREADY_EXISTS");
+        }
+      }
+
+      await db
+        .updateTable("operator_users")
+        .set({
+          email: nextEmail,
+          display_name: input.displayName?.trim() ?? existing.display_name,
+          role: input.role ?? existing.role,
+          active: input.active ?? existing.active,
+          updated_at: new Date().toISOString()
+        })
+        .where("operator_user_id", "=", operatorUserId)
+        .execute();
+
+      const updated = await db
+        .selectFrom("operator_users")
+        .selectAll()
+        .where("operator_user_id", "=", operatorUserId)
+        .executeTakeFirstOrThrow();
+
+      return toOperatorUserRecord(updated as PersistedOperatorUserRow);
+    },
+    async saveOperatorMagicLink(input) {
+      const normalizedEmail = normalizeEmail(input.email);
+      const operator = await db
+        .selectFrom("operator_users")
+        .select("operator_user_id")
+        .where("email", "=", normalizedEmail)
+        .executeTakeFirst();
+
+      await db
+        .insertInto("operator_magic_links")
+        .values({
+          token: input.token,
+          email: normalizedEmail,
+          operator_user_id: operator?.operator_user_id ?? null,
+          expires_at: input.expiresAt,
+          consumed_at: null
+        })
+        .execute();
+    },
+    async getOperatorMagicLink(token) {
+      const row = await db
+        .selectFrom("operator_magic_links")
+        .selectAll()
+        .where("token", "=", token)
+        .executeTakeFirst();
+
+      if (!row) {
+        return undefined;
+      }
+
+      return toOperatorMagicLinkRecord(row as PersistedOperatorMagicLinkRow);
+    },
+    async consumeOperatorMagicLink(token, operatorUserId) {
+      await db
+        .updateTable("operator_magic_links")
+        .set({
+          operator_user_id: operatorUserId,
+          consumed_at: new Date().toISOString()
+        })
+        .where("token", "=", token)
+        .execute();
+    },
+    async saveOperatorSession(session, authMethod) {
+      try {
+        await db
+          .insertInto("operator_sessions")
+          .values({
+            access_token: session.accessToken,
+            refresh_token: session.refreshToken,
+            operator_user_id: session.operatorUserId,
+            access_expires_at: session.expiresAt,
+            expires_at: session.refreshExpiresAt,
+            revoked_at: null,
+            auth_method: authMethod
+          })
+          .execute();
+        return;
+      } catch {
+        await db
+          .updateTable("operator_sessions")
+          .set({
+            refresh_token: session.refreshToken,
+            operator_user_id: session.operatorUserId,
+            access_expires_at: session.expiresAt,
+            expires_at: session.refreshExpiresAt,
+            revoked_at: null,
+            auth_method: authMethod,
+            updated_at: new Date().toISOString()
+          })
+          .where("access_token", "=", session.accessToken)
+          .execute();
+      }
+    },
+    async rotateOperatorRefreshSession(refreshToken, createNextSession, authMethod) {
+      return db.transaction().execute(async (trx) => {
+        const row = await trx
+          .selectFrom("operator_sessions")
+          .selectAll()
+          .where("refresh_token", "=", refreshToken)
+          .forUpdate()
+          .executeTakeFirst();
+
+        if (!row) {
+          return undefined;
+        }
+
+        const persisted = row as unknown as PersistedOperatorSessionRow;
+        const revokedAt = persisted.revoked_at ? parseIsoDate(persisted.revoked_at) : undefined;
+        if (!isRefreshSessionActive(parseIsoDate(persisted.expires_at), revokedAt)) {
+          return undefined;
+        }
+
+        await trx
+          .updateTable("operator_sessions")
+          .set({
+            revoked_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .where("access_token", "=", persisted.access_token)
+          .execute();
+
+        const nextSession = createNextSession(persisted.operator_user_id);
+        await trx
+          .insertInto("operator_sessions")
+          .values({
+            access_token: nextSession.accessToken,
+            refresh_token: nextSession.refreshToken,
+            operator_user_id: nextSession.operatorUserId,
+            access_expires_at: nextSession.expiresAt,
+            expires_at: nextSession.refreshExpiresAt,
+            revoked_at: null,
+            auth_method: authMethod
+          })
+          .execute();
+
+        return nextSession;
+      });
+    },
+    async getOperatorSessionByAccessToken(accessToken) {
+      const row = await db
+        .selectFrom("operator_sessions")
+        .selectAll()
+        .where("access_token", "=", accessToken)
+        .executeTakeFirst();
+
+      if (!row) {
+        return undefined;
+      }
+
+      const persisted = row as unknown as PersistedOperatorSessionRow;
+      const session = toStoredOperatorSession(persisted);
+      const accessSession = authSessionSchema.parse({
+        accessToken: session.accessToken,
+        refreshToken: session.refreshToken,
+        expiresAt: session.expiresAt,
+        userId: session.operatorUserId
+      });
+
+      if (!isAccessSessionActive(accessSession, persisted.revoked_at ? parseIsoDate(persisted.revoked_at) : undefined)) {
+        return undefined;
+      }
+
+      return session;
+    },
+    async getOperatorSessionByRefreshToken(refreshToken) {
+      const row = await db
+        .selectFrom("operator_sessions")
+        .selectAll()
+        .where("refresh_token", "=", refreshToken)
+        .executeTakeFirst();
+
+      if (!row) {
+        return undefined;
+      }
+
+      const persisted = row as unknown as PersistedOperatorSessionRow;
+      if (!isRefreshSessionActive(parseIsoDate(persisted.expires_at), persisted.revoked_at ? parseIsoDate(persisted.revoked_at) : undefined)) {
+        return undefined;
+      }
+
+      return toStoredOperatorSession(persisted);
+    },
+    async revokeOperatorByRefreshToken(refreshToken) {
+      await db
+        .updateTable("operator_sessions")
+        .set({
+          revoked_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .where("refresh_token", "=", refreshToken)
         .execute();
     },
     async pingDb() {

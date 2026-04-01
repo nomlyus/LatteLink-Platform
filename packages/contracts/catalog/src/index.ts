@@ -266,6 +266,22 @@ export const adminMenuItemUpdateSchema = z.object({
   visible: z.boolean()
 });
 
+export const adminMenuItemCreateSchema = z.object({
+  categoryId: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  priceCents: z.number().int().nonnegative(),
+  visible: z.boolean()
+});
+
+export const adminMenuItemVisibilityUpdateSchema = z.object({
+  visible: z.boolean()
+});
+
+export const adminMutationSuccessSchema = z.object({
+  success: z.literal(true)
+});
+
 export const adminStoreConfigSchema = z.object({
   locationId: z.string().min(1),
   storeName: z.string().min(1),
@@ -382,6 +398,8 @@ export type AdminMenuItem = z.output<typeof adminMenuItemSchema>;
 export type AdminMenuCategory = z.output<typeof adminMenuCategorySchema>;
 export type AdminMenuResponse = z.output<typeof adminMenuResponseSchema>;
 export type AdminStoreConfig = z.output<typeof adminStoreConfigSchema>;
+export type AdminMenuItemCreate = z.output<typeof adminMenuItemCreateSchema>;
+export type AdminMenuItemVisibilityUpdate = z.output<typeof adminMenuItemVisibilityUpdateSchema>;
 export type AppConfigTheme = z.output<typeof appConfigThemeSchema>;
 export type AppConfigBrand = z.output<typeof appConfigBrandSchema>;
 export type AppConfigFeatureFlags = z.output<typeof appConfigFeatureFlagsSchema>;

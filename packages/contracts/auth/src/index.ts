@@ -70,6 +70,93 @@ export const meResponseSchema = z.object({
   methods: z.array(z.enum(["apple", "passkey", "magic-link"]))
 });
 
+export const operatorRoleSchema = z.enum(["owner", "manager", "staff"]);
+export const operatorCapabilitySchema = z.enum([
+  "orders:read",
+  "orders:write",
+  "menu:read",
+  "menu:write",
+  "menu:visibility",
+  "store:read",
+  "store:write",
+  "staff:read",
+  "staff:write"
+]);
+
+export const operatorCapabilitiesByRole = {
+  owner: [
+    "orders:read",
+    "orders:write",
+    "menu:read",
+    "menu:write",
+    "menu:visibility",
+    "store:read",
+    "store:write",
+    "staff:read",
+    "staff:write"
+  ],
+  manager: [
+    "orders:read",
+    "orders:write",
+    "menu:read",
+    "menu:write",
+    "menu:visibility",
+    "store:read",
+    "staff:read"
+  ],
+  staff: ["orders:read", "orders:write", "menu:read", "menu:visibility", "store:read"]
+} as const satisfies Record<z.infer<typeof operatorRoleSchema>, readonly z.infer<typeof operatorCapabilitySchema>[]>;
+
+export function resolveOperatorCapabilities(role: z.infer<typeof operatorRoleSchema>) {
+  return [...operatorCapabilitiesByRole[role]];
+}
+
+export const operatorUserSchema = z.object({
+  operatorUserId: z.string().uuid(),
+  displayName: z.string().min(1),
+  email: z.string().trim().email(),
+  role: operatorRoleSchema,
+  locationId: z.string().min(1),
+  active: z.boolean(),
+  capabilities: z.array(operatorCapabilitySchema),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+
+export const operatorSessionSchema = z.object({
+  accessToken: z.string().min(1),
+  refreshToken: z.string().min(1),
+  expiresAt: z.string().datetime(),
+  operator: operatorUserSchema
+});
+
+export const operatorMeResponseSchema = operatorUserSchema;
+
+export const operatorUserListResponseSchema = z.object({
+  users: z.array(operatorUserSchema)
+});
+
+export const operatorUserCreateSchema = z.object({
+  displayName: z.string().trim().min(1),
+  email: z.string().trim().email(),
+  role: operatorRoleSchema
+});
+
+export const operatorUserUpdateSchema = z
+  .object({
+    displayName: z.string().trim().min(1).optional(),
+    email: z.string().trim().email().optional(),
+    role: operatorRoleSchema.optional(),
+    active: z.boolean().optional()
+  })
+  .refine((value) => Object.values(value).some((entry) => entry !== undefined), {
+    message: "At least one operator user field must be provided"
+  });
+
+export const operatorUserParamsSchema = z.object({
+  operatorUserId: z.string().uuid()
+});
+
 export const authContract = {
   basePath: "/auth",
   routes: {
@@ -135,3 +222,44 @@ export const authContract = {
     }
   }
 } as const;
+
+export const operatorAuthContract = {
+  basePath: "/operator/auth",
+  routes: {
+    magicLinkRequest: {
+      method: "POST",
+      path: "/magic-link/request",
+      request: magicLinkRequestSchema,
+      response: z.object({ success: z.literal(true) })
+    },
+    magicLinkVerify: {
+      method: "POST",
+      path: "/magic-link/verify",
+      request: magicLinkVerifySchema,
+      response: operatorSessionSchema
+    },
+    refresh: {
+      method: "POST",
+      path: "/refresh",
+      request: refreshRequestSchema,
+      response: operatorSessionSchema
+    },
+    logout: {
+      method: "POST",
+      path: "/logout",
+      request: logoutRequestSchema,
+      response: z.object({ success: z.literal(true) })
+    },
+    me: {
+      method: "GET",
+      path: "/me",
+      request: z.undefined(),
+      response: operatorMeResponseSchema
+    }
+  }
+} as const;
+
+export type OperatorRole = z.output<typeof operatorRoleSchema>;
+export type OperatorCapability = z.output<typeof operatorCapabilitySchema>;
+export type OperatorUser = z.output<typeof operatorUserSchema>;
+export type OperatorSession = z.output<typeof operatorSessionSchema>;
