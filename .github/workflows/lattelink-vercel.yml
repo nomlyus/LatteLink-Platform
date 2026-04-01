@@ -1,0 +1,135 @@
+name: lattelink-vercel
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "apps/lattelink-web/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/lattelink-vercel.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/lattelink-web/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/lattelink-vercel.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lattelink-vercel-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VERCEL_ORG_ID: ${{ secrets.LATTELINK_VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.LATTELINK_VERCEL_PROJECT_ID }}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm --filter @lattelink/web typecheck
+      - run: pnpm --filter @lattelink/web build
+
+  deploy-preview:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Vercel preview deploy prerequisites
+        id: preview-check
+        env:
+          VERCEL_TOKEN: ${{ secrets.LATTELINK_VERCEL_TOKEN }}
+        run: |
+          missing=0
+          for required in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
+            if [ -z "${!required}" ]; then
+              echo "missing: ${required}"
+              missing=1
+            fi
+          done
+
+          if [ "${missing}" -eq 0 ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping Vercel preview deploy because one or more required secrets are missing."
+          fi
+      - uses: actions/setup-node@v4
+        if: steps.preview-check.outputs.enabled == 'true'
+        with:
+          node-version: 22
+      - name: Install Vercel CLI
+        if: steps.preview-check.outputs.enabled == 'true'
+        run: npm install --global vercel@latest
+      - name: Pull Vercel preview configuration
+        if: steps.preview-check.outputs.enabled == 'true'
+        run: vercel pull --yes --environment=preview --token=${{ secrets.LATTELINK_VERCEL_TOKEN }}
+      - name: Build LatteLink preview artifacts for Vercel
+        if: steps.preview-check.outputs.enabled == 'true'
+        run: vercel build --token=${{ secrets.LATTELINK_VERCEL_TOKEN }}
+      - name: Deploy LatteLink preview to Vercel
+        if: steps.preview-check.outputs.enabled == 'true'
+        run: vercel deploy --prebuilt --token=${{ secrets.LATTELINK_VERCEL_TOKEN }}
+      - name: Skip Vercel preview deploy
+        if: steps.preview-check.outputs.enabled != 'true'
+        run: echo "Preview deploy skipped until LATTELINK_VERCEL_TOKEN, LATTELINK_VERCEL_ORG_ID, and LATTELINK_VERCEL_PROJECT_ID are configured."
+
+  deploy-production:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Vercel production deploy prerequisites
+        id: production-check
+        env:
+          VERCEL_TOKEN: ${{ secrets.LATTELINK_VERCEL_TOKEN }}
+        run: |
+          missing=0
+          for required in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
+            if [ -z "${!required}" ]; then
+              echo "missing: ${required}"
+              missing=1
+            fi
+          done
+
+          if [ "${missing}" -eq 0 ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping Vercel production deploy because one or more required secrets are missing."
+          fi
+      - uses: actions/setup-node@v4
+        if: steps.production-check.outputs.enabled == 'true'
+        with:
+          node-version: 22
+      - name: Install Vercel CLI
+        if: steps.production-check.outputs.enabled == 'true'
+        run: npm install --global vercel@latest
+      - name: Pull Vercel production configuration
+        if: steps.production-check.outputs.enabled == 'true'
+        run: vercel pull --yes --environment=production --token=${{ secrets.LATTELINK_VERCEL_TOKEN }}
+      - name: Build LatteLink production artifacts for Vercel
+        if: steps.production-check.outputs.enabled == 'true'
+        run: vercel build --prod --token=${{ secrets.LATTELINK_VERCEL_TOKEN }}
+      - name: Deploy LatteLink production to Vercel
+        if: steps.production-check.outputs.enabled == 'true'
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.LATTELINK_VERCEL_TOKEN }}
+      - name: Skip Vercel production deploy
+        if: steps.production-check.outputs.enabled != 'true'
+        run: echo "Production deploy skipped until LATTELINK_VERCEL_TOKEN, LATTELINK_VERCEL_ORG_ID, and LATTELINK_VERCEL_PROJECT_ID are configured."

@@ -6,7 +6,14 @@ on:
     branches:
       - main
     paths:
+      - "services/**"
+      - "packages/contracts/**"
+      - "packages/persistence/**"
       - "infra/free/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "turbo.json"
       - ".github/workflows/deploy-free.yml"
 
 permissions:

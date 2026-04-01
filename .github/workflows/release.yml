@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - main
+    paths:
+      - ".changeset/**"
+      - "packages/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/release.yml"
 
 permissions:
   contents: write
