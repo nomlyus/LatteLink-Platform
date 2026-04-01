@@ -208,9 +208,10 @@ export function Card({ children, style, muted = false }: CardProps) {
 type GlassCardProps = {
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
+  contentStyle?: StyleProp<ViewStyle>;
 };
 
-export function GlassCard({ children, style }: GlassCardProps) {
+export function GlassCard({ children, style, contentStyle }: GlassCardProps) {
   const useLiquidGlass = canUseLiquidGlassCard();
 
   return (
@@ -224,7 +225,7 @@ export function GlassCard({ children, style }: GlassCardProps) {
           <View style={styles.cardFallbackInner} />
         </BlurView>
       )}
-      <View style={styles.cardContent}>{children}</View>
+      <View style={[styles.cardContent, contentStyle]}>{children}</View>
     </View>
   );
 }

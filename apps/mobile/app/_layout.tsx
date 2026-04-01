@@ -40,6 +40,14 @@ export default function RootLayout() {
                   >
                     <Stack.Screen name="(tabs)" />
                     <Stack.Screen
+                      name="account/settings"
+                      options={{
+                        headerShown: false,
+                        animation: "none",
+                        contentStyle: { backgroundColor: uiPalette.background }
+                      }}
+                    />
+                    <Stack.Screen
                       name="cart"
                       options={{
                         presentation: "modal",

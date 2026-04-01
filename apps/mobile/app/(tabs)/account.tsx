@@ -1,14 +1,16 @@
 import { Ionicons } from "@expo/vector-icons";
+import { BlurView } from "expo-blur";
+import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthSession } from "../../src/auth/session";
 import { useLoyaltyBalanceQuery, useLoyaltyLedgerQuery } from "../../src/account/data";
 import { AccountFloatingHeader, ACCOUNT_HEADER_HEIGHT } from "../../src/account/AccountFloatingHeader";
 import { resolveAppConfigData, useAppConfigQuery } from "../../src/menu/catalog";
 import { TAB_BAR_HEIGHT, getTabBarBottomOffset } from "../../src/navigation/tabBarMetrics";
-import { Button, Chip, GlassCard, ScreenScroll, SectionLabel, uiPalette, uiTypography } from "../../src/ui/system";
+import { Chip, GlassCard, ScreenScroll, ScreenStatic, SectionLabel, uiPalette, uiTypography } from "../../src/ui/system";
 
 function formatMemberLabel(userId: string | undefined) {
   if (!userId) {
@@ -40,6 +42,42 @@ function AccountPageRow({
   );
 }
 
+function canUseLiquidGlassPill() {
+  if (Platform.OS !== "ios") return false;
+
+  try {
+    return isLiquidGlassAvailable();
+  } catch {
+    return false;
+  }
+}
+
+function GuestSignInPill({ onPress }: { onPress: () => void }) {
+  const useLiquidGlass = canUseLiquidGlassPill();
+  const content = (
+    <View style={[styles.loggedOutStaticCtaContent, useLiquidGlass ? null : styles.loggedOutStaticCtaContentFallback]}>
+      <Ionicons name="log-in-outline" size={16} color={uiPalette.text} />
+      <Text style={styles.loggedOutStaticCtaLabel}>Sign In</Text>
+    </View>
+  );
+
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.loggedOutStaticCtaPressable, pressed ? styles.glassPillPressed : null]}>
+      <View style={styles.loggedOutStaticCtaShell}>
+        {useLiquidGlass ? (
+          <GlassView glassEffectStyle="regular" colorScheme="auto" isInteractive style={styles.loggedOutStaticCtaFrame}>
+            {content}
+          </GlassView>
+        ) : (
+          <BlurView tint="light" intensity={Platform.OS === "ios" ? 28 : 24} style={styles.loggedOutStaticCtaFrame}>
+            {content}
+          </BlurView>
+        )}
+      </View>
+    </Pressable>
+  );
+}
+
 export default function AccountScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -55,6 +93,7 @@ export default function AccountScreen() {
   const memberLabel = formatMemberLabel(session?.userId);
   const headerOffset = insets.top + ACCOUNT_HEADER_HEIGHT;
   const contentBottomInset = Math.max(getTabBarBottomOffset(insets.bottom > 0) + TAB_BAR_HEIGHT + 24 - insets.bottom, 24);
+  const staticBottomInset = getTabBarBottomOffset(insets.bottom > 0) + TAB_BAR_HEIGHT + 12;
 
   function handleRefresh() {
     if (isManualRefresh) return;
@@ -78,6 +117,26 @@ export default function AccountScreen() {
     router.push(pathname);
   }
 
+  if (!isAuthenticated) {
+    return (
+      <View style={styles.screenShell}>
+        <ScreenStatic style={[styles.loggedOutStaticPage, { paddingTop: headerOffset, paddingBottom: staticBottomInset }]}>
+          <View style={styles.loggedOutStaticBody}>
+            <Text style={styles.loggedOutStaticTitle}>Keep every visit in one account.</Text>
+            <Text style={styles.loggedOutStaticText}>
+              Sign in to keep rewards, past orders, alerts, and settings attached to the same customer account at{" "}
+              {appConfig.brand.locationName}.
+            </Text>
+          </View>
+
+          <GuestSignInPill onPress={() => router.push({ pathname: "/auth", params: { returnTo: "/(tabs)/account" } })} />
+        </ScreenStatic>
+
+        <AccountFloatingHeader title="Account" insetTop={insets.top} />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.screenShell}>
       <ScreenScroll
@@ -87,41 +146,22 @@ export default function AccountScreen() {
         contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}
       >
         <GlassCard style={styles.heroCard}>
-          {isAuthenticated ? (
-            <>
-              <View style={styles.heroTopRow}>
-                <View style={styles.heroCopy}>
-                  <SectionLabel label="Member" />
-                  <Text style={styles.heroTitle}>{memberLabel}</Text>
-                  <Text style={styles.heroBody}>{appConfig.brand.locationName}</Text>
-                </View>
-                <Chip label={loyaltyEnabled ? "Loyalty On" : "Loyalty Off"} active={loyaltyEnabled} />
-              </View>
+          <View style={styles.heroTopRow}>
+            <View style={styles.heroCopy}>
+              <SectionLabel label="Member" />
+              <Text style={styles.heroTitle}>{memberLabel}</Text>
+              <Text style={styles.heroBody}>{appConfig.brand.locationName}</Text>
+            </View>
+            <Chip label={loyaltyEnabled ? "Loyalty On" : "Loyalty Off"} active={loyaltyEnabled} />
+          </View>
 
-              <View style={styles.pointsWrap}>
-                <Text style={styles.pointsLabel}>Available points</Text>
-                <Text style={styles.pointsValue}>{loyaltyEnabled ? (loyaltyBalance ? `${loyaltyBalance.availablePoints}` : "…") : "Off"}</Text>
-                <View style={styles.pointsMetaRow}>
-                  <Text style={styles.pointsMeta}>{loyaltyEnabled ? `Pending ${loyaltyBalance ? loyaltyBalance.pendingPoints : "--"} pts` : "Loyalty unavailable"}</Text>
-                </View>
-              </View>
-            </>
-          ) : (
-            <>
-              <SectionLabel label="Member access" />
-              <Text style={styles.heroTitle}>Rewards travel with you.</Text>
-              <Text style={styles.heroBody}>
-                Sign in once to keep points, alerts, and session settings attached to the same customer account.
-              </Text>
-              <Button
-                label="Sign In"
-                variant="secondary"
-                onPress={() => router.push({ pathname: "/auth", params: { returnTo: "/(tabs)/account" } })}
-                style={styles.signInAction}
-                left={<Ionicons name="log-in-outline" size={16} color={uiPalette.text} />}
-              />
-            </>
-          )}
+          <View style={styles.pointsWrap}>
+            <Text style={styles.pointsLabel}>Available points</Text>
+            <Text style={styles.pointsValue}>{loyaltyEnabled ? (loyaltyBalance ? `${loyaltyBalance.availablePoints}` : "…") : "Off"}</Text>
+            <View style={styles.pointsMetaRow}>
+              <Text style={styles.pointsMeta}>{loyaltyEnabled ? `Pending ${loyaltyBalance ? loyaltyBalance.pendingPoints : "--"} pts` : "Loyalty unavailable"}</Text>
+            </View>
+          </View>
         </GlassCard>
 
         <View style={styles.listSection}>
@@ -149,6 +189,69 @@ const styles = StyleSheet.create({
   heroCard: {
     marginTop: 18
   },
+  loggedOutStaticPage: {
+    flex: 1,
+    justifyContent: "space-between"
+  },
+  loggedOutStaticBody: {
+    flex: 1,
+    justifyContent: "flex-start",
+    paddingTop: 18,
+    paddingBottom: 32
+  },
+  loggedOutStaticTitle: {
+    marginTop: 12,
+    fontSize: 36,
+    lineHeight: 40,
+    letterSpacing: -1.1,
+    color: uiPalette.text,
+    fontFamily: uiTypography.displayFamily,
+    fontWeight: "700"
+  },
+  loggedOutStaticText: {
+    marginTop: 12,
+    maxWidth: 320,
+    fontSize: 16,
+    lineHeight: 24,
+    color: uiPalette.textSecondary
+  },
+  loggedOutStaticCtaPressable: {
+    alignSelf: "stretch"
+  },
+  loggedOutStaticCtaShell: {
+    borderRadius: 999,
+    overflow: "hidden"
+  },
+  loggedOutStaticCtaFrame: {
+    borderRadius: 999,
+    overflow: "hidden"
+  },
+  loggedOutStaticCtaContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 252, 246, 0.10)"
+  },
+  loggedOutStaticCtaContentFallback: {
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.34)"
+  },
+  loggedOutStaticCtaLabel: {
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "600",
+    letterSpacing: 0.05,
+    color: uiPalette.text,
+    fontFamily: uiTypography.bodyFamily
+  },
+  glassPillPressed: {
+    opacity: 0.92,
+    transform: [{ scale: 0.992 }]
+  },
   heroTopRow: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -172,6 +275,33 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
     color: uiPalette.textSecondary
+  },
+  loggedOutPreviewBand: {
+    marginTop: 20,
+    paddingTop: 18,
+    borderTopWidth: 1,
+    borderTopColor: uiPalette.border,
+    gap: 14
+  },
+  loggedOutPreviewItem: {
+    gap: 6
+  },
+  loggedOutPreviewLabel: {
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 1.1,
+    textTransform: "uppercase",
+    color: uiPalette.textMuted,
+    fontWeight: "700"
+  },
+  loggedOutPreviewValue: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: uiPalette.text
+  },
+  loggedOutPreviewDivider: {
+    height: 1,
+    backgroundColor: uiPalette.border
   },
   pointsWrap: {
     marginTop: 22,
@@ -204,10 +334,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     color: uiPalette.textSecondary
-  },
-  signInAction: {
-    marginTop: 18,
-    alignSelf: "flex-start"
   },
   listSection: {
     marginTop: 28

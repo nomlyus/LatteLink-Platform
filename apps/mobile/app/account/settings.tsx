@@ -47,7 +47,7 @@ export default function SettingsPage() {
     setSignOutPending(true);
     try {
       await signOut();
-      router.replace("/(tabs)/account");
+      router.dismissTo("/(tabs)/home");
     } finally {
       setSignOutPending(false);
     }
@@ -106,6 +106,7 @@ export default function SettingsPage() {
               void handleSignOut();
             }}
             disabled={signOutPending}
+            style={styles.signOutButton}
           />
         </Card>
       </ScreenScroll>
@@ -187,6 +188,9 @@ const styles = StyleSheet.create({
   signOutCard: {
     marginTop: 14,
     marginBottom: 8,
-    alignItems: "flex-start"
+    alignItems: "stretch"
+  },
+  signOutButton: {
+    alignSelf: "stretch"
   }
 });

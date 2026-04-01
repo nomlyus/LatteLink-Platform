@@ -6,7 +6,13 @@ export function formatOrderDateTime(value: string) {
     return value;
   }
 
-  return new Date(parsed).toLocaleString();
+  return new Date(parsed).toLocaleString([], {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
 }
 
 export function formatOrderStatus(status: string) {

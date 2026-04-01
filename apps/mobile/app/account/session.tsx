@@ -1,5 +1,4 @@
 import { useRouter } from "expo-router";
-import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthSession } from "../../src/auth/session";
@@ -37,10 +36,9 @@ function DetailRow({
 export default function SessionPage() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { isAuthenticated, session, signOut } = useAuthSession();
+  const { isAuthenticated, session } = useAuthSession();
   const appConfig = resolveAppConfigData(useAppConfigQuery().data);
   const headerOffset = insets.top + ACCOUNT_HEADER_HEIGHT;
-  const [signOutPending, setSignOutPending] = useState(false);
 
   function goBack() {
     if (router.canGoBack()) {
@@ -51,16 +49,6 @@ export default function SessionPage() {
     router.replace("/(tabs)/account");
   }
 
-  async function handleSignOut() {
-    setSignOutPending(true);
-    try {
-      await signOut();
-      router.replace("/(tabs)/account");
-    } finally {
-      setSignOutPending(false);
-    }
-  }
-
   if (!isAuthenticated) {
     return (
       <View style={styles.screenShell}>
@@ -68,7 +56,7 @@ export default function SessionPage() {
           <GlassCard style={styles.heroCard}>
             <SectionLabel label="Session" />
             <Text style={styles.heroTitle}>Sign in to view session details.</Text>
-            <Text style={styles.heroBody}>Session state and sign-out controls appear here for authenticated users.</Text>
+            <Text style={styles.heroBody}>Session state appears here for authenticated users.</Text>
             <Button
               label="Sign In"
               variant="secondary"
@@ -103,17 +91,6 @@ export default function SessionPage() {
             <DetailRow label="User ID" value={session?.userId.slice(0, 8).toUpperCase() ?? "--"} />
             <DetailRow label="Expires" value={formatDateTime(session?.expiresAt ?? "")} />
             <DetailRow label="Location" value={appConfig.brand.locationName} />
-          </View>
-
-          <View style={styles.actionRow}>
-            <Button
-              label={signOutPending ? "Signing Out…" : "Sign Out"}
-              variant="ghost"
-              onPress={() => {
-                void handleSignOut();
-              }}
-              disabled={signOutPending}
-            />
           </View>
         </Card>
       </ScreenScroll>
@@ -189,9 +166,5 @@ const styles = StyleSheet.create({
     color: uiPalette.text,
     fontFamily: uiTypography.displayFamily,
     fontWeight: "600"
-  },
-  actionRow: {
-    marginTop: 16,
-    alignItems: "flex-start"
   }
 });

@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useQueryClient } from "@tanstack/react-query";
 import { BlurView } from "expo-blur";
 import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
-import { Link, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Animated as RNAnimated, Image, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, {
@@ -30,11 +30,10 @@ import {
   findLatestOrderTime,
   formatOrderDateTime,
   formatOrderStatus,
-  formatOrderTimelineNote,
   hasRefundActivity
 } from "../../src/orders/history";
 import { OrdersLoadingState } from "../../src/orders/OrdersLoadingState";
-import { Button, ScreenScroll, SectionLabel, uiPalette, uiTypography } from "../../src/ui/system";
+import { Button, ScreenScroll, ScreenStatic, SectionLabel, uiPalette, uiTypography } from "../../src/ui/system";
 
 const ACTIVE_PROGRESS_STEPS = [
   { status: "PENDING_PAYMENT", label: "Payment" },
@@ -129,8 +128,22 @@ function getActiveOrderBody(status: OrderHistoryEntry["status"]) {
 }
 
 function getLatestTimelineNote(order: OrderHistoryEntry) {
-  const latestEvent = order.timeline[order.timeline.length - 1];
-  return latestEvent?.note?.trim() ? formatOrderTimelineNote(latestEvent.note.trim()) : formatOrderStatus(order.status);
+  switch (order.status) {
+    case "PENDING_PAYMENT":
+      return "Payment still needs to be completed for this order.";
+    case "PAID":
+      return "Your order was confirmed successfully.";
+    case "IN_PREP":
+      return "Your order is being prepared.";
+    case "READY":
+      return "Your order was ready for pickup.";
+    case "COMPLETED":
+      return "Picked up successfully.";
+    case "CANCELED":
+      return "This order was canceled.";
+    default:
+      return formatOrderStatus(order.status);
+  }
 }
 
 function resolveOrderItemIcon(name: string) {
@@ -272,7 +285,11 @@ function StatusPill({
   const tone = getStatusTone(status);
   const label = formatOrderStatus(status);
   const shouldUseGlassPill =
-    status === "PAID" || status === "IN_PREP" || status === "READY" || status === "COMPLETED";
+    status === "PAID" ||
+    status === "IN_PREP" ||
+    status === "READY" ||
+    status === "COMPLETED" ||
+    status === "CANCELED";
 
   if (shouldUseGlassPill) {
     const useLiquidGlass = canUseLiquidGlassStatusPill();
@@ -466,19 +483,15 @@ function HistoryRow({
 
       <OrderItemStrip order={order} menuItemsById={menuItemsById} />
 
-      {canOpenRefund ? (
-        <View style={styles.historyFlag}>
-          <Text style={styles.historyFlagText}>Refund</Text>
-        </View>
-      ) : null}
-
       <Text style={styles.historyMeta}>{formatOrderDateTime(findLatestOrderTime(order))}</Text>
       <Text style={styles.historyBody}>{getLatestTimelineNote(order)}</Text>
 
       {canOpenRefund ? (
         <Pressable style={({ pressed }) => [styles.inlineAction, pressed ? styles.inlineActionPressed : null]} onPress={onOpenRefund}>
-          <Text style={styles.inlineActionText}>Refund details</Text>
-          <Ionicons name="arrow-forward" size={14} color={uiPalette.text} />
+          <View style={styles.inlineActionRow}>
+            <Text style={styles.inlineActionText}>Refund details</Text>
+            <Ionicons name="arrow-forward" size={14} color={uiPalette.text} style={styles.inlineActionIcon} />
+          </View>
         </Pressable>
       ) : null}
     </View>
@@ -529,9 +542,9 @@ export default function OrdersScreen() {
   const orderHistory = activeOrder ? orders.filter((order) => order.id !== activeOrder.id) : orders;
   const headerOffset = insets.top + ORDERS_HEADER_HEIGHT;
   const contentBottomInset = Math.max(getTabBarBottomOffset(insets.bottom > 0) + TAB_BAR_HEIGHT + 24 - insets.bottom, 24);
+  const staticBottomInset = getTabBarBottomOffset(insets.bottom > 0) + TAB_BAR_HEIGHT + 12;
   const isInitialOrdersLoading = isAuthenticated && ordersQuery.isLoading && !ordersQuery.data;
   const shouldShowInitialLoading = !didFinishInitialReveal && (isHydrating || isInitialOrdersLoading);
-  const showDevConfirmationPreview = __DEV__;
 
   useEffect(() => {
     if (!isAuthenticated || !activeOrder?.id) {
@@ -604,51 +617,14 @@ export default function OrdersScreen() {
   if (!isAuthenticated) {
     return (
       <View style={styles.screenShell}>
-        <ScreenScroll
-          bottomInset={contentBottomInset}
-          contentContainerStyle={[styles.screenContentNoTopPadding, styles.signedOutScrollContent, { paddingTop: headerOffset }]}
-        >
-          {showDevConfirmationPreview ? (
-            <View style={styles.devPreviewWrap}>
-              <Button label="Preview Confirmation" variant="secondary" onPress={() => router.push("/checkout-success")} />
-              <Button label="Preview Refund" variant="ghost" onPress={() => router.push("/refunds/dev-preview")} />
-            </View>
-          ) : null}
-
-          <View style={styles.signedOutState}>
-            <Text style={styles.stateTitle}>Track pickup and revisit past orders.</Text>
-            <Text style={styles.signedOutBody}>
+        <ScreenStatic style={[styles.loggedOutStaticPage, { paddingTop: headerOffset, paddingBottom: staticBottomInset }]}>
+          <View style={styles.loggedOutStaticBody}>
+            <Text style={styles.loggedOutStaticTitle}>Track pickup and revisit past orders.</Text>
+            <Text style={styles.loggedOutStaticText}>
               Sign in to keep live status, pickup codes, and previous receipts attached to one account every time you come back.
             </Text>
-
-            <View style={styles.signedOutFeatureList}>
-              <View style={styles.signedOutFeatureRow}>
-                <Text style={styles.signedOutFeatureLabel}>Live status</Text>
-                <Text style={styles.signedOutFeatureValue}>Confirmed, in prep, and ready updates appear here.</Text>
-              </View>
-              <View style={styles.signedOutFeatureDivider} />
-              <View style={styles.signedOutFeatureRow}>
-                <Text style={styles.signedOutFeatureLabel}>Pickup codes</Text>
-                <Text style={styles.signedOutFeatureValue}>Every active order keeps its handoff code in one place.</Text>
-              </View>
-              <View style={styles.signedOutFeatureDivider} />
-              <View style={styles.signedOutFeatureRow}>
-                <Text style={styles.signedOutFeatureLabel}>Past orders</Text>
-                <Text style={styles.signedOutFeatureValue}>Completed orders stay available after the visit is over.</Text>
-              </View>
-            </View>
-
-            <Link href={{ pathname: "/auth", params: { returnTo: "/(tabs)/orders" } }} asChild>
-              <Pressable>
-                <Button
-                  label="Sign In"
-                  style={styles.authButton}
-                  left={<Ionicons name="log-in-outline" size={16} color={uiPalette.primaryText} />}
-                />
-              </Pressable>
-            </Link>
           </View>
-        </ScreenScroll>
+        </ScreenStatic>
 
         <View pointerEvents="none" style={[styles.pageHeaderFloating, { paddingTop: insets.top, height: insets.top + ORDERS_HEADER_HEIGHT }]}>
           <OrdersHeader title="Orders" />
@@ -671,13 +647,6 @@ export default function OrdersScreen() {
         onRefresh={refreshOrders}
         contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}
       >
-        {showDevConfirmationPreview ? (
-          <View style={styles.devPreviewWrap}>
-            <Button label="Preview Confirmation" variant="secondary" onPress={() => router.push("/checkout-success")} />
-            <Button label="Preview Refund" variant="ghost" onPress={() => router.push("/refunds/dev-preview")} />
-          </View>
-        ) : null}
-
         {activeOrder ? (
           <View style={styles.sectionBlock}>
             <ActiveOrderPill>
@@ -801,15 +770,31 @@ const styles = StyleSheet.create({
   screenContentNoTopPadding: {
     paddingTop: 0
   },
-  signedOutScrollContent: {
-    flexGrow: 1
+  loggedOutStaticPage: {
+    flex: 1
   },
-  devPreviewWrap: {
-    marginTop: 18,
-    alignSelf: "flex-start",
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10
+  loggedOutStaticBody: {
+    flex: 1,
+    justifyContent: "flex-start",
+    paddingTop: 18,
+    paddingBottom: 32
+  },
+  loggedOutStaticTitle: {
+    marginTop: 12,
+    maxWidth: 320,
+    fontSize: 36,
+    lineHeight: 40,
+    letterSpacing: -1.1,
+    color: uiPalette.text,
+    fontFamily: uiTypography.displayFamily,
+    fontWeight: "700"
+  },
+  loggedOutStaticText: {
+    marginTop: 12,
+    maxWidth: 320,
+    fontSize: 16,
+    lineHeight: 24,
+    color: uiPalette.textSecondary
   },
   sectionBlock: {
     marginTop: 28
@@ -1017,62 +1002,6 @@ const styles = StyleSheet.create({
     marginTop: 22,
     alignSelf: "flex-start"
   },
-  signedOutState: {
-    flex: 1,
-    justifyContent: "flex-start",
-    alignItems: "center",
-    paddingTop: 20,
-    paddingBottom: 24
-  },
-  stateTitle: {
-    fontSize: 28,
-    lineHeight: 32,
-    letterSpacing: -0.8,
-    color: uiPalette.text,
-    fontFamily: uiTypography.displayFamily,
-    fontWeight: "700"
-  },
-  signedOutBody: {
-    marginTop: 10,
-    maxWidth: 560,
-    fontSize: 15,
-    lineHeight: 24,
-    color: uiPalette.textSecondary,
-    textAlign: "center"
-  },
-  signedOutFeatureList: {
-    width: "100%",
-    maxWidth: 560,
-    marginTop: 28,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: uiPalette.border
-  },
-  signedOutFeatureRow: {
-    paddingVertical: 16,
-    gap: 4
-  },
-  signedOutFeatureDivider: {
-    height: 1,
-    backgroundColor: uiPalette.border
-  },
-  signedOutFeatureLabel: {
-    fontSize: 11,
-    lineHeight: 14,
-    letterSpacing: 1.1,
-    textTransform: "uppercase",
-    color: uiPalette.textMuted,
-    fontWeight: "700"
-  },
-  signedOutFeatureValue: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: uiPalette.text
-  },
-  authButton: {
-    marginTop: 26,
-    alignSelf: "center"
-  },
   sectionMessage: {
     marginTop: 18,
     fontSize: 15,
@@ -1149,24 +1078,6 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     color: uiPalette.textSecondary
   },
-  historyFlag: {
-    marginTop: 12,
-    alignSelf: "flex-start",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: "rgba(180, 91, 79, 0.08)",
-    borderWidth: 1,
-    borderColor: "rgba(180, 91, 79, 0.18)"
-  },
-  historyFlagText: {
-    fontSize: 11,
-    lineHeight: 14,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    color: uiPalette.danger,
-    fontWeight: "700"
-  },
   historyMeta: {
     marginTop: 6,
     fontSize: 13,
@@ -1180,20 +1091,25 @@ const styles = StyleSheet.create({
     color: uiPalette.text
   },
   inlineAction: {
-    marginTop: 12,
-    alignSelf: "flex-start",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6
+    marginTop: 18,
+    alignSelf: "flex-start"
   },
   inlineActionPressed: {
     opacity: 0.72
   },
+  inlineActionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6
+  },
   inlineActionText: {
     fontSize: 13,
-    lineHeight: 18,
+    lineHeight: 16,
     color: uiPalette.text,
     fontWeight: "600"
+  },
+  inlineActionIcon: {
+    marginTop: 1
   },
   historyDivider: {
     height: 1,

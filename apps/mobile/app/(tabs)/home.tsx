@@ -1,19 +1,28 @@
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
+import { BlurView } from "expo-blur";
+import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
 import { useRouter } from "expo-router";
 import { useCallback, useRef, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import {
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent
+} from "react-native";
 import Animated, { Extrapolation, interpolate, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { resolveAppConfigData, resolveStoreConfigData, useAppConfigQuery, useStoreConfigQuery } from "../../src/menu/catalog";
 import { TAB_BAR_HEIGHT, getTabBarBottomOffset } from "../../src/navigation/tabBarMetrics";
-import { Card, ScreenBackdrop, TabBarDepthBackdrop, uiPalette, uiTypography } from "../../src/ui/system";
+import { GlassCard, ScreenBackdrop, TabBarDepthBackdrop, uiPalette, uiTypography } from "../../src/ui/system";
 
 const HEADER_TOP_PADDING = 18;
 const HEADER_EXPANDED_HEIGHT = 212;
 const HEADER_COLLAPSED_HEIGHT = 92;
-const DIVIDER_SHADOW_TOP_OVERLAP = 10;
-const DIVIDER_SHADOW_HEIGHT = 38;
 const HEADER_SNAP_VELOCITY_THRESHOLD = 0.2;
 const HEADER_SNAP_EDGE_TOLERANCE = 2;
 
@@ -44,6 +53,54 @@ const HOME_NEWS_ITEMS = [
   }
 ] as const;
 
+type NewsLabel = (typeof HOME_NEWS_ITEMS)[number]["label"];
+
+function canUseLiquidGlassTag() {
+  if (Platform.OS !== "ios") return false;
+
+  try {
+    return isLiquidGlassAvailable();
+  } catch {
+    return false;
+  }
+}
+
+function HomeNewsTag({ label }: { label: NewsLabel }) {
+  const useLiquidGlass = canUseLiquidGlassTag();
+
+  const content = (
+    <View
+      style={[
+        styles.newsLabelInner,
+        useLiquidGlass
+          ? styles.newsLabelInnerGlass
+          : styles.newsLabelInnerFallback
+      ]}
+    >
+      <Text style={styles.newsLabelText}>{label}</Text>
+    </View>
+  );
+
+  return (
+    <View style={styles.newsLabelShell}>
+      {useLiquidGlass ? (
+        <GlassView
+          glassEffectStyle="regular"
+          colorScheme="auto"
+          isInteractive
+          style={styles.newsLabelFrame}
+        >
+          {content}
+        </GlassView>
+      ) : (
+        <BlurView tint="light" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.newsLabelFrame}>
+          {content}
+        </BlurView>
+      )}
+    </View>
+  );
+}
+
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -73,15 +130,6 @@ export default function HomeScreen() {
       scrollY.value,
       [0, headerCollapseDistance],
       [headerExpandedHeight, headerCollapsedHeight],
-      Extrapolation.CLAMP
-    )
-  }));
-
-  const heroShadowStyle = useAnimatedStyle(() => ({
-    top: interpolate(
-      scrollY.value,
-      [0, headerCollapseDistance],
-      [headerExpandedHeight - DIVIDER_SHADOW_TOP_OVERLAP, headerCollapsedHeight - DIVIDER_SHADOW_TOP_OVERLAP],
       Extrapolation.CLAMP
     )
   }));
@@ -203,11 +251,9 @@ export default function HomeScreen() {
       >
         <View style={styles.cardGrid}>
           {HOME_NEWS_ITEMS.map((item) => (
-            <Card key={item.title} muted style={styles.newsCard}>
+            <GlassCard key={item.title} style={styles.newsCard} contentStyle={styles.newsCardContent}>
               <View style={styles.newsCardHeader}>
-                <View style={styles.newsLabel}>
-                  <Text style={styles.newsLabelText}>{item.label}</Text>
-                </View>
+                <HomeNewsTag label={item.label} />
               </View>
 
               <View style={styles.newsCopy}>
@@ -216,7 +262,7 @@ export default function HomeScreen() {
               </View>
 
               <Text style={styles.newsNote}>{item.note}</Text>
-            </Card>
+            </GlassCard>
           ))}
         </View>
       </Animated.ScrollView>
@@ -246,34 +292,6 @@ export default function HomeScreen() {
         </Animated.View>
       </Animated.View>
 
-      <Animated.View pointerEvents="none" style={[styles.heroShadow, heroShadowStyle]}>
-        <LinearGradient
-          colors={[
-            "rgba(0, 0, 0, 0)",
-            "rgba(0, 0, 0, 0.012)",
-            "rgba(0, 0, 0, 0.038)",
-            "rgba(0, 0, 0, 0.01)",
-            "rgba(0, 0, 0, 0)"
-          ]}
-          locations={[0, 0.2, 0.34, 0.5, 1]}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          style={styles.heroShadowGradient}
-        />
-        <LinearGradient
-          colors={[uiPalette.background, "rgba(247, 244, 237, 0)"]}
-          start={{ x: 0, y: 0.5 }}
-          end={{ x: 1, y: 0.5 }}
-          style={[styles.heroShadowEdgeFade, styles.heroShadowEdgeFadeLeft]}
-        />
-        <LinearGradient
-          colors={["rgba(247, 244, 237, 0)", uiPalette.background]}
-          start={{ x: 0, y: 0.5 }}
-          end={{ x: 1, y: 0.5 }}
-          style={[styles.heroShadowEdgeFade, styles.heroShadowEdgeFadeRight]}
-        />
-      </Animated.View>
-
       <TabBarDepthBackdrop />
     </View>
   );
@@ -296,28 +314,6 @@ const styles = StyleSheet.create({
     backgroundColor: uiPalette.background,
     overflow: "hidden",
     justifyContent: "flex-end"
-  },
-  heroShadow: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    height: DIVIDER_SHADOW_HEIGHT,
-    overflow: "hidden"
-  },
-  heroShadowGradient: {
-    ...StyleSheet.absoluteFillObject
-  },
-  heroShadowEdgeFade: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    width: 42
-  },
-  heroShadowEdgeFadeLeft: {
-    left: 0
-  },
-  heroShadowEdgeFadeRight: {
-    right: 0
   },
   hero: {
     paddingTop: 0
@@ -344,8 +340,6 @@ const styles = StyleSheet.create({
   storeRail: {
     marginTop: 28,
     paddingBottom: 18,
-    borderBottomWidth: 1,
-    borderBottomColor: uiPalette.border,
     flexDirection: "row",
     alignItems: "flex-end",
     justifyContent: "space-between",
@@ -389,23 +383,46 @@ const styles = StyleSheet.create({
   },
   newsCard: {
     width: "100%",
+    minHeight: 142
+  },
+  newsCardContent: {
     minHeight: 142,
-    paddingHorizontal: 18,
-    paddingVertical: 18,
     justifyContent: "space-between",
-    gap: 18
+    gap: 14
   },
   newsCardHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between"
   },
-  newsLabel: {
+  newsLabelShell: {
     alignSelf: "flex-start",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: uiPalette.accentSoft
+    overflow: "hidden",
+    shadowColor: "#000000",
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4
+  },
+  newsLabelFrame: {
+    borderRadius: 999,
+    overflow: "hidden"
+  },
+  newsLabelInner: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1
+  },
+  newsLabelInnerGlass: {
+    backgroundColor: "rgba(255,255,255,0.02)",
+    borderColor: "rgba(255,255,255,0.16)"
+  },
+  newsLabelInnerFallback: {
+    backgroundColor: "rgba(255,255,255,0.36)",
+    borderColor: "rgba(255,255,255,0.28)"
   },
   newsLabelText: {
     fontSize: 11,
@@ -415,7 +432,7 @@ const styles = StyleSheet.create({
     color: uiPalette.textSecondary
   },
   newsCopy: {
-    gap: 8
+    gap: 6
   },
   newsTitle: {
     fontSize: 24,

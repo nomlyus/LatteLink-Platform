@@ -1,18 +1,12 @@
 import * as AppleAuthentication from "expo-apple-authentication";
-import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import {
-  useAppleExchangeMutation,
-  useMagicLinkRequestMutation,
-  useMagicLinkVerifyMutation,
-  useMeQueryMutation
-} from "../src/auth/useAuth";
+import { useAppleExchangeMutation } from "../src/auth/useAuth";
 import { generateAuthNonce } from "../src/auth/nonce";
 import { useAuthSession } from "../src/auth/session";
-import { Button, Card, GlassCard, SectionLabel, uiPalette, uiTypography } from "../src/ui/system";
+import { Button, uiPalette, uiTypography } from "../src/ui/system";
 
 type ReturnToPath = "cart" | "/(tabs)/home" | "/(tabs)/orders" | "/(tabs)/account";
 
@@ -24,45 +18,37 @@ function resolveReturnToPath(input: string | string[] | undefined): ReturnToPath
   return null;
 }
 
-function toErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Unknown error";
-}
-
 function formatExpiresAt(expiresAt: string): string {
   const date = new Date(expiresAt);
   return Number.isNaN(date.getTime()) ? expiresAt : date.toLocaleString();
 }
 
-function voidHandler(fn: () => Promise<void>): () => void {
-  return () => {
-    void fn();
-  };
+function getReturnLabel(returnTo: ReturnToPath | null) {
+  switch (returnTo) {
+    case "cart":
+      return "Return to Checkout";
+    case "/(tabs)/orders":
+      return "Return to Orders";
+    case "/(tabs)/account":
+      return "Return to Account";
+    case "/(tabs)/home":
+      return "Return Home";
+    default:
+      return "Continue";
+  }
 }
 
 export default function AuthScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ returnTo?: string | string[] }>();
-  const { session, isAuthenticated, isHydrating, signOut, refreshSession } = useAuthSession();
+  const { session, isAuthenticated, isHydrating } = useAuthSession();
 
-  const [email, setEmail] = useState(__DEV__ ? "owner@gazellecoffee.com" : "");
-  const [magicLinkToken, setMagicLinkToken] = useState(__DEV__ ? "demo-magic-token" : "");
-  const [sessionMessage, setSessionMessage] = useState("");
   const [appleAvailable, setAppleAvailable] = useState(false);
-  const [appleAvailabilityResolved, setAppleAvailabilityResolved] = useState(false);
-  const [appleNativeStatus, setAppleNativeStatus] = useState("");
-  const [magicLinkRequested, setMagicLinkRequested] = useState(false);
 
   const appleExchange = useAppleExchangeMutation();
-  const magicLinkRequest = useMagicLinkRequestMutation();
-  const magicLinkVerify = useMagicLinkVerifyMutation();
-  const meQuery = useMeQueryMutation();
   const returnTo = useMemo(() => resolveReturnToPath(params.returnTo), [params.returnTo]);
-  const showInternalActions = __DEV__;
-
-  useEffect(() => {
-    if (magicLinkRequest.isSuccess) setMagicLinkRequested(true);
-  }, [magicLinkRequest.isSuccess]);
+  const topContentInset = insets.top + 52;
 
   useEffect(() => {
     if (!isAuthenticated || !returnTo) return;
@@ -85,70 +71,21 @@ export default function AuthScreen() {
       const available = await AppleAuthentication.isAvailableAsync();
       if (cancelled) return;
       setAppleAvailable(available);
-      setAppleAvailabilityResolved(true);
     })();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const requestStatus = magicLinkRequest.isSuccess
-    ? "Check your email for a secure sign-in link."
-    : magicLinkRequest.error
-      ? toErrorMessage(magicLinkRequest.error)
-      : "";
-  const verifyStatus = magicLinkVerify.isSuccess
-    ? "Email sign-in complete."
-    : magicLinkVerify.error
-      ? toErrorMessage(magicLinkVerify.error)
-      : "";
-  const appleStatus = appleExchange.isSuccess
-    ? "Apple sign-in complete."
-    : appleExchange.error
-      ? toErrorMessage(appleExchange.error)
-      : appleNativeStatus;
-  const meStatus = meQuery.data
-    ? `Session verified for ${meQuery.data.email ?? "this account"}.`
-    : meQuery.error
-      ? toErrorMessage(meQuery.error)
-      : "";
-
-  async function handleRefreshSession() {
-    if (!isAuthenticated) return;
-
-    setSessionMessage("Refreshing session…");
-    const nextSession = await refreshSession();
-
-    if (nextSession) {
-      setSessionMessage(`Session refreshed. Expires ${formatExpiresAt(nextSession.expiresAt)}.`);
-      return;
-    }
-
-    setSessionMessage("Session refresh failed. You are now signed out.");
-  }
-
-  async function handleSignOut() {
-    setSessionMessage("Signing out…");
-    await signOut();
-    setSessionMessage("Signed out.");
-  }
-
   async function handleNativeAppleSignIn() {
     if (appleExchange.isPending) return;
 
-    if (!appleAvailabilityResolved) {
-      setAppleNativeStatus("Checking Apple Sign-In availability…");
-      return;
-    }
-
     if (!appleAvailable) {
-      setAppleNativeStatus("Apple Sign-In is unavailable on this device.");
       return;
     }
 
     try {
       const safeNonce = generateAuthNonce();
-      setAppleNativeStatus("Requesting Apple credential…");
       const credential = await AppleAuthentication.signInAsync({
         nonce: safeNonce,
         requestedScopes: [
@@ -158,7 +95,6 @@ export default function AuthScreen() {
       });
 
       if (!credential.identityToken || !credential.authorizationCode) {
-        setAppleNativeStatus("Apple Sign-In returned no identity token or authorization code.");
         return;
       }
 
@@ -170,29 +106,35 @@ export default function AuthScreen() {
     } catch (error) {
       const errorCode = (error as { code?: string } | null)?.code;
       if (errorCode === "ERR_REQUEST_CANCELED") {
-        setAppleNativeStatus("Apple Sign-In canceled.");
         return;
       }
-      setAppleNativeStatus(toErrorMessage(error));
     }
+  }
+
+  function continueIntoApp() {
+    if (returnTo === "cart") {
+      if (router.canGoBack()) {
+        router.back();
+        return;
+      }
+      router.replace("/cart");
+      return;
+    }
+
+    router.replace(returnTo ?? "/(tabs)/menu");
   }
 
   if (isHydrating) {
     return (
-      <View style={styles.backdrop}>
-        <View style={styles.sheet}>
-          <View style={styles.handleWrap}>
-            <View style={styles.handle} />
-          </View>
-          <View style={styles.content}>
-            <GlassCard>
-              <SectionLabel label="Session" />
-              <Text style={styles.heroTitle}>Restoring your session…</Text>
-              <View style={styles.loadingRow}>
-                <ActivityIndicator color={uiPalette.primary} />
-                <Text style={styles.bodyText}>Hydrating local credentials</Text>
-              </View>
-            </GlassCard>
+      <View style={styles.screen}>
+        <View style={[styles.handleWrap, styles.handleWrapTop]}>
+          <View style={styles.handle} />
+        </View>
+        <View style={[styles.centerContent, { paddingTop: topContentInset }]}>
+          <Text style={styles.title}>Restoring your session…</Text>
+          <View style={styles.loadingRow}>
+            <ActivityIndicator color={uiPalette.primary} />
+            <Text style={styles.body}>Hydrating local credentials.</Text>
           </View>
         </View>
       </View>
@@ -200,184 +142,60 @@ export default function AuthScreen() {
   }
 
   return (
-    <View style={styles.backdrop}>
-      <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 16) + 16 }]}>
-        <View style={styles.handleWrap}>
-          <View style={styles.handle} />
-        </View>
-
-        <ScrollView
-          bounces
-          showsVerticalScrollIndicator={false}
-          contentInsetAdjustmentBehavior="never"
-          contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, 16) + 20 }]}
-        >
-          <GlassCard>
-            <SectionLabel label="Account access" />
-            <Text style={styles.heroTitle}>Sign in without leaving the flow.</Text>
-            <Text style={styles.heroBody}>
-              Apple Sign-In is the fastest route back in. Email stays available when you need it.
+    <View style={styles.screen}>
+      <View style={[styles.handleWrap, styles.handleWrapTop]}>
+        <View style={styles.handle} />
+      </View>
+      <View style={[styles.centerContent, { paddingTop: topContentInset }]}>
+        {isAuthenticated ? (
+          <>
+            <Text style={styles.title}>You’re signed in.</Text>
+            <Text style={styles.body}>
+              {session ? `Your session is active until ${formatExpiresAt(session.expiresAt)}.` : "Your account is ready to go."}
             </Text>
-          </GlassCard>
+          </>
+        ) : (
+          <>
+            <Text style={styles.title}>Sign in.</Text>
+            <Text style={styles.body}>Use the button below to get back into your account quickly.</Text>
+          </>
+        )}
+      </View>
 
-          <Card style={{ marginTop: 14 }}>
-            <SectionLabel label="Session" />
-            {isAuthenticated && session ? (
-              <>
-                <Text style={styles.sectionTitle}>You are signed in.</Text>
-                <Text style={styles.bodyText}>Session active until {formatExpiresAt(session.expiresAt)}.</Text>
-                <Button label="Sign Out" variant="ghost" onPress={voidHandler(handleSignOut)} style={{ marginTop: 16, alignSelf: "flex-start" }} />
-              </>
-            ) : (
-              <>
-                <Text style={styles.sectionTitle}>Choose a sign-in method.</Text>
-                <Text style={styles.bodyText}>The app should return you to ordering as quickly as possible.</Text>
-              </>
-            )}
-          </Card>
-
-          {!isAuthenticated ? (
-            <>
-              <Card style={{ marginTop: 14 }}>
-                <SectionLabel label="Apple Sign-In" />
-                <Text style={styles.sectionTitle}>Preferred on iPhone</Text>
-                <Text style={styles.bodyText}>Apple Sign-In is the most direct native path back to your saved account.</Text>
-                <View style={{ marginTop: 16 }}>
-                  {appleAvailable ? (
-                    <AppleAuthentication.AppleAuthenticationButton
-                      buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-                      buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
-                      cornerRadius={18}
-                      style={{ width: "100%", height: 52, opacity: appleExchange.isPending ? 0.65 : 1 }}
-                      onPress={voidHandler(handleNativeAppleSignIn)}
-                    />
-                  ) : (
-                    <Button label="Apple Sign-In Unavailable" variant="secondary" disabled />
-                  )}
-                </View>
-                {appleAvailabilityResolved && !appleAvailable ? <Text style={styles.statusText}>Apple Sign-In is only available on supported iOS devices.</Text> : null}
-                {appleStatus ? <Text style={styles.statusText}>{appleStatus}</Text> : null}
-              </Card>
-
-              <Card style={{ marginTop: 14 }}>
-                <SectionLabel label="Email sign-in" />
-                <Text style={styles.sectionTitle}>Use a secure link</Text>
-                <Text style={styles.bodyText}>Enter your email and we will send a secure sign-in link.</Text>
-                <TextInput
-                  value={email}
-                  onChangeText={setEmail}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  placeholder="Email"
-                  placeholderTextColor={uiPalette.textMuted}
-                  keyboardType="email-address"
-                  style={styles.input}
-                />
-                <Button
-                  label={magicLinkRequest.isPending ? "Sending…" : "Send Sign-In Link"}
-                  onPress={() => magicLinkRequest.mutate({ email: email.trim() })}
-                  disabled={magicLinkRequest.isPending}
-                  style={{ marginTop: 16 }}
-                />
-                {requestStatus ? <Text style={styles.statusText}>{requestStatus}</Text> : null}
-              </Card>
-
-              {magicLinkRequested ? (
-                <Card style={{ marginTop: 14 }}>
-                  <SectionLabel label="Complete sign-in" />
-                  <Text style={styles.sectionTitle}>Paste your code</Text>
-                  <TextInput
-                    value={magicLinkToken}
-                    onChangeText={setMagicLinkToken}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    placeholder="Verification code"
-                    placeholderTextColor={uiPalette.textMuted}
-                    style={styles.input}
-                  />
-                  <Button
-                    label={magicLinkVerify.isPending ? "Verifying…" : "Complete Sign-In"}
-                    onPress={() => magicLinkVerify.mutate({ token: magicLinkToken.trim() })}
-                    disabled={magicLinkVerify.isPending}
-                    style={{ marginTop: 16 }}
-                  />
-                  {verifyStatus ? <Text style={styles.statusText}>{verifyStatus}</Text> : null}
-                </Card>
-              ) : null}
-            </>
-          ) : (
-            <Card style={{ marginTop: 14 }}>
-              <SectionLabel label="Continue" />
-              <Text style={styles.sectionTitle}>Return to the app</Text>
-              <Button
-                label={returnTo === "cart" ? "Return to Checkout" : "Continue"}
-                onPress={() => {
-                  if (returnTo === "cart") {
-                    if (router.canGoBack()) {
-                      router.back();
-                      return;
-                    }
-                    router.replace("/cart");
-                    return;
-                  }
-                  router.replace(returnTo ?? "/(tabs)/menu");
-                }}
-                style={{ marginTop: 16 }}
-                left={<Ionicons name="arrow-forward" size={16} color={uiPalette.primaryText} />}
-              />
-            </Card>
-          )}
-
-          {showInternalActions ? (
-            <Card style={{ marginTop: 14 }}>
-              <SectionLabel label="Developer tools" />
-              <Button
-                label="Refresh Session"
-                variant="secondary"
-                onPress={voidHandler(handleRefreshSession)}
-                disabled={!isAuthenticated}
-                style={{ marginTop: 14 }}
-              />
-              <Button
-                label={meQuery.isPending ? "Checking…" : "Fetch /auth/me"}
-                variant="ghost"
-                onPress={() => {
-                  meQuery.mutate();
-                }}
-                disabled={!isAuthenticated || meQuery.isPending}
-                style={{ marginTop: 10 }}
-              />
-              {meStatus ? <Text style={styles.statusText}>{meStatus}</Text> : null}
-            </Card>
-          ) : null}
-
-          {sessionMessage ? <Text style={styles.footerMessage}>{sessionMessage}</Text> : null}
-        </ScrollView>
+      <View style={[styles.bottomDock, { paddingBottom: Math.max(insets.bottom, 16) + 10 }]}>
+        {isAuthenticated ? (
+          <Button label={getReturnLabel(returnTo)} onPress={continueIntoApp} />
+        ) : appleAvailable ? (
+          <AppleAuthentication.AppleAuthenticationButton
+            buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+            buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+            cornerRadius={18}
+            style={styles.appleButton}
+            onPress={handleNativeAppleSignIn}
+          />
+        ) : (
+          <Button label="Sign In Unavailable" variant="secondary" disabled />
+        )}
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
+  screen: {
     flex: 1,
-    backgroundColor: "transparent"
-  },
-  sheet: {
-    flex: 1,
-    backgroundColor: "rgba(246, 247, 244, 0.98)",
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    borderWidth: 1,
-    borderColor: uiPalette.border
+    backgroundColor: uiPalette.background
   },
   handleWrap: {
     position: "absolute",
-    top: 14,
+    top: 0,
     left: 0,
     right: 0,
     alignItems: "center",
     zIndex: 10
+  },
+  handleWrapTop: {
+    paddingTop: 10
   },
   handle: {
     width: 38,
@@ -385,64 +203,42 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: "rgba(151, 160, 154, 0.52)"
   },
-  content: {
-    paddingHorizontal: 20,
-    paddingTop: 24
+  centerContent: {
+    flex: 1,
+    justifyContent: "flex-start",
+    alignItems: "center",
+    paddingHorizontal: 24,
+    paddingBottom: 100
   },
-  heroTitle: {
-    marginTop: 10,
-    fontSize: 30,
-    lineHeight: 34,
-    fontWeight: "700",
-    letterSpacing: -0.8,
+  title: {
+    fontSize: 38,
+    lineHeight: 42,
+    letterSpacing: -1.2,
     color: uiPalette.text,
-    fontFamily: uiTypography.displayFamily
+    textAlign: "center",
+    fontFamily: uiTypography.displayFamily,
+    fontWeight: "700"
   },
-  heroBody: {
-    marginTop: 10,
-    fontSize: 14,
-    lineHeight: 22,
-    color: uiPalette.textSecondary
-  },
-  sectionTitle: {
-    marginTop: 10,
-    fontSize: 20,
-    lineHeight: 24,
-    fontWeight: "600",
-    color: uiPalette.text
-  },
-  bodyText: {
-    marginTop: 8,
-    fontSize: 14,
-    lineHeight: 22,
-    color: uiPalette.textSecondary
-  },
-  input: {
-    marginTop: 16,
-    minHeight: 52,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: uiPalette.border,
-    backgroundColor: uiPalette.surfaceStrong,
-    paddingHorizontal: 14,
-    color: uiPalette.text
-  },
-  statusText: {
+  body: {
     marginTop: 12,
-    fontSize: 13,
-    lineHeight: 19,
-    color: uiPalette.text
+    maxWidth: 320,
+    fontSize: 16,
+    lineHeight: 24,
+    color: uiPalette.textSecondary,
+    textAlign: "center"
   },
   loadingRow: {
-    marginTop: 16,
+    marginTop: 18,
     flexDirection: "row",
     alignItems: "center",
     gap: 10
   },
-  footerMessage: {
-    marginTop: 16,
-    fontSize: 13,
-    lineHeight: 19,
-    color: uiPalette.textSecondary
+  bottomDock: {
+    paddingHorizontal: 20,
+    paddingTop: 16
+  },
+  appleButton: {
+    width: "100%",
+    height: 54
   }
 });
