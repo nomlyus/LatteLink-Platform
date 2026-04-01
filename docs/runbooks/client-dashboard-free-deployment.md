@@ -33,20 +33,33 @@ Deploy the V1 client dashboard as a static site on the same free-first host as t
 - `FREE_DEPLOY_USER`
 - `FREE_DEPLOY_SSH_KEY`
 - `LETSENCRYPT_EMAIL`
-- `FREE_CLIENT_DASHBOARD_API_BASE_URL`
+- `FREE_CLIENT_DASHBOARD_ENV`
 
 ## Build-Time Runtime Wiring
 
-The dashboard is a Vite app and needs the production API URL at build time:
+The dashboard is a Vite app, so build-time `VITE_*` values must be present before `vite build`.
 
-- `VITE_API_BASE_URL=<FREE_CLIENT_DASHBOARD_API_BASE_URL>`
+Store a full dotenv-style payload in `FREE_CLIENT_DASHBOARD_ENV`.
 
-Use this secret as the active API target for the deployed dashboard. This lets you:
+Recommended initial content:
+
+```env
+VITE_API_BASE_URL=http://127.0.0.1:8080
+```
+
+Later, replace it with the real API URL:
+
+```env
+VITE_API_BASE_URL=https://api.example.com
+```
+
+Use this secret as the active build-time config for the deployed dashboard. This lets you:
 
 - point the live dashboard at a local or tunneled API before backend deployment
 - later rotate the secret to the real production API URL without changing workflow code
+- add future `VITE_*` values without redesigning the workflow
 
-The workflow builds with that value automatically.
+The workflow writes this secret to `apps/operator-web/.env.production.local` before build.
 
 ## Deploy Flow
 
@@ -65,7 +78,7 @@ The workflow builds with that value automatically.
 
 - `https://<FREE_CLIENT_DASHBOARD_DOMAIN>`
 - sign-in screen loads
-- authenticated dashboard requests hit the configured `FREE_CLIENT_DASHBOARD_API_BASE_URL`
+- authenticated dashboard requests hit the `VITE_API_BASE_URL` value from `FREE_CLIENT_DASHBOARD_ENV`
 
 ## Notes
 

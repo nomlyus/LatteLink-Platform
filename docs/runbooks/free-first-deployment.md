@@ -50,7 +50,7 @@ Optional:
 - `GHCR_USERNAME`
 - `GHCR_TOKEN`
 - `FREE_CLIENT_DASHBOARD_DOMAIN` if deploying the client dashboard lane
-- `FREE_CLIENT_DASHBOARD_API_BASE_URL` if deploying the client dashboard before the backend
+- `FREE_CLIENT_DASHBOARD_ENV` if deploying the client dashboard before the backend
 - `GOOGLE_OAUTH_*` env values if enabling Google SSO for the client dashboard
 
 ## Deploy

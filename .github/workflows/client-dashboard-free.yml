@@ -54,10 +54,10 @@ jobs:
           DEPLOY_KEY: ${{ secrets.FREE_DEPLOY_SSH_KEY }}
           LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL }}
           CLIENT_DASHBOARD_DOMAIN: ${{ vars.FREE_CLIENT_DASHBOARD_DOMAIN }}
-          CLIENT_DASHBOARD_API_BASE_URL: ${{ secrets.FREE_CLIENT_DASHBOARD_API_BASE_URL }}
+          CLIENT_DASHBOARD_ENV: ${{ secrets.FREE_CLIENT_DASHBOARD_ENV }}
         run: |
           missing=0
-          for required in DEPLOY_HOST DEPLOY_USER DEPLOY_KEY LETSENCRYPT_EMAIL CLIENT_DASHBOARD_DOMAIN CLIENT_DASHBOARD_API_BASE_URL; do
+          for required in DEPLOY_HOST DEPLOY_USER DEPLOY_KEY LETSENCRYPT_EMAIL CLIENT_DASHBOARD_DOMAIN CLIENT_DASHBOARD_ENV; do
             if [ -z "${!required}" ]; then
               echo "missing: ${required}"
               missing=1
@@ -80,11 +80,18 @@ jobs:
           cache: pnpm
       - if: steps.deploy-check.outputs.enabled == 'true'
         run: pnpm install --no-frozen-lockfile
-      - name: Build client dashboard for production
+      - name: Write client dashboard env file
         if: steps.deploy-check.outputs.enabled == 'true'
         env:
-          VITE_API_BASE_URL: ${{ secrets.FREE_CLIENT_DASHBOARD_API_BASE_URL }}
+          CLIENT_DASHBOARD_ENV: ${{ secrets.FREE_CLIENT_DASHBOARD_ENV }}
+        run: |
+          printf '%s\n' "${CLIENT_DASHBOARD_ENV}" > apps/operator-web/.env.production.local
+      - name: Build client dashboard for production
+        if: steps.deploy-check.outputs.enabled == 'true'
         run: pnpm --filter @gazelle/operator-web build
+      - name: Remove client dashboard env file
+        if: always()
+        run: rm -f apps/operator-web/.env.production.local
 
       - name: Setup SSH key
         if: steps.deploy-check.outputs.enabled == 'true'
