@@ -62,6 +62,23 @@ The workflow writes this secret to `apps/operator-web/.env.local` and `apps/oper
 4. Keep the framework preset as `Vite`.
 5. Use the default Vercel project settings unless Vercel fails to detect them.
 6. Add the custom dashboard domain in the Vercel project Domains settings.
+7. If GitHub Actions is the deployment source of truth, disable Vercel Git auto deployments for this project to avoid duplicate preview/production deploys.
+
+## Link The Project Correctly
+
+If you use the GitHub Actions workflow, link the Vercel project from the app directory, not the monorepo root:
+
+```bash
+cd apps/operator-web
+vercel link
+```
+
+Then read the generated `.vercel/project.json` file locally to get:
+
+- `CLIENT_DASHBOARD_VERCEL_ORG_ID`
+- `CLIENT_DASHBOARD_VERCEL_PROJECT_ID`
+
+Keep `.vercel/` out of git.
 
 ## Deploy Flow
 
@@ -72,6 +89,7 @@ The workflow writes this secret to `apps/operator-web/.env.local` and `apps/oper
 5. The workflow:
    - verifies `apps/operator-web`
    - writes the dashboard `.env` payload locally for the build
+   - runs the Vercel CLI from `apps/operator-web`
    - pulls Vercel project configuration
    - builds prebuilt preview or production artifacts
    - deploys the prebuilt artifacts to Vercel
@@ -83,9 +101,12 @@ The workflow writes this secret to `apps/operator-web/.env.local` and `apps/oper
 - authenticated dashboard requests hit the `VITE_API_BASE_URL` value from `CLIENT_DASHBOARD_VERCEL_ENV`
 - preview deploys only run for pull requests
 - production deploys only run for `main`
+- the dashboard can refresh an operator session, sign out cleanly, and still reach the API from the deployed origin
 
 ## Notes
 
 - This lane is independent from the backend Droplet/Compose deployment.
 - Backend services still deploy through `deploy-free`.
 - The backend must still allow the dashboard origin through `CORS_ALLOWED_ORIGINS` or `FREE_CLIENT_DASHBOARD_DOMAIN`.
+- When Google SSO is enabled later, add the deployed dashboard callback URL to the identity service redirect allowlist. The callback shape is:
+  - `https://<your-client-dashboard-domain>/?google_auth_callback=1`
