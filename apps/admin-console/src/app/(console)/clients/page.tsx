@@ -12,8 +12,8 @@ export default async function ClientsPage() {
       <div className="page-header">
         <div>
           <span className="eyebrow">Clients</span>
-          <h3>Provisioned pilot clients</h3>
-          <p>Every row here comes from the internal location provisioning APIs, not local mock data.</p>
+          <h3>Client locations</h3>
+          <p>Every row here comes from the internal location APIs and represents a real client location in the platform.</p>
         </div>
         <Link href="/clients/new" className="primary-button">
           New Client
@@ -22,9 +22,9 @@ export default async function ClientsPage() {
 
       <div className="stat-grid">
         <article className="stat-card">
-          <span className="eyebrow">Provisioned</span>
+          <span className="eyebrow">Client Count</span>
           <strong>{locations.length}</strong>
-          <p>Locations created through the control plane.</p>
+          <p>All client locations currently visible to the control plane.</p>
         </article>
         <article className="stat-card">
           <span className="eyebrow">Dashboard Ready</span>
@@ -41,11 +41,11 @@ export default async function ClientsPage() {
       {locations.length === 0 ? (
         <section className="panel">
           <div className="empty-state">
-            <span className="eyebrow">No Clients Yet</span>
-            <h4>Start with your first pilot store.</h4>
-            <p>Create the client, configure the location, and provision the first owner in one flow.</p>
+            <span className="eyebrow">No Clients Visible</span>
+            <h4>Start with the first client location.</h4>
+            <p>Create the client, configure the location, and set up owner access in one flow.</p>
             <Link href="/clients/new" className="primary-button">
-              Create First Client
+              Create Client
             </Link>
           </div>
         </section>

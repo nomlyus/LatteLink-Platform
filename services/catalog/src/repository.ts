@@ -389,7 +389,7 @@ function createInMemoryRepository(): CatalogRepository {
       return Array.from(adminStoreConfigsByLocation.entries())
         .flatMap(([locationId, adminStoreConfig]) => {
           const appConfig = appConfigsByLocation.get(locationId);
-          if (!appConfig || isDefaultSeedLocation({ brandId: appConfig.brand.brandId, locationId })) {
+          if (!appConfig) {
             return [];
           }
 
@@ -778,7 +778,7 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
       return storeRows
         .flatMap((storeRow) => {
           const appConfig = appConfigByLocation.get(storeRow.location_id);
-          if (!appConfig || isDefaultSeedLocation({ brandId: appConfig.brand.brandId, locationId: storeRow.location_id })) {
+          if (!appConfig) {
             return [];
           }
 

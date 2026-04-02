@@ -13,8 +13,8 @@ export default async function NewClientPage({ searchParams }: NewClientPageProps
       <div className="page-header">
         <div>
           <span className="eyebrow">New Client</span>
-          <h3>Create a pilot client</h3>
-          <p>Provision the location, set launch capabilities, and create the first owner account in one step.</p>
+          <h3>Create a client</h3>
+          <p>Set up the location, launch capabilities, and owner access in one flow.</p>
         </div>
       </div>
 
@@ -110,12 +110,12 @@ export default async function NewClientPage({ searchParams }: NewClientPageProps
           <div className="form-section">
             <div className="section-heading">
               <span className="eyebrow">Step 4</span>
-              <h4>First Owner</h4>
+              <h4>Owner Access</h4>
             </div>
             <div className="field-grid">
               <label className="field">
                 <span>Owner name</span>
-                <input name="ownerDisplayName" placeholder="Pilot Owner" required />
+                <input name="ownerDisplayName" placeholder="Owner Name" required />
               </label>
               <label className="field">
                 <span>Owner email</span>

@@ -21,7 +21,7 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
       <div className="auth-header">
         <span className="eyebrow">LatteLink Internal</span>
         <h1>Admin Console</h1>
-        <p>Internal access for pilot client provisioning, readiness checks, and first-owner handoff.</p>
+        <p>Internal access for client onboarding, readiness checks, and owner handoff.</p>
       </div>
 
       <section className="auth-card">

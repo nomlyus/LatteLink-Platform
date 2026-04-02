@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "LatteLink Admin Console",
-  description: "Internal control plane for pilot client onboarding and launch readiness."
+  description: "Internal control plane for client onboarding, operations, and launch readiness."
 };
 
 export default function RootLayout({

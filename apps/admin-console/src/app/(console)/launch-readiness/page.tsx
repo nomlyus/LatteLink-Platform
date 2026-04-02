@@ -15,7 +15,7 @@ export default async function LaunchReadinessPage() {
       <div className="page-header">
         <div>
           <span className="eyebrow">Launch Readiness</span>
-          <h3>Pilot launch status</h3>
+          <h3>Client launch status</h3>
           <p>Use this view to spot missing owner access or disabled launch-critical capabilities before handoff.</p>
         </div>
       </div>
@@ -24,7 +24,7 @@ export default async function LaunchReadinessPage() {
         {readinessRows.length === 0 ? (
           <div className="empty-state">
             <h4>No launch records yet.</h4>
-            <p>Create the first client before using the readiness board.</p>
+            <p>Create a client before using the readiness board.</p>
           </div>
         ) : (
           <table className="data-table">

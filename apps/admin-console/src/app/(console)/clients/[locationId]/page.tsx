@@ -19,9 +19,9 @@ export default async function ClientDetailPage({ params, searchParams }: ClientD
     ]);
 
     const readiness = [
-      { label: "Location provisioned", ready: true },
+      { label: "Location configured", ready: true },
       { label: "Client dashboard enabled", ready: location.capabilities.operations.dashboardEnabled },
-      { label: "Owner provisioned", ready: Boolean(ownerSummary.owner) },
+      { label: "Owner access configured", ready: Boolean(ownerSummary.owner) },
       { label: "Live order tracking configured", ready: location.capabilities.operations.liveOrderTrackingEnabled }
     ];
 
@@ -43,7 +43,7 @@ export default async function ClientDetailPage({ params, searchParams }: ClientD
           </div>
         </div>
 
-        {created ? <p className="inline-message inline-message-success">Client created and first-owner access provisioned.</p> : null}
+        {created ? <p className="inline-message inline-message-success">Client created and owner access is ready.</p> : null}
 
         <div className="detail-grid">
           <section className="panel">
@@ -78,7 +78,7 @@ export default async function ClientDetailPage({ params, searchParams }: ClientD
           <section className="panel">
             <div className="section-heading">
               <span className="eyebrow">Owner</span>
-              <h4>First owner access</h4>
+              <h4>Owner access</h4>
             </div>
             {ownerSummary.owner ? (
               <dl className="detail-list">
@@ -100,7 +100,7 @@ export default async function ClientDetailPage({ params, searchParams }: ClientD
                 </div>
               </dl>
             ) : (
-              <p className="inline-message inline-message-warning">No owner is provisioned for this location yet.</p>
+              <p className="inline-message inline-message-warning">No owner is assigned to this location yet.</p>
             )}
           </section>
         </div>
