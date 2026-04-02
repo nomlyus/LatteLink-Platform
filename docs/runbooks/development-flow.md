@@ -69,10 +69,11 @@ Follow the repo versioning policy in [versioning.md](./versioning.md).
 The required rule set is:
 
 - decide the ticket's version impact before calling the ticket done
-- if a ticket changes shipped behavior, contracts, deployable runtime behavior, or release-facing functionality, include a `Changesets` entry as part of that ticket work
 - if a ticket is docs-only, process-only, test-only, or otherwise non-release-impacting, record the ticket as `version impact: none`
-- do not hand-edit package versions as ad hoc release bookkeeping
-- before opening a section PR from `dev` to `main`, run the section-close versioning step defined in [versioning.md](./versioning.md)
+- choose the actual version bump when a completed section is prepared for a `dev` to `main` PR
+- the version only becomes official after the PR merges to `main` and is tagged
+- before the first live release, all work still goes through `dev` to `main`
+- after the first live release, the only exception is the post-launch `hotfix/*` flow documented in [versioning.md](./versioning.md)
 
 ## Bootstrap Flow
 
@@ -95,11 +96,10 @@ For each ticket:
 2. Update the ticket status before implementation if the status is stale.
 3. Decide the ticket's version impact using [versioning.md](./versioning.md): `none`, `patch`, `minor`, or `major`.
 4. Make only the changes required for that ticket.
-5. If the ticket has release impact, add the matching `Changesets` entry in the same ticket work.
+5. Update the ticket notes so the ticket reflects reality, including the chosen version impact when useful.
 6. Run the verification relevant to that ticket.
-7. Update the ticket `done` and `blocked` notes so the ticket reflects reality.
-8. Commit the ticket work on `dev`.
-9. Push `dev` to `origin` immediately after the commit.
+7. Commit the ticket work on `dev`.
+8. Push `dev` to `origin` immediately after the commit.
 
 Do not batch unrelated tickets into one commit.
 
@@ -128,8 +128,6 @@ Change log:
 
 `Verification:` may be added when useful, but `Tickets:` and `Change log:` are mandatory.
 
-When a ticket has release impact, the commit should also include the matching `Changesets` file.
-
 ## Push Rules
 
 After every ticket commit:
@@ -149,7 +147,9 @@ Each PR must include:
 - all relevant ticket IDs
 - the section name
 - the target version
-- the version impact summary
+- the bump type
+- why the bump is justified
+- the affected surfaces
 - a concise summary of the shipped work
 - verification performed
 - risk and rollback notes when applicable
@@ -166,7 +166,9 @@ Recommended PR body structure:
 
 ## Version
 - Target version: `0.2.0`
-- Version impact: `minor`
+- Bump type: `minor`
+- Why this bump: introduces one meaningful shipped capability for the current roadmap version
+- Affected surfaces: `mobile`, `gateway`
 
 ## Change log
 - summarize the completed ticket work
@@ -180,6 +182,25 @@ Recommended PR body structure:
 ```
 
 Do not open a PR without listing every included ticket.
+
+## Post-Launch Hotfix Exception
+
+After the first live release, urgent production fixes may use a `hotfix/*` branch from `main`.
+
+That exception is only valid when:
+
+- the issue is urgent and production-facing
+- shipping through `dev` would pull in unrelated unreleased work
+
+When that happens:
+
+1. branch `hotfix/*` from current `main`
+2. make only the urgent fix
+3. merge the hotfix to `main`
+4. tag the released patch on `main`
+5. merge updated `main` back into `dev` immediately
+
+Do not leave a hotfix on `main` without bringing it back into `dev`.
 
 ## Post-Merge Reset
 

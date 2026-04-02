@@ -25,9 +25,6 @@
     "contracts:openapi": "turbo run openapi --filter=@gazelle/gateway --filter=@gazelle/contracts-*",
     "contracts:drift": "./scripts/verify-contract-drift.sh",
     "sdk:generate": "pnpm --filter @gazelle/sdk-mobile generate",
-    "changeset": "changeset",
-    "changeset:status": "changeset status --verbose",
-    "changeset:version": "changeset version",
     "terraform:fmt": "terraform -chdir=infra/terraform/envs/dev fmt -recursive -check",
     "terraform:validate": "pnpm -r --filter ./infra/terraform/envs/* run validate"
   },

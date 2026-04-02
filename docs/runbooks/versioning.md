@@ -4,132 +4,180 @@ Last reviewed: `2026-04-02`
 
 ## Purpose
 
-This document defines the exact versioning flow for the remaining V1 work in this repo.
+This document defines the exact versioning flow for this repo from `V1` through `V5`.
 
-The goal is to keep release identity:
+The goal is to keep versioning:
 
-- explicit
-- reviewable
-- traceable to ticketed work
-- consistent across `dev`, `main`, and deployment handoff
+- simple
+- traceable
+- tied to shipped work
+- aligned with the roadmap milestones
 
-## Tooling
-
-This repo already has `Changesets` configured in [/.changeset/config.json](../../.changeset/config.json).
-
-Use that existing setup instead of manual version bookkeeping.
-
-Use these commands from the repo root:
-
-```bash
-pnpm changeset
-pnpm changeset:status
-pnpm changeset:version
-```
-
-## Version Format
+## Core Policy
 
 - use semantic versioning: `MAJOR.MINOR.PATCH`
-- use `v` prefixes for Git tags and release references, for example `v0.2.0`
-- use bare semantic versions in files and environment values, for example `0.2.0`
+- use one repo-wide version for the whole product
+- use `v` prefixes for official release tags, for example `v1.2.0`
+- use bare semantic versions in files and app configuration, for example `1.2.0`
+
+## What Each Bump Means
+
+### Major
+
+Use a `major` bump when a full roadmap milestone version is complete.
+
+Examples:
+
+- `v1.0.0` when all `V1` roadmap milestones are complete
+- `v2.0.0` when all `V2` roadmap milestones are complete
+- `v3.0.0` when all `V3` roadmap milestones are complete
+
+`major` versions in this repo are milestone-based, not general-purpose breaking-change markers.
+
+## Minor
+
+Use a `minor` bump for a meaningful shipped capability.
+
+Examples:
+
+- a meaningful new customer flow
+- a meaningful new dashboard or admin capability
+- a meaningful new backend capability that changes what the product can do
+
+## Patch
+
+Use a `patch` bump for fixes and non-capability improvements.
+
+Examples:
+
+- bug fixes
+- polish
+- security hardening
+- workflow or CI fixes
+- refactors that do not add a new meaningful capability
+
+## None
+
+Use `version impact: none` for work that does not materially affect the shipped product.
+
+Examples:
+
+- docs-only work
+- process-only work
+- test-only work
+- internal cleanup
+
+## Release Line Before V1
+
+Until all `V1` roadmap milestones are complete, stay on the `0.x.y` line.
+
+That means:
+
+- `0.x.y` is the pre-`V1` release line
+- `1.0.0` is cut only when the full `V1` milestone is complete
 
 ## Source Of Truth
 
-The source of truth depends on the stage:
+The official released version is the Git tag on `main`.
 
-- pending version intent on `dev`: `.changeset/*.md`
-- current package versions after a versioning pass: `package.json` files updated by `Changesets`
-- release identifier for merged `main`: Git tag `vX.Y.Z`
+That means:
 
-Do not hand-edit package versions as ad hoc release bookkeeping.
+- the `dev` to `main` PR declares the intended target version
+- the version becomes official only after the PR merges to `main`
+- the merged `main` commit is then tagged as `vX.Y.Z`
 
-## V1 Baseline
-
-- keep the repo on the `0.x.y` line until the first real live V1 deployment is completed
-- reserve `1.0.0` for the first live production deployment that completes `XS-V1-03`
-- do not use a major bump before that unless the user explicitly approves an exception
-
-## Choosing The Bump
-
-Use the smallest honest bump.
-
-- `patch`
-  - bug fixes
-  - security hardening
-  - CI or workflow corrections
-  - backward-compatible internal improvements
-  - copy or content changes that do not materially expand product capability
-- `minor`
-  - new user-visible or operator-visible capability
-  - new API endpoint or meaningful contract expansion
-  - meaningful flow expansion across mobile, dashboard, admin, or backend behavior
-  - new deployable capability needed for V1 readiness
-- `major`
-  - breaking behavior or contract reset
-  - post-V1 release line change
-
-If a ticket does not change release-facing behavior, use `version impact: none`.
+Package versions or local notes may mirror the release, but they are not the official source of truth for shipped versions.
 
 ## Ticket Rule
 
-For each ticket, decide version impact before the ticket is considered done.
+Each ticket must have an explicit version impact decision:
 
-Use this rule:
+- `major`
+- `minor`
+- `patch`
+- `none`
 
-- add a `Changesets` entry when the ticket changes shipped behavior, runtime behavior, contracts, deployable workflows, or release-facing functionality
-- do not add a `Changesets` entry for docs-only, process-only, test-only, or local-only cleanup work
-- if no version bump is needed, record that ticket as `version impact: none`
+That decision should be made before the ticket is considered done.
 
-Each version-affecting ticket should carry its own `Changesets` entry so the version intent stays tied to the ticket that caused it.
+The ticket does not cut the version by itself. It only contributes to the later section-level release decision.
 
-## Per-Ticket Flow
+## When The Actual Version Is Chosen
 
-1. Decide whether the ticket is `none`, `patch`, `minor`, or `major`.
-2. If the answer is not `none`, run `pnpm changeset`.
-3. Write the summary so it is specific to the ticket and the shipped behavior.
-4. Commit the `Changesets` file with the ticket work on `dev`.
-5. Push `dev` after the ticket commit as required by [development-flow.md](./development-flow.md).
+The actual version bump is chosen at the section `dev` to `main` PR level.
 
-Do not wait until the end of a section to guess the version impact of earlier tickets.
+That means:
 
-## Section-Close Versioning Flow
+- tickets record version impact individually
+- the completed section PR chooses the final target version
+- the PR explains why that target version is correct
 
-After all tickets in one top-level section are complete on `dev`:
-
-1. run `pnpm changeset:status`
-2. inspect the pending changesets and confirm the target release version is coherent
-3. run `pnpm changeset:version`
-4. review the generated package version and changelog updates
-5. commit the versioning output on `dev`
-6. push `dev`
-7. open the `dev` to `main` PR with the target version called out explicitly
-
-That section-close versioning commit is the last commit before opening the PR unless a fix is required.
+Do not cut a new official version for every ticket.
 
 ## Pull Request Rule
 
-Every `dev` to `main` PR must state:
+Every `dev` to `main` PR must include:
 
-- the target version, for example `0.2.0`
-- the version impact summary, for example `minor`
-- the included ticket IDs
-- the verification run after the versioning pass
+- `Target version`
+- `Bump type`
+- `Why this bump`
+- `Affected surfaces`
+- `Included ticket IDs`
 
-Do not open a section PR without making the version target explicit.
+The target version should be the version that will be tagged on `main` if the PR merges.
 
 ## Post-Merge Tagging
 
-When a merged `main` state is accepted as the release candidate or deployment target:
+After the PR merges to `main`:
 
-1. sync local `main` to `origin/main`
-2. create an annotated tag for that merged commit in the form `vX.Y.Z`
-3. push the tag
-4. use that tag in release notes and deployment tracking
+1. sync local `main` with `origin/main`
+2. confirm the merged state is the release state you want to identify
+3. create an annotated tag in the form `vX.Y.Z`
+4. push the tag
 
-Artifact image tags may still use commit SHAs. The semantic version tag is the human release identifier, not a replacement for SHA-based artifact identity.
+The tag is the official release identifier.
 
-## Mobile Release Alignment
+## No Prerelease Semver Labels
 
-If a release includes a mobile build, the selected release version must match the `APP_VERSION` used for that build.
+Do not use prerelease semantic versions for now.
 
-Do not ship a mobile build with an app version that disagrees with the merged release version on `main`.
+Examples that are out of scope for this flow:
+
+- `v1.0.0-beta.1`
+- `v1.0.0-rc.1`
+
+Use branches, PRs, and existing build channels such as `internal` or `beta` instead.
+
+## Mobile Version Alignment
+
+When a release includes the mobile app:
+
+- the mobile app version must match the repo version exactly
+- mobile build numbers remain separate and may increment independently
+
+Example:
+
+- repo release: `v1.2.0`
+- mobile app version: `1.2.0`
+- build number: increments separately for TestFlight or App Store delivery
+
+## Post-Launch Hotfix Flow
+
+Before the first live release, all work still goes through `dev` to `main`.
+
+After the first live release, urgent production fixes may use a `hotfix/*` branch from `main`.
+
+Use that exception only when:
+
+- the issue is urgent
+- the issue affects the live product
+- using `dev` first would pull in unrelated unreleased work
+
+Hotfix flow:
+
+1. branch `hotfix/*` from current `main`
+2. make only the urgent fix
+3. merge the hotfix to `main`
+4. tag the patch release on `main`
+5. merge updated `main` back into `dev` immediately
+
+Do not leave a hotfix only on `main`.

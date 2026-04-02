@@ -1057,9 +1057,9 @@ Acceptance criteria:
 Status:
 
 - `owner`: Codex
-- `status`: validated locally, pending merge to main
-- `done`: documented the repo versioning policy around the existing `Changesets` setup, defined when ticket work requires a changeset, defined the section-close versioning flow before `dev` to `main` PRs, and wired the development-flow runbook to require explicit version impact
-- `blocked`: no external blocker
+- `status`: superseded by `XS-V1-06` before merge to main
+- `done`: captured an initial repo versioning draft around the existing `Changesets` tooling and helper scripts
+- `blocked`: the final founder-selected versioning policy differs from that initial draft and must replace it before merge to main
 
 Goal:
 Define one exact versioning flow for the remaining V1 work so release identity, semantic version bumps, and PR version impact are explicit and repeatable.
@@ -1090,3 +1090,48 @@ Acceptance criteria:
 - section PRs from `dev` to `main` state target version and version impact
 - `1.0.0` is explicitly reserved for the first live V1 deployment
 - versioning uses the repo's existing `Changesets` setup instead of an ad hoc process
+
+### XS-V1-06 Final Versioning Flow Alignment
+
+Status:
+
+- `owner`: Codex
+- `status`: validated locally, pending merge to main
+- `done`: aligned the repo versioning flow to the final agreed policy, documented milestone-based major versions, documented capability-based minor and fix-based patch versions, defined `main` Git tags as the official source of truth, defined section-level version cuts, documented the post-launch hotfix exception, and removed the stale `Changesets`-specific instructions added by the draft policy
+- `blocked`: no external blocker
+
+Goal:
+Replace the provisional versioning draft with the exact versioning policy that will govern V1 through V5 delivery.
+
+Scope:
+
+- keep one repo-wide semantic version
+- define `major` as completion of a full roadmap milestone version such as `V1`, `V2`, or `V3`
+- define `minor` as a meaningful shipped capability
+- define `patch` as fixes, polish, hardening, or non-capability improvements
+- keep docs/process/test/internal-only work at `version impact: none`
+- make the section `dev` to `main` PR the point where the bump is chosen
+- make `main` Git tags the official released-version source of truth
+- require each release PR to state target version, bump type, why the bump is justified, affected surfaces, and included ticket IDs
+- require mobile app version alignment with the repo version
+- define the post-launch `hotfix/*` flow from `main` back into `dev`
+
+Key deliverables:
+
+- one revised versioning runbook that matches the final policy
+- one revised development-flow runbook that matches the final policy
+- removal of the stale `Changesets` helper-script workflow introduced by the draft versioning policy
+
+Dependencies:
+
+- `XS-V1-04`
+- `XS-V1-05`
+
+Acceptance criteria:
+
+- the repo uses one semantic version across the whole product
+- `major` versions map to completed roadmap milestone versions
+- actual version bumps are selected at the section PR level, not per ticket
+- official released versions exist only as Git tags on `main`
+- release PRs include target version, bump type, why the bump is justified, affected surfaces, and included ticket IDs
+- post-launch hotfix flow is documented as `main` -> `hotfix/*` -> `main` -> `dev`
