@@ -6,6 +6,7 @@ import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { getCheckoutRecoveryActionLabel } from "../src/auth/recovery";
 import { useAuthSession } from "../src/auth/session";
 import { ClearCartSheet } from "../src/cart/ClearCartSheet";
 import { buildPricingSummary, describeCustomization } from "../src/cart/model";
@@ -265,7 +266,7 @@ export default function CartModalScreen() {
   const insets = useSafeAreaInsets();
   const stickyFooterBottom = getTabBarBottomOffset(insets.bottom > 0);
   const stickyFooterClearance = stickyFooterBottom + TAB_BAR_HEIGHT + 16;
-  const { isAuthenticated } = useAuthSession();
+  const { isAuthenticated, authRecoveryState } = useAuthSession();
   const { items, itemCount, subtotalCents, setQuantity, removeItem, clear } = useCart();
   const { retryOrder, clearRetryOrder, clearFailure, setConfirmation, setFailure } = useCheckoutFlow();
   const appConfigQuery = useAppConfigQuery();
@@ -305,7 +306,7 @@ export default function CartModalScreen() {
           : nativeApplePayAvailable
             ? "Pay with Apple Pay"
             : "Apple Pay unavailable"
-    : "Sign In to Checkout";
+    : getCheckoutRecoveryActionLabel(authRecoveryState);
   const stickyActionIcon: keyof typeof Ionicons.glyphMap = isAuthenticated ? "logo-apple" : "log-in-outline";
 
   useEffect(() => {

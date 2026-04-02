@@ -1,8 +1,11 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { AppState } from "react-native";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { apiClient } from "../api/client";
+import { type AuthRecoveryState } from "./recovery";
 import {
   clearStoredSession,
+  getSessionRefreshDelayMs,
   isSessionExpiringSoon,
   loadStoredSession,
   persistSession,
@@ -17,36 +20,44 @@ type SessionContextValue = {
   session: AuthSession | null;
   isAuthenticated: boolean;
   isHydrating: boolean;
+  authRecoveryState: AuthRecoveryState;
   signIn: (nextSession: AuthSession) => Promise<void>;
   signOut: (options?: SignOutOptions) => Promise<void>;
   refreshSession: () => Promise<AuthSession | null>;
 };
 
 const SessionContext = createContext<SessionContextValue | undefined>(undefined);
-const SESSION_REFRESH_WINDOW_MS = 60_000;
-
-function getSessionRefreshDelayMs(session: AuthSession, nowMs = Date.now()) {
-  return Math.max(0, Date.parse(session.expiresAt) - nowMs - SESSION_REFRESH_WINDOW_MS);
-}
 
 export function AuthSessionProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [session, setSession] = useState<AuthSession | null>(null);
   const [isHydrating, setIsHydrating] = useState(true);
+  const [authRecoveryState, setAuthRecoveryState] = useState<AuthRecoveryState>("idle");
   const sessionRef = useRef<AuthSession | null>(null);
   const refreshInFlightRef = useRef<Promise<AuthSession | null> | null>(null);
 
-  const clearLocalSession = useCallback(async () => {
-    apiClient.setAccessToken(undefined);
-    sessionRef.current = null;
-    setSession(null);
-    try {
-      await clearStoredSession();
-    } catch {
-      // If secure storage write fails, keep in-memory session cleared.
-    }
-  }, []);
+  const clearAccountQueries = useCallback(async () => {
+    await queryClient.cancelQueries({ queryKey: ["account"] });
+    queryClient.removeQueries({ queryKey: ["account"] });
+  }, [queryClient]);
+
+  const clearLocalSession = useCallback(
+    async (recoveryState: AuthRecoveryState = "idle") => {
+      apiClient.setAccessToken(undefined);
+      sessionRef.current = null;
+      setSession(null);
+      setAuthRecoveryState(recoveryState);
+      try {
+        await Promise.all([clearStoredSession(), clearAccountQueries()]);
+      } catch {
+        // If local cleanup fails, keep in-memory session cleared.
+      }
+    },
+    [clearAccountQueries]
+  );
 
   const signIn = useCallback(async (nextSession: AuthSession) => {
+    setAuthRecoveryState("idle");
     apiClient.setAccessToken(nextSession.accessToken);
     sessionRef.current = nextSession;
     setSession(nextSession);
@@ -68,7 +79,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      await clearLocalSession();
+      await clearLocalSession("idle");
     },
     [clearLocalSession, session?.refreshToken]
   );
@@ -90,7 +101,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
         return nextSession;
       } catch {
         if (sessionRef.current?.refreshToken === currentSession.refreshToken) {
-          await signOut({ revokeRemote: false });
+          await clearLocalSession("expired");
         }
         return null;
       } finally {
@@ -100,7 +111,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
 
     refreshInFlightRef.current = refreshPromise;
     return refreshPromise;
-  }, [signIn, signOut]);
+  }, [clearLocalSession, signIn]);
 
   useEffect(() => {
     sessionRef.current = session;
@@ -119,6 +130,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
         if (!storedSession) {
           apiClient.setAccessToken(undefined);
           setSession(null);
+          setAuthRecoveryState("idle");
           return;
         }
 
@@ -133,13 +145,15 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
             if (!isMounted) {
               return;
             }
-            await clearLocalSession();
+            await clearLocalSession("expired");
           }
           return;
         }
 
         apiClient.setAccessToken(storedSession.accessToken);
+        sessionRef.current = storedSession;
         setSession(storedSession);
+        setAuthRecoveryState("idle");
       } finally {
         if (isMounted) {
           setIsHydrating(false);
@@ -192,11 +206,12 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
       session,
       isHydrating,
       isAuthenticated: session !== null,
+      authRecoveryState,
       signIn,
       signOut,
       refreshSession
     }),
-    [isHydrating, refreshSession, session, signIn, signOut]
+    [authRecoveryState, isHydrating, refreshSession, session, signIn, signOut]
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

@@ -60,7 +60,12 @@ export function getSessionRefreshDelayMs(session: AuthSession, nowMs = Date.now(
 
 export async function loadStoredSession(): Promise<AuthSession | null> {
   const rawValue = await SecureStore.getItemAsync(SESSION_STORAGE_KEY);
-  return parseStoredSession(rawValue);
+  const session = parseStoredSession(rawValue);
+  if (rawValue && !session) {
+    await SecureStore.deleteItemAsync(SESSION_STORAGE_KEY);
+  }
+
+  return session;
 }
 
 export async function persistSession(session: AuthSession): Promise<void> {

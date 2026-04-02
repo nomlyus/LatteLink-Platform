@@ -3,6 +3,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { getAuthScreenRecoveryCopy } from "../src/auth/recovery";
 import { useAppleExchangeMutation } from "../src/auth/useAuth";
 import { generateAuthNonce } from "../src/auth/nonce";
 import { useAuthSession } from "../src/auth/session";
@@ -42,13 +43,14 @@ export default function AuthScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ returnTo?: string | string[] }>();
-  const { session, isAuthenticated, isHydrating } = useAuthSession();
+  const { session, isAuthenticated, isHydrating, authRecoveryState } = useAuthSession();
 
   const [appleAvailable, setAppleAvailable] = useState(false);
 
   const appleExchange = useAppleExchangeMutation();
   const returnTo = useMemo(() => resolveReturnToPath(params.returnTo), [params.returnTo]);
   const topContentInset = insets.top + 52;
+  const recoveryCopy = useMemo(() => getAuthScreenRecoveryCopy(authRecoveryState), [authRecoveryState]);
 
   useEffect(() => {
     if (!isAuthenticated || !returnTo) return;
@@ -156,8 +158,8 @@ export default function AuthScreen() {
           </>
         ) : (
           <>
-            <Text style={styles.title}>Sign in.</Text>
-            <Text style={styles.body}>Use the button below to get back into your account quickly.</Text>
+            <Text style={styles.title}>{recoveryCopy.title}</Text>
+            <Text style={styles.body}>{recoveryCopy.body}</Text>
           </>
         )}
       </View>

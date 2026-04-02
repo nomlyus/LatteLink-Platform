@@ -1,6 +1,7 @@
 import { useRouter } from "expo-router";
 import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { getSessionRecoveryCopy } from "../../src/auth/recovery";
 import { useAuthSession } from "../../src/auth/session";
 import { AccountFloatingHeader, ACCOUNT_HEADER_HEIGHT } from "../../src/account/AccountFloatingHeader";
 import { resolveAppConfigData, useAppConfigQuery } from "../../src/menu/catalog";
@@ -36,9 +37,10 @@ function DetailRow({
 export default function SessionPage() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { isAuthenticated, session } = useAuthSession();
+  const { isAuthenticated, session, authRecoveryState } = useAuthSession();
   const appConfig = resolveAppConfigData(useAppConfigQuery().data);
   const headerOffset = insets.top + ACCOUNT_HEADER_HEIGHT;
+  const recoveryCopy = getSessionRecoveryCopy(authRecoveryState);
 
   function goBack() {
     if (router.canGoBack()) {
@@ -55,10 +57,10 @@ export default function SessionPage() {
         <ScreenScroll bottomInset={48} contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}>
           <GlassCard style={styles.heroCard}>
             <SectionLabel label="Session" />
-            <Text style={styles.heroTitle}>Sign in to view session details.</Text>
-            <Text style={styles.heroBody}>Session state appears here for authenticated users.</Text>
+            <Text style={styles.heroTitle}>{recoveryCopy.title}</Text>
+            <Text style={styles.heroBody}>{recoveryCopy.body}</Text>
             <Button
-              label="Sign In"
+              label={recoveryCopy.actionLabel}
               variant="secondary"
               onPress={() => router.push({ pathname: "/auth", params: { returnTo: "/account/session" } })}
               style={styles.heroAction}

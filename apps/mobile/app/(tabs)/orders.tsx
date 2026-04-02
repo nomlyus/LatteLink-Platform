@@ -14,6 +14,7 @@ import Animated, {
   type SharedValue
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { getOrdersRecoveryCopy } from "../../src/auth/recovery";
 import { useAuthSession } from "../../src/auth/session";
 import {
   findActiveOrder,
@@ -520,7 +521,7 @@ export default function OrdersScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
-  const { isAuthenticated, isHydrating } = useAuthSession();
+  const { isAuthenticated, isHydrating, authRecoveryState } = useAuthSession();
   const ordersQuery = useOrderHistoryQuery(isAuthenticated);
   const loyaltyLedgerQuery = useLoyaltyLedgerQuery(isAuthenticated);
   const menuQuery = useMenuQuery();
@@ -545,6 +546,7 @@ export default function OrdersScreen() {
   const staticBottomInset = getTabBarBottomOffset(insets.bottom > 0) + TAB_BAR_HEIGHT + 12;
   const isInitialOrdersLoading = isAuthenticated && ordersQuery.isLoading && !ordersQuery.data;
   const shouldShowInitialLoading = !didFinishInitialReveal && (isHydrating || isInitialOrdersLoading);
+  const recoveryCopy = getOrdersRecoveryCopy(authRecoveryState);
 
   useEffect(() => {
     if (!isAuthenticated || !activeOrder?.id) {
@@ -619,10 +621,14 @@ export default function OrdersScreen() {
       <View style={styles.screenShell}>
         <ScreenStatic style={[styles.loggedOutStaticPage, { paddingTop: headerOffset, paddingBottom: staticBottomInset }]}>
           <View style={styles.loggedOutStaticBody}>
-            <Text style={styles.loggedOutStaticTitle}>Track pickup and revisit past orders.</Text>
-            <Text style={styles.loggedOutStaticText}>
-              Sign in to keep live status, pickup codes, and previous receipts attached to one account every time you come back.
-            </Text>
+            <Text style={styles.loggedOutStaticTitle}>{recoveryCopy.title}</Text>
+            <Text style={styles.loggedOutStaticText}>{recoveryCopy.body}</Text>
+            <Button
+              label={recoveryCopy.actionLabel}
+              variant="secondary"
+              onPress={() => router.push({ pathname: "/auth", params: { returnTo: "/(tabs)/orders" } })}
+              style={styles.loggedOutStaticAction}
+            />
           </View>
         </ScreenStatic>
 
@@ -795,6 +801,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 24,
     color: uiPalette.textSecondary
+  },
+  loggedOutStaticAction: {
+    marginTop: 20,
+    alignSelf: "flex-start"
   },
   sectionBlock: {
     marginTop: 28

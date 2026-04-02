@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { getAccountRecoveryCopy } from "../../src/auth/recovery";
 import { useAuthSession } from "../../src/auth/session";
 import { useLoyaltyBalanceQuery, useLoyaltyLedgerQuery } from "../../src/account/data";
 import { AccountFloatingHeader, ACCOUNT_HEADER_HEIGHT } from "../../src/account/AccountFloatingHeader";
@@ -52,13 +53,19 @@ function canUseLiquidGlassPill() {
   }
 }
 
-function GuestSignInPill({ onPress }: { onPress: () => void }) {
+function GuestSignInPill({
+  label,
+  onPress
+}: {
+  label: string;
+  onPress: () => void;
+}) {
   const useLiquidGlass = canUseLiquidGlassPill();
   const content = (
-    <View style={[styles.loggedOutStaticCtaContent, useLiquidGlass ? null : styles.loggedOutStaticCtaContentFallback]}>
-      <Ionicons name="log-in-outline" size={16} color={uiPalette.text} />
-      <Text style={styles.loggedOutStaticCtaLabel}>Sign In</Text>
-    </View>
+      <View style={[styles.loggedOutStaticCtaContent, useLiquidGlass ? null : styles.loggedOutStaticCtaContentFallback]}>
+        <Ionicons name="log-in-outline" size={16} color={uiPalette.text} />
+        <Text style={styles.loggedOutStaticCtaLabel}>{label}</Text>
+      </View>
   );
 
   return (
@@ -81,7 +88,7 @@ function GuestSignInPill({ onPress }: { onPress: () => void }) {
 export default function AccountScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { isAuthenticated, session } = useAuthSession();
+  const { isAuthenticated, session, authRecoveryState } = useAuthSession();
   const appConfigQuery = useAppConfigQuery();
   const appConfig = resolveAppConfigData(appConfigQuery.data);
   const loyaltyEnabled = isMobileLoyaltyVisible(appConfigQuery.data);
@@ -94,6 +101,7 @@ export default function AccountScreen() {
   const headerOffset = insets.top + ACCOUNT_HEADER_HEIGHT;
   const contentBottomInset = Math.max(getTabBarBottomOffset(insets.bottom > 0) + TAB_BAR_HEIGHT + 24 - insets.bottom, 24);
   const staticBottomInset = getTabBarBottomOffset(insets.bottom > 0) + TAB_BAR_HEIGHT + 12;
+  const recoveryCopy = getAccountRecoveryCopy(authRecoveryState, appConfig.brand.locationName);
 
   function handleRefresh() {
     if (isManualRefresh) return;
@@ -122,14 +130,14 @@ export default function AccountScreen() {
       <View style={styles.screenShell}>
         <ScreenStatic style={[styles.loggedOutStaticPage, { paddingTop: headerOffset, paddingBottom: staticBottomInset }]}>
           <View style={styles.loggedOutStaticBody}>
-            <Text style={styles.loggedOutStaticTitle}>Keep every visit in one account.</Text>
-            <Text style={styles.loggedOutStaticText}>
-              Sign in to keep rewards, past orders, alerts, and settings attached to the same customer account at{" "}
-              {appConfig.brand.locationName}.
-            </Text>
+            <Text style={styles.loggedOutStaticTitle}>{recoveryCopy.title}</Text>
+            <Text style={styles.loggedOutStaticText}>{recoveryCopy.body}</Text>
           </View>
 
-          <GuestSignInPill onPress={() => router.push({ pathname: "/auth", params: { returnTo: "/(tabs)/account" } })} />
+          <GuestSignInPill
+            label={recoveryCopy.actionLabel}
+            onPress={() => router.push({ pathname: "/auth", params: { returnTo: "/(tabs)/account" } })}
+          />
         </ScreenStatic>
 
         <AccountFloatingHeader title="Account" insetTop={insets.top} />

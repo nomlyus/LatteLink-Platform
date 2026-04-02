@@ -42,6 +42,13 @@ describe("sessionStore", () => {
     expect(parseStoredSession(JSON.stringify({ accessToken: "x" }))).toBeNull();
   });
 
+  it("clears corrupted secure storage payloads during load", async () => {
+    secureStoreMocks.getItemAsync.mockResolvedValueOnce("not-json");
+
+    await expect(loadStoredSession()).resolves.toBeNull();
+    expect(secureStoreMocks.deleteItemAsync).toHaveBeenCalledWith(SESSION_STORAGE_KEY);
+  });
+
   it("detects near-expiry sessions", () => {
     const now = Date.parse("2030-01-01T00:00:00.000Z");
     const soon = { ...sampleSession, expiresAt: "2030-01-01T00:00:30.000Z" };
