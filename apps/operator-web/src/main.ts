@@ -1,5 +1,12 @@
 import "./styles.css";
-import type { AdminStoreConfig, AppConfig } from "@gazelle/contracts-catalog";
+import {
+  isOrderTrackingEnabled,
+  isPlatformManagedMenu,
+  isStaffDashboardEnabled,
+  resolveAppConfigFulfillmentMode,
+  type AdminStoreConfig,
+  type AppConfig
+} from "@gazelle/contracts-catalog";
 import {
   createOperatorMenuItem,
   createOperatorStaffUser,
@@ -921,7 +928,7 @@ function renderCancelButton(order: OperatorOrder, manualStatusControlsEnabled: b
 
 function renderOrderDetail(order: OperatorOrder, appConfig: AppConfig | null) {
   const manualStatusControlsEnabled = canManageOrderStatus(appConfig);
-  const fulfillmentMode = appConfig?.fulfillment.mode ?? "time_based";
+  const fulfillmentMode = resolveAppConfigFulfillmentMode(appConfig);
   const actions = getOrderActions(order, fulfillmentMode);
   const timeline = order.timeline
     .map(
@@ -1009,7 +1016,7 @@ function renderOrderDetail(order: OperatorOrder, appConfig: AppConfig | null) {
 }
 
 function renderOrdersSection() {
-  if (!state.appConfig?.featureFlags.orderTracking) {
+  if (!isStaffDashboardEnabled(state.appConfig) || !isOrderTrackingEnabled(state.appConfig)) {
     return `
       <section class="dash-section">
         ${renderSectionHeading({
@@ -1163,8 +1170,9 @@ function renderMenuCategory(category: OperatorMenuCategory, canWrite: boolean, c
 }
 
 function renderMenuSection() {
-  const canWrite = Boolean(state.appConfig?.featureFlags.menuEditing) && canAccessCapability(state.session?.operator, "menu:write");
-  const canToggleVisibility = Boolean(state.appConfig?.featureFlags.menuEditing) && canAccessCapability(state.session?.operator, "menu:visibility");
+  const menuIsPlatformManaged = isPlatformManagedMenu(state.appConfig);
+  const canWrite = menuIsPlatformManaged && canAccessCapability(state.session?.operator, "menu:write");
+  const canToggleVisibility = menuIsPlatformManaged && canAccessCapability(state.session?.operator, "menu:visibility");
   const createForm = canWrite
     ? `
         <article class="dash-surface">
@@ -1215,9 +1223,9 @@ function renderMenuSection() {
         description: "Keep the live customer menu clean, available, and accurate."
       })}
       ${
-        state.appConfig?.featureFlags.menuEditing
+        menuIsPlatformManaged
           ? ""
-          : `<article class="dash-surface dash-empty-surface"><p class="muted-copy">Menu editing is disabled for this store. Staff can review the live menu but cannot change it.</p></article>`
+          : `<article class="dash-surface dash-empty-surface"><p class="muted-copy">This store is using an external menu sync, so dashboard edits stay disabled until the menu source is switched back to LatteLink.</p></article>`
       }
       ${createForm}
       <article class="dash-surface">
@@ -1454,7 +1462,7 @@ function renderDashboard() {
   ensureSectionIsAvailable();
   const locationLabel = state.appConfig?.brand.locationName ?? state.storeConfig?.storeName ?? "Client dashboard";
   const marketLabel = state.appConfig?.brand.marketLabel ?? "Store operations";
-  const liveEnabled = state.appConfig?.featureFlags.orderTracking !== false;
+  const liveEnabled = isStaffDashboardEnabled(state.appConfig) && isOrderTrackingEnabled(state.appConfig);
 
   return `
     <div class="dash-shell">
@@ -1779,7 +1787,7 @@ async function handleOrderAdvance(orderId: string, status: "IN_PREP" | "READY" |
   }
 
   if (!canManageOrderStatus(state.appConfig)) {
-    setError("Manual order status controls are disabled while time-based fulfillment is active.");
+    setError("Manual order status controls are unavailable until live staff fulfillment is enabled for this store.");
     render();
     return;
   }

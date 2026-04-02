@@ -6,10 +6,14 @@ import {
   adminStoreConfigUpdateSchema,
   appConfigSchema,
   buildDefaultCustomizationInput,
-  describeCustomizationSelection,
   catalogContract,
+  describeCustomizationSelection,
+  isLoyaltyVisible,
+  isOrderTrackingEnabled,
+  isPlatformManagedMenu,
   menuResponseSchema,
   priceMenuItemCustomization,
+  resolveAppConfigFulfillmentMode,
   resolveMenuItemCustomization,
   storeConfigResponseSchema
 } from "../src";
@@ -144,6 +148,11 @@ describe("contracts-catalog", () => {
 
     expect(config.brand.marketLabel).toBe("Ann Arbor, MI");
     expect(config.fulfillment.mode).toBe("staff");
+    expect(config.storeCapabilities.menu.source).toBe("external_sync");
+    expect(isPlatformManagedMenu(config)).toBe(false);
+    expect(isOrderTrackingEnabled(config)).toBe(true);
+    expect(isLoyaltyVisible(config)).toBe(true);
+    expect(resolveAppConfigFulfillmentMode(config)).toBe("staff");
   });
 
   it("defaults fulfillment config for older app-config payloads", () => {
@@ -219,6 +228,7 @@ describe("contracts-catalog", () => {
 
     expect(adminItem.categoryTitle).toBe("Espresso Bar");
     expect(adminStoreConfig.storeName).toBe("Gazelle Coffee Flagship");
+    expect(adminStoreConfig.capabilities.operations.dashboardEnabled).toBe(true);
   });
 
   it("validates admin update payloads", () => {
@@ -230,11 +240,25 @@ describe("contracts-catalog", () => {
     const storeUpdate = adminStoreConfigUpdateSchema.parse({
       storeName: "Gazelle Coffee Downtown",
       hours: "Weekdays · 6:30 AM - 5:00 PM",
-      pickupInstructions: "Use the front pickup shelves."
+      pickupInstructions: "Use the front pickup shelves.",
+      capabilities: {
+        menu: {
+          source: "external_sync"
+        },
+        operations: {
+          fulfillmentMode: "staff",
+          liveOrderTrackingEnabled: false,
+          dashboardEnabled: false
+        },
+        loyalty: {
+          visible: false
+        }
+      }
     });
 
     expect(menuUpdate.visible).toBe(false);
     expect(storeUpdate.hours).toContain("Weekdays");
+    expect(storeUpdate.capabilities?.menu.source).toBe("external_sync");
     expect(catalogContract.routes.adminMenu.path).toBe("/admin/menu");
     expect(catalogContract.routes.adminStoreConfig.path).toBe("/admin/store/config");
   });

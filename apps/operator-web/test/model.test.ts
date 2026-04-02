@@ -89,6 +89,19 @@ const sampleAppConfig = resolveAppConfig({
       ready: 10,
       completed: 15
     }
+  },
+  storeCapabilities: {
+    menu: {
+      source: "platform_managed"
+    },
+    operations: {
+      fulfillmentMode: "staff",
+      liveOrderTrackingEnabled: true,
+      dashboardEnabled: true
+    },
+    loyalty: {
+      visible: true
+    }
   }
 });
 
@@ -147,9 +160,12 @@ describe("operator-web model", () => {
     expect(
       canManageOrderStatus({
         ...sampleAppConfig,
-        fulfillment: {
-          ...sampleAppConfig.fulfillment,
-          mode: "time_based"
+        storeCapabilities: {
+          ...sampleAppConfig.storeCapabilities,
+          operations: {
+            ...sampleAppConfig.storeCapabilities.operations,
+            fulfillmentMode: "time_based"
+          }
         }
       })
     ).toBe(false);
@@ -184,9 +200,11 @@ describe("operator-web model", () => {
       "Clover",
       "Loyalty",
       "Staff fulfillment",
+      "Platform-managed menu",
       "Order tracking",
       "Staff dashboard",
       "Menu editing",
+      "Loyalty features",
       "home tab",
       "orders tab"
     ]);
@@ -197,13 +215,30 @@ describe("operator-web model", () => {
         { ...sampleOperator, capabilities: ["menu:read"] },
         {
           ...sampleAppConfig,
-          featureFlags: {
-            ...sampleAppConfig.featureFlags,
-            orderTracking: false
+          storeCapabilities: {
+            ...sampleAppConfig.storeCapabilities,
+            operations: {
+              ...sampleAppConfig.storeCapabilities.operations,
+              liveOrderTrackingEnabled: false
+            }
           }
         }
       )
     ).toEqual(["overview", "menu"]);
+    expect(
+      getAvailableSections(
+        { ...sampleOperator, capabilities: ["menu:read"] },
+        {
+          ...sampleAppConfig,
+          storeCapabilities: {
+            ...sampleAppConfig.storeCapabilities,
+            menu: {
+              source: "external_sync"
+            }
+          }
+        }
+      )
+    ).toEqual(["overview"]);
   });
 
   it("resolves role labels and capability access", () => {

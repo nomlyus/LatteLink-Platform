@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   appConfigSchema,
+  isLoyaltyVisible,
+  isOrderTrackingEnabled,
   menuItemCustomizationGroupSchema,
   menuResponseSchema,
   storeConfigResponseSchema,
@@ -296,6 +298,19 @@ const fallbackAppConfig = appConfigSchema.parse({
       ready: 10,
       completed: 15
     }
+  },
+  storeCapabilities: {
+    menu: {
+      source: "platform_managed"
+    },
+    operations: {
+      fulfillmentMode: "time_based",
+      liveOrderTrackingEnabled: true,
+      dashboardEnabled: false
+    },
+    loyalty: {
+      visible: true
+    }
   }
 });
 
@@ -362,7 +377,15 @@ export function resolveStoreConfigData(config: StoreConfigResponse | undefined):
 }
 
 export function resolveAppConfigData(config: AppConfig | undefined): AppConfig {
-  return config ?? fallbackAppConfig;
+  return config ? appConfigSchema.parse(config) : fallbackAppConfig;
+}
+
+export function isMobileLoyaltyVisible(config: AppConfig | undefined) {
+  return isLoyaltyVisible(resolveAppConfigData(config));
+}
+
+export function isMobileOrderTrackingEnabled(config: AppConfig | undefined) {
+  return isOrderTrackingEnabled(resolveAppConfigData(config));
 }
 
 export function createEmptyCustomizationInput(): MenuItemCustomizationInput {

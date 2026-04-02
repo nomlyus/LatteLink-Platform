@@ -49,6 +49,16 @@ Current response shape:
   - `staffDashboard`
   - `menuEditing`
 - `loyaltyEnabled`
+- `storeCapabilities`
+  - `menu.source`
+    - `platform_managed`
+    - `external_sync`
+  - `operations.fulfillmentMode`
+    - `staff`
+    - `time_based`
+  - `operations.liveOrderTrackingEnabled`
+  - `operations.dashboardEnabled`
+  - `loyalty.visible`
 - `paymentCapabilities`
   - `applePay`
   - `card`
@@ -93,9 +103,10 @@ Behavior:
 
 - customer menu/store calls still use the current API base
 - customer mobile now prefers gateway `GET /v1/app-config` and falls back to the catalog service only if needed
-- operator web uses the same gateway `GET /v1/app-config` route for runtime brand and feature visibility
+- operator web uses the same gateway `GET /v1/app-config` route for runtime brand and store-capability visibility
 - if app-config cannot be loaded, the app falls back to the default brand config so customer flows stay usable
 - Apple Pay labels now use runtime brand config when available
+- loyalty visibility, live order tracking, menu source, and staff dashboard availability now resolve from `storeCapabilities`
 
 Relevant env vars:
 
@@ -112,7 +123,7 @@ Relevant env vars:
 - `staff`
 - `time_based`
 
-The schedule published in `app-config.fulfillment.timeBasedScheduleMinutes` currently remains the shared default schedule. The mode is configurable now; the schedule can move into tenant-managed config later without changing the contract shape.
+`ORDER_FULFILLMENT_MODE` is now only used to seed the default store capability profile for fresh environments. Once a store capability config is persisted, `app-config.storeCapabilities.operations.fulfillmentMode` becomes the authoritative runtime source for both the mobile app and the client dashboard. The schedule published in `app-config.fulfillment.timeBasedScheduleMinutes` still remains the shared default schedule for V1.
 
 ## Operational Notes
 

@@ -1,4 +1,5 @@
 import {
+  DEFAULT_APP_CONFIG_STORE_CAPABILITIES,
   DEFAULT_APP_CONFIG_FULFILLMENT,
   appConfigFulfillmentModeSchema,
   appConfigSchema,
@@ -75,6 +76,13 @@ export function resolveDefaultAppConfigPayload(
     fulfillment: {
       ...DEFAULT_APP_CONFIG_FULFILLMENT,
       mode: resolveConfiguredFulfillmentMode(env.ORDER_FULFILLMENT_MODE)
+    },
+    storeCapabilities: {
+      ...DEFAULT_APP_CONFIG_STORE_CAPABILITIES,
+      operations: {
+        ...DEFAULT_APP_CONFIG_STORE_CAPABILITIES.operations,
+        fulfillmentMode: resolveConfiguredFulfillmentMode(env.ORDER_FULFILLMENT_MODE)
+      }
     }
   });
 }

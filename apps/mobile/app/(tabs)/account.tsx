@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthSession } from "../../src/auth/session";
 import { useLoyaltyBalanceQuery, useLoyaltyLedgerQuery } from "../../src/account/data";
 import { AccountFloatingHeader, ACCOUNT_HEADER_HEIGHT } from "../../src/account/AccountFloatingHeader";
-import { resolveAppConfigData, useAppConfigQuery } from "../../src/menu/catalog";
+import { isMobileLoyaltyVisible, resolveAppConfigData, useAppConfigQuery } from "../../src/menu/catalog";
 import { TAB_BAR_HEIGHT, getTabBarBottomOffset } from "../../src/navigation/tabBarMetrics";
 import { Chip, GlassCard, ScreenScroll, ScreenStatic, SectionLabel, uiPalette, uiTypography } from "../../src/ui/system";
 
@@ -84,7 +84,7 @@ export default function AccountScreen() {
   const { isAuthenticated, session } = useAuthSession();
   const appConfigQuery = useAppConfigQuery();
   const appConfig = resolveAppConfigData(appConfigQuery.data);
-  const loyaltyEnabled = appConfig.loyaltyEnabled && appConfig.featureFlags.loyalty;
+  const loyaltyEnabled = isMobileLoyaltyVisible(appConfigQuery.data);
   const loyaltyBalanceQuery = useLoyaltyBalanceQuery(isAuthenticated && loyaltyEnabled);
   const loyaltyLedgerQuery = useLoyaltyLedgerQuery(isAuthenticated && loyaltyEnabled);
   const [isManualRefresh, setIsManualRefresh] = useState(false);

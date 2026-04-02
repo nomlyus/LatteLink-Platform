@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthSession } from "../../src/auth/session";
 import { useLoyaltyBalanceQuery, useLoyaltyLedgerQuery, type LoyaltyLedgerEntry } from "../../src/account/data";
 import { AccountFloatingHeader, ACCOUNT_HEADER_HEIGHT } from "../../src/account/AccountFloatingHeader";
-import { resolveAppConfigData, useAppConfigQuery } from "../../src/menu/catalog";
+import { isMobileLoyaltyVisible, resolveAppConfigData, useAppConfigQuery } from "../../src/menu/catalog";
 import { Button, Card, Chip, GlassCard, ScreenScroll, SectionLabel, uiPalette, uiTypography } from "../../src/ui/system";
 
 function formatDateTime(value: string) {
@@ -63,8 +63,9 @@ export default function RewardsPage() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { isAuthenticated } = useAuthSession();
-  const appConfig = resolveAppConfigData(useAppConfigQuery().data);
-  const loyaltyEnabled = appConfig.loyaltyEnabled && appConfig.featureFlags.loyalty;
+  const appConfigQuery = useAppConfigQuery();
+  const appConfig = resolveAppConfigData(appConfigQuery.data);
+  const loyaltyEnabled = isMobileLoyaltyVisible(appConfigQuery.data);
   const loyaltyBalanceQuery = useLoyaltyBalanceQuery(isAuthenticated && loyaltyEnabled);
   const loyaltyLedgerQuery = useLoyaltyLedgerQuery(isAuthenticated && loyaltyEnabled);
   const headerOffset = insets.top + ACCOUNT_HEADER_HEIGHT;

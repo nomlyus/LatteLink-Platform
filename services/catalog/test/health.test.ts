@@ -54,6 +54,9 @@ describe("catalog service", () => {
     const parsed = appConfigSchema.parse(response.json());
     expect(parsed.brand.brandName).toBe("Gazelle Coffee");
     expect(parsed.enabledTabs).toEqual(["home", "menu", "orders", "account"]);
+    expect(parsed.storeCapabilities.menu.source).toBe("platform_managed");
+    expect(parsed.storeCapabilities.operations.dashboardEnabled).toBe(true);
+    expect(parsed.storeCapabilities.loyalty.visible).toBe(true);
     expect(parsed.fulfillment.mode).toBe("time_based");
     await app.close();
   });
@@ -66,6 +69,7 @@ describe("catalog service", () => {
     expect(response.statusCode).toBe(200);
     const parsed = appConfigSchema.parse(response.json());
     expect(parsed.fulfillment.mode).toBe("staff");
+    expect(parsed.storeCapabilities.operations.fulfillmentMode).toBe("staff");
     expect(parsed.fulfillment.timeBasedScheduleMinutes.completed).toBe(15);
 
     await app.close();
@@ -123,6 +127,7 @@ describe("catalog service", () => {
     expect(adminStoreConfigResponse.statusCode).toBe(200);
     const adminStoreConfig = adminStoreConfigSchema.parse(adminStoreConfigResponse.json());
     expect(adminStoreConfig.storeName).toContain("Gazelle");
+    expect(adminStoreConfig.capabilities.menu.source).toBe("platform_managed");
 
     const storeUpdateResponse = await app.inject({
       method: "PUT",
@@ -133,13 +138,70 @@ describe("catalog service", () => {
       payload: {
         storeName: "Gazelle Coffee Downtown",
         hours: "Weekdays · 6:30 AM - 5:00 PM",
-        pickupInstructions: "Use the front pickup shelves."
+        pickupInstructions: "Use the front pickup shelves.",
+        capabilities: {
+          menu: {
+            source: "external_sync"
+          },
+          operations: {
+            fulfillmentMode: "staff",
+            liveOrderTrackingEnabled: false,
+            dashboardEnabled: false
+          },
+          loyalty: {
+            visible: false
+          }
+        }
       }
     });
     expect(storeUpdateResponse.statusCode).toBe(200);
     expect(adminStoreConfigSchema.parse(storeUpdateResponse.json())).toMatchObject({
       storeName: "Gazelle Coffee Downtown",
-      hours: "Weekdays · 6:30 AM - 5:00 PM"
+      hours: "Weekdays · 6:30 AM - 5:00 PM",
+      capabilities: {
+        menu: {
+          source: "external_sync"
+        },
+        operations: {
+          fulfillmentMode: "staff",
+          liveOrderTrackingEnabled: false,
+          dashboardEnabled: false
+        },
+        loyalty: {
+          visible: false
+        }
+      }
+    });
+
+    const appConfigResponse = await app.inject({ method: "GET", url: "/v1/app-config" });
+    expect(appConfigResponse.statusCode).toBe(200);
+    expect(appConfigSchema.parse(appConfigResponse.json())).toMatchObject({
+      brand: {
+        locationName: "Gazelle Coffee Downtown"
+      },
+      storeCapabilities: {
+        menu: {
+          source: "external_sync"
+        },
+        operations: {
+          fulfillmentMode: "staff",
+          liveOrderTrackingEnabled: false,
+          dashboardEnabled: false
+        },
+        loyalty: {
+          visible: false
+        }
+      },
+      fulfillment: {
+        mode: "staff"
+      },
+      featureFlags: {
+        loyalty: false,
+        orderTracking: false,
+        staffDashboard: false,
+        menuEditing: false
+      },
+      loyaltyEnabled: false
     });
 
     await app.close();

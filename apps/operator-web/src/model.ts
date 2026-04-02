@@ -12,6 +12,11 @@ import {
   adminMenuItemUpdateSchema,
   adminStoreConfigUpdateSchema,
   appConfigSchema,
+  isLoyaltyVisible,
+  isOrderTrackingEnabled,
+  isPlatformManagedMenu,
+  isStaffDashboardEnabled,
+  resolveAppConfigFulfillmentMode,
   type AppConfig
 } from "@gazelle/contracts-catalog";
 import { orderSchema, orderStatusSchema } from "@gazelle/contracts-orders";
@@ -156,14 +161,18 @@ export function canAccessCapability(
 
 export function getAvailableSections(
   operator: Pick<OperatorUser, "capabilities"> | null | undefined,
-  appConfig: Pick<AppConfig, "featureFlags"> | null | undefined
+  appConfig: Pick<AppConfig, "featureFlags" | "storeCapabilities" | "loyaltyEnabled" | "fulfillment"> | null | undefined
 ) {
   const sections: DashboardSection[] = ["overview"];
 
-  if (canAccessCapability(operator, "orders:read") && appConfig?.featureFlags.orderTracking !== false) {
+  if (
+    canAccessCapability(operator, "orders:read") &&
+    isStaffDashboardEnabled(appConfig) &&
+    isOrderTrackingEnabled(appConfig)
+  ) {
     sections.push("orders");
   }
-  if (canAccessCapability(operator, "menu:read")) {
+  if (canAccessCapability(operator, "menu:read") && isPlatformManagedMenu(appConfig)) {
     sections.push("menu");
   }
   if (canAccessCapability(operator, "store:read")) {
@@ -176,8 +185,10 @@ export function getAvailableSections(
   return sections;
 }
 
-export function canManageOrderStatus(config: Pick<AppConfig, "fulfillment"> | null | undefined) {
-  return config?.fulfillment.mode === "staff";
+export function canManageOrderStatus(
+  config: Pick<AppConfig, "storeCapabilities" | "featureFlags" | "loyaltyEnabled" | "fulfillment"> | null | undefined
+) {
+  return isStaffDashboardEnabled(config) && isOrderTrackingEnabled(config) && resolveAppConfigFulfillmentMode(config) === "staff";
 }
 
 export function getOrderActions(
@@ -272,24 +283,30 @@ export function getAppConfigCapabilityLabels(config: AppConfig) {
   if (config.paymentCapabilities.clover.enabled) {
     labels.push("Clover");
   }
-  if (config.loyaltyEnabled) {
+  if (isLoyaltyVisible(config)) {
     labels.push("Loyalty");
   }
 
-  labels.push(config.fulfillment.mode === "staff" ? "Staff fulfillment" : "Time-based fulfillment");
+  labels.push(resolveAppConfigFulfillmentMode(config) === "staff" ? "Staff fulfillment" : "Time-based fulfillment");
+  labels.push(isPlatformManagedMenu(config) ? "Platform-managed menu" : "External menu sync");
 
-  const featureLabels: Array<[keyof AppConfig["featureFlags"], string]> = [
-    ["orderTracking", "Order tracking"],
-    ["pushNotifications", "Push notifications"],
-    ["staffDashboard", "Staff dashboard"],
-    ["menuEditing", "Menu editing"],
-    ["loyalty", "Loyalty features"],
-    ["refunds", "Refunds"]
-  ];
-  for (const [key, label] of featureLabels) {
-    if (config.featureFlags[key]) {
-      labels.push(label);
-    }
+  if (isOrderTrackingEnabled(config)) {
+    labels.push("Order tracking");
+  }
+  if (config.featureFlags.pushNotifications) {
+    labels.push("Push notifications");
+  }
+  if (isStaffDashboardEnabled(config)) {
+    labels.push("Staff dashboard");
+  }
+  if (isPlatformManagedMenu(config)) {
+    labels.push("Menu editing");
+  }
+  if (isLoyaltyVisible(config)) {
+    labels.push("Loyalty features");
+  }
+  if (config.featureFlags.refunds) {
+    labels.push("Refunds");
   }
 
   for (const tab of config.enabledTabs) {

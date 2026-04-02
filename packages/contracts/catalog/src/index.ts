@@ -286,11 +286,34 @@ export const adminStoreConfigSchema = z.object({
   locationId: z.string().min(1),
   storeName: z.string().min(1),
   hours: z.string().min(1),
-  pickupInstructions: z.string().min(1)
-});
-
-export const adminStoreConfigUpdateSchema = adminStoreConfigSchema.omit({
-  locationId: true
+  pickupInstructions: z.string().min(1),
+  capabilities: z
+    .object({
+      menu: z.object({
+        source: z.enum(["platform_managed", "external_sync"])
+      }),
+      operations: z.object({
+        fulfillmentMode: z.enum(["staff", "time_based"]),
+        liveOrderTrackingEnabled: z.boolean(),
+        dashboardEnabled: z.boolean()
+      }),
+      loyalty: z.object({
+        visible: z.boolean()
+      })
+    })
+    .default({
+      menu: {
+        source: "platform_managed"
+      },
+      operations: {
+        fulfillmentMode: "time_based",
+        liveOrderTrackingEnabled: true,
+        dashboardEnabled: true
+      },
+      loyalty: {
+        visible: true
+      }
+    })
 });
 
 export const appConfigThemeSchema = z.object({
@@ -376,14 +399,146 @@ export const DEFAULT_APP_CONFIG_FULFILLMENT = appConfigFulfillmentSchema.parse({
   }
 });
 
-export const appConfigSchema = z.object({
+export const appConfigMenuSourceSchema = z.enum(["platform_managed", "external_sync"]);
+
+export const appConfigStoreCapabilitiesSchema = z.object({
+  menu: z.object({
+    source: appConfigMenuSourceSchema
+  }),
+  operations: z.object({
+    fulfillmentMode: appConfigFulfillmentModeSchema,
+    liveOrderTrackingEnabled: z.boolean(),
+    dashboardEnabled: z.boolean()
+  }),
+  loyalty: z.object({
+    visible: z.boolean()
+  })
+});
+
+export const DEFAULT_APP_CONFIG_STORE_CAPABILITIES = appConfigStoreCapabilitiesSchema.parse({
+  menu: {
+    source: "platform_managed"
+  },
+  operations: {
+    fulfillmentMode: DEFAULT_APP_CONFIG_FULFILLMENT.mode,
+    liveOrderTrackingEnabled: true,
+    dashboardEnabled: true
+  },
+  loyalty: {
+    visible: true
+  }
+});
+
+type AppConfigCapabilityInput = Partial<
+  z.output<
+    z.ZodObject<{
+      featureFlags: typeof appConfigFeatureFlagsSchema;
+      loyaltyEnabled: z.ZodBoolean;
+      fulfillment: typeof appConfigFulfillmentSchema;
+      storeCapabilities: z.ZodOptional<typeof appConfigStoreCapabilitiesSchema>;
+    }>
+  >
+>;
+
+function deriveStoreCapabilitiesFromLegacyAppConfig(input: AppConfigCapabilityInput) {
+  const platformManagedMenu =
+    (input.featureFlags?.menuEditing ?? (input.storeCapabilities?.menu.source === "platform_managed")) ?? true;
+
+  return appConfigStoreCapabilitiesSchema.parse({
+    menu: {
+      source: platformManagedMenu ? "platform_managed" : "external_sync"
+    },
+    operations: {
+      fulfillmentMode: input.fulfillment?.mode ?? DEFAULT_APP_CONFIG_STORE_CAPABILITIES.operations.fulfillmentMode,
+      liveOrderTrackingEnabled:
+        input.featureFlags?.orderTracking ?? DEFAULT_APP_CONFIG_STORE_CAPABILITIES.operations.liveOrderTrackingEnabled,
+      dashboardEnabled:
+        input.featureFlags?.staffDashboard ?? DEFAULT_APP_CONFIG_STORE_CAPABILITIES.operations.dashboardEnabled
+    },
+    loyalty: {
+      visible: input.loyaltyEnabled ?? input.featureFlags?.loyalty ?? DEFAULT_APP_CONFIG_STORE_CAPABILITIES.loyalty.visible
+    }
+  });
+}
+
+export function resolveAppConfigStoreCapabilities(input: AppConfigCapabilityInput | null | undefined) {
+  if (!input) {
+    return DEFAULT_APP_CONFIG_STORE_CAPABILITIES;
+  }
+
+  return input.storeCapabilities
+    ? appConfigStoreCapabilitiesSchema.parse(input.storeCapabilities)
+    : deriveStoreCapabilitiesFromLegacyAppConfig(input);
+}
+
+function normalizeAppConfig(input: {
+  brand: z.output<typeof appConfigBrandSchema>;
+  theme: z.output<typeof appConfigThemeSchema>;
+  enabledTabs: Array<z.output<z.ZodEnum<["home", "menu", "orders", "account"]>>>;
+  featureFlags: z.output<typeof appConfigFeatureFlagsSchema>;
+  loyaltyEnabled: boolean;
+  paymentCapabilities: z.output<typeof appConfigPaymentCapabilitiesSchema>;
+  fulfillment: z.output<typeof appConfigFulfillmentSchema>;
+  storeCapabilities?: z.output<typeof appConfigStoreCapabilitiesSchema>;
+}) {
+  const storeCapabilities = resolveAppConfigStoreCapabilities(input);
+
+  return {
+    ...input,
+    storeCapabilities,
+    featureFlags: {
+      ...input.featureFlags,
+      loyalty: storeCapabilities.loyalty.visible,
+      orderTracking: storeCapabilities.operations.liveOrderTrackingEnabled,
+      staffDashboard: storeCapabilities.operations.dashboardEnabled,
+      menuEditing: storeCapabilities.menu.source === "platform_managed"
+    },
+    loyaltyEnabled: storeCapabilities.loyalty.visible,
+    fulfillment: {
+      ...input.fulfillment,
+      mode: storeCapabilities.operations.fulfillmentMode
+    }
+  };
+}
+
+export function isPlatformManagedMenu(config: AppConfigCapabilityInput | null | undefined) {
+  return resolveAppConfigStoreCapabilities(config).menu.source === "platform_managed";
+}
+
+export function isStaffDashboardEnabled(config: AppConfigCapabilityInput | null | undefined) {
+  return resolveAppConfigStoreCapabilities(config).operations.dashboardEnabled;
+}
+
+export function isOrderTrackingEnabled(config: AppConfigCapabilityInput | null | undefined) {
+  return resolveAppConfigStoreCapabilities(config).operations.liveOrderTrackingEnabled;
+}
+
+export function isLoyaltyVisible(config: AppConfigCapabilityInput | null | undefined) {
+  return resolveAppConfigStoreCapabilities(config).loyalty.visible;
+}
+
+export function resolveAppConfigFulfillmentMode(config: AppConfigCapabilityInput | null | undefined) {
+  return resolveAppConfigStoreCapabilities(config).operations.fulfillmentMode;
+}
+
+const appConfigSchemaBase = z.object({
   brand: appConfigBrandSchema,
   theme: appConfigThemeSchema,
   enabledTabs: z.array(z.enum(["home", "menu", "orders", "account"])).min(1),
   featureFlags: appConfigFeatureFlagsSchema,
   loyaltyEnabled: z.boolean(),
   paymentCapabilities: appConfigPaymentCapabilitiesSchema,
-  fulfillment: appConfigFulfillmentSchema.default(DEFAULT_APP_CONFIG_FULFILLMENT)
+  fulfillment: appConfigFulfillmentSchema.default(DEFAULT_APP_CONFIG_FULFILLMENT),
+  storeCapabilities: appConfigStoreCapabilitiesSchema.optional()
+});
+
+export const appConfigSchema = appConfigSchemaBase.transform((value) => normalizeAppConfig(value));
+
+export const adminStoreConfigUpdateSchema = z.object({
+  storeName: z.string().min(1),
+  hours: z.string().min(1),
+  pickupInstructions: z.string().min(1),
+  capabilities: appConfigStoreCapabilitiesSchema.optional()
 });
 
 export type MenuItemCustomizationOption = z.output<typeof menuItemCustomizationOptionSchema>;
@@ -407,6 +562,8 @@ export type AppConfigPaymentCapabilities = z.output<typeof appConfigPaymentCapab
 export type AppConfigFulfillmentMode = z.output<typeof appConfigFulfillmentModeSchema>;
 export type AppConfigFulfillmentSchedule = z.output<typeof appConfigFulfillmentScheduleSchema>;
 export type AppConfigFulfillment = z.output<typeof appConfigFulfillmentSchema>;
+export type AppConfigMenuSource = z.output<typeof appConfigMenuSourceSchema>;
+export type AppConfigStoreCapabilities = z.output<typeof appConfigStoreCapabilitiesSchema>;
 export type AppConfig = z.output<typeof appConfigSchema>;
 
 export type CustomizationValidationIssueCode =

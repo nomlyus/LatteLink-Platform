@@ -6,12 +6,13 @@ import {
   adminMenuItemVisibilityUpdateSchema,
   adminMenuResponseSchema,
   adminStoreConfigSchema,
-  appConfigSchema,
   adminMutationSuccessSchema,
+  appConfigSchema,
   type AdminMenuItem,
   type AdminMenuResponse,
   type AdminStoreConfig,
   type AppConfig,
+  type AppConfigStoreCapabilities,
   menuItemCustomizationGroupSchema,
   menuItemSchema,
   menuResponseSchema,
@@ -237,6 +238,7 @@ type CatalogRepository = {
     storeName: string;
     hours: string;
     pickupInstructions: string;
+    capabilities?: AppConfigStoreCapabilities;
   }): Promise<AdminStoreConfig>;
   getMenu(): Promise<MenuResponse>;
   getStoreConfig(): Promise<StoreConfigResponse>;
@@ -307,21 +309,13 @@ function buildAdminStoreConfig(input: {
   storeName: string;
   hours: string;
   pickupInstructions: string;
+  capabilities: AppConfigStoreCapabilities;
 }) {
   return adminStoreConfigSchema.parse(input);
 }
 
 function applyRuntimeFulfillmentMode(appConfig: AppConfig) {
-  const parsedConfig = appConfigSchema.parse(appConfig);
-  const runtimeFulfillment = resolveDefaultAppConfigPayload().fulfillment;
-
-  return appConfigSchema.parse({
-    ...parsedConfig,
-    fulfillment: {
-      ...parsedConfig.fulfillment,
-      mode: runtimeFulfillment.mode
-    }
-  });
+  return appConfigSchema.parse(appConfig);
 }
 
 function createInMemoryRepository(): CatalogRepository {
@@ -332,7 +326,8 @@ function createInMemoryRepository(): CatalogRepository {
     locationId: DEFAULT_LOCATION_ID,
     storeName: DEFAULT_LOCATION_NAME,
     hours: DEFAULT_STORE_HOURS,
-    pickupInstructions: defaultStoreConfigPayload.pickupInstructions
+    pickupInstructions: defaultStoreConfigPayload.pickupInstructions,
+    capabilities: appConfig.storeCapabilities
   });
 
   return {
@@ -485,7 +480,8 @@ function createInMemoryRepository(): CatalogRepository {
         locationId: DEFAULT_LOCATION_ID,
         storeName: input.storeName,
         hours: input.hours,
-        pickupInstructions: input.pickupInstructions
+        pickupInstructions: input.pickupInstructions,
+        capabilities: input.capabilities ?? appConfig.storeCapabilities
       });
       storeConfig = storeConfigResponseSchema.parse({
         ...storeConfig,
@@ -497,11 +493,7 @@ function createInMemoryRepository(): CatalogRepository {
           ...appConfig.brand,
           locationName: input.storeName
         },
-        featureFlags: {
-          ...appConfig.featureFlags,
-          staffDashboard: true,
-          menuEditing: true
-        }
+        storeCapabilities: input.capabilities ?? appConfig.storeCapabilities
       });
 
       return adminStoreConfig;
@@ -873,15 +865,25 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
           locationId: DEFAULT_LOCATION_ID,
           storeName: DEFAULT_LOCATION_NAME,
           hours: DEFAULT_STORE_HOURS,
-          pickupInstructions: defaultStoreConfigPayload.pickupInstructions
+          pickupInstructions: defaultStoreConfigPayload.pickupInstructions,
+          capabilities: defaultAppConfigPayload.storeCapabilities
         });
       }
+
+      const appConfigRow = await db
+        .selectFrom("catalog_app_configs")
+        .select("app_config_json")
+        .where("brand_id", "=", DEFAULT_BRAND_ID)
+        .where("location_id", "=", DEFAULT_LOCATION_ID)
+        .executeTakeFirst();
+      const appConfig = appConfigSchema.parse(appConfigRow?.app_config_json ?? defaultAppConfigPayload);
 
       return buildAdminStoreConfig({
         locationId: row.location_id,
         storeName: row.store_name,
         hours: row.hours_text,
-        pickupInstructions: row.pickup_instructions
+        pickupInstructions: row.pickup_instructions,
+        capabilities: appConfig.storeCapabilities
       });
     },
     async updateAdminStoreConfig(input) {
@@ -905,11 +907,7 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
           ...currentAppConfig.brand,
           locationName: input.storeName
         },
-        featureFlags: {
-          ...currentAppConfig.featureFlags,
-          staffDashboard: true,
-          menuEditing: true
-        }
+        storeCapabilities: input.capabilities ?? currentAppConfig.storeCapabilities
       });
 
       await db.transaction().execute(async (trx) => {
@@ -954,7 +952,8 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         locationId: DEFAULT_LOCATION_ID,
         storeName: input.storeName,
         hours: input.hours,
-        pickupInstructions: input.pickupInstructions
+        pickupInstructions: input.pickupInstructions,
+        capabilities: nextAppConfig.storeCapabilities
       });
     },
     async getStoreConfig() {
