@@ -13,6 +13,7 @@ describe("gateway", () => {
   let previousLoyaltyBaseUrl: string | undefined;
   let previousNotificationsBaseUrl: string | undefined;
   let previousGatewayInternalToken: string | undefined;
+  let previousInternalAdminToken: string | undefined;
   let previousOrdersInternalToken: string | undefined;
   let previousGatewayOrderStreamPollMs: string | undefined;
   let queuedOrderStatuses: Map<string, Array<"PENDING_PAYMENT" | "PAID" | "IN_PREP" | "READY" | "COMPLETED" | "CANCELED">>;
@@ -77,6 +78,7 @@ describe("gateway", () => {
     previousLoyaltyBaseUrl = process.env.LOYALTY_SERVICE_BASE_URL;
     previousNotificationsBaseUrl = process.env.NOTIFICATIONS_SERVICE_BASE_URL;
     previousGatewayInternalToken = process.env.GATEWAY_INTERNAL_API_TOKEN;
+    previousInternalAdminToken = process.env.INTERNAL_ADMIN_API_TOKEN;
     previousOrdersInternalToken = process.env.ORDERS_INTERNAL_API_TOKEN;
     previousGatewayOrderStreamPollMs = process.env.GATEWAY_ORDER_STREAM_POLL_MS;
     queuedOrderStatuses = new Map();
@@ -86,6 +88,7 @@ describe("gateway", () => {
     process.env.LOYALTY_SERVICE_BASE_URL = "http://loyalty.internal";
     process.env.NOTIFICATIONS_SERVICE_BASE_URL = "http://notifications.internal";
     process.env.GATEWAY_INTERNAL_API_TOKEN = "gateway-test-token";
+    process.env.INTERNAL_ADMIN_API_TOKEN = "internal-admin-token";
     process.env.ORDERS_INTERNAL_API_TOKEN = "orders-internal-token";
     vi.stubGlobal("fetch", fetchMock);
 
@@ -853,6 +856,116 @@ describe("gateway", () => {
         );
       }
 
+      if (url.endsWith("/v1/catalog/internal/locations/bootstrap") && method === "POST") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as {
+          brandId?: string;
+          brandName?: string;
+          locationId?: string;
+          locationName?: string;
+          marketLabel?: string;
+          storeName?: string;
+          hours?: string;
+          pickupInstructions?: string;
+          capabilities?: unknown;
+        };
+
+        return new Response(
+          JSON.stringify({
+            brandId: body.brandId ?? "northside-coffee",
+            brandName: body.brandName ?? "Northside Coffee",
+            locationId: body.locationId ?? "northside-01",
+            locationName: body.locationName ?? "Northside Flagship",
+            marketLabel: body.marketLabel ?? "Detroit, MI",
+            storeName: body.storeName ?? body.locationName ?? "Northside Coffee",
+            hours: body.hours ?? "Daily · 7:00 AM - 6:00 PM",
+            pickupInstructions: body.pickupInstructions ?? "Pickup at the espresso counter.",
+            capabilities:
+              body.capabilities ?? {
+                menu: {
+                  source: "platform_managed"
+                },
+                operations: {
+                  fulfillmentMode: "staff",
+                  liveOrderTrackingEnabled: true,
+                  dashboardEnabled: true
+                },
+                loyalty: {
+                  visible: true
+                }
+              },
+            action: "created"
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      const internalLocationMatch = url.match(/\/v1\/catalog\/internal\/locations\/([^/]+)$/);
+      if (internalLocationMatch && method === "GET") {
+        const locationId = internalLocationMatch[1];
+
+        return new Response(
+          JSON.stringify({
+            brandId: "northside-coffee",
+            brandName: "Northside Coffee",
+            locationId,
+            locationName: "Northside Flagship",
+            marketLabel: "Detroit, MI",
+            storeName: "Northside Coffee",
+            hours: "Daily · 7:00 AM - 6:00 PM",
+            pickupInstructions: "Pickup at the espresso counter.",
+            capabilities: {
+              menu: {
+                source: "platform_managed"
+              },
+              operations: {
+                fulfillmentMode: "staff",
+                liveOrderTrackingEnabled: true,
+                dashboardEnabled: true
+              },
+              loyalty: {
+                visible: true
+              }
+            }
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      const internalOwnerProvisionMatch = url.match(/\/v1\/identity\/internal\/locations\/([^/]+)\/owner\/provision$/);
+      if (internalOwnerProvisionMatch && method === "POST") {
+        const locationId = internalOwnerProvisionMatch[1];
+        const body = JSON.parse(String(init?.body ?? "{}")) as { displayName?: string; email?: string };
+
+        return new Response(
+          JSON.stringify({
+            operator: {
+              operatorUserId: "123e4567-e89b-12d3-a456-426614174995",
+              displayName: body.displayName ?? "Pilot Owner",
+              email: body.email ?? "owner@northside.com",
+              role: "owner",
+              locationId,
+              active: true,
+              capabilities: [
+                "orders:read",
+                "orders:write",
+                "menu:read",
+                "menu:write",
+                "menu:visibility",
+                "store:read",
+                "store:write",
+                "staff:read",
+                "staff:write"
+              ],
+              createdAt: "2026-03-20T00:00:00.000Z",
+              updatedAt: "2026-03-20T00:00:00.000Z"
+            },
+            temporaryPassword: "Temporary123!",
+            action: "created"
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
       if (url.endsWith("/v1/loyalty/balance") && method === "GET") {
         return new Response(
           JSON.stringify({
@@ -934,6 +1047,12 @@ describe("gateway", () => {
       delete process.env.GATEWAY_INTERNAL_API_TOKEN;
     } else {
       process.env.GATEWAY_INTERNAL_API_TOKEN = previousGatewayInternalToken;
+    }
+
+    if (previousInternalAdminToken === undefined) {
+      delete process.env.INTERNAL_ADMIN_API_TOKEN;
+    } else {
+      process.env.INTERNAL_ADMIN_API_TOKEN = previousInternalAdminToken;
     }
 
     if (previousOrdersInternalToken === undefined) {
@@ -1628,6 +1747,105 @@ describe("gateway", () => {
         reason: "Espresso machine issue"
       });
     }
+
+    await app.close();
+  });
+
+  it("forwards internal pilot bootstrap routes with the internal admin token", async () => {
+    const app = await buildApp();
+
+    const bootstrapResponse = await app.inject({
+      method: "POST",
+      url: "/v1/internal/locations/bootstrap",
+      headers: {
+        "x-internal-admin-token": "internal-admin-token"
+      },
+      payload: {
+        brandId: "northside-coffee",
+        brandName: "Northside Coffee",
+        locationId: "northside-01",
+        locationName: "Northside Flagship",
+        marketLabel: "Detroit, MI"
+      }
+    });
+    expect(bootstrapResponse.statusCode).toBe(200);
+    expect(bootstrapResponse.json()).toMatchObject({
+      brandName: "Northside Coffee",
+      locationId: "northside-01",
+      action: "created"
+    });
+
+    const ownerResponse = await app.inject({
+      method: "POST",
+      url: "/v1/internal/locations/northside-01/owner/provision",
+      headers: {
+        "x-internal-admin-token": "internal-admin-token"
+      },
+      payload: {
+        displayName: "Pilot Owner",
+        email: "owner@northside.com"
+      }
+    });
+    expect(ownerResponse.statusCode).toBe(200);
+    expect(ownerResponse.json()).toMatchObject({
+      operator: {
+        email: "owner@northside.com",
+        locationId: "northside-01",
+        role: "owner"
+      },
+      action: "created"
+    });
+
+    const summaryResponse = await app.inject({
+      method: "GET",
+      url: "/v1/internal/locations/northside-01",
+      headers: {
+        "x-internal-admin-token": "internal-admin-token"
+      }
+    });
+    expect(summaryResponse.statusCode).toBe(200);
+    expect(summaryResponse.json()).toMatchObject({
+      locationId: "northside-01",
+      marketLabel: "Detroit, MI"
+    });
+
+    const bootstrapCall = fetchMock.mock.calls.find(([input]) => {
+      const url = typeof input === "string" ? input : input.url;
+      return url === "http://catalog.internal/v1/catalog/internal/locations/bootstrap";
+    });
+    expect(bootstrapCall).toBeDefined();
+    if (bootstrapCall) {
+      const upstreamHeaders = new Headers((bootstrapCall[1]?.headers ?? {}) as HeadersInit);
+      expect(upstreamHeaders.get("x-gateway-token")).toBe("gateway-test-token");
+      expect(upstreamHeaders.get("x-user-id")).toBeNull();
+    }
+
+    await app.close();
+  });
+
+  it("rejects internal pilot routes without the internal admin token", async () => {
+    const app = await buildApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/internal/locations/bootstrap",
+      payload: {
+        brandId: "northside-coffee",
+        brandName: "Northside Coffee",
+        locationId: "northside-01",
+        locationName: "Northside Flagship",
+        marketLabel: "Detroit, MI"
+      }
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({
+      code: "UNAUTHORIZED_INTERNAL_ADMIN"
+    });
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "http://catalog.internal/v1/catalog/internal/locations/bootstrap",
+      expect.anything()
+    );
 
     await app.close();
   });

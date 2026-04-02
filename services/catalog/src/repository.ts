@@ -5,6 +5,8 @@ import {
   adminMenuItemSchema,
   adminMenuItemVisibilityUpdateSchema,
   adminMenuResponseSchema,
+  internalLocationBootstrapSchema,
+  internalLocationSummarySchema,
   adminStoreConfigSchema,
   adminMutationSuccessSchema,
   appConfigSchema,
@@ -13,6 +15,8 @@ import {
   type AdminStoreConfig,
   type AppConfig,
   type AppConfigStoreCapabilities,
+  type InternalLocationBootstrap,
+  type InternalLocationSummary,
   menuItemCustomizationGroupSchema,
   menuItemSchema,
   menuResponseSchema,
@@ -33,7 +37,8 @@ import {
   DEFAULT_LOCATION_NAME,
   DEFAULT_LOCATION_ID,
   DEFAULT_STORE_HOURS,
-  resolveDefaultAppConfigPayload
+  resolveDefaultAppConfigPayload,
+  resolveProvisionedAppConfigPayload
 } from "./tenant.js";
 
 const espressoCustomizationGroups = [
@@ -220,6 +225,8 @@ type MenuItem = z.output<typeof menuItemSchema>;
 type CatalogRepository = {
   backend: "memory" | "postgres";
   getAppConfig(): Promise<AppConfig>;
+  getInternalLocationSummary(locationId: string): Promise<InternalLocationSummary | undefined>;
+  bootstrapInternalLocation(input: InternalLocationBootstrap): Promise<InternalLocationSummary>;
   getAdminMenu(): Promise<AdminMenuResponse>;
   createAdminMenuItem(input: z.output<typeof adminMenuItemCreateSchema>): Promise<AdminMenuItem | undefined>;
   updateAdminMenuItem(input: {
@@ -314,28 +321,122 @@ function buildAdminStoreConfig(input: {
   return adminStoreConfigSchema.parse(input);
 }
 
+function buildInternalLocationSummary(input: {
+  brandId: string;
+  brandName: string;
+  locationId: string;
+  locationName: string;
+  marketLabel: string;
+  storeName: string;
+  hours: string;
+  pickupInstructions: string;
+  capabilities: AppConfigStoreCapabilities;
+  action?: "created" | "updated";
+}) {
+  return internalLocationSummarySchema.parse(input);
+}
+
+function buildProvisionedMenuPayload(locationId: string) {
+  return menuResponseSchema.parse({
+    ...defaultMenuPayload,
+    locationId
+  });
+}
+
 function applyRuntimeFulfillmentMode(appConfig: AppConfig) {
   return appConfigSchema.parse(appConfig);
 }
 
 function createInMemoryRepository(): CatalogRepository {
-  let appConfig = structuredClone(resolveDefaultAppConfigPayload());
-  let menu = structuredClone(defaultMenuPayload);
-  let storeConfig = structuredClone(defaultStoreConfigPayload);
-  let adminStoreConfig = buildAdminStoreConfig({
-    locationId: DEFAULT_LOCATION_ID,
-    storeName: DEFAULT_LOCATION_NAME,
-    hours: DEFAULT_STORE_HOURS,
-    pickupInstructions: defaultStoreConfigPayload.pickupInstructions,
-    capabilities: appConfig.storeCapabilities
-  });
+  const defaultAppConfig = structuredClone(resolveDefaultAppConfigPayload());
+  const appConfigsByLocation = new Map<string, AppConfig>([[DEFAULT_LOCATION_ID, defaultAppConfig]]);
+  const menusByLocation = new Map<string, MenuResponse>([[DEFAULT_LOCATION_ID, structuredClone(defaultMenuPayload)]]);
+  const storeConfigsByLocation = new Map<string, StoreConfigResponse>([
+    [DEFAULT_LOCATION_ID, structuredClone(defaultStoreConfigPayload)]
+  ]);
+  const adminStoreConfigsByLocation = new Map<string, AdminStoreConfig>([
+    [
+      DEFAULT_LOCATION_ID,
+      buildAdminStoreConfig({
+        locationId: DEFAULT_LOCATION_ID,
+        storeName: DEFAULT_LOCATION_NAME,
+        hours: DEFAULT_STORE_HOURS,
+        pickupInstructions: defaultStoreConfigPayload.pickupInstructions,
+        capabilities: defaultAppConfig.storeCapabilities
+      })
+    ]
+  ]);
 
   return {
     backend: "memory",
     async getAppConfig() {
-      return applyRuntimeFulfillmentMode(appConfig);
+      return applyRuntimeFulfillmentMode(appConfigsByLocation.get(DEFAULT_LOCATION_ID) ?? defaultAppConfig);
+    },
+    async getInternalLocationSummary(locationId) {
+      const adminStoreConfig = adminStoreConfigsByLocation.get(locationId);
+      const appConfig = appConfigsByLocation.get(locationId);
+      if (!adminStoreConfig || !appConfig) {
+        return undefined;
+      }
+
+      return buildInternalLocationSummary({
+        brandId: appConfig.brand.brandId,
+        brandName: appConfig.brand.brandName,
+        locationId,
+        locationName: appConfig.brand.locationName,
+        marketLabel: appConfig.brand.marketLabel,
+        storeName: adminStoreConfig.storeName,
+        hours: adminStoreConfig.hours,
+        pickupInstructions: adminStoreConfig.pickupInstructions,
+        capabilities: appConfig.storeCapabilities
+      });
+    },
+    async bootstrapInternalLocation(rawInput) {
+      const input = internalLocationBootstrapSchema.parse(rawInput);
+      const existing = adminStoreConfigsByLocation.get(input.locationId);
+      const nextAppConfig = resolveProvisionedAppConfigPayload({
+        brandId: input.brandId,
+        brandName: input.brandName,
+        locationId: input.locationId,
+        locationName: input.locationName,
+        marketLabel: input.marketLabel,
+        capabilities: input.capabilities
+      });
+      const nextAdminStoreConfig = buildAdminStoreConfig({
+        locationId: input.locationId,
+        storeName: input.storeName ?? input.locationName,
+        hours: input.hours ?? DEFAULT_STORE_HOURS,
+        pickupInstructions: input.pickupInstructions ?? defaultStoreConfigPayload.pickupInstructions,
+        capabilities: nextAppConfig.storeCapabilities
+      });
+      const nextStoreConfig = storeConfigResponseSchema.parse({
+        ...defaultStoreConfigPayload,
+        locationId: input.locationId,
+        pickupInstructions: nextAdminStoreConfig.pickupInstructions
+      });
+
+      appConfigsByLocation.set(input.locationId, nextAppConfig);
+      adminStoreConfigsByLocation.set(input.locationId, nextAdminStoreConfig);
+      storeConfigsByLocation.set(input.locationId, nextStoreConfig);
+      if (!menusByLocation.has(input.locationId)) {
+        menusByLocation.set(input.locationId, buildProvisionedMenuPayload(input.locationId));
+      }
+
+      return buildInternalLocationSummary({
+        brandId: nextAppConfig.brand.brandId,
+        brandName: nextAppConfig.brand.brandName,
+        locationId: input.locationId,
+        locationName: nextAppConfig.brand.locationName,
+        marketLabel: nextAppConfig.brand.marketLabel,
+        storeName: nextAdminStoreConfig.storeName,
+        hours: nextAdminStoreConfig.hours,
+        pickupInstructions: nextAdminStoreConfig.pickupInstructions,
+        capabilities: nextAppConfig.storeCapabilities,
+        action: existing ? "updated" : "created"
+      });
     },
     async getAdminMenu() {
+      const menu = menusByLocation.get(DEFAULT_LOCATION_ID) ?? defaultMenuPayload;
       return buildAdminMenuResponse({
         locationId: menu.locationId,
         categories: menu.categories.map((category) => ({
@@ -357,6 +458,8 @@ function createInMemoryRepository(): CatalogRepository {
       });
     },
     async createAdminMenuItem(input) {
+      const currentMenu = menusByLocation.get(DEFAULT_LOCATION_ID) ?? defaultMenuPayload;
+      let menu = currentMenu;
       const category = menu.categories.find((entry) => entry.id === input.categoryId);
       if (!category) {
         return undefined;
@@ -383,6 +486,7 @@ function createInMemoryRepository(): CatalogRepository {
             : entry
         )
       });
+      menusByLocation.set(DEFAULT_LOCATION_ID, menu);
 
       return toAdminMenuItem({
         itemId: nextItem.id,
@@ -396,6 +500,7 @@ function createInMemoryRepository(): CatalogRepository {
       });
     },
     async updateAdminMenuItem(input) {
+      let menu = menusByLocation.get(DEFAULT_LOCATION_ID) ?? defaultMenuPayload;
       let updatedItem: AdminMenuItem | undefined;
       menu = menuResponseSchema.parse({
         ...menu,
@@ -426,10 +531,12 @@ function createInMemoryRepository(): CatalogRepository {
           })
         }))
       });
+      menusByLocation.set(DEFAULT_LOCATION_ID, menu);
 
       return updatedItem;
     },
     async updateAdminMenuItemVisibility(input) {
+      let menu = menusByLocation.get(DEFAULT_LOCATION_ID) ?? defaultMenuPayload;
       let updatedItem: AdminMenuItem | undefined;
       menu = menuResponseSchema.parse({
         ...menu,
@@ -458,10 +565,12 @@ function createInMemoryRepository(): CatalogRepository {
           })
         }))
       });
+      menusByLocation.set(DEFAULT_LOCATION_ID, menu);
 
       return updatedItem;
     },
     async deleteAdminMenuItem(itemId) {
+      let menu = menusByLocation.get(DEFAULT_LOCATION_ID) ?? defaultMenuPayload;
       menu = menuResponseSchema.parse({
         ...menu,
         categories: menu.categories.map((category) => ({
@@ -469,40 +578,45 @@ function createInMemoryRepository(): CatalogRepository {
           items: category.items.filter((item) => item.id !== itemId)
         }))
       });
+      menusByLocation.set(DEFAULT_LOCATION_ID, menu);
 
       return { success: true };
     },
     async getAdminStoreConfig() {
-      return adminStoreConfig;
+      return adminStoreConfigsByLocation.get(DEFAULT_LOCATION_ID)!;
     },
     async updateAdminStoreConfig(input) {
-      adminStoreConfig = buildAdminStoreConfig({
+      const currentAppConfig = appConfigsByLocation.get(DEFAULT_LOCATION_ID) ?? defaultAppConfig;
+      const nextAdminStoreConfig = buildAdminStoreConfig({
         locationId: DEFAULT_LOCATION_ID,
         storeName: input.storeName,
         hours: input.hours,
         pickupInstructions: input.pickupInstructions,
-        capabilities: input.capabilities ?? appConfig.storeCapabilities
+        capabilities: input.capabilities ?? currentAppConfig.storeCapabilities
       });
-      storeConfig = storeConfigResponseSchema.parse({
-        ...storeConfig,
+      const nextStoreConfig = storeConfigResponseSchema.parse({
+        ...(storeConfigsByLocation.get(DEFAULT_LOCATION_ID) ?? defaultStoreConfigPayload),
         pickupInstructions: input.pickupInstructions
       });
-      appConfig = appConfigSchema.parse({
-        ...appConfig,
+      const nextAppConfig = appConfigSchema.parse({
+        ...currentAppConfig,
         brand: {
-          ...appConfig.brand,
+          ...currentAppConfig.brand,
           locationName: input.storeName
         },
-        storeCapabilities: input.capabilities ?? appConfig.storeCapabilities
+        storeCapabilities: input.capabilities ?? currentAppConfig.storeCapabilities
       });
+      adminStoreConfigsByLocation.set(DEFAULT_LOCATION_ID, nextAdminStoreConfig);
+      storeConfigsByLocation.set(DEFAULT_LOCATION_ID, nextStoreConfig);
+      appConfigsByLocation.set(DEFAULT_LOCATION_ID, nextAppConfig);
 
-      return adminStoreConfig;
+      return nextAdminStoreConfig;
     },
     async getMenu() {
-      return menu;
+      return menusByLocation.get(DEFAULT_LOCATION_ID) ?? defaultMenuPayload;
     },
     async getStoreConfig() {
-      return storeConfig;
+      return storeConfigsByLocation.get(DEFAULT_LOCATION_ID) ?? defaultStoreConfigPayload;
     },
     async pingDb() {
       // no-op for in-memory
@@ -609,6 +723,152 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
       }
 
       return applyRuntimeFulfillmentMode(appConfigSchema.parse(row.app_config_json));
+    },
+    async getInternalLocationSummary(locationId) {
+      const storeRow = await db
+        .selectFrom("catalog_store_configs")
+        .selectAll()
+        .where("location_id", "=", locationId)
+        .executeTakeFirst();
+
+      if (!storeRow) {
+        return undefined;
+      }
+
+      const appConfigRow = await db
+        .selectFrom("catalog_app_configs")
+        .select("app_config_json")
+        .where("location_id", "=", locationId)
+        .executeTakeFirst();
+
+      const appConfig = appConfigSchema.parse(appConfigRow?.app_config_json ?? defaultAppConfigPayload);
+
+      return buildInternalLocationSummary({
+        brandId: appConfig.brand.brandId,
+        brandName: appConfig.brand.brandName,
+        locationId: storeRow.location_id,
+        locationName: appConfig.brand.locationName,
+        marketLabel: appConfig.brand.marketLabel,
+        storeName: storeRow.store_name,
+        hours: storeRow.hours_text,
+        pickupInstructions: storeRow.pickup_instructions,
+        capabilities: appConfig.storeCapabilities
+      });
+    },
+    async bootstrapInternalLocation(rawInput) {
+      const input = internalLocationBootstrapSchema.parse(rawInput);
+      const existingStoreConfigRow = await db
+        .selectFrom("catalog_store_configs")
+        .select(["prep_eta_minutes", "tax_rate_basis_points"])
+        .where("location_id", "=", input.locationId)
+        .executeTakeFirst();
+      const existingAppConfigRow = await db
+        .selectFrom("catalog_app_configs")
+        .select(["brand_id"])
+        .where("location_id", "=", input.locationId)
+        .executeTakeFirst();
+
+      const persistedBrandId = existingAppConfigRow?.brand_id ?? input.brandId;
+      const nextAppConfig = resolveProvisionedAppConfigPayload({
+        brandId: persistedBrandId,
+        brandName: input.brandName,
+        locationId: input.locationId,
+        locationName: input.locationName,
+        marketLabel: input.marketLabel,
+        capabilities: input.capabilities
+      });
+      const storeName = input.storeName ?? input.locationName;
+      const hours = input.hours ?? DEFAULT_STORE_HOURS;
+      const pickupInstructions = input.pickupInstructions ?? defaultStoreConfigPayload.pickupInstructions;
+      const seededMenu = buildProvisionedMenuPayload(input.locationId);
+
+      await db.transaction().execute(async (trx) => {
+        await trx
+          .insertInto("catalog_store_configs")
+          .values({
+            brand_id: persistedBrandId,
+            location_id: input.locationId,
+            store_name: storeName,
+            hours_text: hours,
+            prep_eta_minutes: existingStoreConfigRow?.prep_eta_minutes ?? defaultStoreConfigPayload.prepEtaMinutes,
+            tax_rate_basis_points:
+              existingStoreConfigRow?.tax_rate_basis_points ?? defaultStoreConfigPayload.taxRateBasisPoints,
+            pickup_instructions: pickupInstructions
+          })
+          .onConflict((oc) =>
+            oc.column("location_id").doUpdateSet({
+              brand_id: persistedBrandId,
+              store_name: storeName,
+              hours_text: hours,
+              pickup_instructions: pickupInstructions
+            })
+          )
+          .execute();
+
+        await trx
+          .insertInto("catalog_app_configs")
+          .values({
+            brand_id: persistedBrandId,
+            location_id: input.locationId,
+            app_config_json: nextAppConfig
+          })
+          .onConflict((oc) =>
+            oc.columns(["brand_id", "location_id"]).doUpdateSet({
+              app_config_json: nextAppConfig
+            })
+          )
+          .execute();
+
+        await trx
+          .insertInto("catalog_menu_categories")
+          .values(
+            seededMenu.categories.map((category, index) => ({
+              brand_id: persistedBrandId,
+              location_id: input.locationId,
+              category_id: category.id,
+              title: category.title,
+              sort_order: index
+            }))
+          )
+          .onConflict((oc) => oc.columns(["location_id", "category_id"]).doNothing())
+          .execute();
+
+        await trx
+          .insertInto("catalog_menu_items")
+          .values(
+            seededMenu.categories.flatMap((category) =>
+              category.items.map((item, index) => ({
+                brand_id: persistedBrandId,
+                location_id: input.locationId,
+                item_id: item.id,
+                category_id: category.id,
+                name: item.name,
+                description: item.description,
+                image_url: item.imageUrl ?? null,
+                price_cents: item.priceCents,
+                badge_codes_json: JSON.stringify(item.badgeCodes),
+                customization_groups_json: JSON.stringify(item.customizationGroups ?? []),
+                visible: item.visible,
+                sort_order: index
+              }))
+            )
+          )
+          .onConflict((oc) => oc.columns(["location_id", "item_id"]).doNothing())
+          .execute();
+      });
+
+      return buildInternalLocationSummary({
+        brandId: nextAppConfig.brand.brandId,
+        brandName: nextAppConfig.brand.brandName,
+        locationId: input.locationId,
+        locationName: nextAppConfig.brand.locationName,
+        marketLabel: nextAppConfig.brand.marketLabel,
+        storeName,
+        hours,
+        pickupInstructions,
+        capabilities: nextAppConfig.storeCapabilities,
+        action: existingStoreConfigRow ? "updated" : "created"
+      });
     },
     async getAdminMenu() {
       const categories = await db

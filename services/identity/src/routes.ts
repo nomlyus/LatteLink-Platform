@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { createHmac, randomUUID } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   generateAuthenticationOptions,
   generateRegistrationOptions,
@@ -11,6 +11,9 @@ import {
   appleExchangeRequestSchema,
   googleOAuthStartRequestSchema,
   googleOAuthStartResponseSchema,
+  internalOwnerProvisionParamsSchema,
+  internalOwnerProvisionRequestSchema,
+  internalOwnerProvisionResponseSchema,
   logoutRequestSchema,
   magicLinkRequestSchema,
   magicLinkVerifySchema,
@@ -33,6 +36,7 @@ import {
 import { apiErrorSchema, authSessionSchema } from "@gazelle/contracts-core";
 import { createIdentityRepository, type IdentityRepository } from "./repository.js";
 import { createMailSender, type MailSender } from "./mail.js";
+import { provisionOwnerAccess } from "./provisioning.js";
 
 const payloadSchema = z.object({
   id: z.string().uuid().optional()
@@ -40,6 +44,10 @@ const payloadSchema = z.object({
 
 const authHeaderSchema = z.object({
   authorization: z.string().startsWith("Bearer ").optional()
+});
+
+const gatewayHeadersSchema = z.object({
+  "x-gateway-token": z.string().optional()
 });
 
 const clientDataSchema = z.object({
@@ -106,6 +114,16 @@ function buildOperatorMagicLinkUrl(baseUrl: string, token: string) {
   const url = new URL("/", baseUrl);
   url.searchParams.set("operator_token", token);
   return url.toString();
+}
+
+function secretsMatch(expected: string, provided: string) {
+  const expectedBuffer = Buffer.from(expected, "utf8");
+  const providedBuffer = Buffer.from(provided, "utf8");
+  if (expectedBuffer.length !== providedBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(expectedBuffer, providedBuffer);
 }
 
 const googleTokenResponseSchema = z.object({
@@ -386,6 +404,35 @@ function buildApiError(requestId: string, code: string, message: string) {
   });
 }
 
+function authorizeGatewayRequest(
+  request: { headers: unknown; id: string },
+  gatewayToken: string | undefined
+) {
+  if (!gatewayToken) {
+    return {
+      ok: false as const,
+      statusCode: 503,
+      body: buildApiError(
+        request.id,
+        "GATEWAY_ACCESS_NOT_CONFIGURED",
+        "GATEWAY_INTERNAL_API_TOKEN must be configured before accepting gateway requests"
+      )
+    };
+  }
+
+  const parsedHeaders = gatewayHeadersSchema.safeParse(request.headers);
+  const providedToken = parsedHeaders.success ? parsedHeaders.data["x-gateway-token"] : undefined;
+  if (providedToken && secretsMatch(gatewayToken, providedToken)) {
+    return { ok: true as const };
+  }
+
+  return {
+    ok: false as const,
+    statusCode: 401,
+    body: buildApiError(request.id, "UNAUTHORIZED_GATEWAY_REQUEST", "Gateway token is invalid")
+  };
+}
+
 function logIdentityMutation(
   request: { id: string; log: { info(payload: Record<string, unknown>, message: string): void } },
   message: string,
@@ -431,6 +478,7 @@ export type RegisterRoutesOptions = {
 export async function registerRoutes(app: FastifyInstance, options: RegisterRoutesOptions = {}) {
   const repository = options.repository ?? (await createIdentityRepository(app.log));
   const mailSender = options.mailSender ?? createMailSender({ logger: app.log });
+  const gatewayApiToken = process.env.GATEWAY_INTERNAL_API_TOKEN?.trim() || undefined;
   const passkeyConfig = loadPasskeyConfig();
   const rateLimitWindowMs = toPositiveInteger(process.env.IDENTITY_RATE_LIMIT_WINDOW_MS, defaultRateLimitWindowMs);
   const magicLinkExpiryMinutes = toPositiveInteger(process.env.MAGIC_LINK_EXPIRY_MINUTES, 15);
@@ -1495,6 +1543,30 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
       return updated;
     }
   );
+
+  app.post("/v1/identity/internal/locations/:locationId/owner/provision", async (request, reply) => {
+    const authorization = authorizeGatewayRequest(request, gatewayApiToken);
+    if (!authorization.ok) {
+      return reply.status(authorization.statusCode).send(authorization.body);
+    }
+
+    const { locationId } = internalOwnerProvisionParamsSchema.parse(request.params);
+    const input = internalOwnerProvisionRequestSchema.parse(request.body);
+    const result = await provisionOwnerAccess(repository, {
+      ...input,
+      locationId,
+      allowInMemory: false
+    });
+
+    logIdentityMutation(request, "internal owner provisioned", {
+      targetOperatorUserId: result.operator.operatorUserId,
+      targetEmail: result.operator.email,
+      locationId,
+      action: result.action
+    });
+
+    return internalOwnerProvisionResponseSchema.parse(result);
+  });
 
   app.post("/v1/auth/internal/ping", async (request) => {
     const parsed = payloadSchema.parse(request.body ?? {});

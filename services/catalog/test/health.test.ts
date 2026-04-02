@@ -4,6 +4,7 @@ import {
   adminMenuResponseSchema,
   adminStoreConfigSchema,
   appConfigSchema,
+  internalLocationSummarySchema,
   menuResponseSchema,
   storeConfigResponseSchema
 } from "@gazelle/contracts-catalog";
@@ -314,6 +315,68 @@ describe("catalog service", () => {
       status: "ready",
       service: "catalog",
       persistence: expect.stringMatching(/^(memory|postgres)$/)
+    });
+
+    await app.close();
+  });
+
+  it("bootstraps and fetches an internal pilot location through gateway-protected routes", async () => {
+    process.env.GATEWAY_INTERNAL_API_TOKEN = "catalog-gateway-token";
+    const app = await buildApp();
+
+    const bootstrapResponse = await app.inject({
+      method: "POST",
+      url: "/v1/catalog/internal/locations/bootstrap",
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        brandId: "northside-coffee",
+        brandName: "Northside Coffee",
+        locationId: "northside-01",
+        locationName: "Northside Flagship",
+        marketLabel: "Detroit, MI",
+        storeName: "Northside Coffee",
+        hours: "Daily · 7:00 AM - 6:00 PM",
+        pickupInstructions: "Pickup at the espresso counter.",
+        capabilities: {
+          menu: {
+            source: "platform_managed"
+          },
+          operations: {
+            fulfillmentMode: "staff",
+            liveOrderTrackingEnabled: true,
+            dashboardEnabled: true
+          },
+          loyalty: {
+            visible: true
+          }
+        }
+      }
+    });
+
+    expect(bootstrapResponse.statusCode).toBe(200);
+    const bootstrap = internalLocationSummarySchema.parse(bootstrapResponse.json());
+    expect(bootstrap.action).toBe("created");
+    expect(bootstrap.locationId).toBe("northside-01");
+
+    const summaryResponse = await app.inject({
+      method: "GET",
+      url: "/v1/catalog/internal/locations/northside-01",
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      }
+    });
+
+    expect(summaryResponse.statusCode).toBe(200);
+    expect(internalLocationSummarySchema.parse(summaryResponse.json())).toMatchObject({
+      brandName: "Northside Coffee",
+      locationId: "northside-01",
+      capabilities: {
+        operations: {
+          fulfillmentMode: "staff"
+        }
+      }
     });
 
     await app.close();

@@ -182,6 +182,23 @@ export const operatorUserParamsSchema = z.object({
   operatorUserId: z.string().uuid()
 });
 
+export const internalOwnerProvisionParamsSchema = z.object({
+  locationId: z.string().trim().min(1)
+});
+
+export const internalOwnerProvisionRequestSchema = z.object({
+  displayName: z.string().trim().min(1),
+  email: z.string().trim().email(),
+  password: operatorPasswordSchema.optional(),
+  dashboardUrl: z.string().trim().url().optional()
+});
+
+export const internalOwnerProvisionResponseSchema = z.object({
+  operator: operatorUserSchema,
+  temporaryPassword: operatorPasswordSchema,
+  action: z.enum(["created", "updated"])
+});
+
 export const operatorPasswordSignInSchema = z.object({
   email: z.string().trim().email(),
   password: operatorPasswordSchema
@@ -326,4 +343,6 @@ export const operatorAuthContract = {
 export type OperatorRole = z.output<typeof operatorRoleSchema>;
 export type OperatorCapability = z.output<typeof operatorCapabilitySchema>;
 export type OperatorUser = z.output<typeof operatorUserSchema>;
+export type InternalOwnerProvisionRequest = z.output<typeof internalOwnerProvisionRequestSchema>;
+export type InternalOwnerProvisionResponse = z.output<typeof internalOwnerProvisionResponseSchema>;
 export type OperatorSession = z.output<typeof operatorSessionSchema>;

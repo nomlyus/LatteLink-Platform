@@ -8,6 +8,8 @@ import {
   buildDefaultCustomizationInput,
   catalogContract,
   describeCustomizationSelection,
+  internalLocationBootstrapSchema,
+  internalLocationSummarySchema,
   isLoyaltyVisible,
   isOrderTrackingEnabled,
   isPlatformManagedMenu,
@@ -261,6 +263,41 @@ describe("contracts-catalog", () => {
     expect(storeUpdate.capabilities?.menu.source).toBe("external_sync");
     expect(catalogContract.routes.adminMenu.path).toBe("/admin/menu");
     expect(catalogContract.routes.adminStoreConfig.path).toBe("/admin/store/config");
+  });
+
+  it("validates internal location bootstrap and summary payloads", () => {
+    const bootstrap = internalLocationBootstrapSchema.parse({
+      brandId: "northside-coffee",
+      brandName: "Northside Coffee",
+      locationId: "northside-01",
+      locationName: "Northside Flagship",
+      marketLabel: "Detroit, MI",
+      capabilities: {
+        menu: {
+          source: "platform_managed"
+        },
+        operations: {
+          fulfillmentMode: "staff",
+          liveOrderTrackingEnabled: true,
+          dashboardEnabled: true
+        },
+        loyalty: {
+          visible: true
+        }
+      }
+    });
+
+    const summary = internalLocationSummarySchema.parse({
+      ...bootstrap,
+      storeName: "Northside Coffee",
+      hours: "Daily · 7:00 AM - 6:00 PM",
+      pickupInstructions: "Pickup at the espresso counter.",
+      capabilities: bootstrap.capabilities,
+      action: "created"
+    });
+
+    expect(summary.locationId).toBe("northside-01");
+    expect(summary.action).toBe("created");
   });
 
   it("rejects invalid store tax rate", () => {

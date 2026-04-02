@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   appleExchangeRequestSchema,
   googleOAuthStartRequestSchema,
+  internalOwnerProvisionRequestSchema,
+  internalOwnerProvisionResponseSchema,
   magicLinkRequestSchema,
   operatorGoogleExchangeRequestSchema,
   operatorPasswordSignInSchema,
@@ -118,5 +120,42 @@ describe("contracts-auth", () => {
 
     expect(payload.displayName).toBe("Avery Quinn");
     expect(payload.email).toBe("avery@store.com");
+  });
+
+  it("validates internal owner provisioning payloads", () => {
+    const request = internalOwnerProvisionRequestSchema.parse({
+      displayName: " Pilot Owner ",
+      email: " owner@northside.com ",
+      dashboardUrl: "https://client.example.com"
+    });
+
+    const response = internalOwnerProvisionResponseSchema.parse({
+      operator: {
+        operatorUserId: "123e4567-e89b-12d3-a456-426614174000",
+        displayName: "Pilot Owner",
+        email: "owner@northside.com",
+        role: "owner",
+        locationId: "northside-01",
+        active: true,
+        capabilities: [
+          "orders:read",
+          "orders:write",
+          "menu:read",
+          "menu:write",
+          "menu:visibility",
+          "store:read",
+          "store:write",
+          "staff:read",
+          "staff:write"
+        ],
+        createdAt: "2026-04-01T00:00:00.000Z",
+        updatedAt: "2026-04-01T00:00:00.000Z"
+      },
+      temporaryPassword: "Temporary123!",
+      action: "created"
+    });
+
+    expect(request.email).toBe("owner@northside.com");
+    expect(response.operator.role).toBe("owner");
   });
 });

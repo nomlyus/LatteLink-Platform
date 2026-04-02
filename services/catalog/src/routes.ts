@@ -5,7 +5,10 @@ import {
   adminMenuItemUpdateSchema,
   adminMenuItemVisibilityUpdateSchema,
   adminMutationSuccessSchema,
-  adminStoreConfigUpdateSchema
+  adminStoreConfigUpdateSchema,
+  internalLocationBootstrapSchema,
+  internalLocationParamsSchema,
+  internalLocationSummarySchema
 } from "@gazelle/contracts-catalog";
 import { z } from "zod";
 import { createCatalogRepository } from "./repository.js";
@@ -219,6 +222,36 @@ export async function registerRoutes(app: FastifyInstance) {
 
     const input = adminStoreConfigUpdateSchema.parse(request.body);
     return repository.updateAdminStoreConfig(input);
+  });
+
+  app.post("/v1/catalog/internal/locations/bootstrap", async (request, reply) => {
+    if (!authorizeGatewayRequest(request, reply, gatewayApiToken)) {
+      return;
+    }
+
+    const input = internalLocationBootstrapSchema.parse(request.body);
+    return internalLocationSummarySchema.parse(await repository.bootstrapInternalLocation(input));
+  });
+
+  app.get("/v1/catalog/internal/locations/:locationId", async (request, reply) => {
+    if (!authorizeGatewayRequest(request, reply, gatewayApiToken)) {
+      return;
+    }
+
+    const { locationId } = internalLocationParamsSchema.parse(request.params);
+    const summary = await repository.getInternalLocationSummary(locationId);
+    if (!summary) {
+      return reply.status(404).send(
+        serviceErrorSchema.parse({
+          code: "LOCATION_NOT_FOUND",
+          message: "Location not found",
+          requestId: request.id,
+          details: { locationId }
+        })
+      );
+    }
+
+    return internalLocationSummarySchema.parse(summary);
   });
 
   app.post("/v1/catalog/internal/ping", async (request, reply) => {

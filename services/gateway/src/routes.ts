@@ -7,6 +7,9 @@ import {
   authContract,
   googleOAuthStartRequestSchema,
   googleOAuthStartResponseSchema,
+  internalOwnerProvisionParamsSchema,
+  internalOwnerProvisionRequestSchema,
+  internalOwnerProvisionResponseSchema,
   logoutRequestSchema,
   magicLinkRequestSchema,
   magicLinkVerifySchema,
@@ -36,6 +39,9 @@ import {
   adminStoreConfigUpdateSchema,
   appConfigSchema,
   catalogContract,
+  internalLocationBootstrapSchema,
+  internalLocationParamsSchema,
+  internalLocationSummarySchema,
   menuResponseSchema,
   storeConfigResponseSchema
 } from "@gazelle/contracts-catalog";
@@ -63,6 +69,9 @@ declare module "fastify" {
 
 const authHeaderSchema = z.object({
   authorization: z.string().startsWith("Bearer ").optional()
+});
+const internalAdminHeaderSchema = z.object({
+  "x-internal-admin-token": z.string().optional()
 });
 const jwtHeaderSchema = z.object({
   alg: z.literal("HS256"),
@@ -125,6 +134,43 @@ function forbidden(requestId: string, capability?: string) {
       : "Operator is not authorized to access this resource",
     requestId
   });
+}
+
+function internalAdminUnauthorized(requestId: string, message: string, code = "UNAUTHORIZED_INTERNAL_ADMIN") {
+  return apiErrorSchema.parse({
+    code,
+    message,
+    requestId
+  });
+}
+
+function ensureInternalAdminToken(request: FastifyRequest, reply: FastifyReply, expectedToken: string | undefined) {
+  if (!expectedToken) {
+    reply.status(503).send(
+      internalAdminUnauthorized(
+        request.id,
+        "INTERNAL_ADMIN_API_TOKEN must be configured before accepting internal admin requests",
+        "INTERNAL_ADMIN_NOT_CONFIGURED"
+      )
+    );
+    return false;
+  }
+
+  const parsed = internalAdminHeaderSchema.safeParse(request.headers);
+  const providedToken = parsed.success ? parsed.data["x-internal-admin-token"] : undefined;
+  if (!providedToken) {
+    reply.status(401).send(internalAdminUnauthorized(request.id, "Missing internal admin token"));
+    return false;
+  }
+
+  const expectedBuffer = Buffer.from(expectedToken, "utf8");
+  const providedBuffer = Buffer.from(providedToken, "utf8");
+  if (expectedBuffer.length !== providedBuffer.length || !timingSafeEqual(expectedBuffer, providedBuffer)) {
+    reply.status(401).send(internalAdminUnauthorized(request.id, "Invalid internal admin token"));
+    return false;
+  }
+
+  return true;
 }
 
 async function resolveOperatorAccess(params: {
@@ -743,6 +789,7 @@ export async function registerRoutes(app: FastifyInstance) {
   const loyaltyBaseUrl = process.env.LOYALTY_SERVICE_BASE_URL ?? "http://127.0.0.1:3004";
   const notificationsBaseUrl = process.env.NOTIFICATIONS_SERVICE_BASE_URL ?? "http://127.0.0.1:3005";
   const gatewayInternalApiToken = trimToUndefined(process.env.GATEWAY_INTERNAL_API_TOKEN);
+  const internalAdminApiToken = trimToUndefined(process.env.INTERNAL_ADMIN_API_TOKEN);
   const jwtSecret = trimToUndefined(process.env.JWT_SECRET);
   const rateLimitWindowMs = toPositiveInteger(process.env.GATEWAY_RATE_LIMIT_WINDOW_MS, defaultRateLimitWindowMs);
   const authWriteRateLimit = {
@@ -1896,6 +1943,99 @@ export async function registerRoutes(app: FastifyInstance) {
         path: `/v1/operator/users/${operatorUserId}`,
         body: input,
         responseSchema: operatorMeResponseSchema
+      });
+    }
+  );
+
+  app.post(
+    "/v1/internal/locations/bootstrap",
+    {
+      preHandler: async (request, reply) => {
+        if (!ensureInternalAdminToken(request, reply, internalAdminApiToken)) {
+          return reply;
+        }
+
+        return undefined;
+      }
+    },
+    async (request, reply) => {
+      const input = internalLocationBootstrapSchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "POST",
+        path: "/v1/catalog/internal/locations/bootstrap",
+        body: input,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken
+        },
+        forwardUserIdHeader: false,
+        responseSchema: internalLocationSummarySchema
+      });
+    }
+  );
+
+  app.get(
+    "/v1/internal/locations/:locationId",
+    {
+      preHandler: async (request, reply) => {
+        if (!ensureInternalAdminToken(request, reply, internalAdminApiToken)) {
+          return reply;
+        }
+
+        return undefined;
+      }
+    },
+    async (request, reply) => {
+      const { locationId } = internalLocationParamsSchema.parse(request.params);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "GET",
+        path: `/v1/catalog/internal/locations/${locationId}`,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken
+        },
+        forwardUserIdHeader: false,
+        responseSchema: internalLocationSummarySchema
+      });
+    }
+  );
+
+  app.post(
+    "/v1/internal/locations/:locationId/owner/provision",
+    {
+      preHandler: async (request, reply) => {
+        if (!ensureInternalAdminToken(request, reply, internalAdminApiToken)) {
+          return reply;
+        }
+
+        return undefined;
+      }
+    },
+    async (request, reply) => {
+      const { locationId } = internalOwnerProvisionParamsSchema.parse(request.params);
+      const input = internalOwnerProvisionRequestSchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: identityBaseUrl,
+        serviceLabel: "Identity",
+        method: "POST",
+        path: `/v1/identity/internal/locations/${locationId}/owner/provision`,
+        body: input,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken
+        },
+        forwardUserIdHeader: false,
+        responseSchema: internalOwnerProvisionResponseSchema
       });
     }
   );

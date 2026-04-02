@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MailSender } from "../src/mail.js";
 import { buildApp } from "../src/app.js";
 import { createInMemoryIdentityRepository } from "../src/repository.js";
+import { internalOwnerProvisionResponseSchema } from "@gazelle/contracts-auth";
 
 function createCapturingMailSender() {
   const sender: MailSender = {
@@ -28,8 +29,15 @@ async function signInOperator(app: Awaited<ReturnType<typeof buildApp>>, email: 
 }
 
 describe("operator auth", () => {
+  const previousGatewayToken = process.env.GATEWAY_INTERNAL_API_TOKEN;
+
   afterEach(() => {
     vi.useRealTimers();
+    if (previousGatewayToken === undefined) {
+      delete process.env.GATEWAY_INTERNAL_API_TOKEN;
+    } else {
+      process.env.GATEWAY_INTERNAL_API_TOKEN = previousGatewayToken;
+    }
   });
 
   it("supports refresh rotation and invalidates prior operator access tokens after logout", async () => {
@@ -272,6 +280,33 @@ describe("operator auth", () => {
     expect(conflictUpdate.json()).toMatchObject({
       code: "OPERATOR_EMAIL_ALREADY_EXISTS"
     });
+
+    await app.close();
+  });
+
+  it("provisions a first owner through the gateway-protected internal route", async () => {
+    process.env.GATEWAY_INTERNAL_API_TOKEN = "identity-gateway-token";
+    const repository = createInMemoryIdentityRepository();
+    const { sender } = createCapturingMailSender();
+    const app = await buildApp({ repository, mailSender: sender });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/identity/internal/locations/pilot-01/owner/provision",
+      headers: {
+        "x-gateway-token": "identity-gateway-token"
+      },
+      payload: {
+        displayName: "Pilot Owner",
+        email: "pilot.owner@example.com"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    const parsed = internalOwnerProvisionResponseSchema.parse(response.json());
+    expect(parsed.action).toBe("created");
+    expect(parsed.operator.locationId).toBe("pilot-01");
+    expect(parsed.operator.role).toBe("owner");
 
     await app.close();
   });

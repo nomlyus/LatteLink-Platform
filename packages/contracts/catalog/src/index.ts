@@ -541,6 +541,35 @@ export const adminStoreConfigUpdateSchema = z.object({
   capabilities: appConfigStoreCapabilitiesSchema.optional()
 });
 
+export const internalLocationParamsSchema = z.object({
+  locationId: z.string().trim().min(1)
+});
+
+export const internalLocationBootstrapSchema = z.object({
+  brandId: z.string().trim().min(1),
+  brandName: z.string().trim().min(1),
+  locationId: z.string().trim().min(1),
+  locationName: z.string().trim().min(1),
+  marketLabel: z.string().trim().min(1),
+  storeName: z.string().trim().min(1).optional(),
+  hours: z.string().trim().min(1).optional(),
+  pickupInstructions: z.string().trim().min(1).optional(),
+  capabilities: appConfigStoreCapabilitiesSchema.optional()
+});
+
+export const internalLocationSummarySchema = z.object({
+  brandId: z.string().min(1),
+  brandName: z.string().min(1),
+  locationId: z.string().min(1),
+  locationName: z.string().min(1),
+  marketLabel: z.string().min(1),
+  storeName: z.string().min(1),
+  hours: z.string().min(1),
+  pickupInstructions: z.string().min(1),
+  capabilities: appConfigStoreCapabilitiesSchema,
+  action: z.enum(["created", "updated"]).optional()
+});
+
 export type MenuItemCustomizationOption = z.output<typeof menuItemCustomizationOptionSchema>;
 export type MenuItemCustomizationGroup = z.output<typeof menuItemCustomizationGroupSchema>;
 export type MenuItemCustomizationSelection = z.output<typeof menuItemCustomizationSelectionSchema>;
@@ -565,6 +594,8 @@ export type AppConfigFulfillment = z.output<typeof appConfigFulfillmentSchema>;
 export type AppConfigMenuSource = z.output<typeof appConfigMenuSourceSchema>;
 export type AppConfigStoreCapabilities = z.output<typeof appConfigStoreCapabilitiesSchema>;
 export type AppConfig = z.output<typeof appConfigSchema>;
+export type InternalLocationBootstrap = z.output<typeof internalLocationBootstrapSchema>;
+export type InternalLocationSummary = z.output<typeof internalLocationSummarySchema>;
 
 export type CustomizationValidationIssueCode =
   | "unknown_group"
