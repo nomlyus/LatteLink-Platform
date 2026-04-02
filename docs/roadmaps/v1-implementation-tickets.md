@@ -61,15 +61,23 @@ Unless you explicitly reprioritize the work, Codex should execute the tickets in
 
 ## Status Convention
 
-Default status for all tickets in this document:
+Per-ticket status below is now the source of truth.
 
 - `owner`: Codex
-- `status`: queued
-- `execution rule`: follow the V1 critical path first, then pull remaining V1 tickets by dependency order
+- `status`: current execution state for that ticket
+- `done`: what is implemented and verified locally
+- `blocked`: external rollout or provider work still required
 
 ## Backend Platform Tickets
 
 ### BE-V1-01 Free-First Deployment Alignment
+
+Status:
+
+- `owner`: Codex
+- `status`: repo-complete, locally validated
+- `done`: aligned `deploy-free`, `infra/free/.env.example`, GHCR namespace usage, Caddy/runtime env wiring, and the free-first smoke check path
+- `blocked`: first live deploy still needs the target host, GitHub deploy secrets/vars, published GHCR images, and a real remote smoke-check transcript
 
 Goal:
 Make the DigitalOcean/free-first deployment path reliable enough for a real pilot run.
@@ -100,6 +108,13 @@ Acceptance criteria:
 - rollback steps are documented and realistic
 
 ### BE-V1-02 Persistence and Restore Hardening
+
+Status:
+
+- `owner`: Codex
+- `status`: repo-complete, locally validated
+- `done`: added backup/restore drill tooling, migration coverage through the current schema, restore verification scripts, and the free-first restore runbook
+- `blocked`: a real backup/restore rehearsal still has to be executed on the deployed host and recorded against pilot data
 
 Goal:
 Make production data survivable for a pilot.
@@ -132,6 +147,13 @@ Acceptance criteria:
 
 ### BE-V1-03 Order and Payment Production Hardening
 
+Status:
+
+- `owner`: Codex
+- `status`: repo-complete, locally validated
+- `done`: hardened timeout/reconciliation handling, updated payment recovery docs, and revalidated the happy-path customer quote/create/pay/get flow against the live local stack in simulated-provider mode
+- `blocked`: real Clover credentials, Apple Pay live validation, webhook secrets, and production reconciliation procedures still depend on external provider setup
+
 Goal:
 Make the order/payment path safe for real use.
 
@@ -160,6 +182,13 @@ Acceptance criteria:
 - paid orders move into the expected lifecycle cleanly
 
 ### BE-V1-04 Client and Store Capability Config Foundation
+
+Status:
+
+- `owner`: Codex
+- `status`: validated locally
+- `done`: centralized typed store capability config and verified that dashboard behavior can be switched centrally through store config, including staff-mode fulfillment during live QA
+- `blocked`: live pilot store capability choices still need to be finalized and applied in the deployed environment
 
 Goal:
 Stop relying on scattered assumptions for pilot client behavior.
@@ -191,6 +220,13 @@ Acceptance criteria:
 
 ### BE-V1-05 Client Dashboard Auth and Capability Enforcement Closeout
 
+Status:
+
+- `owner`: Codex
+- `status`: validated locally
+- `done`: password auth, session refresh/logout, owner vs staff boundaries, staff order updates, owner staff management, and admin route capability enforcement all passed against the live local stack
+- `blocked`: Google SSO production rollout is still separate and depends on real dashboard/public-domain credentials
+
 Goal:
 Make owner/staff access safe enough for a pilot.
 
@@ -218,6 +254,13 @@ Acceptance criteria:
 - owner can manage staff and store settings
 
 ### BE-V1-06 Observability and Operational Smoke Checks
+
+Status:
+
+- `owner`: Codex
+- `status`: validated locally, live rollout blocked
+- `done`: request-id propagation and the smoke-check path are in place, and the smoke check now passes end to end locally after fixing the operator sign-in token capture
+- `blocked`: deployed-stack log tracing, metrics review, and live release-checklist execution still depend on the real hosted environment
 
 Goal:
 Make the pilot operable when things go wrong.
@@ -248,6 +291,13 @@ Acceptance criteria:
 
 ### MF-V1-01 Session and Auth Hardening
 
+Status:
+
+- `owner`: Codex
+- `status`: repo-complete, code-health validated
+- `done`: session recovery/auth hardening is implemented and the mobile app currently passes `lint`, `typecheck`, and `test`
+- `blocked`: real device relaunch and expired-session QA is still needed against a running pilot environment
+
 Goal:
 Make customer auth stable across real use.
 
@@ -274,6 +324,13 @@ Acceptance criteria:
 - expired sessions recover or sign out clearly
 
 ### MF-V1-02 Pilot Purchase Flow QA
+
+Status:
+
+- `owner`: Codex
+- `status`: partially validated locally
+- `done`: the backend happy-path purchase flow passed live QA and the mobile checkout/cart test suite passes locally
+- `blocked`: full browse-to-order QA on an actual device, including Apple Pay handoff and customer-visible failure states, still needs a pilot build and real device run
 
 Goal:
 Make browse-to-order flow reliable for real customers.
@@ -303,6 +360,13 @@ Acceptance criteria:
 
 ### MF-V1-03 Production Environment and Build Wiring
 
+Status:
+
+- `owner`: Codex
+- `status`: repo-complete, external rollout blocked
+- `done`: the EAS/build-matrix groundwork is in the repo and documented for internal, beta, and production style builds
+- `blocked`: final API/payment env values, EAS credentials, and the real pilot build secrets still need to be supplied externally
+
 Goal:
 Make pilot builds safe and repeatable.
 
@@ -330,6 +394,13 @@ Acceptance criteria:
 
 ### MF-V1-04 Active Order Experience Hardening
 
+Status:
+
+- `owner`: Codex
+- `status`: repo-complete, code-health validated
+- `done`: post-purchase/order-detail hardening is implemented and covered by the current mobile test suite
+- `blocked`: real device validation against live order progression is still needed once the pilot environment is up
+
 Goal:
 Make post-purchase experience credible during the pilot.
 
@@ -356,6 +427,13 @@ Acceptance criteria:
 - support can ask users to verify expected details in-app
 
 ### MF-V1-05 TestFlight Pilot Release
+
+Status:
+
+- `owner`: Codex
+- `status`: blocked on external release setup
+- `done`: the runbook/release groundwork is in place for a controlled pilot release
+- `blocked`: Apple developer/TestFlight setup, signed builds, tester distribution, and the first live candidate release are external steps
 
 Goal:
 Get the first real customer build into controlled hands.
@@ -386,6 +464,13 @@ Acceptance criteria:
 
 ### CD-V1-01 Dashboard QA and Bug Scrub
 
+Status:
+
+- `owner`: Codex
+- `status`: validated locally
+- `done`: full live local QA now passes for owner and staff flows, and the client dashboard currently passes `lint`, `typecheck`, `test`, and `build`
+- `blocked`: deployed-browser QA on the real dashboard URL still depends on the production deploy lane being configured
+
 Goal:
 Make the current dashboard safe enough for daily store use.
 
@@ -415,6 +500,13 @@ Acceptance criteria:
 
 ### CD-V1-02 Production Deploy Lane and Domain
 
+Status:
+
+- `owner`: Codex
+- `status`: repo-complete, external rollout blocked
+- `done`: the dashboard deployment lane was moved to Vercel and the project now has a dedicated workflow and runbook
+- `blocked`: Vercel project setup, secrets, custom domain, and a public API base URL still have to be configured externally
+
 Goal:
 Make the client dashboard deployable independently.
 
@@ -443,6 +535,13 @@ Acceptance criteria:
 
 ### CD-V1-03 Owner Provisioning and First-Time Access
 
+Status:
+
+- `owner`: Codex
+- `status`: validated locally
+- `done`: internal client/location bootstrap and first-owner provisioning passed live QA without raw DB work, and the supporting backend paths are in place
+- `blocked`: the final operator runbook for live onboarding still depends on the deployed admin/dashboard surfaces and chosen pilot process
+
 Goal:
 Make first-owner access deliberate and repeatable.
 
@@ -468,6 +567,13 @@ Acceptance criteria:
 - a new owner can be granted access without raw DB improvisation
 
 ### CD-V1-04 Google SSO Production Setup
+
+Status:
+
+- `owner`: Codex
+- `status`: code-ready, production-config blocked
+- `done`: Google SSO code paths and provider discovery are in place, and local provider status correctly reports `configured: false` when creds are absent
+- `blocked`: Google OAuth client credentials, redirect URIs, and a public dashboard domain are still required before end-to-end validation can happen
 
 Goal:
 Make Google sign-in usable for real store accounts where needed.
@@ -496,6 +602,13 @@ Acceptance criteria:
 - non-provisioned Google users are denied cleanly
 
 ### CD-V1-05 Menu, Store, and Team Final Hardening
+
+Status:
+
+- `owner`: Codex
+- `status`: validated locally
+- `done`: owner menu/store/team CRUD and staff permission boundaries passed the live local QA matrix, including store capability updates and staff order-status progression
+- `blocked`: final polish against the deployed browser experience still depends on the production dashboard rollout
 
 Goal:
 Make the admin actions feel finished enough for the pilot.
@@ -526,6 +639,13 @@ Acceptance criteria:
 
 ### AC-V1-01 Admin Console Product and Architecture Definition
 
+Status:
+
+- `owner`: Codex
+- `status`: complete
+- `done`: the internal admin-console product/architecture direction is documented and the V1 target is defined
+- `blocked`: no repo-side blocker remains on the definition ticket
+
 Goal:
 Define what the internal console must do in V1.
 
@@ -552,6 +672,13 @@ Acceptance criteria:
 
 ### AC-V1-02 Internal Provisioning Backend APIs
 
+Status:
+
+- `owner`: Codex
+- `status`: validated locally
+- `done`: internal client/location bootstrap and owner-provision APIs are implemented and passed live QA against the local stack
+- `blocked`: live operational use still depends on deployed internal access and real platform-admin credentials
+
 Goal:
 Build the backend capabilities the admin console will need first.
 
@@ -576,6 +703,13 @@ Acceptance criteria:
 - platform admins can provision a new pilot client through supported APIs
 
 ### AC-V1-03 Initial Internal App Shell
+
+Status:
+
+- `owner`: Codex
+- `status`: repo-complete, code-health validated
+- `done`: the admin-console shell is scaffolded and currently passes `lint`, `typecheck`, and `build`
+- `blocked`: internal hosting, auth rollout, and real platform-admin browser QA are still external steps
 
 Goal:
 Start the internal control plane instead of leaving it theoretical.
@@ -605,6 +739,13 @@ Acceptance criteria:
 
 ### LW-V1-01 Booking and Contact CTA Flow
 
+Status:
+
+- `owner`: Codex
+- `status`: repo-complete, deployment follow-through blocked
+- `done`: the site now includes a real lead-capture/intro path instead of a dead-end CTA, and the app currently passes `lint`, `typecheck`, and `build`
+- `blocked`: production lead routing and live CTA verification still depend on the chosen outbound handling and production env setup
+
 Goal:
 Turn the site into a usable outreach surface, not just a visual page.
 
@@ -630,6 +771,13 @@ Acceptance criteria:
 
 ### LW-V1-02 Trust and Proof Pass
 
+Status:
+
+- `owner`: Codex
+- `status`: complete
+- `done`: trust/proof messaging was tightened to remove weaker aspirational signals and better match the actual product state
+- `blocked`: no repo-side blocker remains beyond future copy refinements as the pilot story evolves
+
 Goal:
 Make the homepage credible to cold traffic.
 
@@ -654,6 +802,13 @@ Acceptance criteria:
 - the site no longer overclaims relative to the current platform reality
 
 ### LW-V1-03 Analytics and SEO Baseline
+
+Status:
+
+- `owner`: Codex
+- `status`: repo-complete, external config blocked
+- `done`: analytics hooks, CTA tracking, metadata, manifest, sitemap, robots, and social image baseline are in place, and the site build is green
+- `blocked`: production analytics still needs a real measurement ID and live verification in Vercel
 
 Goal:
 Make the site measurable and discoverable.
@@ -702,11 +857,10 @@ Optional-but-likely within V1:
 
 ## After This Document
 
-The next useful planning step is to assign:
+The next useful execution step is to move the still-blocked items out of repo work and into rollout work:
 
-- owner
-- target week
-- current status
-- blocker
-
-for each ticket above.
+- backend host, secrets, GHCR image publish, and live smoke-check
+- Vercel setup for the client dashboard
+- Google OAuth credentials and redirect URIs
+- mobile pilot builds and TestFlight distribution
+- final live browser/device QA on the deployed pilot surfaces

@@ -81,7 +81,7 @@ operator_sign_in() {
   payload="$(SMOKE_OPERATOR_EMAIL="$SMOKE_OPERATOR_EMAIL" SMOKE_OPERATOR_PASSWORD="$SMOKE_OPERATOR_PASSWORD" \
     node -e 'process.stdout.write(JSON.stringify({email:process.env.SMOKE_OPERATOR_EMAIL,password:process.env.SMOKE_OPERATOR_PASSWORD}))')"
 
-  echo "[smoke-check] POST ${API_BASE}/operator/auth/sign-in"
+  echo "[smoke-check] POST ${API_BASE}/operator/auth/sign-in" >&2
   curl --fail --silent --show-error \
     -D "$headers_file" \
     -o "$body_file" \

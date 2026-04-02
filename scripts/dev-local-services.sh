@@ -57,6 +57,7 @@ ORDERS_UPSTREAM_HOST="${ORDERS_UPSTREAM_HOST:-127.0.0.1}"
 CATALOG_UPSTREAM_HOST="${CATALOG_UPSTREAM_HOST:-127.0.0.1}"
 LOYALTY_UPSTREAM_HOST="${LOYALTY_UPSTREAM_HOST:-127.0.0.1}"
 NOTIFICATIONS_UPSTREAM_HOST="${NOTIFICATIONS_UPSTREAM_HOST:-127.0.0.1}"
+LOCAL_CORS_ALLOWED_ORIGINS="${CORS_ALLOWED_ORIGINS:-http://127.0.0.1:4173,http://localhost:4173,http://127.0.0.1:5173,http://localhost:5173}"
 
 start_service() {
   local label="$1"
@@ -82,23 +83,26 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
-start_service "identity:3000" env PORT=3000 HOST="${BIND_HOST}" pnpm -C "${ROOT_DIR}" --filter @gazelle/identity dev
-start_service "orders:3001" env PORT=3001 HOST="${BIND_HOST}" pnpm -C "${ROOT_DIR}" --filter @gazelle/orders dev
-start_service "catalog:3002" env PORT=3002 HOST="${BIND_HOST}" pnpm -C "${ROOT_DIR}" --filter @gazelle/catalog dev
-start_service "payments:3003" env PORT=3003 HOST="${BIND_HOST}" pnpm -C "${ROOT_DIR}" --filter @gazelle/payments dev
-start_service "loyalty:3004" env PORT=3004 HOST="${BIND_HOST}" pnpm -C "${ROOT_DIR}" --filter @gazelle/loyalty dev
-start_service "notifications:3005" env PORT=3005 HOST="${BIND_HOST}" pnpm -C "${ROOT_DIR}" --filter @gazelle/notifications dev
+start_service "identity:3000" env PORT=3000 HOST="${BIND_HOST}" GATEWAY_INTERNAL_API_TOKEN="${GATEWAY_INTERNAL_API_TOKEN:-}" pnpm -C "${ROOT_DIR}" --filter @gazelle/identity dev
+start_service "orders:3001" env PORT=3001 HOST="${BIND_HOST}" GATEWAY_INTERNAL_API_TOKEN="${GATEWAY_INTERNAL_API_TOKEN:-}" ORDERS_INTERNAL_API_TOKEN="${ORDERS_INTERNAL_API_TOKEN:-}" LOYALTY_INTERNAL_API_TOKEN="${LOYALTY_INTERNAL_API_TOKEN:-}" NOTIFICATIONS_INTERNAL_API_TOKEN="${NOTIFICATIONS_INTERNAL_API_TOKEN:-}" pnpm -C "${ROOT_DIR}" --filter @gazelle/orders dev
+start_service "catalog:3002" env PORT=3002 HOST="${BIND_HOST}" GATEWAY_INTERNAL_API_TOKEN="${GATEWAY_INTERNAL_API_TOKEN:-}" pnpm -C "${ROOT_DIR}" --filter @gazelle/catalog dev
+start_service "payments:3003" env PORT=3003 HOST="${BIND_HOST}" GATEWAY_INTERNAL_API_TOKEN="${GATEWAY_INTERNAL_API_TOKEN:-}" ORDERS_INTERNAL_API_TOKEN="${ORDERS_INTERNAL_API_TOKEN:-}" pnpm -C "${ROOT_DIR}" --filter @gazelle/payments dev
+start_service "loyalty:3004" env PORT=3004 HOST="${BIND_HOST}" GATEWAY_INTERNAL_API_TOKEN="${GATEWAY_INTERNAL_API_TOKEN:-}" LOYALTY_INTERNAL_API_TOKEN="${LOYALTY_INTERNAL_API_TOKEN:-}" pnpm -C "${ROOT_DIR}" --filter @gazelle/loyalty dev
+start_service "notifications:3005" env PORT=3005 HOST="${BIND_HOST}" GATEWAY_INTERNAL_API_TOKEN="${GATEWAY_INTERNAL_API_TOKEN:-}" NOTIFICATIONS_INTERNAL_API_TOKEN="${NOTIFICATIONS_INTERNAL_API_TOKEN:-}" pnpm -C "${ROOT_DIR}" --filter @gazelle/notifications dev
 
 start_service \
   "gateway:8080" \
   env \
   PORT=8080 \
   HOST="${BIND_HOST}" \
+  CORS_ALLOWED_ORIGINS="${LOCAL_CORS_ALLOWED_ORIGINS}" \
   IDENTITY_SERVICE_BASE_URL="http://${IDENTITY_UPSTREAM_HOST}:3000" \
   ORDERS_SERVICE_BASE_URL="http://${ORDERS_UPSTREAM_HOST}:3001" \
   CATALOG_SERVICE_BASE_URL="http://${CATALOG_UPSTREAM_HOST}:3002" \
   LOYALTY_SERVICE_BASE_URL="http://${LOYALTY_UPSTREAM_HOST}:3004" \
   NOTIFICATIONS_SERVICE_BASE_URL="http://${NOTIFICATIONS_UPSTREAM_HOST}:3005" \
+  ORDERS_INTERNAL_API_TOKEN="${ORDERS_INTERNAL_API_TOKEN:-}" \
+  GATEWAY_INTERNAL_API_TOKEN="${GATEWAY_INTERNAL_API_TOKEN:-}" \
   pnpm -C "${ROOT_DIR}" --filter @gazelle/gateway dev
 
 if [[ "${START_MENU_SYNC_WORKER:-0}" == "1" ]]; then
