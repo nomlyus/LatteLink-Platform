@@ -343,7 +343,7 @@ describe.sequential("orders + payments e2e", () => {
     }
   });
 
-  it("keeps timeout retries idempotent per key and recovers with a new key", async () => {
+  it("blocks further pay attempts after a timeout until reconciliation lands", async () => {
     const order = await createOrder();
 
     const firstTimeout = await ordersApp.inject({
@@ -365,11 +365,11 @@ describe.sequential("orders + payments e2e", () => {
         idempotencyKey: "timeout-attempt-1"
       }
     });
-    expect(secondTimeout.statusCode).toBe(504);
-    expect(secondTimeout.json()).toMatchObject({ code: "PAYMENT_TIMEOUT" });
+    expect(secondTimeout.statusCode).toBe(409);
+    expect(secondTimeout.json()).toMatchObject({ code: "PAYMENT_RECONCILIATION_PENDING" });
     expect(secondTimeout.json().details.paymentId).toBe(firstTimeout.json().details.paymentId);
 
-    const recoveredPayment = await ordersApp.inject({
+    const blockedRecovery = await ordersApp.inject({
       method: "POST",
       url: `/v1/orders/${order.id}/pay`,
       payload: {
@@ -377,8 +377,45 @@ describe.sequential("orders + payments e2e", () => {
         idempotencyKey: "timeout-recovery-2"
       }
     });
-    expect(recoveredPayment.statusCode).toBe(200);
-    expect(orderSchema.parse(recoveredPayment.json()).status).toBe("PAID");
+    expect(blockedRecovery.statusCode).toBe(409);
+    expect(blockedRecovery.json()).toMatchObject({
+      code: "PAYMENT_RECONCILIATION_PENDING",
+      details: expect.objectContaining({
+        paymentId: firstTimeout.json().details.paymentId,
+        status: "TIMEOUT"
+      })
+    });
+
+    const reconciledPayment = await ordersApp.inject({
+      method: "POST",
+      url: "/v1/orders/internal/payments/reconcile",
+      headers: {
+        "x-internal-token": internalPaymentsToken
+      },
+      payload: {
+        eventId: "evt_timeout_recovery_1",
+        provider: "CLOVER",
+        kind: "CHARGE",
+        orderId: order.id,
+        paymentId: firstTimeout.json().details.paymentId,
+        status: "SUCCEEDED",
+        occurredAt: "2026-03-11T00:00:00.000Z",
+        message: "Charge settled asynchronously"
+      }
+    });
+    expect(reconciledPayment.statusCode).toBe(200);
+    expect(reconciledPayment.json()).toMatchObject({
+      accepted: true,
+      applied: true,
+      orderStatus: "PAID"
+    });
+
+    const getOrder = await ordersApp.inject({
+      method: "GET",
+      url: `/v1/orders/${order.id}`
+    });
+    expect(getOrder.statusCode).toBe(200);
+    expect(orderSchema.parse(getOrder.json()).status).toBe("PAID");
   });
 
   it("allows decline retry recovery with a new idempotency key", async () => {

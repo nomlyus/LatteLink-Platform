@@ -1179,6 +1179,23 @@ describe("orders service", () => {
     expect(timedOut.statusCode).toBe(504);
     expect(timedOut.json()).toMatchObject({ code: "PAYMENT_TIMEOUT" });
 
+    const blockedRetry = await app.inject({
+      method: "POST",
+      url: `/v1/orders/${order.id}/pay`,
+      payload: {
+        applePayToken: "apple-pay-success-token",
+        idempotencyKey: "pay-timeout-retry"
+      }
+    });
+    expect(blockedRetry.statusCode).toBe(409);
+    expect(blockedRetry.json()).toMatchObject({
+      code: "PAYMENT_RECONCILIATION_PENDING",
+      details: expect.objectContaining({
+        paymentId: "123e4567-e89b-12d3-a456-426614174102",
+        status: "TIMEOUT"
+      })
+    });
+
     const getOrder = await app.inject({
       method: "GET",
       url: `/v1/orders/${order.id}`
@@ -1493,6 +1510,85 @@ describe("orders service", () => {
         })
       ])
     );
+
+    await app.close();
+  });
+
+  it("treats refund reconciliation for completed orders as a no-op instead of failing the webhook", async () => {
+    vi.stubEnv("ORDER_FULFILLMENT_MODE", "staff");
+    vi.stubEnv("ORDERS_INTERNAL_API_TOKEN", "orders-staff-token");
+    const app = await buildApp();
+    const quoteResponse = await app.inject({
+      method: "POST",
+      url: "/v1/orders/quote",
+      payload: sampleQuotePayload
+    });
+    const quote = orderQuoteSchema.parse(quoteResponse.json());
+
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/v1/orders",
+      headers: customerHeaders(),
+      payload: {
+        quoteId: quote.quoteId,
+        quoteHash: quote.quoteHash
+      }
+    });
+    const order = orderSchema.parse(createResponse.json());
+
+    const payResponse = await app.inject({
+      method: "POST",
+      url: `/v1/orders/${order.id}/pay`,
+      payload: {
+        applePayToken: "apple-pay-success-token",
+        idempotencyKey: "completed-refund-pay"
+      }
+    });
+    expect(payResponse.statusCode).toBe(200);
+
+    for (const status of ["IN_PREP", "READY", "COMPLETED"] as const) {
+      const transitionResponse = await app.inject({
+        method: "POST",
+        url: `/v1/orders/${order.id}/status`,
+        headers: {
+          "x-internal-token": "orders-staff-token"
+        },
+        payload: { status }
+      });
+      expect(transitionResponse.statusCode).toBe(200);
+    }
+
+    const refundReconcile = await app.inject({
+      method: "POST",
+      url: "/v1/orders/internal/payments/reconcile",
+      headers: {
+        "x-internal-token": "orders-staff-token"
+      },
+      payload: {
+        eventId: "evt_refund_completed_1",
+        provider: "CLOVER",
+        kind: "REFUND",
+        orderId: order.id,
+        paymentId: "123e4567-e89b-12d3-a456-426614174333",
+        refundId: "123e4567-e89b-12d3-a456-426614174444",
+        status: "REFUNDED",
+        occurredAt: "2026-03-11T00:05:00.000Z",
+        message: "Refund settled after completion"
+      }
+    });
+    expect(refundReconcile.statusCode).toBe(200);
+    expect(refundReconcile.json()).toMatchObject({
+      accepted: true,
+      applied: false,
+      orderStatus: "COMPLETED"
+    });
+
+    const finalOrder = await app.inject({
+      method: "GET",
+      url: `/v1/orders/${order.id}`
+    });
+    expect(finalOrder.statusCode).toBe(200);
+    expect(orderSchema.parse(finalOrder.json()).status).toBe("COMPLETED");
 
     await app.close();
   });

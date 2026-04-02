@@ -71,6 +71,26 @@ Default notifications upstream:
   - derived from `orderId:idempotencyKey`
   - repeated payments with the same key return the same paid response
 
+## Payment Recovery Rules
+
+- `DECLINED`
+  - order remains `PENDING_PAYMENT`
+  - customer can retry with a new payment idempotency key
+- `TIMEOUT`
+  - order remains `PENDING_PAYMENT`
+  - the last Clover charge snapshot is persisted on the order
+  - new payment attempts are blocked with `PAYMENT_RECONCILIATION_PENDING`
+  - only two exits are allowed:
+    - Clover reconciliation webhook settles the charge
+    - support confirms the charge did not settle and explicitly clears the path operationally before another checkout attempt
+- `REFUND_REJECTED`
+  - order remains in its pre-cancel state
+  - the rejected refund snapshot is persisted for support follow-up
+- late `REFUND` webhook after `COMPLETED`
+  - accepted as a no-op
+  - order does not auto-transition out of `COMPLETED`
+  - support must review the refund separately
+
 ## Gateway Routing
 
 `services/gateway` order routes now proxy to the orders service (`ORDERS_SERVICE_BASE_URL`).

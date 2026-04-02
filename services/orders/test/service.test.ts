@@ -183,6 +183,20 @@ describe("orders service layer", () => {
           });
         }
 
+        if (simulationSignal.includes("timeout")) {
+          return paymentsResponse({
+            paymentId: "123e4567-e89b-12d3-a456-426614174102",
+            provider: "CLOVER",
+            orderId: body.orderId,
+            status: "TIMEOUT",
+            approved: false,
+            amountCents: body.amountCents,
+            currency: "USD",
+            occurredAt: "2026-03-10T00:00:30.000Z",
+            message: "Clover timed out while confirming the charge"
+          });
+        }
+
         return paymentsResponse({
           paymentId: "123e4567-e89b-12d3-a456-426614174100",
           provider: "CLOVER",
@@ -400,6 +414,67 @@ describe("orders service layer", () => {
     expect(persistedOrder?.status).toBe("PENDING_PAYMENT");
   });
 
+  it("processPayment blocks new payment attempts after a timeout until reconciliation lands", async () => {
+    const userId = "123e4567-e89b-12d3-a456-426614174512";
+    const { deps } = await createTestDeps(repositories);
+    const { order } = await createQuotedOrder(deps, { userId });
+
+    const timedOutResult = await processPayment({
+      orderId: order.id,
+      input: {
+        applePayToken: "apple-pay-timeout-token",
+        idempotencyKey: "service-pay-timeout"
+      },
+      requestId: "service-pay-timeout",
+      requestUserContext: { userId },
+      deps
+    });
+
+    expect("error" in timedOutResult).toBe(true);
+    if (!("error" in timedOutResult)) {
+      throw new Error("Expected timed out payment error");
+    }
+    expect(timedOutResult.error).toMatchObject({
+      statusCode: 504,
+      code: "PAYMENT_TIMEOUT"
+    });
+
+    const persistedCharge = await deps.repository.getSuccessfulCharge(order.id);
+    expect(persistedCharge).toMatchObject({
+      status: "TIMEOUT",
+      paymentId: "123e4567-e89b-12d3-a456-426614174102"
+    });
+
+    const blockedRetry = await processPayment({
+      orderId: order.id,
+      input: {
+        applePayToken: "apple-pay-success-token",
+        idempotencyKey: "service-pay-timeout-retry"
+      },
+      requestId: "service-pay-timeout-retry",
+      requestUserContext: { userId },
+      deps
+    });
+
+    expect("error" in blockedRetry).toBe(true);
+    if (!("error" in blockedRetry)) {
+      throw new Error("Expected pending reconciliation error");
+    }
+    expect(blockedRetry.error).toMatchObject({
+      statusCode: 409,
+      code: "PAYMENT_RECONCILIATION_PENDING",
+      details: expect.objectContaining({
+        paymentId: "123e4567-e89b-12d3-a456-426614174102",
+        status: "TIMEOUT"
+      })
+    });
+
+    const chargeCalls = fetchMock.mock.calls.filter(([input]) =>
+      (typeof input === "string" ? input : input.toString()).endsWith("/v1/payments/charges")
+    );
+    expect(chargeCalls).toHaveLength(1);
+  });
+
   it("cancelOrder cancels an unpaid order without issuing a refund", async () => {
     const userId = "123e4567-e89b-12d3-a456-426614174503";
     const { deps } = await createTestDeps(repositories);
@@ -481,6 +556,47 @@ describe("orders service layer", () => {
         })
       ])
     );
+  });
+
+  it("cancelOrder persists rejected refund responses for support follow-up", async () => {
+    const userId = "123e4567-e89b-12d3-a456-426614174513";
+    const { deps } = await createTestDeps(repositories);
+    const { order } = await createQuotedOrder(deps, { userId });
+
+    const paidResult = await processPayment({
+      orderId: order.id,
+      input: {
+        applePayToken: "apple-pay-success-token",
+        idempotencyKey: "service-paid-reject-refund-pay"
+      },
+      requestId: "service-paid-reject-refund-pay",
+      requestUserContext: { userId },
+      deps
+    });
+    expect("error" in paidResult).toBe(false);
+
+    const cancelResult = await cancelOrder({
+      orderId: order.id,
+      input: { reason: "please reject refund" },
+      cancelSource: "customer",
+      requestId: "service-paid-reject-refund",
+      requestUserContext: { userId },
+      deps
+    });
+
+    expect("error" in cancelResult).toBe(true);
+    if (!("error" in cancelResult)) {
+      throw new Error("Expected rejected refund error");
+    }
+    expect(cancelResult.error).toMatchObject({
+      statusCode: 409,
+      code: "REFUND_REJECTED"
+    });
+
+    const persistedRefund = await deps.repository.getSuccessfulRefund(order.id);
+    expect(persistedRefund).toMatchObject({
+      status: "REJECTED"
+    });
   });
 
   it("advanceOrderStatus rejects invalid transitions", async () => {

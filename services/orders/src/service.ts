@@ -201,6 +201,14 @@ type CreateOrderRequest = z.output<typeof createOrderRequestSchema>;
 type PayOrderRequest = z.output<typeof payOrderRequestSchema>;
 type OrdersPaymentReconciliationInput = z.output<typeof ordersPaymentReconciliationSchema>;
 type OrdersPaymentReconciliationResult = z.output<typeof ordersPaymentReconciliationResultSchema>;
+type PaymentsChargeResponse = z.output<typeof paymentsChargeResponseSchema>;
+type PaymentsRefundResponse = z.output<typeof paymentsRefundResponseSchema>;
+type ChargeRequestResult =
+  | { response: PaymentsChargeResponse }
+  | { error: ServiceError; snapshot?: PaymentsChargeResponse };
+type RefundRequestResult =
+  | { response: PaymentsRefundResponse }
+  | { error: ServiceError; snapshot?: PaymentsRefundResponse };
 
 export function isServiceError(value: unknown): value is ServiceError {
   return (
@@ -246,6 +254,20 @@ function buildActiveOrderExistsError(order: Order) {
   });
 }
 
+function buildPendingPaymentReconciliationError(charge: PaymentsChargeResponse) {
+  return buildServiceError({
+    statusCode: 409,
+    code: "PAYMENT_RECONCILIATION_PENDING",
+    message: charge.message ?? "Previous payment attempt is still awaiting Clover reconciliation",
+    details: {
+      paymentId: charge.paymentId,
+      provider: charge.provider,
+      status: charge.status,
+      occurredAt: charge.occurredAt
+    }
+  });
+}
+
 function parseJsonSafely(rawBody: string): unknown {
   if (!rawBody) {
     return undefined;
@@ -266,6 +288,24 @@ function toRefundIdempotencyKey(orderId: string, reason: string) {
 
 function toLoyaltyIdempotencyKey(orderId: string, action: string) {
   return `order:${orderId}:loyalty:${action}`;
+}
+
+function parsePersistedChargeSnapshot(payload: unknown | undefined) {
+  if (payload === undefined) {
+    return undefined;
+  }
+
+  const parsed = paymentsChargeResponseSchema.safeParse(payload);
+  return parsed.success ? parsed.data : undefined;
+}
+
+function parsePersistedRefundSnapshot(payload: unknown | undefined) {
+  if (payload === undefined) {
+    return undefined;
+  }
+
+  const parsed = paymentsRefundResponseSchema.safeParse(payload);
+  return parsed.success ? parsed.data : undefined;
 }
 
 function resolveRequestUserId(context: RequestUserContext | undefined) {
@@ -725,7 +765,7 @@ async function requestSuccessfulCharge(params: {
   order: Order;
   requestId: string;
   deps: OrderServiceDeps;
-}) {
+}): Promise<ChargeRequestResult> {
   const chargeRequestPayload = paymentsChargeRequestSchema.parse({
     orderId: params.orderId,
     amountCents: params.order.total.amountCents,
@@ -754,59 +794,71 @@ async function requestSuccessfulCharge(params: {
       { error, requestId: params.requestId, orderId: params.orderId },
       "payments charge request failed before response"
     );
-    return buildServiceError({
-      statusCode: 502,
-      code: "PAYMENTS_UNAVAILABLE",
-      message: "Payments service is unavailable"
-    });
+    return {
+      error: buildServiceError({
+        statusCode: 502,
+        code: "PAYMENTS_UNAVAILABLE",
+        message: "Payments service is unavailable"
+      })
+    };
   }
 
   const parsedChargeBody = parseJsonSafely(await chargeResponse.text());
   if (!chargeResponse.ok) {
-    return buildServiceError({
-      statusCode: 502,
-      code: "PAYMENTS_ERROR",
-      message: `Payments charge request failed with status ${chargeResponse.status}`,
-      details: { upstreamBody: parsedChargeBody }
-    });
+    return {
+      error: buildServiceError({
+        statusCode: 502,
+        code: "PAYMENTS_ERROR",
+        message: `Payments charge request failed with status ${chargeResponse.status}`,
+        details: { upstreamBody: parsedChargeBody }
+      })
+    };
   }
 
   const parsedCharge = paymentsChargeResponseSchema.safeParse(parsedChargeBody);
   if (!parsedCharge.success) {
-    return buildServiceError({
-      statusCode: 502,
-      code: "PAYMENTS_INVALID_RESPONSE",
-      message: "Payments service returned an invalid charge response",
-      details: parsedCharge.error.flatten()
-    });
+    return {
+      error: buildServiceError({
+        statusCode: 502,
+        code: "PAYMENTS_INVALID_RESPONSE",
+        message: "Payments service returned an invalid charge response",
+        details: parsedCharge.error.flatten()
+      })
+    };
   }
 
   if (parsedCharge.data.status === "DECLINED") {
-    return buildServiceError({
-      statusCode: 402,
-      code: "PAYMENT_DECLINED",
-      message: parsedCharge.data.message ?? "Payment was declined",
-      details: {
-        paymentId: parsedCharge.data.paymentId,
-        provider: parsedCharge.data.provider,
-        declineCode: parsedCharge.data.declineCode
-      }
-    });
+    return {
+      error: buildServiceError({
+        statusCode: 402,
+        code: "PAYMENT_DECLINED",
+        message: parsedCharge.data.message ?? "Payment was declined",
+        details: {
+          paymentId: parsedCharge.data.paymentId,
+          provider: parsedCharge.data.provider,
+          declineCode: parsedCharge.data.declineCode
+        }
+      }),
+      snapshot: parsedCharge.data
+    };
   }
 
   if (parsedCharge.data.status === "TIMEOUT") {
-    return buildServiceError({
-      statusCode: 504,
-      code: "PAYMENT_TIMEOUT",
-      message: parsedCharge.data.message ?? "Payment timed out",
-      details: {
-        paymentId: parsedCharge.data.paymentId,
-        provider: parsedCharge.data.provider
-      }
-    });
+    return {
+      error: buildServiceError({
+        statusCode: 504,
+        code: "PAYMENT_TIMEOUT",
+        message: parsedCharge.data.message ?? "Payment timed out",
+        details: {
+          paymentId: parsedCharge.data.paymentId,
+          provider: parsedCharge.data.provider
+        }
+      }),
+      snapshot: parsedCharge.data
+    };
   }
 
-  return parsedCharge.data;
+  return { response: parsedCharge.data };
 }
 
 async function requestSuccessfulRefund(params: {
@@ -816,7 +868,7 @@ async function requestSuccessfulRefund(params: {
   paymentId: string;
   requestId: string;
   deps: OrderServiceDeps;
-}) {
+}): Promise<RefundRequestResult> {
   const refundPayload = paymentsRefundRequestSchema.parse({
     orderId: params.orderId,
     paymentId: params.paymentId,
@@ -850,47 +902,56 @@ async function requestSuccessfulRefund(params: {
       },
       "payments refund request failed before response"
     );
-    return buildServiceError({
-      statusCode: 502,
-      code: "PAYMENTS_UNAVAILABLE",
-      message: "Payments service is unavailable"
-    });
+    return {
+      error: buildServiceError({
+        statusCode: 502,
+        code: "PAYMENTS_UNAVAILABLE",
+        message: "Payments service is unavailable"
+      })
+    };
   }
 
   const parsedRefundBody = parseJsonSafely(await refundResponse.text());
   if (!refundResponse.ok) {
-    return buildServiceError({
-      statusCode: 502,
-      code: "REFUND_REQUEST_FAILED",
-      message: `Payments refund request failed with status ${refundResponse.status}`,
-      details: { upstreamBody: parsedRefundBody }
-    });
+    return {
+      error: buildServiceError({
+        statusCode: 502,
+        code: "REFUND_REQUEST_FAILED",
+        message: `Payments refund request failed with status ${refundResponse.status}`,
+        details: { upstreamBody: parsedRefundBody }
+      })
+    };
   }
 
   const parsedRefund = paymentsRefundResponseSchema.safeParse(parsedRefundBody);
   if (!parsedRefund.success) {
-    return buildServiceError({
-      statusCode: 502,
-      code: "PAYMENTS_INVALID_RESPONSE",
-      message: "Payments service returned an invalid refund response",
-      details: parsedRefund.error.flatten()
-    });
+    return {
+      error: buildServiceError({
+        statusCode: 502,
+        code: "PAYMENTS_INVALID_RESPONSE",
+        message: "Payments service returned an invalid refund response",
+        details: parsedRefund.error.flatten()
+      })
+    };
   }
 
   if (parsedRefund.data.status === "REJECTED") {
-    return buildServiceError({
-      statusCode: 409,
-      code: "REFUND_REJECTED",
-      message: parsedRefund.data.message ?? "Clover rejected the refund",
-      details: {
-        paymentId: parsedRefund.data.paymentId,
-        refundId: parsedRefund.data.refundId,
-        provider: parsedRefund.data.provider
-      }
-    });
+    return {
+      error: buildServiceError({
+        statusCode: 409,
+        code: "REFUND_REJECTED",
+        message: parsedRefund.data.message ?? "Clover rejected the refund",
+        details: {
+          paymentId: parsedRefund.data.paymentId,
+          refundId: parsedRefund.data.refundId,
+          provider: parsedRefund.data.provider
+        }
+      }),
+      snapshot: parsedRefund.data
+    };
   }
 
-  return parsedRefund.data;
+  return { response: parsedRefund.data };
 }
 
 export async function createQuote(params: {
@@ -1026,6 +1087,13 @@ export async function processPayment(params: {
     return { order: existingOrder };
   }
 
+  const persistedCharge = parsePersistedChargeSnapshot(await deps.repository.getSuccessfulCharge(orderId));
+  if (persistedCharge?.status === "TIMEOUT") {
+    return {
+      error: buildPendingPaymentReconciliationError(persistedCharge)
+    };
+  }
+
   const orderQuote = await deps.repository.getOrderQuote(orderId);
   if (!orderQuote) {
     return {
@@ -1047,14 +1115,7 @@ export async function processPayment(params: {
     return { error: orderUserId };
   }
 
-  const persistedCharge = await deps.repository.getSuccessfulCharge(orderId);
-  let successfulCharge: z.output<typeof paymentsChargeResponseSchema> | undefined;
-  if (persistedCharge !== undefined) {
-    const parsedPersistedCharge = paymentsChargeResponseSchema.safeParse(persistedCharge);
-    if (parsedPersistedCharge.success && parsedPersistedCharge.data.status === "SUCCEEDED") {
-      successfulCharge = parsedPersistedCharge.data;
-    }
-  }
+  let successfulCharge: PaymentsChargeResponse | undefined = persistedCharge?.status === "SUCCEEDED" ? persistedCharge : undefined;
 
   if (!successfulCharge) {
     const requestedCharge = await requestSuccessfulCharge({
@@ -1064,12 +1125,18 @@ export async function processPayment(params: {
       requestId,
       deps
     });
-    if (isServiceError(requestedCharge)) {
-      return { error: requestedCharge };
+    if ("error" in requestedCharge) {
+      if (requestedCharge.snapshot) {
+        await deps.repository.setSuccessfulCharge(orderId, requestedCharge.snapshot);
+        await deps.repository.setPaymentId(orderId, requestedCharge.snapshot.paymentId);
+      }
+
+      return { error: requestedCharge.error };
     }
 
-    successfulCharge = requestedCharge;
+    successfulCharge = requestedCharge.response;
     await deps.repository.setSuccessfulCharge(orderId, successfulCharge);
+    await deps.repository.setPaymentId(orderId, successfulCharge.paymentId);
   }
 
   if (orderQuote.pointsToRedeem > 0) {
@@ -1268,13 +1335,11 @@ export async function cancelOrder(params: {
       return { error: orderUserId };
     }
 
-    const persistedRefund = await deps.repository.getSuccessfulRefund(orderId);
-    let successfulRefund: z.output<typeof paymentsRefundResponseSchema> | undefined;
-    if (persistedRefund !== undefined) {
-      const parsedPersistedRefund = paymentsRefundResponseSchema.safeParse(persistedRefund);
-      if (parsedPersistedRefund.success && parsedPersistedRefund.data.status === "REFUNDED") {
-        successfulRefund = parsedPersistedRefund.data;
-      }
+  const persistedRefund = await deps.repository.getSuccessfulRefund(orderId);
+    let successfulRefund: PaymentsRefundResponse | undefined;
+    const parsedPersistedRefund = parsePersistedRefundSnapshot(persistedRefund);
+    if (parsedPersistedRefund?.status === "REFUNDED") {
+      successfulRefund = parsedPersistedRefund;
     }
 
     if (!successfulRefund) {
@@ -1286,12 +1351,16 @@ export async function cancelOrder(params: {
         requestId,
         deps
       });
-      if (isServiceError(requestedRefund)) {
-        return { error: requestedRefund };
+      if ("error" in requestedRefund) {
+        if (requestedRefund.snapshot) {
+          await deps.repository.setSuccessfulRefund(orderId, requestedRefund.snapshot);
+        }
+
+        return { error: requestedRefund.error };
       }
 
-      successfulRefund = requestedRefund;
-      await deps.repository.setSuccessfulRefund(orderId, requestedRefund);
+      successfulRefund = requestedRefund.response;
+      await deps.repository.setSuccessfulRefund(orderId, requestedRefund.response);
     }
 
     const reverseEarnMutation = loyaltyMutationRequestSchema.parse({
@@ -1569,11 +1638,11 @@ export async function reconcilePaymentWebhook(params: {
 
   if (existingOrder.status === "COMPLETED") {
     return {
-      error: buildServiceError({
-        statusCode: 409,
-        code: "ORDER_NOT_CANCELABLE",
-        message: "Completed orders cannot be canceled",
-        details: { orderId: input.orderId, status: existingOrder.status }
+      result: ordersPaymentReconciliationResultSchema.parse({
+        accepted: true,
+        applied: false,
+        orderStatus: existingOrder.status,
+        note: "Completed orders require manual refund review and do not auto-transition"
       })
     };
   }

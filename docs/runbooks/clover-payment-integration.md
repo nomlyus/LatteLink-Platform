@@ -124,6 +124,13 @@ Loyalty side effects are applied using existing idempotency keys, so duplicate w
 - `DECLINED` -> `402` with `PAYMENT_DECLINED`
 - `TIMEOUT` -> `504` with `PAYMENT_TIMEOUT`
 
+Timeout hardening rule:
+
+- once a timed-out Clover charge snapshot is persisted on the order, subsequent pay attempts for that order return `409 PAYMENT_RECONCILIATION_PENDING`
+- pilot operators should not start a brand-new payment attempt until either:
+  - Clover reconciliation webhook marks the charge `SUCCEEDED` or `DECLINED`
+  - support verifies in Clover that the timed-out charge did not settle and explicitly decides the customer should retry
+
 ## Refund Outcomes
 
 When canceling a `PAID` order:
@@ -140,6 +147,21 @@ For dev simulation, a cancel reason containing `reject` returns a rejected refun
 - Refunds are idempotent in payments by `orderId:idempotencyKey`.
 - Orders keeps pay idempotency per `orderId:idempotencyKey` for paid responses.
 - Orders refund requests use `cancel:<orderId>:<reasonHashPrefix>` so identical cancel retries are idempotent while failed refund attempts can be retried with changed cancellation context.
+
+## Pilot Recovery Matrix
+
+- charge `DECLINED`
+  - customer retry is allowed with a new payment idempotency key
+- charge `TIMEOUT`
+  - do not ask the customer to keep tapping pay
+  - wait for Clover webhook reconciliation or verify the payment outcome in Clover first
+- refund `REJECTED`
+  - order stays in its current state
+  - rejected refund snapshot is persisted so support has the Clover identifiers needed for follow-up
+- refund webhook after `COMPLETED`
+  - orders accepts the reconciliation as a no-op
+  - no automatic order state regression occurs
+  - support reviews the refund separately
 
 ## Verification
 

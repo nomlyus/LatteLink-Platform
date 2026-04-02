@@ -55,3 +55,4 @@ Expected result:
 
 - Quote items are currently aggregated by `menuItemId` before calling `/orders/quote`.
 - Payment idempotency key is generated per checkout attempt in the mobile client.
+- If checkout returns `PAYMENT_TIMEOUT`, the order remains pending and the client should not silently retry with a fresh idempotency key. The payment must be reconciled first.
