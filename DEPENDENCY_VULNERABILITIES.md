@@ -15,6 +15,7 @@ Most HIGH vulnerabilities are in transitive dependencies of Expo and Vitest, whi
 ### HIGH Vulnerabilities (12 total)
 
 #### Fastify (Production Service)
+
 - **Status:** Already using v4.29.1
 - **Issue:** Content-Type header tab character allows body validation bypass (< 5.7.2)
 - **Fix:** Fastify 4.x < 5.7.2 — check if v5.0+ is available
@@ -22,8 +23,9 @@ Most HIGH vulnerabilities are in transitive dependencies of Expo and Vitest, whi
 - **Risk:** MEDIUM (header parsing bypass, but schema validation still applies)
 
 #### Undici (Production dependency via Node.js HTTP)
+
 - **Status:** Likely pulling from Fastify/Node.js deps
-- **Issues:** 
+- **Issues:**
   - WebSocket 64-bit overflow
   - Unbounded memory in decompression
   - Invalid server_max_window_bits validation
@@ -32,12 +34,14 @@ Most HIGH vulnerabilities are in transitive dependencies of Expo and Vitest, whi
 - **Risk:** LOW (WebSocket issues, services don't use WebSocket heavily)
 
 #### Kysely (Production — database library)
+
 - **Issues:** MySQL SQL injection via unsanitized JSON path keys
 - **Action:** Already using parameterized queries; verify no `sql.lit(userInput)` usage
 - **Verification:** Done — no user input passed to `sql.lit()` found
 - **Risk:** LOW (code is safe, but update Kysely anyway)
 
 #### TAR (Transitive from Expo)
+
 - **Status:** Comes from `@expo/cli` → tar < 7.5.11
 - **Issue:** Symlink path traversal via drive-relative linkpath
 - **Risk:** MEDIUM (build-time only, not runtime)
@@ -45,6 +49,7 @@ Most HIGH vulnerabilities are in transitive dependencies of Expo and Vitest, whi
 - **Timeline:** Can defer for pilot (dev-time only)
 
 #### Flatted (Transitive from Expo)
+
 - **Status:** Comes from Expo dependencies
 - **Issues:**
   - Unbounded recursion DoS in parse()
@@ -52,7 +57,8 @@ Most HIGH vulnerabilities are in transitive dependencies of Expo and Vitest, whi
 - **Risk:** LOW (dev-time, not in production)
 - **Action:** Wait for Expo to update; not production-critical
 
-#### Picomatch (Transitive from Expo, Vitest, Changesets)
+#### Picomatch (Transitive from Expo, Vitest)
+
 - **Status:** Multiple versions affected (2.3.1, 3.0.1, 4.0.3)
 - **Issues:** Method injection in POSIX character classes, incorrect glob matching
 - **Risk:** LOW (build-time glob patterns, not runtime)
@@ -61,8 +67,9 @@ Most HIGH vulnerabilities are in transitive dependencies of Expo and Vitest, whi
 ### MODERATE Vulnerabilities (7 total)
 
 All MODERATE vulns are in dev/build dependencies:
+
 - Picomatch glob patterns (3x different versions)
-- Glob, Globby, fast-glob (Changesets, Vitest)
+- Glob, Globby, fast-glob (Vitest)
 
 **Production impact:** NONE — these are build-time only
 
@@ -71,12 +78,15 @@ All MODERATE vulns are in dev/build dependencies:
 ### Immediate (Before Production Deploy — Item 82)
 
 1. **Fastify:** Update to latest v5
+
    ```bash
    pnpm update fastify@latest -r
    ```
+
    Need to do in: `services/catalog`, `services/gateway`, `services/identity`, `services/loyalty`, `services/notifications`, `services/orders`, `services/payments`
 
 2. **Kysely:** Update to latest (verify no sql.lit() with user input)
+
    ```bash
    pnpm update kysely@latest -r
    ```
@@ -86,7 +96,7 @@ All MODERATE vulns are in dev/build dependencies:
 ### Deferred (Post-Pilot Acceptable)
 
 - **Expo dependencies** (tar, flatted, picomatch) — Wait for Expo 55+ release or update when safe
-- **Vitest/Changesets picomatch** — Non-critical for production
+- **Vitest picomatch** — Non-critical for production
 
 ## Risk Assessment
 
@@ -99,6 +109,7 @@ All MODERATE vulns are in dev/build dependencies:
 ## Testing After Updates
 
 After updating Fastify:
+
 1. Run: `pnpm build`
 2. Run: `pnpm test`
 3. Test each service locally: `pnpm dev:services`
@@ -120,6 +131,7 @@ After updating Fastify:
 ## Recommendation
 
 **For pilot launch (Phase 11, Item 82):**
+
 - Update Fastify, Undici, Kysely
 - Test locally
 - Deploy with changes
@@ -127,6 +139,7 @@ After updating Fastify:
 - Plan Expo update for post-pilot hardening
 
 **Commit message:**
+
 ```
 fix: update production dependencies to patch vulnerabilities
 

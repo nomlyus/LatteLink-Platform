@@ -154,6 +154,8 @@ Each PR must include:
 - verification performed
 - risk and rollback notes when applicable
 
+Use the GitHub template at [PULL_REQUEST_TEMPLATE.md](../../.github/PULL_REQUEST_TEMPLATE.md). Pull requests to `main` are validated by [validate-versioning-pr.yml](../../.github/workflows/validate-versioning-pr.yml).
+
 Recommended PR body structure:
 
 ```text
@@ -206,9 +208,10 @@ Do not leave a hotfix on `main` without bringing it back into `dev`.
 
 After a `dev` to `main` PR merges:
 
-1. update local `main` from `origin/main`
-2. make sure local `dev` is aligned with the merged `main` state before starting the next section
-3. push the aligned `dev` state back to `origin/dev` before starting the next ticket section
+1. run the GitHub `release` workflow on `main` if this merged section is cutting an official version
+2. update local `main` from `origin/main`
+3. make sure local `dev` is aligned with the merged `main` state before starting the next section
+4. push the aligned `dev` state back to `origin/dev` before starting the next ticket section
 
 The exact alignment command can vary depending on whether `main` fast-forwarded cleanly or gained a merge commit, but the rule does not change:
 

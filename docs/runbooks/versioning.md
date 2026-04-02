@@ -125,14 +125,28 @@ Every `dev` to `main` PR must include:
 
 The target version should be the version that will be tagged on `main` if the PR merges.
 
+GitHub enforces this in two places:
+
+- the pull request body template at [PULL_REQUEST_TEMPLATE.md](../../.github/PULL_REQUEST_TEMPLATE.md)
+- the validation workflow at [validate-versioning-pr.yml](../../.github/workflows/validate-versioning-pr.yml)
+
 ## Post-Merge Tagging
 
-After the PR merges to `main`:
+After the PR merges to `main`, cut the official release from GitHub using [release.yml](../../.github/workflows/release.yml).
 
-1. sync local `main` with `origin/main`
-2. confirm the merged state is the release state you want to identify
-3. create an annotated tag in the form `vX.Y.Z`
-4. push the tag
+That workflow:
+
+- only runs when manually started on `main`
+- requires a bare semantic version such as `0.3.0`
+- creates the official `vX.Y.Z` tag on `main`
+- creates the matching GitHub release
+
+Operational flow:
+
+1. merge the approved section PR into `main`
+2. confirm the merged `main` state is the release state you want to identify
+3. run the GitHub `release` workflow on `main` with the selected version, bump type, and short release reason
+4. confirm the workflow created the expected `vX.Y.Z` tag and GitHub release
 
 The tag is the official release identifier.
 

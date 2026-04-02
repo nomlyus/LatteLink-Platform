@@ -1134,4 +1134,43 @@ Acceptance criteria:
 - actual version bumps are selected at the section PR level, not per ticket
 - official released versions exist only as Git tags on `main`
 - release PRs include target version, bump type, why the bump is justified, affected surfaces, and included ticket IDs
+
+### XS-V1-07 GitHub Versioning Enforcement and Release Automation
+
+Status:
+
+- `owner`: Codex
+- `status`: validated locally, pending merge to main
+- `done`: updated the GitHub pull request template to require release metadata, added a GitHub workflow that validates versioning fields on PRs into `main`, replaced the stale `Changesets`-based release workflow with a semver tag-and-release workflow on `main`, removed the stale `Changesets` config and dependency footprint, and aligned versioning docs with the GitHub implementation
+- `blocked`: no external blocker
+
+Goal:
+Implement the repo's final versioning flow on GitHub so PRs, release tagging, and release creation all follow the same policy already documented in the repo.
+
+Scope:
+
+- enforce versioning metadata in the GitHub PR template
+- validate versioning metadata on pull requests to `main`
+- replace the old `Changesets` release automation with a GitHub release workflow that cuts semver tags from `main`
+- remove stale `Changesets` config files and dependency wiring that no longer match the chosen release model
+- document the GitHub-side release path in the runbooks
+
+Key deliverables:
+
+- one GitHub PR template that includes required versioning fields
+- one PR validation workflow for versioning metadata on `main` pull requests
+- one release workflow that creates official semver tags and GitHub releases from `main`
+- removal of stale `Changesets` repo config and dependency wiring
+
+Dependencies:
+
+- `XS-V1-04`
+- `XS-V1-06`
+
+Acceptance criteria:
+
+- pull requests to `main` fail if required versioning metadata is missing or invalid
+- the GitHub release workflow only creates valid semantic-version tags from `main`
+- GitHub releases are created from the same semver tags that define official released versions
+- the repo no longer exposes a stale `Changesets` release path in GitHub workflows or package dependencies
 - post-launch hotfix flow is documented as `main` -> `hotfix/*` -> `main` -> `dev`

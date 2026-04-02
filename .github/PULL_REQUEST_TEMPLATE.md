@@ -1,3 +1,18 @@
+## Section
+
+- REPLACE_ME
+
+## Tickets
+
+- REPLACE_ME
+
+## Version
+
+- Target version: `REPLACE_ME`
+- Bump type: `REPLACE_ME`
+- Why this bump: REPLACE_ME
+- Affected surfaces: REPLACE_ME
+
 ## Summary
 
 -
@@ -6,7 +21,7 @@
 
 - Closes #
 
-## Test Evidence
+## Verification
 
 - [ ] lint
 - [ ] typecheck

@@ -1,58 +1,100 @@
 name: release
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - ".changeset/**"
-      - "packages/**"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - ".github/workflows/release.yml"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Semantic version without the leading v, for example 0.3.0"
+        required: true
+        type: string
+      bump_type:
+        description: "Version bump classification"
+        required: true
+        type: choice
+        options:
+          - major
+          - minor
+          - patch
+          - none
+      why:
+        description: "Short reason this release version is being cut"
+        required: true
+        type: string
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
-  version-and-release:
+  tag-and-release:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --no-frozen-lockfile
-      - name: Create release PR (when changesets exist)
-        id: changesets
-        uses: changesets/action@v1
-        with:
-          version: pnpm changeset version
-          commit: "chore(release): version packages"
-          title: "chore(release): version packages"
+          fetch-depth: 0
+          ref: main
+
+      - name: Validate release request
+        id: validate
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Check publish prerequisites
-        id: publish-check
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ inputs.version }}
+          BUMP_TYPE: ${{ inputs.bump_type }}
+          WHY: ${{ inputs.why }}
         run: |
-          if [ -n "${NPM_TOKEN}" ]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "NPM_TOKEN is not configured; package publish will be skipped."
+          set -euo pipefail
+
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Version must match MAJOR.MINOR.PATCH without a leading v."
+            exit 1
           fi
-      - name: Publish packages
-        if: ${{ steps.changesets.outputs.hasChangesets == 'false' && steps.publish-check.outputs.enabled == 'true' }}
-        run: pnpm changeset publish
+
+          if ! [[ "$BUMP_TYPE" =~ ^(major|minor|patch|none)$ ]]; then
+            echo "Bump type must be one of: major, minor, patch, none."
+            exit 1
+          fi
+
+          if [ -z "${WHY// }" ]; then
+            echo "Release reason is required."
+            exit 1
+          fi
+
+          git fetch origin main --tags
+
+          tag="v${VERSION}"
+          remote_main="$(git rev-parse origin/main)"
+          local_head="$(git rev-parse HEAD)"
+
+          if [ "$local_head" != "$remote_main" ]; then
+            echo "Checked out main is not aligned with origin/main."
+            exit 1
+          fi
+
+          if git rev-parse "$tag" >/dev/null 2>&1; then
+            echo "Tag ${tag} already exists."
+            exit 1
+          fi
+
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "sha=${local_head}" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push release tag
         env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: Skip publish (NPM_TOKEN missing)
-        if: ${{ steps.changesets.outputs.hasChangesets == 'false' && steps.publish-check.outputs.enabled != 'true' }}
-        run: echo "Skipping package publish because NPM_TOKEN is not configured."
+          TAG: ${{ steps.validate.outputs.tag }}
+          SHA: ${{ steps.validate.outputs.sha }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" "$SHA" -m "Release $TAG"
+          git push origin "$TAG"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.validate.outputs.tag }}
+          name: ${{ steps.validate.outputs.tag }}
+          target_commitish: ${{ steps.validate.outputs.sha }}
+          generate_release_notes: true
+          body: |
+            Bump type: `${{ inputs.bump_type }}`
+            Why this bump: ${{ inputs.why }}
