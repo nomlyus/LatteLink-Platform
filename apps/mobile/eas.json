@@ -1,0 +1,44 @@
+{
+  "cli": {
+    "version": ">= 16.0.0"
+  },
+  "build": {
+    "base": {
+      "ios": {
+        "resourceClass": "m-medium"
+      }
+    },
+    "internal": {
+      "extends": "base",
+      "distribution": "internal",
+      "channel": "internal",
+      "env": {
+        "APP_VARIANT": "internal"
+      }
+    },
+    "beta": {
+      "extends": "base",
+      "distribution": "store",
+      "channel": "beta",
+      "env": {
+        "APP_VARIANT": "beta"
+      }
+    },
+    "production": {
+      "extends": "base",
+      "distribution": "store",
+      "channel": "production",
+      "env": {
+        "APP_VARIANT": "production"
+      }
+    }
+  },
+  "submit": {
+    "beta": {
+      "ios": {}
+    },
+    "production": {
+      "ios": {}
+    }
+  }
+}

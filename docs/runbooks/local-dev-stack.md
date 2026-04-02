@@ -112,6 +112,11 @@ Override example:
 DEV_MACHINE_IP=192.168.1.25 pnpm dev:mobile:lan
 ```
 
+For profile-driven pilot/TestFlight builds, use:
+
+- [mobile-eas-builds.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/mobile-eas-builds.md)
+- [apps/mobile/.env.example](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/.env.example)
+
 ## Quick Health Checks
 
 ```bash

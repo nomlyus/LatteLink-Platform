@@ -104,7 +104,8 @@ Behavior:
 - customer menu/store calls still use the current API base
 - customer mobile now prefers gateway `GET /v1/app-config` and falls back to the catalog service only if needed
 - operator web uses the same gateway `GET /v1/app-config` route for runtime brand and store-capability visibility
-- if app-config cannot be loaded, the app falls back to the default brand config so customer flows stay usable
+- in local/dev builds, if app-config cannot be loaded, the mobile app falls back to the default brand config so customer flows stay usable
+- in pilot/production builds, app-config outages should surface as real unavailable states instead of silently masking configuration failures
 - Apple Pay labels now use runtime brand config when available
 - loyalty visibility, live order tracking, menu source, and staff dashboard availability now resolve from `storeCapabilities`
 
