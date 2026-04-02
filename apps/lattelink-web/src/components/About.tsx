@@ -16,7 +16,7 @@ const stats = [
 
 const fitPoints = [
   "Independent coffee shops that want repeat ordering under their own brand",
-  "Operators who care about loyalty, retention, and direct customer ownership",
+  "Owners who care about loyalty, retention, and direct customer ownership",
   "Teams that want setup handled for them rather than piecing together tools",
   "Single-location shops today, with room for multi-location growth later",
 ];
@@ -30,7 +30,7 @@ const nextSteps = [
   {
     step: "02",
     title: "Review brand and menu",
-    desc: "We map the customer flow, loyalty setup, and operator needs around your real menu.",
+    desc: "We map the customer flow, loyalty setup, and store-team needs around your real menu.",
   },
   {
     step: "03",
@@ -135,7 +135,7 @@ export function About() {
                 <br />
                 The goal is narrower and more practical than that. Build one
                 strong product for coffee shops, handle the setup with them, and
-                give operators a direct relationship with their regulars.
+                give coffee shops a direct relationship with their regulars.
               </p>
 
               <Stagger className="about-stats">

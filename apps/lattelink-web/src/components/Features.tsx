@@ -14,7 +14,7 @@ const features = [
   {
     icon: "⚡",
     title: "Real-time ordering",
-    desc: "Orders appear on the operator dashboard the instant customers place them. No polling, no delays.",
+    desc: "Orders appear on the client dashboard the instant customers place them. No polling, no delays.",
   },
   {
     icon: "🎯",
@@ -23,8 +23,8 @@ const features = [
   },
   {
     icon: "📊",
-    title: "Operator dashboard",
-    desc: "Manage your menu, track live orders, and run the day-to-day operator workflow without stitching multiple tools together.",
+    title: "Client dashboard",
+    desc: "Manage your menu, track live orders, and run the day-to-day shop workflow without stitching multiple tools together.",
   },
   {
     icon: "🔔",
@@ -48,7 +48,7 @@ const proofItems = [
     desc: "The first release is being shaped around a real store workflow and a narrow launch plan instead of placeholder enterprise claims.",
   },
   {
-    title: "Operator-first",
+    title: "Shop-team first",
     desc: "Menu changes, loyalty rules, live orders, and customer data live in one operating flow for the shop team.",
   },
   {
@@ -353,7 +353,7 @@ export function Logos() {
           <AnimateIn delay={0.05}>
             <SectionP>
               LatteLink is early, but the footing is concrete: coffee-only
-              focus, pilot-stage rollout discipline, operator-first tooling, and
+              focus, pilot-stage rollout discipline, shop-team tooling, and
               pricing that does not depend on skimming each order.
             </SectionP>
           </AnimateIn>

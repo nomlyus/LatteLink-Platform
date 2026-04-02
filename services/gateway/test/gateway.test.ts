@@ -5,7 +5,6 @@ describe("gateway", () => {
   const fetchMock = vi.fn<typeof fetch>();
   const authHeader = { authorization: "Bearer access-token" } as const;
   const ownerOperatorHeaders = { authorization: "Bearer operator-owner-access-token" } as const;
-  const managerOperatorHeaders = { authorization: "Bearer operator-manager-access-token" } as const;
   const staffOperatorHeaders = { authorization: "Bearer operator-staff-access-token" } as const;
   let previousIdentityBaseUrl: string | undefined;
   let previousOrdersBaseUrl: string | undefined;

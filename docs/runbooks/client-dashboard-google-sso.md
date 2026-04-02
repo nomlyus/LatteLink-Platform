@@ -4,7 +4,7 @@ Last reviewed: `2026-04-01`
 
 ## Goal
 
-Enable Google sign-in for already-provisioned client dashboard accounts.
+Enable Google sign-in for client dashboard accounts that already exist in the platform.
 
 ## Product Rules
 
@@ -13,7 +13,7 @@ Enable Google sign-in for already-provisioned client dashboard accounts.
 - First-time Google sign-in must map to an existing active dashboard account.
 - If no active dashboard account exists for the verified email, access is denied.
 
-Provision the owner account first with:
+Create the owner account first with:
 
 - [client-dashboard-owner-provisioning.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/client-dashboard-owner-provisioning.md)
 
@@ -92,14 +92,14 @@ The client dashboard now uses this readiness response to disable the Google butt
 ## Rollout Order
 
 1. Ensure the client dashboard domain is live on Vercel.
-2. Provision the owner account first by email.
+2. Create the owner account first by email.
 3. Create the Google OAuth web app in Google Cloud.
 4. Add the production callback URI and optional localhost callback URI.
 5. Set the four Google OAuth runtime values in GitHub vars/secrets for `deploy-free`.
 6. Redeploy the backend with `deploy-free`.
 7. Confirm `/v1/operator/auth/providers` returns `configured: true`.
-8. Test Google sign-in with the provisioned owner email.
-9. Test a non-provisioned Google account and confirm it is denied cleanly.
+8. Test Google sign-in with the owner email for an existing store account.
+9. Test a Google account with no matching store account and confirm it is denied cleanly.
 
 ## Request Flow
 
@@ -108,7 +108,7 @@ The client dashboard now uses this readiness response to disable the Google butt
 3. Google redirects back to the client dashboard with `code` and `state`.
 4. The browser calls `POST /v1/operator/auth/google/exchange`.
 5. Identity exchanges the code, reads Google user info, and resolves the store account.
-6. If the Google user is already linked or matches an active provisioned account by verified email, a normal dashboard session is issued.
+6. If the Google user is already linked or matches an existing active account by verified email, a normal dashboard session is issued.
 
 ## First-Time Sign-In Policy
 
@@ -122,7 +122,7 @@ This keeps store, role, and permission assignment under platform control.
 
 Practical first-time flow:
 
-1. Provision the owner in the platform first.
+1. Create the owner account in the platform first.
 2. The owner signs in with Google using the same email address.
 3. Identity matches the verified Google user to the existing active dashboard user.
 4. The session inherits store, role, and capabilities from the platform database.
@@ -132,8 +132,8 @@ Practical first-time flow:
 
 Successful cases:
 
-- provisioned owner email signs in with Google and lands in the dashboard
-- provisioned active staff email signs in with Google and receives only staff capabilities
+- owner email for an existing account signs in with Google and lands in the dashboard
+- active staff email for an existing account signs in with Google and receives only staff capabilities
 - repeat Google sign-in reuses the linked Google subject and keeps the same dashboard identity
 
 Expected-deny cases:

@@ -279,7 +279,7 @@ export async function fetchOperatorSnapshot(session: OperatorSession): Promise<O
       : Promise.resolve(
           adminStoreConfigSchema.parse({
             locationId: session.operator.locationId,
-            storeName: "Operator access unavailable",
+            storeName: "Store access unavailable",
             hours: "Permissions required",
             pickupInstructions: "Permissions required"
           })

@@ -442,7 +442,8 @@ type AppConfigCapabilityInput = Partial<
 
 function deriveStoreCapabilitiesFromLegacyAppConfig(input: AppConfigCapabilityInput) {
   const platformManagedMenu =
-    (input.featureFlags?.menuEditing ?? (input.storeCapabilities?.menu.source === "platform_managed")) ?? true;
+    input.featureFlags?.menuEditing ??
+    (input.storeCapabilities ? input.storeCapabilities.menu.source === "platform_managed" : true);
 
   return appConfigStoreCapabilitiesSchema.parse({
     menu: {

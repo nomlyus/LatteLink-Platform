@@ -715,7 +715,7 @@ function renderAuthScreen() {
     state.authProviders === null
       ? "Checking availability"
       : googleSsoConfigured
-        ? "Use your provisioned store Google account"
+        ? "Use your store Google account"
         : "Unavailable for this environment";
   const devCredentials = showLocalDevHints
     ? devCredentialProfiles
@@ -809,7 +809,7 @@ function renderAuthScreen() {
               ? `
                   <section class="credential-hint">
                     <div class="credential-hint__header">
-                      <p class="eyebrow">Local seeded credentials</p>
+                      <p class="eyebrow">Local test credentials</p>
                       <p class="muted-copy">Use these only for localhost development unless you overrode the defaults in env.</p>
                     </div>
                     <div class="credential-list">${devCredentials}</div>

@@ -20,7 +20,7 @@ Use this runbook to validate the client dashboard before a pilot deployment or a
 
 The client dashboard passes when all of the following are true:
 
-- email/password sign-in works for provisioned accounts
+- email/password sign-in works for active dashboard accounts
 - expired or invalid sessions return the user to sign-in cleanly
 - owners and staff only see the sections their role and store capabilities allow
 - manual order controls only appear when the store and role both allow them

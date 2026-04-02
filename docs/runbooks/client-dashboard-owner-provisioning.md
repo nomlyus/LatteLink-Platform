@@ -4,24 +4,24 @@ Last updated: `2026-04-01`
 
 ## Goal
 
-Provision the first owner for a pilot store without manual database edits.
+Create the first owner account for a client store without manual database edits.
 
-For V1, one client store maps to one `locationId`. The first owner is provisioned by the platform team, then that owner can create staff from inside the client dashboard.
+For V1, one client store maps to one `locationId`. The platform team creates the first owner account, then that owner can create staff from inside the client dashboard.
 
 ## Default V1 Pattern
 
 Use a temporary password as the default first-time access path:
 
-1. provision the owner account against the identity backend
+1. create the owner account against the identity backend
 2. send the dashboard URL, email, and temporary password over a secure channel
 3. the owner signs in with email and password
 4. after first access, the owner rotates their own password from the `Team` tab
 
 Optional Google-first flow:
 
-- provision the owner with the same email they will use for Google
+- create the owner account with the same email they will use for Google
 - do not auto-create access from Google
-- once Google SSO is configured, the provisioned email can link on first sign-in
+- once Google SSO is configured, that email can link on first sign-in
 
 ## Prerequisites
 
@@ -46,7 +46,7 @@ Optional:
 
 - pass `--password "ChosenTempPassword123!"` to set the temporary password yourself
 - omit `--password` to have the script generate a strong temporary password
-- pass `--allow-in-memory` only for local testing; do not use it for real pilot provisioning
+- pass `--allow-in-memory` only for local testing; do not use it for shared or production provisioning
 
 The command will print:
 
@@ -94,7 +94,7 @@ If the owner loses access before Google SSO is enabled:
 - no public self-sign-up
 - no invite acceptance flow yet
 - no multi-location organization switcher yet
-- Google SSO still requires a pre-provisioned matching account
+- Google SSO still requires a matching account that already exists
 
 See also:
 

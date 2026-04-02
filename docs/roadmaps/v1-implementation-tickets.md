@@ -872,3 +872,143 @@ Repo-side blockers already cleared for those rollout lanes now include:
 - client dashboard Vercel workflow and Google SSO rollout mapping
 - mobile EAS/TestFlight env matrix and release preflight
 - LatteLink Vercel env preflight for lead capture and analytics
+
+## Additional Cross-Surface Tickets
+
+These tickets were added after the `2026-04-02` repo-wide V1 audit.
+
+They cover the remaining work that is still honest to call `V1`, but which is not captured cleanly enough by the surface tickets above.
+
+### XS-V1-01 Roadmap Truth Pass
+
+Status:
+
+- `owner`: Codex
+- `status`: not started
+- `done`: the audit found stale planning assumptions in the roadmap set, including docs that still describe the admin console as absent from the repo and older wording that no longer matches the current product naming or deployment lanes
+- `blocked`: no external blocker
+
+Goal:
+Bring the roadmap and planning docs back into sync with the implemented V1 repo state.
+
+Scope:
+
+- update `docs/roadmaps/README.md`
+- update `docs/roadmaps/admin-console-v1-v5.md`
+- scan roadmap/spec docs for stale wording that no longer matches the current product:
+  - `Operator Dashboard`
+  - `pilot client`
+  - `seeded` / `provisioned` client language where it misstates current behavior
+  - `admin console does not exist in code yet`
+- align roadmap wording with the actual V1 hosting model:
+  - backend on `DigitalOcean` + `GHCR`
+  - client dashboard on `Vercel`
+  - LatteLink web on `Vercel`
+  - mobile on `Expo / EAS`
+
+Key deliverables:
+
+- corrected roadmap assumptions
+- corrected admin-console current-state description
+- planning docs that describe the current product names and rollout lanes truthfully
+
+Dependencies:
+
+- completed repo audit
+
+Acceptance criteria:
+
+- no roadmap doc claims the admin console is absent from the repo
+- roadmap docs use current product-facing naming where it matters
+- roadmap docs describe the real V1 deployment lanes
+
+### XS-V1-02 V1 Launch Packet Consolidation
+
+Status:
+
+- `owner`: Codex
+- `status`: not started
+- `done`: the repo already contains the per-surface pieces needed for rollout, including backend deploy and restore runbooks, client dashboard deployment and onboarding runbooks, mobile release preflight, and LatteLink web deployment preflight
+- `blocked`: no external blocker
+
+Goal:
+Turn the current runbooks and V1 audit output into one final launch packet that can actually drive rollout.
+
+Scope:
+
+- define the exact release sequence from repo-ready to live-ready
+- consolidate links to the authoritative runbooks
+- list every external input still required and where it is used
+- separate:
+  - repo-complete work
+  - external setup work
+  - live-validation work that happens after deploy
+- capture the minimum evidence expected for V1 launch readiness:
+  - deployed smoke check
+  - deployed browser QA
+  - mobile device QA
+  - restore drill transcript
+  - payment/provider validation transcript
+
+Key deliverables:
+
+- one cross-surface launch checklist
+- one external-input matrix
+- one evidence checklist for live launch signoff
+
+Dependencies:
+
+- `XS-V1-01`
+
+Acceptance criteria:
+
+- a human can execute V1 rollout without reconstructing the process from multiple roadmap docs
+- each external credential or hosted input is listed exactly once with its destination
+- the difference between repo-ready and live-ready is explicit
+
+### XS-V1-03 Final External Deployment, Credentials, and Live Validation
+
+Status:
+
+- `owner`: User + Codex
+- `status`: blocked on external accounts, credentials, and hosted setup
+- `done`: repo-side deployment workflows, env examples, validation scripts, and core V1 product flows are in place; the repo now also passes `pnpm verify` when run outside the sandbox
+- `blocked`: live deployment targets, provider accounts, credentials, domains, and first-production validation all require external access
+
+Goal:
+Complete the final non-repo steps required to take V1 live.
+
+Scope:
+
+- backend host bootstrap on `DigitalOcean`
+- GitHub vars/secrets for image publish and `deploy-free`
+- first GHCR image publish and first live backend deploy
+- deployed backend smoke check and restore rehearsal
+- client dashboard `Vercel` project, domain, env vars, and deployed-browser QA
+- LatteLink web production env verification for lead capture and analytics
+- Google OAuth client credentials and redirect URI setup
+- live Clover credentials, webhook secret, and Apple Pay validation
+- `Expo / EAS`, App Store Connect, signed build setup, and first internal/TestFlight build
+- real-device mobile QA against the deployed backend
+
+Key deliverables:
+
+- live backend deployment
+- live client dashboard deployment
+- live LatteLink web verification
+- working provider configuration
+- first signed mobile build
+- final V1 launch evidence set
+
+Dependencies:
+
+- `XS-V1-02`
+
+Acceptance criteria:
+
+- the backend is running on the real host and passes smoke checks
+- the client dashboard is reachable on its real public URL
+- the marketing site lead path and analytics are verified in production
+- a provisioned dashboard user can authenticate on the live domain
+- live payments work with the intended production provider configuration
+- a signed mobile build can complete the pilot flow against the deployed backend

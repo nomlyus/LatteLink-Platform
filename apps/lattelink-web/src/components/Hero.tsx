@@ -340,7 +340,7 @@ export function Hero() {
             }}
           >
             LatteLink gives independent coffee shops a branded ordering app,
-            loyalty program, and operator dashboard without a giant software
+            loyalty program, and client dashboard without a giant software
             contract or a platform taking a cut of every order.
           </p>
         </AnimEntry>

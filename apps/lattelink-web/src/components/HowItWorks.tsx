@@ -17,7 +17,7 @@ const steps = [
     num: "02",
     icon: "🎨",
     title: "We configure your launch",
-    desc: "We set up your brand, menu, loyalty rules, and operator flow. You review and approve, and we handle the technical heavy lifting.",
+    desc: "We set up your brand, menu, loyalty rules, and client dashboard flow. You review and approve, and we handle the technical heavy lifting.",
     visual: "Your brand, your menu, your rules. We handle setup.",
   },
   {
@@ -31,7 +31,7 @@ const steps = [
     num: "04",
     icon: "📈",
     title: "Operate and iterate",
-    desc: "Once the app is live, orders, loyalty activity, and customer data flow into the operator dashboard so you can keep improving the experience.",
+    desc: "Once the app is live, orders, loyalty activity, and customer data flow into the client dashboard so you can keep improving the experience.",
     visual: "Launch fast, then improve with real customer behavior.",
   },
 ];

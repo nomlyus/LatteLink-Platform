@@ -370,14 +370,19 @@ describe("catalog service", () => {
     });
 
     expect(listResponse.statusCode).toBe(200);
-    expect(internalLocationListResponseSchema.parse(listResponse.json())).toMatchObject({
-      locations: [
-        {
+    const locationList = internalLocationListResponseSchema.parse(listResponse.json());
+    expect(locationList.locations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          locationId: "flagship-01",
+          brandName: "Gazelle Coffee"
+        }),
+        expect.objectContaining({
           locationId: "northside-01",
           brandName: "Northside Coffee"
-        }
-      ]
-    });
+        })
+      ])
+    );
 
     const summaryResponse = await app.inject({
       method: "GET",

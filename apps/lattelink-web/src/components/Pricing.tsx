@@ -15,7 +15,7 @@ const plans = [
       "Branded iOS app",
       "Mobile ordering",
       "Basic loyalty program",
-      "Operator dashboard",
+      "Client dashboard",
       "Push notifications",
       "Stripe payments",
     ],

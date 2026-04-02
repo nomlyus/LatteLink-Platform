@@ -10,7 +10,7 @@ Deploy the V1 client dashboard to Vercel as an independent frontend lane.
 
 - single-store dashboard
 - email/password sign-in
-- Google SSO for provisioned accounts
+- Google SSO for accounts already created in the platform
 - no Apple SSO in V1
 - no audit history UI in V1
 - no multi-store switcher in V1
@@ -101,7 +101,7 @@ Keep `.vercel/` out of git.
 - authenticated dashboard requests hit the `VITE_API_BASE_URL` value from `CLIENT_DASHBOARD_VERCEL_ENV`
 - preview deploys only run for pull requests
 - production deploys only run for `main`
-- the dashboard can refresh an operator session, sign out cleanly, and still reach the API from the deployed origin
+- the dashboard can refresh a session, sign out cleanly, and still reach the API from the deployed origin
 
 ## Notes
 

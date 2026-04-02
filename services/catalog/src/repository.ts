@@ -3,7 +3,6 @@ import type { FastifyBaseLogger } from "fastify";
 import {
   adminMenuItemCreateSchema,
   adminMenuItemSchema,
-  adminMenuItemVisibilityUpdateSchema,
   adminMenuResponseSchema,
   internalLocationBootstrapSchema,
   internalLocationSummarySchema,
@@ -350,10 +349,6 @@ function compareInternalLocationSummaries(left: InternalLocationSummary, right: 
     left.locationName.localeCompare(right.locationName) ||
     left.locationId.localeCompare(right.locationId)
   );
-}
-
-function isDefaultSeedLocation(input: { brandId: string; locationId: string }) {
-  return input.brandId === DEFAULT_BRAND_ID && input.locationId === DEFAULT_LOCATION_ID;
 }
 
 function applyRuntimeFulfillmentMode(appConfig: AppConfig) {
