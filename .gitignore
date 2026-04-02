@@ -10,6 +10,7 @@ coverage
 .expo
 .expo-shared
 .next
+*.tsbuildinfo
 
 # logs
 *.log
