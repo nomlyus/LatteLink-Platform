@@ -33,9 +33,16 @@ const gatewayHeadersSchema = z.object({
   "x-gateway-token": z.string().optional()
 });
 
+const defaultRateLimitWindowMs = 60_000;
+
 function trimToUndefined(value: string | undefined) {
   const next = value?.trim();
   return next && next.length > 0 ? next : undefined;
+}
+
+function toPositiveInteger(value: string | undefined, fallback: number) {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function sendError(
@@ -97,6 +104,22 @@ function authorizeGatewayRequest(request: FastifyRequest, reply: FastifyReply, g
 export async function registerRoutes(app: FastifyInstance) {
   const repository = await createCatalogRepository(app.log);
   const gatewayApiToken = trimToUndefined(process.env.GATEWAY_INTERNAL_API_TOKEN);
+  const rateLimitWindowMs = toPositiveInteger(process.env.CATALOG_RATE_LIMIT_WINDOW_MS, defaultRateLimitWindowMs);
+  const gatewayReadRateLimit = {
+    max: toPositiveInteger(process.env.CATALOG_RATE_LIMIT_GATEWAY_READ_MAX, 120),
+    timeWindow: rateLimitWindowMs
+  };
+  const gatewayWriteRateLimit = {
+    max: toPositiveInteger(process.env.CATALOG_RATE_LIMIT_GATEWAY_WRITE_MAX, 60),
+    timeWindow: rateLimitWindowMs
+  };
+  const requireGatewayAccess = async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!authorizeGatewayRequest(request, reply, gatewayApiToken)) {
+      return reply;
+    }
+
+    return undefined;
+  };
 
   app.addHook("onClose", async () => {
     await repository.close();
@@ -118,164 +141,181 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.get("/v1/store/config", async () => repository.getStoreConfig());
 
-  app.get("/v1/catalog/admin/menu", async (request, reply) => {
-    if (!authorizeGatewayRequest(request, reply, gatewayApiToken)) {
-      return;
+  app.get(
+    "/v1/catalog/admin/menu",
+    {
+      preHandler: [app.rateLimit(gatewayReadRateLimit), requireGatewayAccess]
+    },
+    async () => repository.getAdminMenu()
+  );
+
+  app.put(
+    "/v1/catalog/admin/menu/:itemId",
+    {
+      preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess]
+    },
+    async (request, reply) => {
+      const { itemId } = menuItemParamsSchema.parse(request.params);
+      const input = adminMenuItemUpdateSchema.parse(request.body);
+      const updatedItem = await repository.updateAdminMenuItem({
+        itemId,
+        ...input
+      });
+
+      if (!updatedItem) {
+        return reply.status(404).send(
+          serviceErrorSchema.parse({
+            code: "MENU_ITEM_NOT_FOUND",
+            message: "Menu item not found",
+            requestId: request.id,
+            details: { itemId }
+          })
+        );
+      }
+
+      return updatedItem;
     }
+  );
 
-    return repository.getAdminMenu();
-  });
+  app.post(
+    "/v1/catalog/admin/menu",
+    {
+      preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess]
+    },
+    async (request, reply) => {
+      const input = adminMenuItemCreateSchema.parse(request.body);
+      const createdItem = await repository.createAdminMenuItem(input);
+      if (!createdItem) {
+        return reply.status(404).send(
+          serviceErrorSchema.parse({
+            code: "MENU_CATEGORY_NOT_FOUND",
+            message: "Menu category not found",
+            requestId: request.id,
+            details: { categoryId: input.categoryId }
+          })
+        );
+      }
 
-  app.put("/v1/catalog/admin/menu/:itemId", async (request, reply) => {
-    if (!authorizeGatewayRequest(request, reply, gatewayApiToken)) {
-      return;
+      return createdItem;
     }
+  );
 
-    const { itemId } = menuItemParamsSchema.parse(request.params);
-    const input = adminMenuItemUpdateSchema.parse(request.body);
-    const updatedItem = await repository.updateAdminMenuItem({
-      itemId,
-      ...input
-    });
+  app.patch(
+    "/v1/catalog/admin/menu/:itemId/visibility",
+    {
+      preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess]
+    },
+    async (request, reply) => {
+      const { itemId } = menuItemParamsSchema.parse(request.params);
+      const input = adminMenuItemVisibilityUpdateSchema.parse(request.body);
+      const updatedItem = await repository.updateAdminMenuItemVisibility({
+        itemId,
+        ...input
+      });
 
-    if (!updatedItem) {
-      return reply.status(404).send(
-        serviceErrorSchema.parse({
-          code: "MENU_ITEM_NOT_FOUND",
-          message: "Menu item not found",
-          requestId: request.id,
-          details: { itemId }
-        })
-      );
+      if (!updatedItem) {
+        return reply.status(404).send(
+          serviceErrorSchema.parse({
+            code: "MENU_ITEM_NOT_FOUND",
+            message: "Menu item not found",
+            requestId: request.id,
+            details: { itemId }
+          })
+        );
+      }
+
+      return updatedItem;
     }
+  );
 
-    return updatedItem;
-  });
-
-  app.post("/v1/catalog/admin/menu", async (request, reply) => {
-    if (!authorizeGatewayRequest(request, reply, gatewayApiToken)) {
-      return;
+  app.delete(
+    "/v1/catalog/admin/menu/:itemId",
+    {
+      preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess]
+    },
+    async (request) => {
+      const { itemId } = menuItemParamsSchema.parse(request.params);
+      return adminMutationSuccessSchema.parse(await repository.deleteAdminMenuItem(itemId));
     }
+  );
 
-    const input = adminMenuItemCreateSchema.parse(request.body);
-    const createdItem = await repository.createAdminMenuItem(input);
-    if (!createdItem) {
-      return reply.status(404).send(
-        serviceErrorSchema.parse({
-          code: "MENU_CATEGORY_NOT_FOUND",
-          message: "Menu category not found",
-          requestId: request.id,
-          details: { categoryId: input.categoryId }
-        })
-      );
+  app.get(
+    "/v1/catalog/admin/store/config",
+    {
+      preHandler: [app.rateLimit(gatewayReadRateLimit), requireGatewayAccess]
+    },
+    async () => repository.getAdminStoreConfig()
+  );
+
+  app.put(
+    "/v1/catalog/admin/store/config",
+    {
+      preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess]
+    },
+    async (request) => {
+      const input = adminStoreConfigUpdateSchema.parse(request.body);
+      return repository.updateAdminStoreConfig(input);
     }
+  );
 
-    return createdItem;
-  });
-
-  app.patch("/v1/catalog/admin/menu/:itemId/visibility", async (request, reply) => {
-    if (!authorizeGatewayRequest(request, reply, gatewayApiToken)) {
-      return;
+  app.post(
+    "/v1/catalog/internal/locations/bootstrap",
+    {
+      preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess]
+    },
+    async (request) => {
+      const input = internalLocationBootstrapSchema.parse(request.body);
+      return internalLocationSummarySchema.parse(await repository.bootstrapInternalLocation(input));
     }
+  );
 
-    const { itemId } = menuItemParamsSchema.parse(request.params);
-    const input = adminMenuItemVisibilityUpdateSchema.parse(request.body);
-    const updatedItem = await repository.updateAdminMenuItemVisibility({
-      itemId,
-      ...input
-    });
+  app.get(
+    "/v1/catalog/internal/locations",
+    {
+      preHandler: [app.rateLimit(gatewayReadRateLimit), requireGatewayAccess]
+    },
+    async () =>
+      internalLocationListResponseSchema.parse({
+        locations: await repository.listInternalLocations()
+      })
+  );
 
-    if (!updatedItem) {
-      return reply.status(404).send(
-        serviceErrorSchema.parse({
-          code: "MENU_ITEM_NOT_FOUND",
-          message: "Menu item not found",
-          requestId: request.id,
-          details: { itemId }
-        })
-      );
+  app.get(
+    "/v1/catalog/internal/locations/:locationId",
+    {
+      preHandler: [app.rateLimit(gatewayReadRateLimit), requireGatewayAccess]
+    },
+    async (request, reply) => {
+      const { locationId } = internalLocationParamsSchema.parse(request.params);
+      const summary = await repository.getInternalLocationSummary(locationId);
+      if (!summary) {
+        return reply.status(404).send(
+          serviceErrorSchema.parse({
+            code: "LOCATION_NOT_FOUND",
+            message: "Location not found",
+            requestId: request.id,
+            details: { locationId }
+          })
+        );
+      }
+
+      return internalLocationSummarySchema.parse(summary);
     }
+  );
 
-    return updatedItem;
-  });
+  app.post(
+    "/v1/catalog/internal/ping",
+    {
+      preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess]
+    },
+    async (request) => {
+      const parsed = payloadSchema.parse(request.body ?? {});
 
-  app.delete("/v1/catalog/admin/menu/:itemId", async (request, reply) => {
-    if (!authorizeGatewayRequest(request, reply, gatewayApiToken)) {
-      return;
+      return {
+        service: "catalog",
+        accepted: true,
+        payload: parsed
+      };
     }
-
-    const { itemId } = menuItemParamsSchema.parse(request.params);
-    return adminMutationSuccessSchema.parse(await repository.deleteAdminMenuItem(itemId));
-  });
-
-  app.get("/v1/catalog/admin/store/config", async (request, reply) => {
-    if (!authorizeGatewayRequest(request, reply, gatewayApiToken)) {
-      return;
-    }
-
-    return repository.getAdminStoreConfig();
-  });
-
-  app.put("/v1/catalog/admin/store/config", async (request, reply) => {
-    if (!authorizeGatewayRequest(request, reply, gatewayApiToken)) {
-      return;
-    }
-
-    const input = adminStoreConfigUpdateSchema.parse(request.body);
-    return repository.updateAdminStoreConfig(input);
-  });
-
-  app.post("/v1/catalog/internal/locations/bootstrap", async (request, reply) => {
-    if (!authorizeGatewayRequest(request, reply, gatewayApiToken)) {
-      return;
-    }
-
-    const input = internalLocationBootstrapSchema.parse(request.body);
-    return internalLocationSummarySchema.parse(await repository.bootstrapInternalLocation(input));
-  });
-
-  app.get("/v1/catalog/internal/locations", async (request, reply) => {
-    if (!authorizeGatewayRequest(request, reply, gatewayApiToken)) {
-      return;
-    }
-
-    return internalLocationListResponseSchema.parse({
-      locations: await repository.listInternalLocations()
-    });
-  });
-
-  app.get("/v1/catalog/internal/locations/:locationId", async (request, reply) => {
-    if (!authorizeGatewayRequest(request, reply, gatewayApiToken)) {
-      return;
-    }
-
-    const { locationId } = internalLocationParamsSchema.parse(request.params);
-    const summary = await repository.getInternalLocationSummary(locationId);
-    if (!summary) {
-      return reply.status(404).send(
-        serviceErrorSchema.parse({
-          code: "LOCATION_NOT_FOUND",
-          message: "Location not found",
-          requestId: request.id,
-          details: { locationId }
-        })
-      );
-    }
-
-    return internalLocationSummarySchema.parse(summary);
-  });
-
-  app.post("/v1/catalog/internal/ping", async (request, reply) => {
-    if (!authorizeGatewayRequest(request, reply, gatewayApiToken)) {
-      return;
-    }
-
-    const parsed = payloadSchema.parse(request.body ?? {});
-
-    return {
-      service: "catalog",
-      accepted: true,
-      payload: parsed
-    };
-  });
+  );
 }

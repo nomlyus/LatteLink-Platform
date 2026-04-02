@@ -48,9 +48,9 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --no-frozen-lockfile
-      - run: pnpm --filter @gazelle/operator-web typecheck
-      - run: pnpm --filter @gazelle/operator-web lint
-      - run: pnpm --filter @gazelle/operator-web build
+      - run: pnpm exec turbo run typecheck --filter=@gazelle/operator-web
+      - run: pnpm exec turbo run lint --filter=@gazelle/operator-web
+      - run: pnpm exec turbo run build --filter=@gazelle/operator-web
 
   deploy-preview:
     if: github.event_name == 'pull_request'

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   adminMenuItemSchema,
   adminMenuResponseSchema,
@@ -271,6 +271,61 @@ describe("catalog service", () => {
     });
 
     await app.close();
+  });
+
+  it("rate limits gateway-protected catalog routes when configured threshold is reached", async () => {
+    process.env.GATEWAY_INTERNAL_API_TOKEN = "catalog-gateway-token";
+    vi.stubEnv("CATALOG_RATE_LIMIT_GATEWAY_READ_MAX", "1");
+    vi.stubEnv("CATALOG_RATE_LIMIT_GATEWAY_WRITE_MAX", "1");
+    vi.stubEnv("CATALOG_RATE_LIMIT_WINDOW_MS", "60000");
+    const app = await buildApp();
+
+    try {
+      const firstRead = await app.inject({
+        method: "GET",
+        url: "/v1/catalog/admin/menu",
+        headers: {
+          "x-gateway-token": "catalog-gateway-token"
+        }
+      });
+      expect(firstRead.statusCode).toBe(200);
+
+      const secondRead = await app.inject({
+        method: "GET",
+        url: "/v1/catalog/admin/menu",
+        headers: {
+          "x-gateway-token": "catalog-gateway-token"
+        }
+      });
+      expect(secondRead.statusCode).toBe(429);
+
+      const firstWrite = await app.inject({
+        method: "POST",
+        url: "/v1/catalog/internal/ping",
+        headers: {
+          "x-gateway-token": "catalog-gateway-token"
+        },
+        payload: {
+          id: "123e4567-e89b-12d3-a456-426614174998"
+        }
+      });
+      expect(firstWrite.statusCode).toBe(200);
+
+      const secondWrite = await app.inject({
+        method: "POST",
+        url: "/v1/catalog/internal/ping",
+        headers: {
+          "x-gateway-token": "catalog-gateway-token"
+        },
+        payload: {
+          id: "123e4567-e89b-12d3-a456-426614174998"
+        }
+      });
+      expect(secondWrite.statusCode).toBe(429);
+    } finally {
+      vi.unstubAllEnvs();
+      await app.close();
+    }
   });
 
   it("propagates x-request-id and exposes metrics counters", async () => {

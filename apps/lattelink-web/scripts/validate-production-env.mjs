@@ -65,7 +65,7 @@ const hasWebhook = webhookUrl.length > 0;
 const hasResend = resendKey.length > 0 || contactTo.length > 0 || contactFrom.length > 0;
 
 if (hasWebhook && !isValidHttpsUrl(webhookUrl)) {
-  errors.push(`LATTELINK_CONTACT_WEBHOOK_URL must be an https URL. Received: ${webhookUrl}`);
+  errors.push("LATTELINK_CONTACT_WEBHOOK_URL must be an https URL.");
 }
 
 if (!hasWebhook && webhookBearer) {
@@ -81,12 +81,12 @@ if (hasResend) {
   if (!contactTo) {
     errors.push("LATTELINK_CONTACT_EMAIL_TO is required when using Resend delivery.");
   } else if (!isValidEmail(contactTo)) {
-    errors.push(`LATTELINK_CONTACT_EMAIL_TO must be a valid email address. Received: ${contactTo}`);
+    errors.push("LATTELINK_CONTACT_EMAIL_TO must be a valid email address.");
   }
   if (!contactFrom) {
     errors.push("LATTELINK_CONTACT_EMAIL_FROM is required when using Resend delivery.");
   } else if (!isValidEmail(contactFrom)) {
-    errors.push(`LATTELINK_CONTACT_EMAIL_FROM must be a valid email address. Received: ${contactFrom}`);
+    errors.push("LATTELINK_CONTACT_EMAIL_FROM must be a valid email address.");
   }
 }
 
@@ -104,9 +104,7 @@ if (!hasWebhook && !hasResend) {
 
 if (gaMeasurementId) {
   if (!/^G-[A-Z0-9]+$/i.test(gaMeasurementId)) {
-    errors.push(
-      `NEXT_PUBLIC_GA_MEASUREMENT_ID should look like a GA4 measurement ID (for example G-ABC123XYZ). Received: ${gaMeasurementId}`
-    );
+    errors.push("NEXT_PUBLIC_GA_MEASUREMENT_ID should look like a GA4 measurement ID (for example G-ABC123XYZ).");
   }
 } else if (target === "production") {
   warnings.push("NEXT_PUBLIC_GA_MEASUREMENT_ID is not set; production traffic and CTA events will not be measured.");
