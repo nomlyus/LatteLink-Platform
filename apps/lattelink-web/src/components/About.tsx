@@ -7,10 +7,10 @@ import { contactEmail, demoHref } from "@/lib/site";
 import { LeadCapture } from "./LeadCapture";
 
 const stats = [
-  { value: "1", suffix: "st", label: "Pilot launch in progress" },
-  { value: "100", suffix: "%", label: "Coffee-shop focus" },
-  { value: "2", suffix: "wk", label: "Targeted launch window" },
+  { value: "Pilot", suffix: "", label: "Current stage" },
+  { value: "Coffee", suffix: "-only", label: "Product focus" },
   { value: "0", suffix: "%", label: "LatteLink order markup" },
+  { value: "Founder", suffix: "-led", label: "Build approach" },
 ];
 
 const fitPoints = [

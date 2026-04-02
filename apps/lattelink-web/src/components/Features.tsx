@@ -24,7 +24,7 @@ const features = [
   {
     icon: "📊",
     title: "Operator dashboard",
-    desc: "Manage your menu, track orders, and see customer analytics. No technical knowledge required.",
+    desc: "Manage your menu, track live orders, and run the day-to-day operator workflow without stitching multiple tools together.",
   },
   {
     icon: "🔔",
@@ -34,7 +34,7 @@ const features = [
   {
     icon: "💳",
     title: "Integrated payments",
-    desc: "Stripe-powered checkout built in. Accept cards, Apple Pay, and digital wallets with zero extra setup.",
+    desc: "Card and wallet checkout can be configured without sending customers through a separate marketplace-style payment flow.",
   },
 ];
 
@@ -44,8 +44,8 @@ const proofItems = [
     desc: "LatteLink is built specifically for independent coffee shops, not every restaurant category at once.",
   },
   {
-    title: "Pilot in motion",
-    desc: "The first launch is being shaped with a real café partner instead of generic placeholder use cases.",
+    title: "Pilot reality",
+    desc: "The first release is being shaped around a real store workflow and a narrow launch plan instead of placeholder enterprise claims.",
   },
   {
     title: "Operator-first",
@@ -352,9 +352,9 @@ export function Logos() {
           </AnimateIn>
           <AnimateIn delay={0.05}>
             <SectionP>
-              LatteLink is early, but the thesis is concrete: vertical focus,
-              live pilot work, operator-first tooling, and pricing that does not
-              depend on skimming each order.
+              LatteLink is early, but the footing is concrete: coffee-only
+              focus, pilot-stage rollout discipline, operator-first tooling, and
+              pricing that does not depend on skimming each order.
             </SectionP>
           </AnimateIn>
         </div>

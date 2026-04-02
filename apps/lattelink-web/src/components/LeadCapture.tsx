@@ -109,7 +109,7 @@ export function LeadCapture() {
             className="lead-field__input"
             type="text"
             name="shopName"
-            placeholder="Rawaq Coffee"
+            placeholder="Northside Coffee"
             maxLength={100}
             required
           />

@@ -9,18 +9,18 @@ const ease = [0.16, 1, 0.3, 1] as const;
 
 const proofPoints = [
   {
-    label: "Pilot partner",
-    value: "Rawaq",
-    note: "First launch in motion with a real coffee-shop workflow.",
+    label: "Current stage",
+    value: "Pilot-ready",
+    note: "Built around a real coffee-shop workflow and being prepared for the first live launch.",
   },
   {
-    label: "Founder insight",
-    value: "Coffee-shop operator",
-    note: "Built by someone who has worked the floor and felt the gap firsthand.",
+    label: "Product focus",
+    value: "Coffee only",
+    note: "Designed specifically for independent cafés and repeat-ordering, not every restaurant category at once.",
   },
   {
     label: "Business model",
-    value: "Flat monthly pricing",
+    value: "Flat monthly",
     note: "No LatteLink platform cut on every order as volume grows.",
   },
 ];
