@@ -420,8 +420,8 @@ Make the client dashboard deployable independently.
 
 Scope:
 
-- free-host deployment workflow
-- static build deployment
+- Vercel deployment workflow
+- static build deployment on Vercel
 - domain/TLS plan
 - smoke-check path
 
@@ -433,7 +433,7 @@ Key deliverables:
 
 Dependencies:
 
-- public host
+- Vercel project
 - public API or tunnel target
 
 Acceptance criteria:

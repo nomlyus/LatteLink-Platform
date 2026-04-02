@@ -13,7 +13,7 @@ Run the full service stack on one low-cost host before AWS cutover.
 - Services: gateway, identity, catalog, orders, payments, loyalty, notifications
 - Dependencies: PostgreSQL, Valkey
 - Edge: Caddy with TLS for `api.<your-domain>`
-- Optional static client dashboard on the same host
+- Client dashboard deployed separately on Vercel
 
 ## Prerequisites
 
@@ -29,7 +29,6 @@ Run the full service stack on one low-cost host before AWS cutover.
 - Caddy config: `infra/free/Caddyfile`
 - Runtime env template: `infra/free/.env.example`
 - Workflow: `.github/workflows/deploy-free.yml`
-- Client dashboard workflow: `.github/workflows/client-dashboard-free.yml`
 
 ## Required GitHub Variables
 
@@ -45,7 +44,7 @@ Recommended:
 Optional:
 
 - `FREE_CORS_ALLOWED_ORIGINS`
-- `FREE_CLIENT_DASHBOARD_DOMAIN`
+- `FREE_CLIENT_DASHBOARD_DOMAIN` if you want the workflow to derive the dashboard CORS origin automatically
 - `FREE_GOOGLE_OAUTH_ALLOWED_REDIRECT_URIS`
 
 ## Required GitHub Secrets
@@ -65,7 +64,6 @@ Optional:
 
 - `GHCR_USERNAME`
 - `GHCR_TOKEN`
-- `FREE_CLIENT_DASHBOARD_ENV` if deploying the client dashboard before the backend
 - `FREE_GOOGLE_OAUTH_CLIENT_ID`
 - `FREE_GOOGLE_OAUTH_CLIENT_SECRET`
 - `FREE_GOOGLE_OAUTH_STATE_SECRET`
@@ -76,7 +74,6 @@ The workflow writes the server-side `.env` file from GitHub vars and secrets. Th
 
 - edge and routing
   - `API_DOMAIN`
-  - `CLIENT_DASHBOARD_DOMAIN` if already configured or provided
   - `LETSENCRYPT_EMAIL`
 - image/source selection
   - `IMAGE_REGISTRY_PREFIX`
@@ -100,7 +97,7 @@ The workflow writes the server-side `.env` file from GitHub vars and secrets. Th
   - `GOOGLE_OAUTH_STATE_SECRET`
   - `GOOGLE_OAUTH_ALLOWED_REDIRECT_URIS`
 
-If `FREE_CORS_ALLOWED_ORIGINS` is not set, the workflow defaults CORS to the deployed client dashboard domain when available.
+If `FREE_CORS_ALLOWED_ORIGINS` is not set, the workflow defaults CORS to `FREE_CLIENT_DASHBOARD_DOMAIN` when available.
 
 ## Deploy
 
@@ -119,7 +116,7 @@ docker compose up -d --remove-orphans
 - `https://api.<your-domain>/ready`
 - `https://api.<your-domain>/metrics`
 - Service docs route: `https://api.<your-domain>/docs`
-- If the client dashboard lane is live, confirm API requests from `https://<FREE_CLIENT_DASHBOARD_DOMAIN>` pass CORS.
+- If the client dashboard lane is live, confirm API requests from its Vercel domain pass CORS.
 
 ## Backup and Restore Drill
 

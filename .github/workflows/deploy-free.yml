@@ -109,17 +109,10 @@ jobs:
           set -euo pipefail
 
           cd "${DEPLOY_PATH}"
-
-          EXISTING_CLIENT_DASHBOARD_DOMAIN=""
-          if [ -f .env ]; then
-            EXISTING_CLIENT_DASHBOARD_DOMAIN="$(grep '^CLIENT_DASHBOARD_DOMAIN=' .env | tail -n 1 | cut -d= -f2- || true)"
-          fi
-
-          CLIENT_DASHBOARD_DOMAIN_VALUE="${FREE_CLIENT_DASHBOARD_DOMAIN:-${EXISTING_CLIENT_DASHBOARD_DOMAIN}}"
           if [ -n "${FREE_CORS_ALLOWED_ORIGINS:-}" ]; then
             CORS_ALLOWED_ORIGINS_VALUE="${FREE_CORS_ALLOWED_ORIGINS}"
-          elif [ -n "${CLIENT_DASHBOARD_DOMAIN_VALUE}" ]; then
-            CORS_ALLOWED_ORIGINS_VALUE="https://${CLIENT_DASHBOARD_DOMAIN_VALUE}"
+          elif [ -n "${FREE_CLIENT_DASHBOARD_DOMAIN:-}" ]; then
+            CORS_ALLOWED_ORIGINS_VALUE="https://${FREE_CLIENT_DASHBOARD_DOMAIN}"
           else
             CORS_ALLOWED_ORIGINS_VALUE="https://${FREE_API_DOMAIN}"
           fi
@@ -128,7 +121,6 @@ jobs:
 
           cat > .env <<ENVVARS
           API_DOMAIN=${FREE_API_DOMAIN}
-          CLIENT_DASHBOARD_DOMAIN=${CLIENT_DASHBOARD_DOMAIN_VALUE}
           LETSENCRYPT_EMAIL=${LETSENCRYPT_EMAIL}
           IMAGE_REGISTRY_PREFIX=${FREE_IMAGE_REGISTRY_PREFIX}
           IMAGE_TAG=${FREE_IMAGE_TAG:-latest}

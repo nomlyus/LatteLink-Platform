@@ -44,6 +44,7 @@ Last updated: `2026-03-11`
 - [x] Add free deployment workflow scaffold (`deploy-free`).
 - [x] Add DigitalOcean/Compose deployment bundle under `infra/free`.
 - [x] Add free-first deployment runbook and required secrets/vars checklist.
+- [x] Split the client dashboard into its own Vercel deployment lane.
 - [ ] Provision droplet/domain/secrets and execute first successful remote deploy.
 
 ## Phase 6: AWS Cutover

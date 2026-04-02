@@ -26,7 +26,7 @@ Key current gaps:
 Primary inputs:
 
 - [operator-dashboard.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/operator-dashboard.md)
-- [client-dashboard-free-deployment.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/client-dashboard-free-deployment.md)
+- [client-dashboard-vercel-deployment.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/client-dashboard-vercel-deployment.md)
 - [client-dashboard-google-sso.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/client-dashboard-google-sso.md)
 
 ## V1
@@ -51,7 +51,7 @@ Ship a single-store client dashboard that a pilot store can actually use.
 - backend-menu create/edit/remove/visibility flows
 - store config editing
 - live order board and status updates
-- cheap/free-first deployment lane
+- Vercel deployment lane
 
 ### Engineering Changes
 
