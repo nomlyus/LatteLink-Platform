@@ -2433,7 +2433,6 @@ export async function registerRoutes(app: FastifyInstance) {
       merchantId
     });
   };
-
   const readLatestCloverWebhookVerificationCode = () => {
     if (!latestCloverWebhookVerificationCode) {
       return undefined;
@@ -2477,7 +2476,6 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get("/v1/payments/clover/oauth/status", async () => buildCloverOauthStatus());
 
   app.get("/v1/payments/clover/card-entry-config", async () => buildCloverCardEntryConfig());
-
   app.get("/v1/payments/clover/webhooks/verification-code", async (request, reply) => {
     const latestVerificationCode = readLatestCloverWebhookVerificationCode();
 

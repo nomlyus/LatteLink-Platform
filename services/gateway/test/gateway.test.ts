@@ -1065,7 +1065,6 @@ describe("gateway", () => {
           { status: 200, headers: { "content-type": "application/json" } }
         );
       }
-
       if (url.endsWith("/v1/payments/clover/webhooks/verification-code") && method === "GET") {
         return new Response(
           JSON.stringify({
@@ -2223,7 +2222,6 @@ describe("gateway", () => {
 
     await app.close();
   });
-
   it("forwards Clover webhook verification-code reads through the gateway", async () => {
     const app = await buildApp();
     const response = await app.inject({
