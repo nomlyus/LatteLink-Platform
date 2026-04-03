@@ -709,7 +709,7 @@ Status:
 - `owner`: Codex
 - `status`: repo-complete, code-health validated
 - `done`: the admin-console shell is scaffolded and currently passes `lint`, `typecheck`, and `build`
-- `blocked`: internal hosting, auth rollout, and real platform-admin browser QA are still external steps
+- `blocked`: live internal hosting, auth rollout, and platform-admin browser QA are deferred to `AC-V1-04`
 
 Goal:
 Start the internal control plane instead of leaving it theoretical.
@@ -734,6 +734,41 @@ Dependencies:
 Acceptance criteria:
 
 - the LatteLink team can log into an internal console and see the first control-plane surface
+
+### AC-V1-04 Live Internal Deployment, Auth Rollout, and Validation
+
+Status:
+
+- `owner`: Codex
+- `status`: pending
+- `done`: live rollout is intentionally separated from the repo-complete shell and tracked as its own external follow-through ticket
+- `blocked`: requires Vercel hosting, internal auth env setup, backend `INTERNAL_ADMIN_API_TOKEN` rollout, and real platform-admin browser QA
+
+Goal:
+Turn the admin console from a validated shell into a usable live internal tool.
+
+Scope:
+
+- Vercel deployment for `apps/admin-console`
+- internal admin auth environment configuration
+- live internal API token rollout on the backend
+- real browser validation for sign-in and first provisioning flow
+
+Key deliverables:
+
+- live admin-console domain
+- configured internal admin shared-password/session auth
+- working connectivity to live `/v1/internal/*` backend APIs
+- validated internal onboarding path for client/location/owner setup
+
+Dependencies:
+
+- `AC-V1-02`
+- `AC-V1-03`
+
+Acceptance criteria:
+
+- the LatteLink team can sign into the live admin console and complete the first real provisioning flow without raw DB or shell manipulation
 
 ## LatteLink Web Tickets
 
