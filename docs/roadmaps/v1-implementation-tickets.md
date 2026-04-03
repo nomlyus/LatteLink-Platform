@@ -1012,3 +1012,201 @@ Acceptance criteria:
 - a provisioned dashboard user can authenticate on the live domain
 - live payments work with the intended production provider configuration
 - a signed mobile build can complete the pilot flow against the deployed backend
+
+### XS-V1-04 Development Flow and Change Control
+
+Status:
+
+- `owner`: Codex
+- `status`: validated locally, pending merge to main
+- `done`: defined the exact `main`/`dev` branch flow, documented the ticket-before-change rule, documented per-ticket commit and push behavior, documented per-section PR behavior, and created the working `dev` branch from current `main`
+- `blocked`: no external blocker
+
+Goal:
+Define one exact operating flow for all remaining V1 work so repo changes are ticketed, traceable, and merged in a repeatable way.
+
+Scope:
+
+- define `main` vs `dev` responsibilities
+- require a ticket before any repo change
+- require per-ticket commits on `dev`
+- require push to `origin/dev` after each ticket commit
+- define section-based PR flow from `dev` to `main`
+- define required commit-body and PR-body content
+
+Key deliverables:
+
+- one documented development-flow runbook
+- one active `dev` branch on `origin`
+- one required commit and PR format tied to ticket IDs
+
+Dependencies:
+
+- none
+
+Acceptance criteria:
+
+- no repo change proceeds without a ticket in this document
+- each commit includes `Tickets` and `Change log`
+- each PR from `dev` to `main` lists all included tickets
+- `dev` exists locally and on `origin` from current `main`
+- ticket sections are the default PR grouping boundary
+
+### XS-V1-05 Versioning and Release Identification
+
+Status:
+
+- `owner`: Codex
+- `status`: superseded by `XS-V1-06` before merge to main
+- `done`: captured an initial repo versioning draft around the existing `Changesets` tooling and helper scripts
+- `blocked`: the final founder-selected versioning policy differs from that initial draft and must replace it before merge to main
+
+Goal:
+Define one exact versioning flow for the remaining V1 work so release identity, semantic version bumps, and PR version impact are explicit and repeatable.
+
+Scope:
+
+- standardize on semantic versioning for repo releases
+- use the existing `Changesets` tooling already configured in the repo
+- define when a ticket requires a changeset versus `version impact: none`
+- define the section-close versioning step before opening a `dev` to `main` PR
+- define PR requirements for target version and version impact
+- reserve `1.0.0` for the first real live V1 deployment
+
+Key deliverables:
+
+- one documented versioning runbook
+- development-flow rules updated to reference the versioning flow
+- root package scripts for `Changesets` create, status, and version commands
+
+Dependencies:
+
+- `XS-V1-04`
+
+Acceptance criteria:
+
+- the repo has one documented versioning source of truth and flow
+- version-affecting tickets have an explicit versioning path
+- section PRs from `dev` to `main` state target version and version impact
+- `1.0.0` is explicitly reserved for the first live V1 deployment
+- versioning uses the repo's existing `Changesets` setup instead of an ad hoc process
+
+### XS-V1-06 Final Versioning Flow Alignment
+
+Status:
+
+- `owner`: Codex
+- `status`: validated locally, pending merge to main
+- `done`: aligned the repo versioning flow to the final agreed policy, documented milestone-based major versions, documented capability-based minor and fix-based patch versions, defined `main` Git tags as the official source of truth, defined section-level version cuts, documented the post-launch hotfix exception, and removed the stale `Changesets`-specific instructions added by the draft policy
+- `blocked`: no external blocker
+
+Goal:
+Replace the provisional versioning draft with the exact versioning policy that will govern V1 through V5 delivery.
+
+Scope:
+
+- keep one repo-wide semantic version
+- define `major` as completion of a full roadmap milestone version such as `V1`, `V2`, or `V3`
+- define `minor` as a meaningful shipped capability
+- define `patch` as fixes, polish, hardening, or non-capability improvements
+- keep docs/process/test/internal-only work at `version impact: none`
+- make the section `dev` to `main` PR the point where the bump is chosen
+- make `main` Git tags the official released-version source of truth
+- require each release PR to state target version, bump type, why the bump is justified, affected surfaces, and included ticket IDs
+- require mobile app version alignment with the repo version
+- define the post-launch `hotfix/*` flow from `main` back into `dev`
+
+Key deliverables:
+
+- one revised versioning runbook that matches the final policy
+- one revised development-flow runbook that matches the final policy
+- removal of the stale `Changesets` helper-script workflow introduced by the draft versioning policy
+
+Dependencies:
+
+- `XS-V1-04`
+- `XS-V1-05`
+
+Acceptance criteria:
+
+- the repo uses one semantic version across the whole product
+- `major` versions map to completed roadmap milestone versions
+- actual version bumps are selected at the section PR level, not per ticket
+- official released versions exist only as Git tags on `main`
+- release PRs include target version, bump type, why the bump is justified, affected surfaces, and included ticket IDs
+
+### XS-V1-07 GitHub Versioning Enforcement and Release Automation
+
+Status:
+
+- `owner`: Codex
+- `status`: validated locally, pending merge to main
+- `done`: updated the GitHub pull request template to require release metadata, added a GitHub workflow that validates versioning fields on PRs into `main`, replaced the stale `Changesets`-based release workflow with a semver tag-and-release workflow on `main`, removed the stale `Changesets` config and dependency footprint, and aligned versioning docs with the GitHub implementation
+- `blocked`: no external blocker
+
+Goal:
+Implement the repo's final versioning flow on GitHub so PRs, release tagging, and release creation all follow the same policy already documented in the repo.
+
+Scope:
+
+- enforce versioning metadata in the GitHub PR template
+- validate versioning metadata on pull requests to `main`
+- replace the old `Changesets` release automation with a GitHub release workflow that cuts semver tags from `main`
+- remove stale `Changesets` config files and dependency wiring that no longer match the chosen release model
+- document the GitHub-side release path in the runbooks
+
+Key deliverables:
+
+- one GitHub PR template that includes required versioning fields
+- one PR validation workflow for versioning metadata on `main` pull requests
+- one release workflow that creates official semver tags and GitHub releases from `main`
+- removal of stale `Changesets` repo config and dependency wiring
+
+Dependencies:
+
+- `XS-V1-04`
+- `XS-V1-06`
+
+Acceptance criteria:
+
+- pull requests to `main` fail if required versioning metadata is missing or invalid
+- the GitHub release workflow only creates valid semantic-version tags from `main`
+- GitHub releases are created from the same semver tags that define official released versions
+- the repo no longer exposes a stale `Changesets` release path in GitHub workflows or package dependencies
+
+### XS-V1-08 Squash-Merge Dev Reset Rule
+
+Status:
+
+- `owner`: Codex
+- `status`: validated locally, pending merge to main
+- `done`: documented that `main` is squash-merge-only, documented that `dev` is disposable after each merged `dev` to `main` PR, added the exact post-merge reset sequence for recreating `dev` from current `main`, and clarified the required force-push behavior for refreshing `origin/dev` after a squash merge
+- `blocked`: no external blocker
+
+Goal:
+Make the branch-reset behavior explicit so the `dev` branch does not drift after squash-only merges to `main`.
+
+Scope:
+
+- document the squash-only merge assumption for `main`
+- document that `dev` is disposable after each merged section PR
+- define the exact local reset sequence from updated `main`
+- define the required remote `origin/dev` refresh after the reset
+- clarify that the old pre-merge `dev` history is not preserved as the next working branch tip
+
+Key deliverables:
+
+- one updated development-flow runbook with squash-only post-merge reset instructions
+- one explicit rule that `dev` is recreated or reset from merged `main` after every squash merge
+
+Dependencies:
+
+- `XS-V1-04`
+
+Acceptance criteria:
+
+- the docs state that `main` uses squash-only merges
+- the docs state that `dev` is disposable after each merged `dev` to `main` PR
+- the docs provide exact commands or equivalent steps for resetting local `dev` from updated `main`
+- the docs require refreshing `origin/dev` after the post-merge reset
+- post-launch hotfix flow is documented as `main` -> `hotfix/*` -> `main` -> `dev`

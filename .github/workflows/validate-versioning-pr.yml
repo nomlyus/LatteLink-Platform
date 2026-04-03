@@ -1,0 +1,133 @@
+name: validate-versioning-pr
+
+on:
+  pull_request_target:
+    branches:
+      - main
+    types:
+      - opened
+      - edited
+      - reopened
+      - synchronize
+      - ready_for_review
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate required versioning metadata
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.pull_request.body ?? "";
+            const errors = [];
+
+            function escapeRegExp(value) {
+              return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            }
+
+            function extractSection(title) {
+              const lines = body.split(/\r?\n/);
+              let collecting = false;
+              const output = [];
+
+              for (const line of lines) {
+                if (/^##\s+/.test(line)) {
+                  if (collecting) {
+                    break;
+                  }
+
+                  collecting = line.trim().toLowerCase() === `## ${title.toLowerCase()}`;
+                  continue;
+                }
+
+                if (collecting) {
+                  output.push(line);
+                }
+              }
+
+              return collecting ? output.join("\n").trim() : null;
+            }
+
+            function readKey(section, key) {
+              if (!section) {
+                return null;
+              }
+
+              const pattern = new RegExp(`^-\\s+${escapeRegExp(key)}:\\s*(.+)$`, "mi");
+              const match = section.match(pattern);
+
+              if (!match) {
+                return null;
+              }
+
+              return match[1].trim().replace(/^`|`$/g, "").trim();
+            }
+
+            const section = extractSection("Section");
+            const tickets = extractSection("Tickets");
+            const version = extractSection("Version");
+
+            if (!section) {
+              errors.push("Missing `## Section` section.");
+            } else {
+              const hasSectionValue = section
+                .split(/\r?\n/)
+                .some((line) => /^\s*-\s+\S+/.test(line) && !/REPLACE_ME/i.test(line));
+
+              if (!hasSectionValue) {
+                errors.push("`## Section` must include a real section bullet.");
+              }
+            }
+
+            if (!tickets) {
+              errors.push("Missing `## Tickets` section.");
+            } else {
+              const hasTicket = tickets
+                .split(/\r?\n/)
+                .some(
+                  (line) =>
+                    /^\s*-\s+[A-Z]{2,4}-V\d+-\d+\b/.test(line) && !/REPLACE_ME/i.test(line),
+                );
+
+              if (!hasTicket) {
+                errors.push("`## Tickets` must include at least one real ticket ID such as `XS-V1-07`.");
+              }
+            }
+
+            if (!version) {
+              errors.push("Missing `## Version` section.");
+            }
+
+            const targetVersion = readKey(version, "Target version");
+            const bumpType = readKey(version, "Bump type");
+            const why = readKey(version, "Why this bump");
+            const affectedSurfaces = readKey(version, "Affected surfaces");
+
+            if (!targetVersion || /REPLACE_ME/i.test(targetVersion)) {
+              errors.push("`Target version` is required.");
+            } else if (!/^\d+\.\d+\.\d+$/.test(targetVersion)) {
+              errors.push("`Target version` must match MAJOR.MINOR.PATCH without a leading `v`.");
+            }
+
+            if (!bumpType || /REPLACE_ME/i.test(bumpType)) {
+              errors.push("`Bump type` is required.");
+            } else if (!["major", "minor", "patch", "none"].includes(bumpType.toLowerCase())) {
+              errors.push("`Bump type` must be one of: major, minor, patch, none.");
+            }
+
+            if (!why || /REPLACE_ME/i.test(why)) {
+              errors.push("`Why this bump` is required.");
+            }
+
+            if (!affectedSurfaces || /REPLACE_ME/i.test(affectedSurfaces)) {
+              errors.push("`Affected surfaces` is required.");
+            }
+
+            if (errors.length > 0) {
+              core.setFailed(`Versioning policy check failed:\n- ${errors.join("\n- ")}`);
+            }
