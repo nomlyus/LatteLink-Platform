@@ -197,6 +197,16 @@ describe("orders service layer", () => {
           });
         }
 
+        if (simulationSignal.includes("provider-error")) {
+          return paymentsResponse(
+            {
+              code: "CLOVER_CHARGE_ERROR",
+              message: "Clover rejected the source token before confirmation"
+            },
+            502
+          );
+        }
+
         return paymentsResponse({
           paymentId: "123e4567-e89b-12d3-a456-426614174100",
           provider: "CLOVER",
@@ -481,6 +491,44 @@ describe("orders service layer", () => {
       (typeof input === "string" ? input : input.toString()).endsWith("/v1/payments/charges")
     );
     expect(chargeCalls).toHaveLength(1);
+  });
+
+  it("processPayment cancels the order after a definitive upstream payment error", async () => {
+    const userId = "123e4567-e89b-12d3-a456-426614174514";
+    const { deps } = await createTestDeps(repositories);
+    const { order } = await createQuotedOrder(deps, { userId });
+
+    const result = await processPayment({
+      orderId: order.id,
+      input: {
+        applePayToken: "apple-pay-provider-error-token",
+        idempotencyKey: "service-pay-provider-error"
+      },
+      requestId: "service-pay-provider-error",
+      requestUserContext: { userId },
+      deps
+    });
+
+    expect("error" in result).toBe(true);
+    if (!("error" in result)) {
+      throw new Error("Expected upstream payment error");
+    }
+
+    expect(result.error).toMatchObject({
+      statusCode: 502,
+      code: "PAYMENTS_ERROR",
+      details: expect.objectContaining({
+        orderId: order.id,
+        orderStatus: "CANCELED"
+      })
+    });
+
+    const persistedOrder = await deps.repository.getOrder(order.id);
+    expect(persistedOrder?.status).toBe("CANCELED");
+    expect(persistedOrder?.timeline.at(-1)).toMatchObject({
+      status: "CANCELED",
+      source: "system"
+    });
   });
 
   it("cancelOrder cancels an unpaid order without issuing a refund", async () => {

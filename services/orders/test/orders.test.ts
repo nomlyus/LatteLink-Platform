@@ -141,6 +141,16 @@ describe("orders service", () => {
           });
         }
 
+        if (simulationSignal.includes("provider-error")) {
+          return paymentsResponse(
+            {
+              code: "CLOVER_CHARGE_ERROR",
+              message: "Clover rejected the source token before confirmation"
+            },
+            502
+          );
+        }
+
         return paymentsResponse({
           paymentId: "123e4567-e89b-12d3-a456-426614174100",
           provider: "CLOVER",
@@ -1164,6 +1174,34 @@ describe("orders service", () => {
     });
     expect(declinedOrderRead.statusCode).toBe(200);
     expect(orderSchema.parse(declinedOrderRead.json()).status).toBe("CANCELED");
+
+    const { order: upstreamErrorOrder } = await createQuotedOrder(app, {
+      userId: "123e4567-e89b-12d3-a456-426614174121"
+    });
+
+    const upstreamError = await app.inject({
+      method: "POST",
+      url: `/v1/orders/${upstreamErrorOrder.id}/pay`,
+      payload: {
+        applePayToken: "apple-pay-provider-error-token",
+        idempotencyKey: "pay-provider-error"
+      }
+    });
+    expect(upstreamError.statusCode).toBe(502);
+    expect(upstreamError.json()).toMatchObject({
+      code: "PAYMENTS_ERROR",
+      details: expect.objectContaining({
+        orderId: upstreamErrorOrder.id,
+        orderStatus: "CANCELED"
+      })
+    });
+
+    const upstreamErrorOrderRead = await app.inject({
+      method: "GET",
+      url: `/v1/orders/${upstreamErrorOrder.id}`
+    });
+    expect(upstreamErrorOrderRead.statusCode).toBe(200);
+    expect(orderSchema.parse(upstreamErrorOrderRead.json()).status).toBe("CANCELED");
 
     const { order: timedOutOrder } = await createQuotedOrder(app, {
       userId: "123e4567-e89b-12d3-a456-426614174120"
