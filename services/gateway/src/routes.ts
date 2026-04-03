@@ -1066,6 +1066,21 @@ export async function registerRoutes(app: FastifyInstance) {
     })
   );
 
+  app.get(
+    "/v1/payments/clover/webhooks/verification-code",
+    { preHandler: app.rateLimit(paymentsReadRateLimit) },
+    async (request, reply) =>
+      proxyOpaqueUpstream({
+        request,
+        reply,
+        baseUrl: paymentsBaseUrl,
+        serviceLabel: "Payments",
+        method: "GET",
+        path: "/v1/payments/clover/webhooks/verification-code",
+        forwardUserIdHeader: false
+      })
+  );
+
   app.get("/v1/payments/clover/oauth/connect", { preHandler: app.rateLimit(paymentsReadRateLimit) }, async (request, reply) =>
     proxyOpaqueUpstream({
       request,

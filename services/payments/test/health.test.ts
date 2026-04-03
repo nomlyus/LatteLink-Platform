@@ -1169,6 +1169,41 @@ describe("payments service", () => {
     await app.close();
   });
 
+  it("exposes the latest Clover webhook verification code through a short-lived status endpoint", async () => {
+    vi.stubEnv("CLOVER_WEBHOOK_SHARED_SECRET", "");
+    const app = await buildApp();
+
+    const missingResponse = await app.inject({
+      method: "GET",
+      url: "/v1/payments/clover/webhooks/verification-code"
+    });
+    expect(missingResponse.statusCode).toBe(404);
+    expect(missingResponse.json()).toMatchObject({
+      code: "CLOVER_WEBHOOK_VERIFICATION_CODE_NOT_FOUND"
+    });
+
+    const webhookResponse = await app.inject({
+      method: "POST",
+      url: "/v1/payments/webhooks/clover",
+      payload: {
+        verificationCode: "verify-me-123"
+      }
+    });
+    expect(webhookResponse.statusCode).toBe(200);
+
+    const latestResponse = await app.inject({
+      method: "GET",
+      url: "/v1/payments/clover/webhooks/verification-code"
+    });
+    expect(latestResponse.statusCode).toBe(200);
+    expect(latestResponse.json()).toMatchObject({
+      available: true,
+      verificationCode: "verify-me-123"
+    });
+
+    await app.close();
+  });
+
   it("accepts Clover webhook deliveries authenticated via x-clover-auth", async () => {
     const fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal("fetch", fetchMock);

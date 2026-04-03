@@ -470,6 +470,77 @@ Acceptance criteria:
 - non-production local development can still rely on localhost defaults
 - regression tests cover each required upstream base URL
 
+### BE-V1-12 Clover Webhook Verification Code Operator Logging
+
+Status:
+
+- `owner`: Codex
+- `status`: repo-complete, locally validated
+- `done`: updated `payments` to log Clover webhook verification codes clearly for operators during onboarding, documented the log-based retrieval path in the Clover integration runbook, and reran the targeted payments test suite
+- `blocked`: live verification still requires redeploying the updated backend and retrying the Clover webhook verification flow
+
+Goal:
+Make Clover webhook URL verification operable during onboarding by logging the one-time verification code clearly in the payments service logs.
+
+Scope:
+
+- log the received Clover webhook verification code clearly when Clover sends the verification payload
+- keep the implementation limited to operator-facing bootstrap logging instead of adding a new product surface
+- document where operators should read the code during Clover onboarding
+
+Key deliverables:
+
+- explicit payments-service log entry containing the Clover `verificationCode`
+- runbook guidance telling operators to read the code from payments logs during webhook setup
+
+Dependencies:
+
+- `BE-V1-07`
+- `BE-V1-10`
+
+Acceptance criteria:
+
+- clicking `Send Verification Code` in Clover produces a readable log entry with the received `verificationCode`
+- operators can complete Clover webhook verification without inspecting raw HTTP traffic
+- the runbook explains where the code is surfaced during onboarding
+
+### BE-V1-13 Clover Webhook Verification Code Retrieval Endpoint
+
+Status:
+
+- `owner`: Codex
+- `status`: repo-complete, locally validated
+- `done`: added short-lived verification-code storage plus `GET /v1/payments/clover/webhooks/verification-code` in `payments`, forwarded the same path through `gateway`, documented the retrieval flow in the Clover runbook, regenerated the gateway OpenAPI artifact, and reran targeted payments and gateway tests
+- `blocked`: live verification still requires deploying the updated backend and retrying the Clover webhook verification flow
+
+Goal:
+Expose the latest Clover webhook verification code through a short-lived operator-facing API route so onboarding can complete without tailing container logs.
+
+Scope:
+
+- persist the latest Clover webhook verification code in `payments` for a short TTL
+- expose a read endpoint from `payments`
+- forward that endpoint through `gateway`
+- update the onboarding runbook with the new retrieval flow
+
+Key deliverables:
+
+- `GET /v1/payments/clover/webhooks/verification-code` in `payments`
+- public passthrough for the same path in `gateway`
+- runbook guidance telling operators when the endpoint is available and what `404` means
+
+Dependencies:
+
+- `BE-V1-07`
+- `BE-V1-10`
+- `BE-V1-12`
+
+Acceptance criteria:
+
+- before Clover sends a verification payload, the retrieval endpoint returns `404`
+- after Clover sends a verification payload, the endpoint returns the latest `verificationCode`
+- the retrieval path is documented for Clover onboarding
+
 ## Customer Frontend Mobile Tickets
 
 ### MF-V1-01 Session and Auth Hardening

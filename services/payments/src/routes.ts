@@ -24,6 +24,7 @@ const payloadSchema = z.object({
 const defaultRateLimitWindowMs = 60_000;
 const defaultPaymentsWriteRateLimitMax = 60;
 const defaultWebhookRateLimitMax = 120;
+const defaultCloverWebhookVerificationCodeTtlMs = 15 * 60_000;
 
 const chargeRequestSchema = z.object({
   orderId: z.string().uuid(),
@@ -129,6 +130,13 @@ const cloverOauthStatusSchema = z.object({
   apiAccessKeyConfigured: z.boolean()
 });
 
+const cloverWebhookVerificationCodeResponseSchema = z.object({
+  available: z.literal(true),
+  verificationCode: z.string().min(1),
+  receivedAt: z.string().datetime(),
+  expiresAt: z.string().datetime()
+});
+
 const cloverOauthTokenResponseSchema = z.object({
   access_token: z.string().min(1),
   refresh_token: z.string().min(1).optional(),
@@ -206,6 +214,8 @@ type CloverConnection = {
   tokenType?: string;
   scope?: string;
 };
+
+type RecentCloverWebhookVerificationCode = z.output<typeof cloverWebhookVerificationCodeResponseSchema>;
 
 type PaymentsRepository = {
   backend: "memory" | "postgres";
@@ -2351,6 +2361,11 @@ export async function registerRoutes(app: FastifyInstance) {
     max: toPositiveInteger(process.env.PAYMENTS_RATE_LIMIT_WEBHOOK_MAX, defaultWebhookRateLimitMax),
     timeWindow: rateLimitWindowMs
   };
+  const cloverWebhookVerificationCodeTtlMs = toPositiveInteger(
+    process.env.CLOVER_WEBHOOK_VERIFICATION_CODE_TTL_MS,
+    defaultCloverWebhookVerificationCodeTtlMs
+  );
+  let latestCloverWebhookVerificationCode: RecentCloverWebhookVerificationCode | undefined;
 
   app.addHook("onClose", async () => {
     await repository.close();
@@ -2381,6 +2396,19 @@ export async function registerRoutes(app: FastifyInstance) {
     });
   };
 
+  const readLatestCloverWebhookVerificationCode = () => {
+    if (!latestCloverWebhookVerificationCode) {
+      return undefined;
+    }
+
+    if (Date.parse(latestCloverWebhookVerificationCode.expiresAt) <= Date.now()) {
+      latestCloverWebhookVerificationCode = undefined;
+      return undefined;
+    }
+
+    return latestCloverWebhookVerificationCode;
+  };
+
   app.get("/health", async () => ({ status: "ok", service: "payments" }));
   app.get("/ready", async (_request, reply) => {
     const runtimeCredentials =
@@ -2409,6 +2437,22 @@ export async function registerRoutes(app: FastifyInstance) {
   });
 
   app.get("/v1/payments/clover/oauth/status", async () => buildCloverOauthStatus());
+
+  app.get("/v1/payments/clover/webhooks/verification-code", async (request, reply) => {
+    const latestVerificationCode = readLatestCloverWebhookVerificationCode();
+
+    if (!latestVerificationCode) {
+      return reply.status(404).send(
+        serviceErrorSchema.parse({
+          code: "CLOVER_WEBHOOK_VERIFICATION_CODE_NOT_FOUND",
+          message: "No active Clover webhook verification code is available",
+          requestId: request.id
+        })
+      );
+    }
+
+    return cloverWebhookVerificationCodeResponseSchema.parse(latestVerificationCode);
+  });
 
   app.get("/v1/payments/clover/oauth/connect", async (request, reply) => {
     if (!cloverOAuthConfig.configured || !cloverOAuthConfig.appId || !cloverOAuthConfig.redirectUri || !cloverOAuthConfig.stateSigningSecret) {
@@ -2849,7 +2893,17 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post("/v1/payments/webhooks/clover", { preHandler: app.rateLimit(paymentsWebhookRateLimit) }, async (request, reply) => {
     const verificationCode = resolveCloverWebhookVerificationCode(request.body);
     if (verificationCode) {
-      request.log.info({ requestId: request.id }, "accepted Clover webhook verification request");
+      const receivedAt = new Date().toISOString();
+      latestCloverWebhookVerificationCode = cloverWebhookVerificationCodeResponseSchema.parse({
+        available: true,
+        verificationCode,
+        receivedAt,
+        expiresAt: new Date(Date.now() + cloverWebhookVerificationCodeTtlMs).toISOString()
+      });
+      request.log.info(
+        { requestId: request.id, verificationCode },
+        "accepted Clover webhook verification request; use verificationCode to complete Clover webhook setup"
+      );
       return {
         accepted: true,
         verificationCode

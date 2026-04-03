@@ -53,6 +53,15 @@
         }
       }
     },
+    "/payments/clover/webhooks/verification-code": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/payments/clover/oauth/connect": {
       "get": {
         "responses": {

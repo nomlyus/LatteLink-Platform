@@ -97,6 +97,8 @@ Verification note:
 
 - Clover may first send a verification payload containing `verificationCode` before normal webhook auth is active.
 - `payments` now accepts that verification callback with `200` so Clover can validate the public URL.
+- `payments` also logs the received `verificationCode` clearly for operators. During onboarding, click `Send Verification Code` in Clover, then read the code from the live `payments` service logs and paste it back into the Clover webhook form.
+- the latest active verification code is also available briefly at `GET /v1/payments/clover/webhooks/verification-code` through the public API. Before Clover sends the verification payload this returns `404`; after the payload arrives it returns the latest `verificationCode`, `receivedAt`, and `expiresAt`.
 - after verification, production deliveries authenticate with the Clover auth header (`X-Clover-Auth`), which should match `CLOVER_WEBHOOK_SHARED_SECRET`
 
 On each webhook:

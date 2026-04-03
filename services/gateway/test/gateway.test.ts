@@ -1052,6 +1052,18 @@ describe("gateway", () => {
         );
       }
 
+      if (url.endsWith("/v1/payments/clover/webhooks/verification-code") && method === "GET") {
+        return new Response(
+          JSON.stringify({
+            available: true,
+            verificationCode: "verify-me-123",
+            receivedAt: "2026-04-03T12:00:00.000Z",
+            expiresAt: "2026-04-03T12:15:00.000Z"
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
       if (url.endsWith("/v1/payments/clover/oauth/connect") && method === "GET") {
         return new Response(
           JSON.stringify({
@@ -2162,6 +2174,32 @@ describe("gateway", () => {
     if (statusCall) {
       expect(typeof statusCall[0] === "string" ? statusCall[0] : statusCall[0].url).toBe(
         "http://payments.internal/v1/payments/clover/oauth/status"
+      );
+    }
+
+    await app.close();
+  });
+
+  it("forwards Clover webhook verification-code reads through the gateway", async () => {
+    const app = await buildApp();
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/payments/clover/webhooks/verification-code"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      available: true,
+      verificationCode: "verify-me-123"
+    });
+
+    const verificationCodeCall = fetchMock.mock.calls.find(([input]) =>
+      (typeof input === "string" ? input : input.url).endsWith("/v1/payments/clover/webhooks/verification-code")
+    );
+    expect(verificationCodeCall).toBeDefined();
+    if (verificationCodeCall) {
+      expect(typeof verificationCodeCall[0] === "string" ? verificationCodeCall[0] : verificationCodeCall[0].url).toBe(
+        "http://payments.internal/v1/payments/clover/webhooks/verification-code"
       );
     }
 
