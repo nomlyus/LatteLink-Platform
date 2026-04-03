@@ -1052,6 +1052,20 @@ describe("gateway", () => {
         );
       }
 
+      if (url.endsWith("/v1/payments/clover/card-entry-config") && method === "GET") {
+        return new Response(
+          JSON.stringify({
+            enabled: true,
+            providerMode: "live",
+            environment: "production",
+            tokenizeEndpoint: "https://token.clover.com/v1/tokens",
+            apiAccessKey: "public-api-access-key",
+            merchantId: "test-merchant-123"
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
       if (url.endsWith("/v1/payments/clover/webhooks/verification-code") && method === "GET") {
         return new Response(
           JSON.stringify({
@@ -2174,6 +2188,36 @@ describe("gateway", () => {
     if (statusCall) {
       expect(typeof statusCall[0] === "string" ? statusCall[0] : statusCall[0].url).toBe(
         "http://payments.internal/v1/payments/clover/oauth/status"
+      );
+    }
+
+    await app.close();
+  });
+
+  it("forwards authenticated Clover card-entry config reads through the gateway", async () => {
+    const app = await buildApp();
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/payments/clover/card-entry-config",
+      headers: authHeader
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      enabled: true,
+      providerMode: "live",
+      tokenizeEndpoint: "https://token.clover.com/v1/tokens",
+      apiAccessKey: "public-api-access-key",
+      merchantId: "test-merchant-123"
+    });
+
+    const configCall = fetchMock.mock.calls.find(([input]) =>
+      (typeof input === "string" ? input : input.url).endsWith("/v1/payments/clover/card-entry-config")
+    );
+    expect(configCall).toBeDefined();
+    if (configCall) {
+      expect(typeof configCall[0] === "string" ? configCall[0] : configCall[0].url).toBe(
+        "http://payments.internal/v1/payments/clover/card-entry-config"
       );
     }
 

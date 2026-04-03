@@ -714,6 +714,41 @@ Acceptance criteria:
 - the app is installable and usable by pilot testers
 - the team has a clear way to gather and triage pilot feedback
 
+### MF-V1-06 Clover Card Token Checkout
+
+Status:
+
+- `owner`: Codex
+- `status`: repo-in-progress
+- `done`: the checkout contracts and payments stack now accept a generalized Clover source token path in parallel with Apple Pay inputs, and the live backend can already expose authenticated Clover card-entry configuration
+- `blocked`: final mobile UX polish plus end-to-end validation still depends on confirming Clover test-card behavior in the connected target environment
+
+Goal:
+Add a real Clover card-token checkout path that does not depend on Apple Pay.
+
+Scope:
+
+- mobile card-entry UX
+- authenticated Clover card-entry config retrieval
+- tokenized card checkout submission
+- customer-visible payment-method gating
+
+Key deliverables:
+
+- customer checkout can submit a Clover `paymentSourceToken`
+- the mobile app only exposes card entry when Clover card tokenization is configured
+- pilot QA has a non-Apple payment path for end-to-end validation
+
+Dependencies:
+
+- connected Clover merchant OAuth credentials
+- Clover public API access key availability
+
+Acceptance criteria:
+
+- the mobile app can tokenize a card directly with Clover and pay an order with the resulting source token
+- card entry is hidden when Clover card tokenization is not configured for the current environment
+
 ## Client Dashboard Tickets
 
 ### CD-V1-01 Dashboard QA and Bug Scrub
@@ -1142,6 +1177,7 @@ Optional-but-likely within V1:
 
 - `CD-V1-04`
 - `LW-V1-02`
+- `MF-V1-06`
 - `MF-V1-05`
 
 ## After This Document

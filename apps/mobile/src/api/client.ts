@@ -1,5 +1,6 @@
 import { orderSchema, type Order } from "@gazelle/contracts-orders";
 import { GazelleApiClient } from "@gazelle/sdk-mobile";
+import { z } from "zod";
 
 const DEFAULT_LOCAL_API_BASE_URL = "http://127.0.0.1:8080/v1";
 const DEFAULT_LOCAL_CATALOG_API_BASE_URL = "http://127.0.0.1:3002/v1";
@@ -13,8 +14,18 @@ export const CATALOG_API_BASE_URL =
 
 type OrderUpdateHandler = (order: Order) => void;
 type OrderUpdateErrorHandler = (error: unknown) => void;
+const cloverCardEntryConfigSchema = z.object({
+  enabled: z.boolean(),
+  providerMode: z.enum(["simulated", "live"]),
+  environment: z.enum(["sandbox", "production"]).optional(),
+  tokenizeEndpoint: z.string().url().optional(),
+  apiAccessKey: z.string().min(1).optional(),
+  merchantId: z.string().min(1).optional()
+});
+export type CloverCardEntryConfig = z.output<typeof cloverCardEntryConfigSchema>;
 
 type MobileApiClient = GazelleApiClient & {
+  getCloverCardEntryConfig(): Promise<CloverCardEntryConfig>;
   subscribeToOrderUpdates(
     orderId: string,
     onUpdate: OrderUpdateHandler,
@@ -153,6 +164,25 @@ baseApiClient.setAccessToken = (token?: string) => {
 };
 
 export const apiClient = Object.assign(baseApiClient, {
+  async getCloverCardEntryConfig() {
+    if (!currentAccessToken) {
+      throw new Error("Sign in again to refresh payment configuration.");
+    }
+
+    const response = await fetch(`${API_BASE_URL}/payments/clover/card-entry-config`, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${currentAccessToken}`
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Card configuration request failed (${response.status})`);
+    }
+
+    return cloverCardEntryConfigSchema.parse(JSON.parse(await response.text()));
+  },
   subscribeToOrderUpdates(orderId: string, onUpdate: OrderUpdateHandler, onError?: OrderUpdateErrorHandler) {
     let disposed = false;
     let fallbackCleanup = () => {};

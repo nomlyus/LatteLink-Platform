@@ -30,26 +30,29 @@ const chargeRequestSchema = z.object({
   orderId: z.string().uuid(),
   amountCents: z.number().int().positive(),
   currency: z.literal("USD"),
+  paymentSourceToken: z.string().min(1).optional(),
   applePayToken: z.string().min(1).optional(),
   applePayWallet: applePayWalletSchema.optional(),
   idempotencyKey: z.string().min(1)
 }).superRefine((input, context) => {
+  const hasPaymentSourceToken = Boolean(input.paymentSourceToken);
   const hasToken = Boolean(input.applePayToken);
   const hasWallet = Boolean(input.applePayWallet);
+  const methodCount = [hasPaymentSourceToken, hasToken, hasWallet].filter(Boolean).length;
 
-  if (!hasToken && !hasWallet) {
+  if (methodCount === 0) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
-      path: ["applePayToken"],
-      message: "Either applePayToken or applePayWallet is required."
+      path: ["paymentSourceToken"],
+      message: "Provide exactly one payment method."
     });
   }
 
-  if (hasToken && hasWallet) {
+  if (methodCount > 1) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["applePayWallet"],
-      message: "Provide either applePayToken or applePayWallet, but not both."
+      message: "Provide exactly one payment method."
     });
   }
 });
@@ -117,6 +120,15 @@ const cloverOauthConnectResponseSchema = z.object({
   authorizeUrl: z.string().url(),
   redirectUri: z.string().url(),
   stateExpiresAt: z.string().datetime()
+});
+
+const cloverCardEntryConfigResponseSchema = z.object({
+  enabled: z.boolean(),
+  providerMode: z.enum(["simulated", "live"]),
+  environment: z.enum(["sandbox", "production"]).optional(),
+  tokenizeEndpoint: z.string().url().optional(),
+  apiAccessKey: z.string().min(1).optional(),
+  merchantId: z.string().min(1).optional()
 });
 
 const cloverOauthStatusSchema = z.object({
@@ -1924,7 +1936,7 @@ async function dispatchOrderReconciliation(params: {
 }
 
 function createSimulatedChargeResponse(input: ChargeRequest): ChargeResponse {
-  const simulationSignal = (input.applePayToken ?? input.applePayWallet?.data ?? "").toLowerCase();
+  const simulationSignal = (input.paymentSourceToken ?? input.applePayToken ?? input.applePayWallet?.data ?? "").toLowerCase();
 
   if (simulationSignal.includes("decline")) {
     return chargeResponseSchema.parse({
@@ -1998,7 +2010,7 @@ async function executeLiveCharge(params: {
   }
 
   const internalPaymentId = randomUUID();
-  let sourceToken = request.applePayToken;
+  let sourceToken = request.paymentSourceToken ?? request.applePayToken;
   if (!sourceToken && request.applePayWallet) {
     if (!config.applePayTokenizeEndpoint) {
       throw new Error("CLOVER_APPLE_PAY_TOKENIZE_ENDPOINT is required for applePayWallet requests");
@@ -2396,6 +2408,32 @@ export async function registerRoutes(app: FastifyInstance) {
     });
   };
 
+  const buildCloverCardEntryConfig = async () => {
+    const runtimeCredentials =
+      cloverProvider.mode === "live"
+        ? await resolveRuntimeCloverCredentials({
+            logger: app.log,
+            repository,
+            providerConfig: cloverProvider,
+            oauthConfig: cloverOAuthConfig,
+            allowRefresh: false
+          })
+        : undefined;
+
+    const apiAccessKey = runtimeCredentials?.apiAccessKey;
+    const tokenizeEndpoint = cloverProvider.applePayTokenizeEndpoint;
+    const merchantId = runtimeCredentials?.merchantId ?? cloverProvider.merchantId;
+
+    return cloverCardEntryConfigResponseSchema.parse({
+      enabled: Boolean(apiAccessKey && tokenizeEndpoint),
+      providerMode: cloverProvider.mode,
+      environment: cloverOAuthConfig.environment,
+      tokenizeEndpoint,
+      apiAccessKey,
+      merchantId
+    });
+  };
+
   const readLatestCloverWebhookVerificationCode = () => {
     if (!latestCloverWebhookVerificationCode) {
       return undefined;
@@ -2437,6 +2475,8 @@ export async function registerRoutes(app: FastifyInstance) {
   });
 
   app.get("/v1/payments/clover/oauth/status", async () => buildCloverOauthStatus());
+
+  app.get("/v1/payments/clover/card-entry-config", async () => buildCloverCardEntryConfig());
 
   app.get("/v1/payments/clover/webhooks/verification-code", async (request, reply) => {
     const latestVerificationCode = readLatestCloverWebhookVerificationCode();

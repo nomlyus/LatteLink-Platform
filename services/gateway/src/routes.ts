@@ -91,6 +91,14 @@ const adminOrderStatusUpdateSchema = z.object({
   status: z.enum(["IN_PREP", "READY", "COMPLETED", "CANCELED"]),
   note: z.string().min(1).optional()
 });
+const cloverCardEntryConfigResponseSchema = z.object({
+  enabled: z.boolean(),
+  providerMode: z.enum(["simulated", "live"]),
+  environment: z.enum(["sandbox", "production"]).optional(),
+  tokenizeEndpoint: z.string().url().optional(),
+  apiAccessKey: z.string().min(1).optional(),
+  merchantId: z.string().min(1).optional()
+});
 const defaultRateLimitWindowMs = 60_000;
 const defaultUpstreamTimeoutMs = 5_000;
 const defaultOrderStreamPollIntervalMs = 2_000;
@@ -1064,6 +1072,21 @@ export async function registerRoutes(app: FastifyInstance) {
       path: "/v1/payments/clover/oauth/status",
       forwardUserIdHeader: false
     })
+  );
+
+  app.get(
+    "/v1/payments/clover/card-entry-config",
+    { preHandler: [app.rateLimit(paymentsReadRateLimit), requireCustomerAuth] },
+    async (request, reply) =>
+      proxyUpstream({
+        request,
+        reply,
+        baseUrl: paymentsBaseUrl,
+        serviceLabel: "Payments",
+        method: "GET",
+        path: "/v1/payments/clover/card-entry-config",
+        responseSchema: cloverCardEntryConfigResponseSchema
+      })
   );
 
   app.get(

@@ -97,26 +97,29 @@ export const applePayWalletSchema = z.object({
 });
 
 export const payOrderRequestSchema = z.object({
+  paymentSourceToken: z.string().min(1).optional(),
   applePayToken: z.string().min(1).optional(),
   applePayWallet: applePayWalletSchema.optional(),
   idempotencyKey: z.string().min(1)
 }).superRefine((input, context) => {
+  const hasPaymentSourceToken = Boolean(input.paymentSourceToken);
   const hasToken = Boolean(input.applePayToken);
   const hasWallet = Boolean(input.applePayWallet);
+  const methodCount = [hasPaymentSourceToken, hasToken, hasWallet].filter(Boolean).length;
 
-  if (!hasToken && !hasWallet) {
+  if (methodCount === 0) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
-      path: ["applePayToken"],
-      message: "Either applePayToken or applePayWallet is required."
+      path: ["paymentSourceToken"],
+      message: "Provide exactly one payment method."
     });
   }
 
-  if (hasToken && hasWallet) {
+  if (methodCount > 1) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["applePayWallet"],
-      message: "Provide either applePayToken or applePayWallet, but not both."
+      message: "Provide exactly one payment method."
     });
   }
 });

@@ -244,6 +244,47 @@ describe("sdk-mobile", () => {
     }
   });
 
+  it("supports direct Clover source tokens for payOrder", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          id: "123e4567-e89b-12d3-a456-426614174113",
+          locationId: "flagship-01",
+          status: "PAID",
+          items: [{ itemId: "latte", quantity: 1, unitPriceCents: 675 }],
+          total: { currency: "USD", amountCents: 716 },
+          pickupCode: "A1B2C3",
+          timeline: [
+            { status: "PENDING_PAYMENT", occurredAt: "2026-03-10T00:00:00.000Z" },
+            { status: "PAID", occurredAt: "2026-03-10T00:01:00.000Z" }
+          ]
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      )
+    );
+
+    const client = new GazelleApiClient({ baseUrl: "https://api.gazellecoffee.com/v1" });
+    const orderId = "123e4567-e89b-12d3-a456-426614174113";
+    const paidOrder = await client.payOrder(orderId, {
+      paymentSourceToken: "clv_1TSTxxxxxxxxxxxxxxxxxFQif",
+      idempotencyKey: "checkout-card-idempotency-key"
+    });
+
+    expect(paidOrder.status).toBe("PAID");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const request = fetchMock.mock.calls[0];
+    expect(request).toBeDefined();
+    if (request) {
+      const body = JSON.parse(String(request[1]?.body ?? "{}")) as Record<string, unknown>;
+      expect(body).toMatchObject({
+        idempotencyKey: "checkout-card-idempotency-key",
+        paymentSourceToken: "clv_1TSTxxxxxxxxxxxxxxxxxFQif"
+      });
+      expect(body.applePayToken).toBeUndefined();
+      expect(body.applePayWallet).toBeUndefined();
+    }
+  });
+
   it("retries concurrent unauthorized requests behind a single refresh", async () => {
     const client = new GazelleApiClient({ baseUrl: "https://api.gazellecoffee.com/v1" });
     client.setAccessToken("access-old");

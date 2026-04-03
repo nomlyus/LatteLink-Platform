@@ -22,6 +22,7 @@ import {
   useStoreConfigQuery
 } from "../src/menu/catalog";
 import { canAttemptNativeApplePay, requestNativeApplePayWallet, type ApplePayWalletPayload } from "../src/orders/applePay";
+import { tokenizeCloverCard, useCloverCardEntryConfigQuery } from "../src/orders/card";
 import {
   CheckoutSubmissionError,
   createDemoApplePayToken,
@@ -283,7 +284,11 @@ export default function CartModalScreen() {
       ? "Checkout configuration is temporarily unavailable. Retry loading checkout before paying."
       : null;
   const checkoutReady = checkoutUnavailableMessage === null;
+  const cardCapabilityEnabled = Boolean(appConfig?.paymentCapabilities.card);
+  const cardEntryConfigQuery = useCloverCardEntryConfigQuery(isAuthenticated && checkoutReady && cardCapabilityEnabled);
   const nativeApplePayAvailable = Boolean(checkoutReady && canAttemptNativeApplePay() && appConfig?.paymentCapabilities.applePay);
+  const cardEntryAvailable = Boolean(checkoutReady && cardCapabilityEnabled && cardEntryConfigQuery.data?.enabled);
+  const cardEntryConfigPending = Boolean(isAuthenticated && checkoutReady && cardCapabilityEnabled && cardEntryConfigQuery.isLoading);
   const showDevFallback = __DEV__ && checkoutReady;
   const quoteItems = useMemo(() => toQuoteItems(items), [items]);
   const retryableOrder = retryOrder && quoteItemsEqual(quoteItems, retryOrder.quoteItems) ? retryOrder : undefined;
@@ -299,23 +304,46 @@ export default function CartModalScreen() {
   const [clearSheetOpen, setClearSheetOpen] = useState(false);
 
   const [applePayToken, setApplePayToken] = useState("");
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardExpMonth, setCardExpMonth] = useState("");
+  const [cardExpYear, setCardExpYear] = useState("");
+  const [cardCvv, setCardCvv] = useState("");
   const [nativeApplePayPending, setNativeApplePayPending] = useState(false);
+  const [cardCheckoutPending, setCardCheckoutPending] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
-  const stickyActionDisabled = isAuthenticated ? !checkoutReady || nativeApplePayPending || checkoutMutation.isPending || !nativeApplePayAvailable : false;
+  const stickyActionDisabled = isAuthenticated
+    ? !checkoutReady ||
+      nativeApplePayPending ||
+      cardCheckoutPending ||
+      checkoutMutation.isPending ||
+      (!nativeApplePayAvailable && !cardEntryAvailable)
+    : false;
   const stickyActionLabel = isAuthenticated
     ? !checkoutReady
       ? "Checkout unavailable"
       : nativeApplePayPending
         ? "Opening Apple Pay…"
+        : cardCheckoutPending
+          ? "Preparing card…"
+        : cardEntryConfigPending
+          ? "Loading payment…"
         : checkoutMutation.isPending
           ? "Processing…"
           : retryableOrder
-            ? "Retry Apple Pay"
+            ? "Retry payment"
             : nativeApplePayAvailable
               ? "Pay with Apple Pay"
-              : "Apple Pay unavailable"
+              : cardEntryAvailable
+                ? "Use card below"
+                : "Payment unavailable"
     : getCheckoutRecoveryActionLabel(authRecoveryState);
-  const stickyActionIcon: keyof typeof Ionicons.glyphMap = isAuthenticated ? "logo-apple" : "log-in-outline";
+  const stickyActionIcon: keyof typeof Ionicons.glyphMap = isAuthenticated
+    ? nativeApplePayAvailable
+      ? "logo-apple"
+      : cardEntryAvailable
+        ? "card-outline"
+        : "alert-circle-outline"
+    : "log-in-outline";
   const stickyActionValue = formatUsd(checkoutReady ? pricingSummary.totalCents : subtotalCents);
 
   useEffect(() => {
@@ -348,7 +376,12 @@ export default function CartModalScreen() {
     setStatusMessage("");
   }
 
-  function submitCheckout(paymentInput: { applePayToken: string } | { applePayWallet: ApplePayWalletPayload }) {
+  function submitCheckout(
+    paymentInput:
+      | { paymentSourceToken: string }
+      | { applePayToken: string }
+      | { applePayWallet: ApplePayWalletPayload }
+  ) {
     if (!storeConfig || !appConfig) {
       setStatusMessage(checkoutUnavailableMessage ?? "Checkout is temporarily unavailable.");
       return;
@@ -366,6 +399,7 @@ export default function CartModalScreen() {
       {
         onSuccess: (paidOrder) => {
           setNativeApplePayPending(false);
+          setCardCheckoutPending(false);
           setConfirmation({
             orderId: paidOrder.id,
             pickupCode: paidOrder.pickupCode,
@@ -381,6 +415,7 @@ export default function CartModalScreen() {
         },
         onError: (error) => {
           setNativeApplePayPending(false);
+          setCardCheckoutPending(false);
           const message = error instanceof Error ? error.message : "Checkout failed.";
 
           if (error instanceof CheckoutSubmissionError) {
@@ -410,6 +445,33 @@ export default function CartModalScreen() {
     }
     setApplePayToken("");
     submitCheckout({ applePayToken: token });
+  }
+
+  async function handleCardCheckout() {
+    if (!storeConfig || !appConfig) {
+      setStatusMessage(checkoutUnavailableMessage ?? "Checkout is temporarily unavailable.");
+      return;
+    }
+
+    setCardCheckoutPending(true);
+    setStatusMessage("Securing card details with Clover…");
+
+    try {
+      const tokenizedCard = await tokenizeCloverCard({
+        number: cardNumber,
+        expMonth: cardExpMonth,
+        expYear: cardExpYear,
+        cvv: cardCvv
+      }, cardEntryConfigQuery.data);
+      setCardNumber("");
+      setCardExpMonth("");
+      setCardExpYear("");
+      setCardCvv("");
+      submitCheckout({ paymentSourceToken: tokenizedCard.token });
+    } catch (error) {
+      setCardCheckoutPending(false);
+      setStatusMessage(error instanceof Error ? error.message : "Card tokenization failed.");
+    }
   }
 
   async function handleNativeApplePayCheckout() {
@@ -595,15 +657,27 @@ export default function CartModalScreen() {
                     <>
                       <View style={styles.deckDivider} />
 
-                      <View style={styles.paymentStatusRow}>
-                        <View style={styles.paymentStatusIconWrap}>
-                          <Ionicons name="logo-apple" size={16} color={uiPalette.text} />
+                      {nativeApplePayAvailable ? (
+                        <View style={styles.paymentStatusRow}>
+                          <View style={styles.paymentStatusIconWrap}>
+                            <Ionicons name="logo-apple" size={16} color={uiPalette.text} />
+                          </View>
+                          <View style={styles.paymentStatusCopy}>
+                            <Text style={styles.paymentStatusTitle}>Apple Pay ready</Text>
+                            <Text style={styles.paymentStatusBody}>Use the footer to confirm payment when you are ready.</Text>
+                          </View>
                         </View>
-                        <View style={styles.paymentStatusCopy}>
-                          <Text style={styles.paymentStatusTitle}>Apple Pay ready</Text>
-                          <Text style={styles.paymentStatusBody}>Use the footer to confirm payment when you are ready.</Text>
+                      ) : cardEntryAvailable ? (
+                        <View style={styles.paymentStatusRow}>
+                          <View style={styles.paymentStatusIconWrap}>
+                            <Ionicons name="card-outline" size={16} color={uiPalette.text} />
+                          </View>
+                          <View style={styles.paymentStatusCopy}>
+                            <Text style={styles.paymentStatusTitle}>Card entry ready</Text>
+                            <Text style={styles.paymentStatusBody}>Enter a test card below to tokenize it with Clover and complete checkout.</Text>
+                          </View>
                         </View>
-                      </View>
+                      ) : null}
 
                       {showDevFallback ? (
                         <View style={styles.devSection}>
@@ -635,6 +709,74 @@ export default function CartModalScreen() {
                           </View>
                         </View>
                       ) : null}
+
+                      {cardEntryAvailable ? (
+                        <View style={styles.devSection}>
+                          <Text style={styles.devEyebrow}>Card checkout</Text>
+                          <Text style={styles.paymentStatusBody}>
+                            Card details are sent directly to Clover for tokenization before your order is paid.
+                          </Text>
+                          <TextInput
+                            value={cardNumber}
+                            onChangeText={setCardNumber}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            keyboardType="number-pad"
+                            placeholder="Card number"
+                            placeholderTextColor={uiPalette.textMuted}
+                            style={[styles.tokenInput, styles.cardInput]}
+                          />
+                          <View style={styles.cardRow}>
+                            <TextInput
+                              value={cardExpMonth}
+                              onChangeText={setCardExpMonth}
+                              autoCapitalize="none"
+                              autoCorrect={false}
+                              keyboardType="number-pad"
+                              placeholder="MM"
+                              placeholderTextColor={uiPalette.textMuted}
+                              style={[styles.tokenInput, styles.cardFieldSmall]}
+                            />
+                            <TextInput
+                              value={cardExpYear}
+                              onChangeText={setCardExpYear}
+                              autoCapitalize="none"
+                              autoCorrect={false}
+                              keyboardType="number-pad"
+                              placeholder="YYYY"
+                              placeholderTextColor={uiPalette.textMuted}
+                              style={[styles.tokenInput, styles.cardFieldMedium]}
+                            />
+                            <TextInput
+                              value={cardCvv}
+                              onChangeText={setCardCvv}
+                              autoCapitalize="none"
+                              autoCorrect={false}
+                              keyboardType="number-pad"
+                              secureTextEntry
+                              placeholder="CVV"
+                              placeholderTextColor={uiPalette.textMuted}
+                              style={[styles.tokenInput, styles.cardFieldSmall]}
+                            />
+                          </View>
+                          <View style={styles.devActions}>
+                            <Button
+                              label={cardCheckoutPending || checkoutMutation.isPending ? "Processing…" : "Pay with card"}
+                              variant="secondary"
+                              disabled={
+                                cardCheckoutPending ||
+                                checkoutMutation.isPending ||
+                                nativeApplePayPending ||
+                                cardEntryConfigPending
+                              }
+                              onPress={() => {
+                                void handleCardCheckout();
+                              }}
+                              style={{ flex: 1 }}
+                            />
+                          </View>
+                        </View>
+                      ) : null}
                     </>
                   ) : isAuthenticated ? (
                     <>
@@ -646,7 +788,7 @@ export default function CartModalScreen() {
                         </View>
                         <View style={styles.paymentStatusCopy}>
                           <Text style={styles.paymentStatusTitle}>Checkout needs a refresh</Text>
-                          <Text style={styles.paymentStatusBody}>Use the retry action in the header to restore live pricing and Apple Pay.</Text>
+                          <Text style={styles.paymentStatusBody}>Use the retry action in the header to restore live pricing and payment options.</Text>
                         </View>
                       </View>
                     </>
@@ -1167,6 +1309,20 @@ const styles = StyleSheet.create({
     backgroundColor: uiPalette.surfaceStrong,
     paddingHorizontal: 14,
     color: uiPalette.text
+  },
+  cardInput: {
+    marginTop: 10
+  },
+  cardRow: {
+    marginTop: 10,
+    flexDirection: "row",
+    gap: 10
+  },
+  cardFieldSmall: {
+    flex: 1
+  },
+  cardFieldMedium: {
+    flex: 1.35
   },
   devActions: {
     marginTop: 10,

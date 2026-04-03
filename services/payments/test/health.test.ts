@@ -580,9 +580,12 @@ describe("payments service", () => {
 
     const fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal("fetch", fetchMock);
-    fetchMock.mockImplementation(async (input) => {
+    fetchMock.mockImplementation(async (input, init) => {
       const url = typeof input === "string" ? input : input.toString();
       if (url === "https://sandbox.clover.test/v1/merchants/merchant-sbx/charges") {
+        expect(JSON.parse(String(init?.body ?? "{}"))).toMatchObject({
+          source: "clv_card_source_token"
+        });
         return new Response(
           JSON.stringify({
             id: "clv-charge-1",
@@ -618,7 +621,7 @@ describe("payments service", () => {
         orderId: "123e4567-e89b-12d3-a456-426614174031",
         amountCents: 1200,
         currency: "USD",
-        applePayToken: "apple-pay-source-token",
+        paymentSourceToken: "clv_card_source_token",
         idempotencyKey: "live-charge-1"
       }
     });
@@ -853,6 +856,19 @@ describe("payments service", () => {
       status: "ready",
       providerMode: "live",
       providerConfigured: true
+    });
+
+    const cardEntryConfigResponse = await app.inject({
+      method: "GET",
+      url: "/v1/payments/clover/card-entry-config"
+    });
+    expect(cardEntryConfigResponse.statusCode).toBe(200);
+    expect(cardEntryConfigResponse.json()).toMatchObject({
+      enabled: true,
+      providerMode: "live",
+      tokenizeEndpoint: "https://token-sandbox.dev.clover.com/v1/tokens",
+      apiAccessKey: "oauth-api-access-key-1",
+      merchantId: "merchant-oauth-1"
     });
 
     const chargeResponse = await app.inject({

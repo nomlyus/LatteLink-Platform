@@ -24,6 +24,7 @@ export type CheckoutOrderSnapshot = z.output<typeof checkoutOrderSchema> & {
 export type CheckoutSubmissionStage = "quote" | "create" | "pay";
 
 type CheckoutPaymentInput =
+  | { paymentSourceToken: string; applePayToken?: never; applePayWallet?: never }
   | { applePayToken: string; applePayWallet?: never }
   | { applePayWallet: ApplePayWalletInput; applePayToken?: never };
 
@@ -109,14 +110,24 @@ export function useApplePayCheckoutMutation() {
         throw new Error("Cart is empty.");
       }
 
+      const hasPaymentSourceToken = typeof (input as { paymentSourceToken?: string }).paymentSourceToken === "string";
       const hasToken = typeof (input as { applePayToken?: string }).applePayToken === "string";
       const hasWallet = typeof (input as { applePayWallet?: ApplePayWalletInput }).applePayWallet !== "undefined";
 
-      if (hasToken === hasWallet) {
-        throw new Error("Provide exactly one Apple Pay payment payload.");
+      if ([hasPaymentSourceToken, hasToken, hasWallet].filter(Boolean).length !== 1) {
+        throw new Error("Provide exactly one payment method.");
       }
 
-      const paymentPayload: Pick<PayOrderInput, "applePayToken" | "applePayWallet"> = hasToken
+      const paymentPayload: Pick<PayOrderInput, "paymentSourceToken" | "applePayToken" | "applePayWallet"> = hasPaymentSourceToken
+        ? (() => {
+            const paymentSourceToken = (input as { paymentSourceToken: string }).paymentSourceToken.trim();
+            if (!paymentSourceToken) {
+              throw new Error("Payment source token is required.");
+            }
+
+            return { paymentSourceToken };
+          })()
+        : hasToken
         ? (() => {
             const applePayToken = (input as { applePayToken: string }).applePayToken.trim();
             if (!applePayToken) {

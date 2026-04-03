@@ -53,6 +53,15 @@
         }
       }
     },
+    "/payments/clover/card-entry-config": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/payments/clover/webhooks/verification-code": {
       "get": {
         "responses": {
