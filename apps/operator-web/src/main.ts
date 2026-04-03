@@ -32,6 +32,7 @@ import {
 import {
   canAdvanceOrderStatus,
   canAccessCapability,
+  canCancelOrder,
   canCreateMenuItems,
   canManageTeamMembers,
   canToggleMenuItemVisibility,
@@ -39,6 +40,7 @@ import {
   filterOrdersByView,
   formatOrderStatus,
   getAvailableSections,
+  getOrderCancelUnavailableMessage,
   getOrderControlUnavailableMessage,
   getOperatorRoleLabel,
   getOrderActions,
@@ -961,8 +963,8 @@ function renderSectionHeading(config: {
   `;
 }
 
-function renderCancelButton(order: OperatorOrder, manualStatusControlsEnabled: boolean) {
-  if (!manualStatusControlsEnabled || order.status === "COMPLETED" || order.status === "CANCELED") {
+function renderCancelButton(order: OperatorOrder) {
+  if (order.status === "COMPLETED" || order.status === "CANCELED") {
     return "";
   }
 
@@ -989,7 +991,9 @@ function renderCancelButton(order: OperatorOrder, manualStatusControlsEnabled: b
 
 function renderOrderDetail(order: OperatorOrder, appConfig: AppConfig | null) {
   const manualStatusControlsEnabled = canAdvanceOrderStatus(state.session?.operator ?? null, appConfig);
+  const cancelControlsEnabled = canCancelOrder(state.session?.operator ?? null, appConfig, order);
   const manualStatusControlsMessage = getOrderControlUnavailableMessage(state.session?.operator ?? null, appConfig);
+  const cancelControlsMessage = getOrderCancelUnavailableMessage(state.session?.operator ?? null, appConfig, order);
   const fulfillmentMode = resolveAppConfigFulfillmentMode(appConfig);
   const actions = getOrderActions(order, fulfillmentMode);
   const timeline = order.timeline
@@ -1036,6 +1040,12 @@ function renderOrderDetail(order: OperatorOrder, appConfig: AppConfig | null) {
       `
     )
     .join("");
+  const controlButtons = [
+    manualStatusControlsEnabled ? actionButtons : "",
+    cancelControlsEnabled ? renderCancelButton(order) : ""
+  ]
+    .filter((markup) => markup.length > 0)
+    .join("");
   const latestTimelineEntry = order.timeline[order.timeline.length - 1];
 
   return `
@@ -1066,9 +1076,11 @@ function renderOrderDetail(order: OperatorOrder, appConfig: AppConfig | null) {
       <div class="detail-stack">${items || `<p class="muted-copy">No line items recorded for this order.</p>`}</div>
     </div>
     ${
-      manualStatusControlsEnabled
-        ? `<div class="button-row">${actionButtons}${renderCancelButton(order, manualStatusControlsEnabled)}</div>`
-        : `<p class="muted-copy">${escapeHtml(manualStatusControlsMessage ?? "Manual order controls are unavailable for this store.")}</p>`
+      controlButtons
+        ? `<div class="button-row">${controlButtons}</div>`
+        : `<p class="muted-copy">${escapeHtml(
+            cancelControlsMessage ?? manualStatusControlsMessage ?? "Manual order controls are unavailable for this store."
+          )}</p>`
     }
     <div class="dash-detail-block">
       <div class="dash-detail-block__label">Timeline</div>
@@ -1919,10 +1931,19 @@ async function handleOrderAdvance(orderId: string, status: "IN_PREP" | "READY" |
     return;
   }
 
-  if (!canAdvanceOrderStatus(state.session.operator, state.appConfig)) {
+  const selectedOrder = state.orders.find((order) => order.id === orderId);
+  const canProceed =
+    status === "CANCELED"
+      ? canCancelOrder(state.session.operator, state.appConfig, selectedOrder ?? null)
+      : canAdvanceOrderStatus(state.session.operator, state.appConfig);
+
+  if (!canProceed) {
     setError(
-      getOrderControlUnavailableMessage(state.session.operator, state.appConfig) ??
-        "Manual order status controls are unavailable for this store."
+      status === "CANCELED"
+        ? getOrderCancelUnavailableMessage(state.session.operator, state.appConfig, selectedOrder ?? null) ??
+            "Canceling this order is unavailable for this store."
+        : getOrderControlUnavailableMessage(state.session.operator, state.appConfig) ??
+            "Manual order status controls are unavailable for this store."
     );
     render();
     return;

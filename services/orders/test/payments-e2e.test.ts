@@ -418,7 +418,7 @@ describe.sequential("orders + payments e2e", () => {
     expect(orderSchema.parse(getOrder.json()).status).toBe("PAID");
   });
 
-  it("allows decline retry recovery with a new idempotency key", async () => {
+  it("cancels declined orders and blocks recovery attempts on the same order", async () => {
     const order = await createOrder();
 
     const declinedPayment = await ordersApp.inject({
@@ -430,7 +430,20 @@ describe.sequential("orders + payments e2e", () => {
       }
     });
     expect(declinedPayment.statusCode).toBe(402);
-    expect(declinedPayment.json()).toMatchObject({ code: "PAYMENT_DECLINED" });
+    expect(declinedPayment.json()).toMatchObject({
+      code: "PAYMENT_DECLINED",
+      details: expect.objectContaining({
+        orderId: order.id,
+        orderStatus: "CANCELED"
+      })
+    });
+
+    const canceledOrder = await ordersApp.inject({
+      method: "GET",
+      url: `/v1/orders/${order.id}`
+    });
+    expect(canceledOrder.statusCode).toBe(200);
+    expect(orderSchema.parse(canceledOrder.json()).status).toBe("CANCELED");
 
     const recoveredPayment = await ordersApp.inject({
       method: "POST",
@@ -440,8 +453,8 @@ describe.sequential("orders + payments e2e", () => {
         idempotencyKey: "decline-recovery-2"
       }
     });
-    expect(recoveredPayment.statusCode).toBe(200);
-    expect(orderSchema.parse(recoveredPayment.json()).status).toBe("PAID");
+    expect(recoveredPayment.statusCode).toBe(409);
+    expect(recoveredPayment.json()).toMatchObject({ code: "ORDER_NOT_PAYABLE" });
   });
 
   it("keeps successful payments idempotent for repeated keys", async () => {

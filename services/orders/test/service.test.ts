@@ -384,7 +384,7 @@ describe("orders service layer", () => {
     expect(chargeCalls).toHaveLength(1);
   });
 
-  it("processPayment returns a declined error without advancing the order", async () => {
+  it("processPayment cancels the order after a declined payment response", async () => {
     const userId = "123e4567-e89b-12d3-a456-426614174502";
     const { deps } = await createTestDeps(repositories);
     const { order } = await createQuotedOrder(deps, { userId });
@@ -407,11 +407,19 @@ describe("orders service layer", () => {
 
     expect(result.error).toMatchObject({
       statusCode: 402,
-      code: "PAYMENT_DECLINED"
+      code: "PAYMENT_DECLINED",
+      details: expect.objectContaining({
+        orderId: order.id,
+        orderStatus: "CANCELED"
+      })
     });
 
     const persistedOrder = await deps.repository.getOrder(order.id);
-    expect(persistedOrder?.status).toBe("PENDING_PAYMENT");
+    expect(persistedOrder?.status).toBe("CANCELED");
+    expect(persistedOrder?.timeline.at(-1)).toMatchObject({
+      status: "CANCELED",
+      source: "system"
+    });
   });
 
   it("processPayment blocks new payment attempts after a timeout until reconciliation lands", async () => {
@@ -649,6 +657,30 @@ describe("orders service layer", () => {
       details: {
         fulfillmentMode: "time_based"
       }
+    });
+  });
+
+  it("allows staff to cancel an unpaid order even when fulfillment mode is not staff", async () => {
+    const { deps } = await createTestDeps(repositories, { fulfillmentMode: "time_based" });
+    const { order } = await createQuotedOrder(deps);
+
+    const result = await cancelOrder({
+      orderId: order.id,
+      input: { reason: "operator canceled unpaid order" },
+      cancelSource: "staff",
+      requestId: "service-staff-cancel-pending",
+      deps
+    });
+
+    expect("error" in result).toBe(false);
+    if ("error" in result) {
+      throw new Error(result.error.code);
+    }
+
+    expect(result.order.status).toBe("CANCELED");
+    expect(result.order.timeline.at(-1)).toMatchObject({
+      status: "CANCELED",
+      source: "staff"
     });
   });
 

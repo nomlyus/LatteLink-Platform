@@ -198,6 +198,22 @@ export function canAdvanceOrderStatus(
   return canAccessCapability(operator, "orders:write") && canManageOrderStatus(config);
 }
 
+export function canCancelOrder(
+  operator: Pick<OperatorUser, "capabilities"> | null | undefined,
+  config: Pick<AppConfig, "storeCapabilities" | "featureFlags" | "loyaltyEnabled" | "fulfillment"> | null | undefined,
+  order: Pick<OperatorOrder, "status"> | null | undefined
+) {
+  if (!order || isTerminalOrderStatus(order.status)) {
+    return false;
+  }
+
+  if (!canAccessCapability(operator, "orders:write")) {
+    return false;
+  }
+
+  return order.status === "PENDING_PAYMENT" || canManageOrderStatus(config);
+}
+
 export function getOrderControlUnavailableMessage(
   operator: Pick<OperatorUser, "capabilities"> | null | undefined,
   config: Pick<AppConfig, "storeCapabilities" | "featureFlags" | "loyaltyEnabled" | "fulfillment"> | null | undefined
@@ -215,6 +231,26 @@ export function getOrderControlUnavailableMessage(
   }
 
   return null;
+}
+
+export function getOrderCancelUnavailableMessage(
+  operator: Pick<OperatorUser, "capabilities"> | null | undefined,
+  config: Pick<AppConfig, "storeCapabilities" | "featureFlags" | "loyaltyEnabled" | "fulfillment"> | null | undefined,
+  order: Pick<OperatorOrder, "status"> | null | undefined
+) {
+  if (!order || isTerminalOrderStatus(order.status)) {
+    return null;
+  }
+
+  if (!canAccessCapability(operator, "orders:write")) {
+    return "You have read-only access to live orders for this store.";
+  }
+
+  if (order.status === "PENDING_PAYMENT") {
+    return null;
+  }
+
+  return getOrderControlUnavailableMessage(operator, config);
 }
 
 export function canCreateMenuItems(

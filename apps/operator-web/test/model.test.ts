@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canAdvanceOrderStatus,
   canAccessCapability,
+  canCancelOrder,
   canCreateMenuItems,
   canManageOrderStatus,
   canManageTeamMembers,
@@ -14,6 +15,7 @@ import {
   formatOrderStatus,
   getAppConfigCapabilityLabels,
   getAvailableSections,
+  getOrderCancelUnavailableMessage,
   getOrderControlUnavailableMessage,
   getOperatorRoleLabel,
   getOrderActions,
@@ -181,6 +183,26 @@ describe("operator-web model", () => {
     expect(filterActiveOrders([sampleOrder, { ...sampleOrder, status: "COMPLETED" }]).map((order) => order.status)).toEqual([
       "PAID"
     ]);
+  });
+
+  it("allows canceling unpaid orders even when manual staff fulfillment is disabled", () => {
+    const timeBasedConfig = {
+      ...sampleAppConfig,
+      storeCapabilities: {
+        ...sampleAppConfig.storeCapabilities,
+        operations: {
+          ...sampleAppConfig.storeCapabilities.operations,
+          fulfillmentMode: "time_based" as const
+        }
+      }
+    };
+
+    expect(canCancelOrder(sampleOperator, timeBasedConfig, { ...sampleOrder, status: "PENDING_PAYMENT" })).toBe(true);
+    expect(getOrderCancelUnavailableMessage(sampleOperator, timeBasedConfig, { ...sampleOrder, status: "PENDING_PAYMENT" })).toBeNull();
+    expect(canCancelOrder(sampleOperator, timeBasedConfig, sampleOrder)).toBe(false);
+    expect(getOrderCancelUnavailableMessage(sampleOperator, timeBasedConfig, sampleOrder)).toBe(
+      "Time-based fulfillment is active, so manual order controls are disabled."
+    );
   });
 
   it("filters orders by active, completed, and all views", () => {

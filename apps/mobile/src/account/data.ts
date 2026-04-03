@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { apiClient } from "../api/client";
 
@@ -75,6 +75,11 @@ export type LoyaltyBalance = z.output<typeof loyaltyBalanceSchema>;
 export type LoyaltyLedgerEntry = z.output<typeof loyaltyLedgerEntrySchema>;
 export type ActiveOrderStatus = z.output<typeof activeOrderStatusSchema>;
 
+type CancelOrderInput = {
+  orderId: string;
+  reason: string;
+};
+
 export function sortOrdersByLatestActivity(orders: OrderHistoryEntry[]) {
   return [...orders].sort((left, right) => {
     const leftOccurredAt = left.timeline[left.timeline.length - 1]?.occurredAt ?? "";
@@ -88,6 +93,35 @@ export function useOrderHistoryQuery(enabled = true) {
     queryKey: orderHistoryQueryKey,
     enabled,
     queryFn: async (): Promise<OrderHistoryEntry[]> => sortOrdersByLatestActivity(orderListSchema.parse(await apiClient.listOrders()))
+  });
+}
+
+export function useCancelOrderMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: CancelOrderInput) =>
+      orderSchema.parse(await apiClient.cancelOrder(input.orderId, { reason: input.reason })),
+    onSuccess: async (order) => {
+      queryClient.setQueryData<OrderHistoryEntry[] | undefined>(orderHistoryQueryKey, (currentOrders) => {
+        if (!currentOrders) {
+          return currentOrders;
+        }
+
+        const hasExistingOrder = currentOrders.some((entry) => entry.id === order.id);
+        const nextOrders = hasExistingOrder
+          ? currentOrders.map((entry) => (entry.id === order.id ? order : entry))
+          : [order, ...currentOrders];
+
+        return sortOrdersByLatestActivity(nextOrders);
+      });
+
+      await Promise.allSettled([
+        queryClient.invalidateQueries({ queryKey: orderHistoryQueryKey }),
+        queryClient.invalidateQueries({ queryKey: ["account", "loyalty", "balance"] }),
+        queryClient.invalidateQueries({ queryKey: ["account", "loyalty", "ledger"] })
+      ]);
+    }
   });
 }
 

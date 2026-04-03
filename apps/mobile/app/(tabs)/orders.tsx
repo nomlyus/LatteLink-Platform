@@ -20,6 +20,7 @@ import {
   findActiveOrder,
   orderHistoryQueryKey,
   sortOrdersByLatestActivity,
+  useCancelOrderMutation,
   useLoyaltyLedgerQuery,
   useOrderHistoryQuery,
   type OrderHistoryEntry
@@ -27,6 +28,7 @@ import {
 import { apiClient } from "../../src/api/client";
 import { formatUsd, resolveMenuData, useMenuQuery, type MenuItem } from "../../src/menu/catalog";
 import { getTabBarBottomOffset, TAB_BAR_HEIGHT } from "../../src/navigation/tabBarMetrics";
+import { useCheckoutFlow } from "../../src/orders/flow";
 import {
   findLatestOrderTime,
   formatOrderDateTime,
@@ -526,13 +528,16 @@ export default function OrdersScreen() {
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
   const { isAuthenticated, isHydrating, authRecoveryState } = useAuthSession();
+  const { clearFailure, clearRetryOrder } = useCheckoutFlow();
   const ordersQuery = useOrderHistoryQuery(isAuthenticated);
   const loyaltyLedgerQuery = useLoyaltyLedgerQuery(isAuthenticated);
+  const cancelOrderMutation = useCancelOrderMutation();
   const menuQuery = useMenuQuery();
   const loadingOpacity = useRef(new RNAnimated.Value(1)).current;
   const [showLoadingOverlay, setShowLoadingOverlay] = useState(false);
   const [didFinishInitialReveal, setDidFinishInitialReveal] = useState(false);
   const [isManualRefresh, setIsManualRefresh] = useState(false);
+  const [pendingCancelError, setPendingCancelError] = useState<string | null>(null);
 
   const orders = ordersQuery.data ?? [];
   const loyaltyLedger = loyaltyLedgerQuery.data ?? [];
@@ -611,6 +616,12 @@ export default function OrdersScreen() {
     });
   }, [didFinishInitialReveal, loadingOpacity, shouldShowInitialLoading, showLoadingOverlay]);
 
+  useEffect(() => {
+    if ((activeOrderStatus ?? activeOrder?.status) !== "PENDING_PAYMENT") {
+      setPendingCancelError(null);
+    }
+  }, [activeOrder?.id, activeOrder?.status, activeOrderStatus]);
+
   const refreshOrders = () => {
     if (isManualRefresh) return;
 
@@ -618,6 +629,24 @@ export default function OrdersScreen() {
     void Promise.allSettled([ordersQuery.refetch(), loyaltyLedgerQuery.refetch()]).finally(() => {
       setIsManualRefresh(false);
     });
+  };
+
+  const cancelPendingPaymentOrder = async () => {
+    if (!activeOrder || (activeOrderStatus ?? activeOrder.status) !== "PENDING_PAYMENT" || cancelOrderMutation.isPending) {
+      return;
+    }
+
+    try {
+      setPendingCancelError(null);
+      await cancelOrderMutation.mutateAsync({
+        orderId: activeOrder.id,
+        reason: "Customer canceled unpaid order"
+      });
+      clearRetryOrder();
+      clearFailure();
+    } catch (error) {
+      setPendingCancelError(error instanceof Error ? error.message : "Unable to cancel the unpaid order.");
+    }
   };
 
   if (!isAuthenticated) {
@@ -692,12 +721,24 @@ export default function OrdersScreen() {
               <Button label="Refresh Status" variant="secondary" onPress={refreshOrders} style={styles.activeRefreshButton} />
 
               {(activeOrderStatus ?? activeOrder.status) === "PENDING_PAYMENT" ? (
-                <Button
-                  label="Complete Payment"
-                  onPress={() => router.push("/cart")}
-                  style={styles.paymentButton}
-                  left={<Ionicons name="logo-apple" size={16} color={uiPalette.primaryText} />}
-                />
+                <View style={styles.paymentActionGroup}>
+                  <Button
+                    label="Complete Payment"
+                    onPress={() => router.push("/cart")}
+                    style={styles.paymentButton}
+                    left={<Ionicons name="logo-apple" size={16} color={uiPalette.primaryText} />}
+                  />
+                  <Button
+                    label={cancelOrderMutation.isPending ? "Canceling…" : "Cancel Order"}
+                    variant="secondary"
+                    disabled={cancelOrderMutation.isPending}
+                    onPress={() => {
+                      void cancelPendingPaymentOrder();
+                    }}
+                    style={styles.paymentButton}
+                  />
+                  {pendingCancelError ? <Text style={styles.pendingCancelError}>{pendingCancelError}</Text> : null}
+                </View>
               ) : null}
             </ActiveOrderPill>
           </View>
@@ -1034,8 +1075,17 @@ const styles = StyleSheet.create({
     color: uiPalette.text
   },
   paymentButton: {
-    marginTop: 22,
     alignSelf: "flex-start"
+  },
+  paymentActionGroup: {
+    marginTop: 22,
+    alignSelf: "stretch",
+    gap: 12
+  },
+  pendingCancelError: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: uiPalette.danger
   },
   activeSupportBlock: {
     marginTop: 20,

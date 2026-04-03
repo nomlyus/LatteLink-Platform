@@ -1139,38 +1139,39 @@ describe("orders service", () => {
 
   it("maps Clover decline and timeout payment paths", async () => {
     const app = await buildApp();
-    const quoteResponse = await app.inject({
-      method: "POST",
-      url: "/v1/orders/quote",
-      payload: sampleQuotePayload
-    });
-    const quote = orderQuoteSchema.parse(quoteResponse.json());
-
-    const createResponse = await app.inject({
-      method: "POST",
-      url: "/v1/orders",
-      headers: customerHeaders(),
-      payload: {
-        quoteId: quote.quoteId,
-        quoteHash: quote.quoteHash
-      }
-    });
-    const order = orderSchema.parse(createResponse.json());
+    const { order: declinedOrder } = await createQuotedOrder(app);
 
     const declined = await app.inject({
       method: "POST",
-      url: `/v1/orders/${order.id}/pay`,
+      url: `/v1/orders/${declinedOrder.id}/pay`,
       payload: {
         applePayToken: "apple-pay-decline-token",
         idempotencyKey: "pay-decline"
       }
     });
     expect(declined.statusCode).toBe(402);
-    expect(declined.json()).toMatchObject({ code: "PAYMENT_DECLINED" });
+    expect(declined.json()).toMatchObject({
+      code: "PAYMENT_DECLINED",
+      details: expect.objectContaining({
+        orderId: declinedOrder.id,
+        orderStatus: "CANCELED"
+      })
+    });
+
+    const declinedOrderRead = await app.inject({
+      method: "GET",
+      url: `/v1/orders/${declinedOrder.id}`
+    });
+    expect(declinedOrderRead.statusCode).toBe(200);
+    expect(orderSchema.parse(declinedOrderRead.json()).status).toBe("CANCELED");
+
+    const { order: timedOutOrder } = await createQuotedOrder(app, {
+      userId: "123e4567-e89b-12d3-a456-426614174120"
+    });
 
     const timedOut = await app.inject({
       method: "POST",
-      url: `/v1/orders/${order.id}/pay`,
+      url: `/v1/orders/${timedOutOrder.id}/pay`,
       payload: {
         applePayToken: "apple-pay-timeout-token",
         idempotencyKey: "pay-timeout"
@@ -1181,7 +1182,7 @@ describe("orders service", () => {
 
     const blockedRetry = await app.inject({
       method: "POST",
-      url: `/v1/orders/${order.id}/pay`,
+      url: `/v1/orders/${timedOutOrder.id}/pay`,
       payload: {
         applePayToken: "apple-pay-success-token",
         idempotencyKey: "pay-timeout-retry"
@@ -1198,7 +1199,7 @@ describe("orders service", () => {
 
     const getOrder = await app.inject({
       method: "GET",
-      url: `/v1/orders/${order.id}`
+      url: `/v1/orders/${timedOutOrder.id}`
     });
     expect(getOrder.statusCode).toBe(200);
     expect(orderSchema.parse(getOrder.json()).status).toBe("PENDING_PAYMENT");
@@ -1717,29 +1718,44 @@ describe("orders service", () => {
     await app.close();
   });
 
-  it("rejects staff-driven cancel requests when time-based fulfillment mode is active", async () => {
+  it("allows staff-driven cancel requests for unpaid orders when time-based fulfillment mode is active", async () => {
     vi.stubEnv("ORDER_FULFILLMENT_MODE", "time_based");
     const app = await buildApp();
+    const { order } = await createQuotedOrder(app);
 
-    const quoteResponse = await app.inject({
+    const cancelResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
-      payload: sampleQuotePayload
-    });
-    expect(quoteResponse.statusCode).toBe(200);
-    const quote = orderQuoteSchema.parse(quoteResponse.json());
-
-    const createResponse = await app.inject({
-      method: "POST",
-      url: "/v1/orders",
-      headers: customerHeaders(),
+      url: `/v1/orders/${order.id}/cancel`,
+      headers: {
+        "x-order-cancel-source": "staff"
+      },
       payload: {
-        quoteId: quote.quoteId,
-        quoteHash: quote.quoteHash
+        reason: "Canceled by operator"
       }
     });
-    expect(createResponse.statusCode).toBe(200);
-    const order = orderSchema.parse(createResponse.json());
+
+    expect(cancelResponse.statusCode).toBe(200);
+    expect(orderSchema.parse(cancelResponse.json()).status).toBe("CANCELED");
+
+    await app.close();
+  });
+
+  it("rejects staff-driven cancel requests for paid orders when time-based fulfillment mode is active", async () => {
+    vi.stubEnv("ORDER_FULFILLMENT_MODE", "time_based");
+    const app = await buildApp();
+    const { order } = await createQuotedOrder(app, {
+      userId: "123e4567-e89b-12d3-a456-426614174121"
+    });
+
+    const payResponse = await app.inject({
+      method: "POST",
+      url: `/v1/orders/${order.id}/pay`,
+      payload: {
+        applePayToken: "apple-pay-success-token",
+        idempotencyKey: "pay-before-staff-cancel-block"
+      }
+    });
+    expect(payResponse.statusCode).toBe(200);
 
     const cancelResponse = await app.inject({
       method: "POST",
