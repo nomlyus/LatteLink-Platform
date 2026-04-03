@@ -1135,11 +1135,13 @@ export async function processPayment(params: {
         await deps.repository.setPaymentId(orderId, requestedCharge.snapshot.paymentId);
       }
 
-      if (requestedCharge.error.code === "PAYMENT_DECLINED" && requestedCharge.snapshot?.status === "DECLINED") {
+      if (requestedCharge.error.code !== "PAYMENT_TIMEOUT") {
         const canceledTransition = transitionOrderStatus(existingOrder, "CANCELED", {
-          note: requestedCharge.snapshot.message
-            ? `Payment declined before confirmation: ${requestedCharge.snapshot.message}`
-            : "Payment declined before order confirmation.",
+          note: requestedCharge.snapshot?.message
+            ? `Payment failed before confirmation: ${requestedCharge.snapshot.message}`
+            : requestedCharge.error.message
+              ? `Payment failed before confirmation: ${requestedCharge.error.message}`
+              : "Payment failed before order confirmation.",
           source: "system"
         });
         await deps.repository.updateOrder(orderId, canceledTransition.order);
