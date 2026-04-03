@@ -83,21 +83,38 @@ export function quoteItemsEqual(left: QuoteItem[], right: QuoteItem[]) {
   });
 }
 
-function resolveCheckoutErrorMessage(error: unknown, fallback: string) {
+type ParsedCheckoutApiError = {
+  code?: string;
+  message?: string;
+  details?: Record<string, unknown>;
+};
+
+function parseCheckoutApiError(error: unknown): ParsedCheckoutApiError | undefined {
   if (!(error instanceof Error) || !error.message) {
-    return fallback;
+    return undefined;
   }
 
   const jsonSuffixMatch = error.message.match(/:\s*(\{[\s\S]*\})$/);
-  if (jsonSuffixMatch) {
-    try {
-      const parsed = JSON.parse(jsonSuffixMatch[1]) as { message?: unknown };
-      if (typeof parsed.message === "string" && parsed.message.trim().length > 0) {
-        return parsed.message;
-      }
-    } catch {
-      // Fall through to the original error message when the suffix is not valid JSON.
-    }
+  if (!jsonSuffixMatch) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(jsonSuffixMatch[1]) as ParsedCheckoutApiError;
+    return parsed && typeof parsed === "object" ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveCheckoutErrorMessage(error: unknown, fallback: string) {
+  const parsedApiError = parseCheckoutApiError(error);
+  if (typeof parsedApiError?.message === "string" && parsedApiError.message.trim().length > 0) {
+    return parsedApiError.message;
+  }
+
+  if (!(error instanceof Error) || !error.message) {
+    return fallback;
   }
 
   return error.message;
@@ -145,8 +162,11 @@ export function useApplePayCheckoutMutation() {
             idempotencyKey: createCheckoutIdempotencyKey()
           });
         } catch (error) {
+          const parsedApiError = parseCheckoutApiError(error);
           const message = resolveCheckoutErrorMessage(error, "Unable to complete payment.");
-          throw new CheckoutSubmissionError(message, "pay", input.existingOrder);
+          const shouldKeepRetryOrder =
+            parsedApiError?.code === "PAYMENT_TIMEOUT" || parsedApiError?.code === "PAYMENT_RECONCILIATION_PENDING";
+          throw new CheckoutSubmissionError(message, "pay", shouldKeepRetryOrder ? input.existingOrder : undefined);
         }
       }
 
@@ -185,8 +205,11 @@ export function useApplePayCheckoutMutation() {
           idempotencyKey: createCheckoutIdempotencyKey()
         });
       } catch (error) {
+        const parsedApiError = parseCheckoutApiError(error);
         const message = resolveCheckoutErrorMessage(error, "Unable to complete payment.");
-        throw new CheckoutSubmissionError(message, "pay", orderSnapshot);
+        const shouldKeepRetryOrder =
+          parsedApiError?.code === "PAYMENT_TIMEOUT" || parsedApiError?.code === "PAYMENT_RECONCILIATION_PENDING";
+        throw new CheckoutSubmissionError(message, "pay", shouldKeepRetryOrder ? orderSnapshot : undefined);
       }
     }
   });

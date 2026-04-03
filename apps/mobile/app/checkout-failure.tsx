@@ -1,11 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GlassActionPill } from "../src/cart/GlassActionPill";
+import { useCancelOrderMutation } from "../src/account/data";
 import { useCheckoutFlow } from "../src/orders/flow";
 import { formatOrderDateTime } from "../src/orders/history";
-import { uiPalette, uiTypography } from "../src/ui/system";
+import { Button, uiPalette, uiTypography } from "../src/ui/system";
 
 function DetailRow({
   label,
@@ -51,7 +53,9 @@ function formatUsd(amountCents: number) {
 export default function CheckoutFailureScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { failure, retryOrder, clearFailure } = useCheckoutFlow();
+  const { failure, retryOrder, clearFailure, clearRetryOrder } = useCheckoutFlow();
+  const cancelOrderMutation = useCancelOrderMutation();
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   const createdButUnpaid = failure?.stage === "pay" && failure.order;
   const title = createdButUnpaid ? "Payment Didn’t Finish" : "Payment Didn’t Go Through";
@@ -73,6 +77,25 @@ export default function CheckoutFailureScreen() {
   function goToMenu() {
     clearFailure();
     router.dismissTo("/(tabs)/menu");
+  }
+
+  async function cancelOpenOrder() {
+    if (!createdButUnpaid || cancelOrderMutation.isPending) {
+      return;
+    }
+
+    try {
+      setCancelError(null);
+      await cancelOrderMutation.mutateAsync({
+        orderId: createdButUnpaid.id,
+        reason: "Customer canceled unpaid order after payment failure"
+      });
+      clearRetryOrder();
+      clearFailure();
+      router.dismissTo("/(tabs)/orders");
+    } catch (error) {
+      setCancelError(error instanceof Error ? error.message : "Unable to cancel the open order.");
+    }
   }
 
   return (
@@ -105,12 +128,29 @@ export default function CheckoutFailureScreen() {
                 <Text style={styles.messageText}>{failure.message}</Text>
               </View>
             ) : null}
+
+            {cancelError ? (
+              <View style={styles.messageBlock}>
+                <Text style={styles.messageLabel}>Cancel failed</Text>
+                <Text style={styles.messageText}>{cancelError}</Text>
+              </View>
+            ) : null}
           </View>
         </View>
 
         <View style={[styles.footerContent, { paddingBottom: Math.max(insets.bottom, 12) }]}>
           <GlassActionPill label={retryOrder ? "Retry Payment" : "Return to Cart"} onPress={returnToCart} tone="dark" />
           <GlassActionPill label={createdButUnpaid ? "View Orders" : "Back to Menu"} onPress={createdButUnpaid ? goToOrders : goToMenu} />
+          {createdButUnpaid ? (
+            <Button
+              label={cancelOrderMutation.isPending ? "Canceling open order…" : "Cancel Open Order"}
+              onPress={() => {
+                void cancelOpenOrder();
+              }}
+              disabled={cancelOrderMutation.isPending}
+              variant="secondary"
+            />
+          ) : null}
         </View>
       </View>
     </View>

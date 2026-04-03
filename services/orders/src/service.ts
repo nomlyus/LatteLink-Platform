@@ -1135,6 +1135,35 @@ export async function processPayment(params: {
         await deps.repository.setPaymentId(orderId, requestedCharge.snapshot.paymentId);
       }
 
+      if (requestedCharge.error.code === "PAYMENT_DECLINED" && requestedCharge.snapshot?.status === "DECLINED") {
+        const canceledTransition = transitionOrderStatus(existingOrder, "CANCELED", {
+          note: requestedCharge.snapshot.message
+            ? `Payment declined before confirmation: ${requestedCharge.snapshot.message}`
+            : "Payment declined before order confirmation.",
+          source: "system"
+        });
+        await deps.repository.updateOrder(orderId, canceledTransition.order);
+        await deps.repository.savePaymentIdempotency(orderId, input.idempotencyKey);
+        await sendOrderStateNotification({
+          requestId,
+          deps,
+          userId: orderUserId,
+          order: canceledTransition.order,
+          timelineEntry: canceledTransition.appliedTransitions[0]?.timelineEntry
+        });
+
+        return {
+          error: buildServiceError({
+            ...requestedCharge.error,
+            details: {
+              ...requestedCharge.error.details,
+              orderId,
+              orderStatus: canceledTransition.order.status
+            }
+          })
+        };
+      }
+
       return { error: requestedCharge.error };
     }
 
@@ -1289,7 +1318,7 @@ export async function cancelOrder(params: {
     return { order: existingOrder };
   }
 
-  if (cancelSource === "staff" && deps.fulfillmentConfig.mode !== "staff") {
+  if (cancelSource === "staff" && existingOrder.status !== "PENDING_PAYMENT" && deps.fulfillmentConfig.mode !== "staff") {
     return {
       error: buildServiceError({
         statusCode: 409,
