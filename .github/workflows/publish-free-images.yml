@@ -150,5 +150,6 @@ jobs:
               echo "- Latest tag: not published"
             fi
             echo
-            echo "Use \`${SHA_TAG}\` as \`FREE_IMAGE_TAG\` if you want to deploy this exact build with \`deploy-free\`."
+            echo "A successful \`main\` publish automatically triggers \`deploy-free\` with \`${SHA_TAG}\`."
+            echo "Use manual \`deploy-free\` \`image_tag\` input overrides only when you want to redeploy or roll back to a specific immutable build."
           } >> "$GITHUB_STEP_SUMMARY"

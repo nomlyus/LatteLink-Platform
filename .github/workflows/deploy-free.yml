@@ -2,28 +2,62 @@ name: deploy-free
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - "services/**"
-      - "packages/contracts/**"
-      - "packages/persistence/**"
-      - "infra/free/**"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - "turbo.json"
-      - ".github/workflows/deploy-free.yml"
+    inputs:
+      image_tag:
+        description: Optional immutable image tag override for manual redeploy or rollback
+        required: false
+        type: string
+  workflow_run:
+    workflows:
+      - publish-free-images
+    types:
+      - completed
 
 permissions:
   contents: read
 
 jobs:
   deploy:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'main'
+      )
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Resolve deploy image tag
+        id: image-tag
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
+          DEFAULT_IMAGE_TAG: ${{ vars.FREE_IMAGE_TAG }}
+        run: |
+          resolved_tag=""
+          source=""
+
+          if [ -n "${INPUT_IMAGE_TAG:-}" ]; then
+            resolved_tag="${INPUT_IMAGE_TAG}"
+            source="workflow_dispatch input"
+          elif [ "${EVENT_NAME}" = "workflow_run" ] && [ -n "${WORKFLOW_RUN_HEAD_SHA:-}" ]; then
+            resolved_tag="sha-${WORKFLOW_RUN_HEAD_SHA::12}"
+            source="publish-free-images head SHA"
+          elif [ -n "${DEFAULT_IMAGE_TAG:-}" ]; then
+            resolved_tag="${DEFAULT_IMAGE_TAG}"
+            source="FREE_IMAGE_TAG variable"
+          else
+            resolved_tag="latest"
+            source="latest fallback"
+          fi
+
+          echo "tag=${resolved_tag}" >> "$GITHUB_OUTPUT"
+          echo "source=${source}" >> "$GITHUB_OUTPUT"
+          echo "Deploy image tag: ${resolved_tag} (${source})"
 
       - name: Check deploy prerequisites
         id: free-check
@@ -133,7 +167,7 @@ jobs:
           FREE_DEPLOY_PATH: ${{ vars.FREE_DEPLOY_PATH }}
           FREE_API_DOMAIN: ${{ vars.FREE_API_DOMAIN }}
           FREE_CLIENT_DASHBOARD_DOMAIN: ${{ vars.FREE_CLIENT_DASHBOARD_DOMAIN }}
-          FREE_IMAGE_TAG: ${{ vars.FREE_IMAGE_TAG }}
+          FREE_IMAGE_TAG: ${{ steps.image-tag.outputs.tag }}
           FREE_IMAGE_REGISTRY_PREFIX: ${{ vars.FREE_IMAGE_REGISTRY_PREFIX }}
           FREE_PASSKEY_RP_ID: ${{ vars.FREE_PASSKEY_RP_ID }}
           FREE_CORS_ALLOWED_ORIGINS: ${{ vars.FREE_CORS_ALLOWED_ORIGINS }}

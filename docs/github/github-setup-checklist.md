@@ -1,8 +1,9 @@
 # GitHub Setup Checklist
 
-Last reviewed: `2026-03-21`
+Last reviewed: `2026-04-03`
 
 ## Repository
+
 - [x] org: `GazelleDev`
 - [x] repo: `GazelleMobilePlatform`
 - [x] visibility: `public`
@@ -10,14 +11,18 @@ Last reviewed: `2026-03-21`
 - [x] merge method: squash only
 
 ## Teams
+
 Create:
+
 - [x] `@GazelleDev/mobile`
 - [x] `@GazelleDev/platform`
 - [x] `@GazelleDev/infra`
 - [x] `@GazelleDev/security`
 
 ## Branch Protection (`main`)
+
 Enable:
+
 - [x] pull request required
 - [ ] minimum 1 approval (currently `0`)
 - [ ] CODEOWNERS review required (currently disabled)
@@ -29,6 +34,7 @@ Enable:
 - [x] block deletion
 
 Required checks:
+
 - [x] `lint`
 - [x] `typecheck`
 - [x] `unit-tests`
@@ -40,18 +46,23 @@ Required checks:
 - [x] `secret-scan`
 
 ## Environments
+
 Create environments:
+
 - [x] `dev`
 - [x] `staging`
 - [x] `prod`
 
 Rules:
+
 - [x] `dev`: auto deploy from `main`
 - [x] `staging`: manual approval
 - [x] `prod`: manual approval with reviewers `@GazelleDev/platform`, `@GazelleDev/infra`
 
 ## Project Board
+
 Create project board columns:
+
 - [x] Backlog
 - [x] Ready
 - [x] In Progress
@@ -59,6 +70,7 @@ Create project board columns:
 - [x] Done
 
 ## Repository Variables
+
 - [x] `AWS_REGION=us-east-1`
 - [x] `API_BASE_URL_DEV`
 - [x] `API_BASE_URL_STAGING`
@@ -66,7 +78,6 @@ Create project board columns:
 - [ ] `FREE_API_DOMAIN`
 - [ ] `FREE_DEPLOY_PATH`
 - [ ] `FREE_IMAGE_REGISTRY_PREFIX`
-- [ ] `FREE_IMAGE_TAG`
 - [ ] `FREE_PASSKEY_RP_ID`
 - [ ] `FREE_CORS_ALLOWED_ORIGINS`
 - [ ] `FREE_CLIENT_DASHBOARD_DOMAIN`
@@ -76,8 +87,10 @@ Create project board columns:
 - [ ] `FREE_CLOVER_CHARGE_ENDPOINT`
 - [ ] `FREE_CLOVER_REFUND_ENDPOINT`
 - [ ] `FREE_CLOVER_APPLE_PAY_TOKENIZE_ENDPOINT`
+- [ ] `FREE_IMAGE_TAG` (optional manual override for rollback or explicit redeploys)
 
 ## Environment Secrets
+
 - [ ] `AWS_ROLE_ARN`
 - [ ] `DATABASE_URL`
 - [ ] `REDIS_URL`
@@ -127,4 +140,5 @@ Create project board columns:
 - [ ] `GHCR_TOKEN` (if GHCR images are private)
 
 Notes:
+
 - `gh secret list --repo AnxiousDaoud/LatteLink-Platform` and per-environment secret list commands returned no configured secrets on `2026-03-09`.

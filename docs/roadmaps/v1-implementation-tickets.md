@@ -1392,3 +1392,41 @@ Acceptance criteria:
 - the docs provide exact commands or equivalent steps for resetting local `dev` from updated `main`
 - the docs require refreshing `origin/dev` after the post-merge reset
 - post-launch hotfix flow is documented as `main` -> `hotfix/*` -> `main` -> `dev`
+
+### XS-V1-09 Automated Immutable Free-First Image Promotion
+
+Status:
+
+- `owner`: Codex
+- `status`: validated locally, pending merge to main
+- `done`: changed `deploy-free` to auto-consume the just-published immutable SHA tag after successful `publish-free-images` runs on `main`, kept manual image-tag override support for rollback and explicit redeploys, and aligned the free-first deployment docs with the automated release path
+- `blocked`: no external blocker
+
+Goal:
+Remove the manual `FREE_IMAGE_TAG` update step from normal free-first releases without giving up immutable-image deploys or rollback clarity.
+
+Scope:
+
+- trigger `deploy-free` automatically after successful `publish-free-images` runs on `main`
+- resolve the deployed image tag from the just-published commit SHA by default
+- preserve manual `workflow_dispatch` image-tag overrides for rollback and explicit redeploys
+- downgrade `FREE_IMAGE_TAG` from required release input to optional manual override in the runbooks
+- document the expected path for image publish, automatic deploy, and manual infra-only redeploys
+
+Key deliverables:
+
+- one `deploy-free` workflow that deploys the exact SHA published by the preceding image workflow on `main`
+- updated free-first release docs that no longer require editing `FREE_IMAGE_TAG` on every backend release
+- one explicit rollback path that still accepts an immutable tag override
+
+Dependencies:
+
+- `BE-V1-01`
+- `XS-V1-03`
+
+Acceptance criteria:
+
+- successful `publish-free-images` runs on `main` automatically trigger `deploy-free`
+- the automatic deploy uses the matching `sha-<12>` image tag from the published commit by default
+- operators can still run `deploy-free` manually with an explicit image-tag override for rollback or redeploys
+- the runbooks describe `FREE_IMAGE_TAG` as an optional manual override instead of a required per-release variable update

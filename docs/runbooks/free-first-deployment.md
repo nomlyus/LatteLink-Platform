@@ -1,6 +1,6 @@
 # Free-First Deployment (GitHub Student + DigitalOcean)
 
-Last reviewed: `2026-04-01`
+Last reviewed: `2026-04-03`
 
 ## Goal
 
@@ -56,11 +56,12 @@ su - deploy -c 'docker version'
 
 ## Publish Images
 
-Before `deploy-free`, publish the backend service images:
+Before the first deploy, publish the backend service images:
 
 1. Trigger `publish-free-images` from GitHub Actions
 2. Note the published SHA tag from the workflow summary, for example `sha-abc123def456`
-3. Set `FREE_IMAGE_TAG` to that tag if you want to deploy an exact build, or let `latest` flow from `main`
+3. On `main`, a successful publish now triggers `deploy-free` automatically and deploys that exact immutable SHA tag
+4. Use manual `deploy-free` `image_tag` input overrides only when you want to redeploy or roll back to a specific immutable build
 
 The publish workflow creates:
 
@@ -80,11 +81,11 @@ The publish workflow creates:
 Recommended:
 
 - `FREE_DEPLOY_PATH` (default: `/opt/gazelle-free`)
-- `FREE_IMAGE_TAG` (default: `latest`)
 - `FREE_PASSKEY_RP_ID` (defaults to `FREE_API_DOMAIN`)
 
 Optional:
 
+- `FREE_IMAGE_TAG` as a manual fallback when you want `workflow_dispatch` redeploys to default to a specific immutable tag instead of `latest`
 - `FREE_CORS_ALLOWED_ORIGINS`
 - `FREE_CLIENT_DASHBOARD_DOMAIN` if you want the workflow to derive the dashboard CORS origin automatically
 - `FREE_GOOGLE_OAUTH_ALLOWED_REDIRECT_URIS`
@@ -174,9 +175,19 @@ If `FREE_PAYMENTS_PROVIDER_MODE=live`, the workflow validates the generated serv
 
 ## Deploy
 
-1. Ensure Docker images are published to GHCR for the selected tag.
-2. Trigger `deploy-free` workflow from GitHub Actions.
-3. Workflow copies `infra/free` to the host, writes runtime `.env`, and runs:
+Normal release path:
+
+1. Merge the intended backend change to `main`.
+2. Let `publish-free-images` finish successfully.
+3. `deploy-free` triggers automatically from that workflow and deploys the matching immutable `sha-<12>` tag.
+
+Manual deploy path:
+
+1. Trigger `deploy-free` from GitHub Actions.
+2. Leave `image_tag` blank to use the optional `FREE_IMAGE_TAG` fallback or `latest`.
+3. Set `image_tag` explicitly when you want to redeploy or roll back to a known immutable tag.
+
+In both paths the workflow copies `infra/free` to the host, writes runtime `.env`, and runs:
 
 ```bash
 docker compose pull
