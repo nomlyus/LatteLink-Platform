@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   createOrderRequestSchema,
@@ -100,6 +101,20 @@ function parseJsonSafely(raw: string): unknown {
   } catch {
     return raw;
   }
+}
+
+function timingSafeTokenMatches(expectedToken: string | undefined, providedToken: string | undefined) {
+  if (expectedToken === undefined || providedToken === undefined) {
+    return expectedToken === providedToken;
+  }
+
+  const expectedBuffer = Buffer.from(expectedToken, "utf8");
+  const providedBuffer = Buffer.from(providedToken, "utf8");
+  if (expectedBuffer.length !== providedBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(expectedBuffer, providedBuffer);
 }
 
 class SubmitOrderDispatchError extends Error {
@@ -241,7 +256,7 @@ function authorizeInternalRequest(
 
   const parsedHeaders = internalHeadersSchema.safeParse(request.headers);
   const providedToken = parsedHeaders.success ? parsedHeaders.data["x-internal-token"] : undefined;
-  if (providedToken === internalToken) {
+  if (timingSafeTokenMatches(internalToken, providedToken)) {
     return true;
   }
 
@@ -265,7 +280,7 @@ function authorizeGatewayRequest(
 
   const parsedHeaders = gatewayHeadersSchema.safeParse(request.headers);
   const providedToken = parsedHeaders.success ? parsedHeaders.data["x-gateway-token"] : undefined;
-  if (providedToken === gatewayToken) {
+  if (timingSafeTokenMatches(gatewayToken, providedToken)) {
     return true;
   }
 
