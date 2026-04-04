@@ -96,6 +96,7 @@ jobs:
 
   validate-commits:
     name: validate-commits
+    if: ${{ github.event.pull_request.base.ref == 'dev' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
