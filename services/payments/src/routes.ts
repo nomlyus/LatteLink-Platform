@@ -2000,6 +2000,12 @@ export async function registerRoutes(app: FastifyInstance) {
   );
   let latestCloverWebhookVerificationCode: RecentCloverWebhookVerificationCode | undefined;
 
+  const requireOrdersInternalWriteAccess = async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!authorizeInternalRequest(request, reply, ordersInternalToken)) {
+      return reply;
+    }
+  };
+
   app.addHook("onClose", async () => {
     await repository.close();
   });
@@ -2307,11 +2313,10 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   });
 
-  app.post("/v1/payments/orders/submit", { preHandler: app.rateLimit(paymentsWriteRateLimit) }, async (request, reply) => {
-    if (!authorizeInternalRequest(request, reply, ordersInternalToken)) {
-      return;
-    }
-
+  app.post(
+    "/v1/payments/orders/submit",
+    { preHandler: [app.rateLimit(paymentsWriteRateLimit), requireOrdersInternalWriteAccess] },
+    async (request, reply) => {
     const order = orderSchema.parse(request.body);
     if (cloverProvider.mode === "simulated") {
       return submitOrderResponseSchema.parse({ accepted: true });
@@ -2368,7 +2373,8 @@ export async function registerRoutes(app: FastifyInstance) {
         })
       );
     }
-  });
+    }
+  );
 
   app.post("/v1/payments/charges", { preHandler: app.rateLimit(paymentsWriteRateLimit) }, async (request, reply) => {
     if (!authorizeInternalRequest(request, reply, ordersInternalToken)) {
