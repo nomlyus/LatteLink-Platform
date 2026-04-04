@@ -1817,6 +1817,54 @@ describe("gateway", () => {
     await app.close();
   });
 
+  it("rejects invalid admin menu customization updates with a client error", async () => {
+    const app = await buildApp();
+
+    const response = await app.inject({
+      method: "PUT",
+      url: "/v1/admin/menu/latte",
+      headers: ownerOperatorHeaders,
+      payload: {
+        name: "Honey Oat Latte",
+        priceCents: 675,
+        visible: true,
+        customizationGroups: [
+          {
+            id: "milk",
+            label: "Milk",
+            selectionType: "single",
+            required: true,
+            sortOrder: 0,
+            options: [
+              {
+                id: "oat",
+                label: "Oat milk",
+                priceDeltaCents: "75",
+                default: true,
+                available: true,
+                sortOrder: 0
+              }
+            ]
+          }
+        ]
+      }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({
+      code: "INVALID_REQUEST",
+      message: "Admin menu update payload is invalid"
+    });
+
+    const updateCall = fetchMock.mock.calls.find(([input, init]) => {
+      const url = typeof input === "string" ? input : input.url;
+      return url === "http://catalog.internal/v1/catalog/admin/menu/latte" && (init?.method ?? "GET") === "PUT";
+    });
+    expect(updateCall).toBeUndefined();
+
+    await app.close();
+  });
+
   it("blocks staff from owner-only admin routes", async () => {
     const app = await buildApp();
 

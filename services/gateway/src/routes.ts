@@ -169,6 +169,15 @@ function internalAdminUnauthorized(requestId: string, message: string, code = "U
   });
 }
 
+function invalidRequest(requestId: string, message: string, details?: unknown) {
+  return apiErrorSchema.parse({
+    code: "INVALID_REQUEST",
+    message,
+    requestId,
+    ...(details === undefined ? {} : { details })
+  });
+}
+
 function ensureInternalAdminToken(request: FastifyRequest, reply: FastifyReply, expectedToken: string | undefined) {
   if (!expectedToken) {
     reply.status(503).send(
@@ -2049,7 +2058,14 @@ export async function registerRoutes(app: FastifyInstance) {
     },
     async (request, reply) => {
       const { itemId } = menuItemParamsSchema.parse(request.params);
-      const input = adminMenuItemUpdateWithCustomizationsSchema.parse(request.body);
+      const parsedBody = adminMenuItemUpdateWithCustomizationsSchema.safeParse(request.body);
+      if (!parsedBody.success) {
+        return reply.status(400).send(
+          invalidRequest(request.id, "Admin menu update payload is invalid", {
+            issues: parsedBody.error.issues
+          })
+        );
+      }
 
       return proxyUpstream({
         request,
@@ -2058,7 +2074,7 @@ export async function registerRoutes(app: FastifyInstance) {
         serviceLabel: "Catalog",
         method: "PUT",
         path: `/v1/catalog/admin/menu/${itemId}`,
-        body: input,
+        body: parsedBody.data,
         additionalHeaders: {
           "x-gateway-token": gatewayInternalApiToken
         },
