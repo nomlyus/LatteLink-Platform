@@ -1,10 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { apiClient } from "../../src/api/client";
 import { getAccountRecoveryCopy } from "../../src/auth/recovery";
 import { useAuthSession } from "../../src/auth/session";
 import { useLoyaltyBalanceQuery, useLoyaltyLedgerQuery } from "../../src/account/data";
@@ -13,13 +15,10 @@ import { isMobileLoyaltyVisible, resolveAppConfigData, useAppConfigQuery } from 
 import { TAB_BAR_HEIGHT, getTabBarBottomOffset } from "../../src/navigation/tabBarMetrics";
 import { Chip, GlassCard, ScreenScroll, ScreenStatic, SectionLabel, uiPalette, uiTypography } from "../../src/ui/system";
 
-function formatMemberLabel(userId: string | undefined) {
-  if (!userId) {
-    return "Member";
-  }
-
-  return `Member ${userId.slice(0, 8).toUpperCase()}`;
-}
+type AccountIdentity = Awaited<ReturnType<typeof apiClient.me>> & {
+  name?: string;
+  displayName?: string;
+};
 
 function AccountPageRow({
   label,
@@ -88,16 +87,26 @@ function GuestSignInPill({
 export default function AccountScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { isAuthenticated, session, authRecoveryState } = useAuthSession();
+  const { isAuthenticated, authRecoveryState } = useAuthSession();
   const appConfigQuery = useAppConfigQuery();
   const appConfig = resolveAppConfigData(appConfigQuery.data);
   const loyaltyEnabled = isMobileLoyaltyVisible(appConfigQuery.data);
+  const identityQuery = useQuery({
+    queryKey: ["account", "identity"],
+    enabled: isAuthenticated,
+    queryFn: async (): Promise<AccountIdentity> => apiClient.me()
+  });
   const loyaltyBalanceQuery = useLoyaltyBalanceQuery(isAuthenticated && loyaltyEnabled);
   const loyaltyLedgerQuery = useLoyaltyLedgerQuery(isAuthenticated && loyaltyEnabled);
   const [isManualRefresh, setIsManualRefresh] = useState(false);
 
   const loyaltyBalance = loyaltyBalanceQuery.data;
-  const memberLabel = formatMemberLabel(session?.userId);
+  const identity = identityQuery.data;
+  const accountGreeting =
+    identity?.name?.trim() ||
+    identity?.displayName?.trim() ||
+    identity?.email?.trim() ||
+    "Welcome back";
   const headerOffset = insets.top + ACCOUNT_HEADER_HEIGHT;
   const contentBottomInset = Math.max(getTabBarBottomOffset(insets.bottom > 0) + TAB_BAR_HEIGHT + 24 - insets.bottom, 24);
   const staticBottomInset = getTabBarBottomOffset(insets.bottom > 0) + TAB_BAR_HEIGHT + 12;
@@ -109,6 +118,7 @@ export default function AccountScreen() {
     setIsManualRefresh(true);
     void Promise.allSettled([
       appConfigQuery.refetch(),
+      identityQuery.refetch(),
       loyaltyBalanceQuery.refetch(),
       loyaltyLedgerQuery.refetch()
     ]).finally(() => {
@@ -156,8 +166,8 @@ export default function AccountScreen() {
         <GlassCard style={styles.heroCard}>
           <View style={styles.heroTopRow}>
             <View style={styles.heroCopy}>
-              <SectionLabel label="Member" />
-              <Text style={styles.heroTitle}>{memberLabel}</Text>
+              <SectionLabel label="Account" />
+              <Text style={styles.heroTitle}>{accountGreeting}</Text>
               <Text style={styles.heroBody}>{appConfig.brand.locationName}</Text>
             </View>
             <Chip label={loyaltyEnabled ? "Loyalty On" : "Loyalty Off"} active={loyaltyEnabled} />
@@ -167,7 +177,7 @@ export default function AccountScreen() {
             <Text style={styles.pointsLabel}>Available points</Text>
             <Text style={styles.pointsValue}>{loyaltyEnabled ? (loyaltyBalance ? `${loyaltyBalance.availablePoints}` : "…") : "Off"}</Text>
             <View style={styles.pointsMetaRow}>
-              <Text style={styles.pointsMeta}>{loyaltyEnabled ? `Pending ${loyaltyBalance ? loyaltyBalance.pendingPoints : "--"} pts` : "Loyalty unavailable"}</Text>
+              <Text style={styles.pointsMeta}>{loyaltyEnabled ? `Lifetime ${loyaltyBalance ? loyaltyBalance.lifetimeEarned : "--"} pts` : "Loyalty unavailable"}</Text>
             </View>
           </View>
         </GlassCard>
