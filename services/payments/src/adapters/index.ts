@@ -1,5 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
 import {
+  isCloverCredentialsUnavailableError,
   resolveRuntimeCloverCredentials,
   type CloverOAuthConfig,
   type CloverProviderConfig,
@@ -20,6 +21,11 @@ export async function getAdapter(params: {
     providerConfig: params.providerConfig,
     oauthConfig: params.oauthConfig
   });
+  if (isCloverCredentialsUnavailableError(runtimeCredentials)) {
+    const error = Object.assign(new Error(runtimeCredentials.error.message), runtimeCredentials.error);
+    error.name = "CloverCredentialsUnavailableError";
+    throw error;
+  }
   if (!runtimeCredentials) {
     throw new Error(
       params.oauthConfig.misconfigurationReason ??

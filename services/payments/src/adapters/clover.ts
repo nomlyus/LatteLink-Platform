@@ -80,10 +80,10 @@ export class CloverAdapter implements PosAdapter {
     let sourceToken = request.paymentSourceToken ?? request.applePayToken;
     if (!sourceToken && request.applePayWallet) {
       if (!this.config.applePayTokenizeEndpoint) {
-        throw new Error("CLOVER_APPLE_PAY_TOKENIZE_ENDPOINT is required for applePayWallet requests");
+        throw new Error("Clover wallet tokenization endpoint is not configured");
       }
       if (!this.credentials.apiAccessKey) {
-        throw new Error("CLOVER_API_ACCESS_KEY is required for applePayWallet requests");
+        throw new Error("Clover merchant API access key is not configured. Complete the Clover OAuth connection flow.");
       }
 
       const tokenizeController = new AbortController();

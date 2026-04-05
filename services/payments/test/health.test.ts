@@ -19,6 +19,32 @@ function webhookHeaders(extraHeaders?: Record<string, string>) {
   };
 }
 
+async function connectCloverOauth(app: Awaited<ReturnType<typeof buildApp>>, merchantId = "merchant-oauth-1") {
+  const connectResponse = await app.inject({
+    method: "GET",
+    url: "/v1/payments/clover/oauth/connect"
+  });
+  expect(connectResponse.statusCode).toBe(200);
+
+  const authorizeUrl = new URL((connectResponse.json() as { authorizeUrl: string }).authorizeUrl);
+  const state = authorizeUrl.searchParams.get("state");
+  expect(state).toEqual(expect.any(String));
+
+  const callbackResponse = await app.inject({
+    method: "GET",
+    url: `/v1/payments/clover/oauth/callback?code=oauth-code-1&state=${encodeURIComponent(String(state))}&merchant_id=${merchantId}`
+  });
+  expect(callbackResponse.statusCode).toBe(200);
+  return callbackResponse;
+}
+
+function stubLiveCloverOauthEnv() {
+  vi.stubEnv("PAYMENTS_PROVIDER_MODE", "live");
+  vi.stubEnv("CLOVER_APP_ID", "clover-app-id");
+  vi.stubEnv("CLOVER_APP_SECRET", "clover-app-secret");
+  vi.stubEnv("CLOVER_OAUTH_REDIRECT_URI", "https://example.test/v1/payments/clover/oauth/callback");
+}
+
 describe("payments service", () => {
   beforeEach(() => {
     vi.stubEnv("ORDERS_INTERNAL_API_TOKEN", internalPaymentsToken);
@@ -48,11 +74,7 @@ describe("payments service", () => {
   });
 
   it("returns degraded readiness when live Clover mode is misconfigured", async () => {
-    vi.stubEnv("CLOVER_PROVIDER_MODE", "live");
-    vi.stubEnv("CLOVER_BEARER_TOKEN", "");
-    vi.stubEnv("CLOVER_MERCHANT_ID", "");
-    vi.stubEnv("CLOVER_CHARGE_ENDPOINT", "");
-    vi.stubEnv("CLOVER_REFUND_ENDPOINT", "");
+    vi.stubEnv("PAYMENTS_PROVIDER_MODE", "live");
 
     const app = await buildApp();
     const ready = await app.inject({ method: "GET", url: "/ready" });
@@ -67,34 +89,48 @@ describe("payments service", () => {
     await app.close();
   });
 
-  it("reports ready when live Clover mode is fully configured", async () => {
-    vi.stubEnv("CLOVER_PROVIDER_MODE", "live");
-    vi.stubEnv("CLOVER_BEARER_TOKEN", "test-bearer-token");
-    vi.stubEnv("CLOVER_MERCHANT_ID", "merchant-123");
-    vi.stubEnv("CLOVER_CHARGE_ENDPOINT", "https://sandbox.clover.example/merchants/{merchantId}/charges");
-    vi.stubEnv("CLOVER_REFUND_ENDPOINT", "https://sandbox.clover.example/merchants/{merchantId}/payments/{paymentId}/refunds");
+  it("reports ready when live Clover has a stored OAuth connection", async () => {
+    vi.stubEnv("PAYMENTS_PROVIDER_MODE", "live");
+    vi.stubEnv("CLOVER_APP_ID", "clover-app-id");
+    vi.stubEnv("CLOVER_APP_SECRET", "clover-app-secret");
+    vi.stubEnv("CLOVER_OAUTH_REDIRECT_URI", "https://example.test/v1/payments/clover/oauth/callback");
 
-    const app = await buildApp();
-    const ready = await app.inject({ method: "GET", url: "/ready" });
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetchMock);
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url === "https://apisandbox.dev.clover.com/oauth/v2/token") {
+        expect(JSON.parse(String(init?.body ?? "{}"))).toMatchObject({
+          client_id: "clover-app-id",
+          client_secret: "clover-app-secret",
+          code: "oauth-code-1"
+        });
+        return new Response(
+          JSON.stringify({
+            access_token: "oauth-access-token-1",
+            refresh_token: "oauth-refresh-token-1",
+            token_type: "Bearer",
+            access_token_expiration: Math.floor(Date.now() / 1000) + 3600,
+            refresh_token_expiration: Math.floor(Date.now() / 1000) + 7200
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
 
-    expect(ready.statusCode).toBe(200);
-    expect(ready.json()).toMatchObject({
-      status: "ready",
-      service: "payments",
-      providerMode: "live",
-      providerConfigured: true
+      if (url === "https://scl-sandbox.dev.clover.com/pakms/apikey") {
+        return new Response(
+          JSON.stringify({
+            apiAccessKey: "oauth-api-access-key-1"
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      throw new Error(`unexpected Clover URL: ${url}`);
     });
-    await app.close();
-  });
-
-  it("still accepts legacy CLOVER_API_KEY for live Clover charge/refund auth", async () => {
-    vi.stubEnv("CLOVER_PROVIDER_MODE", "live");
-    vi.stubEnv("CLOVER_API_KEY", "legacy-bearer-token");
-    vi.stubEnv("CLOVER_MERCHANT_ID", "merchant-123");
-    vi.stubEnv("CLOVER_CHARGE_ENDPOINT", "https://sandbox.clover.example/merchants/{merchantId}/charges");
-    vi.stubEnv("CLOVER_REFUND_ENDPOINT", "https://sandbox.clover.example/merchants/{merchantId}/payments/{paymentId}/refunds");
 
     const app = await buildApp();
+    await connectCloverOauth(app, "merchant-ready-1");
     const ready = await app.inject({ method: "GET", url: "/ready" });
 
     expect(ready.statusCode).toBe(200);
@@ -137,7 +173,7 @@ describe("payments service", () => {
   });
 
   it("redirects Clover app launches into the OAuth authorize flow when callback is hit without code", async () => {
-    vi.stubEnv("CLOVER_PROVIDER_MODE", "live");
+    vi.stubEnv("PAYMENTS_PROVIDER_MODE", "live");
     vi.stubEnv("CLOVER_APP_ID", "clover-app-id");
     vi.stubEnv("CLOVER_APP_SECRET", "clover-app-secret");
     vi.stubEnv("CLOVER_OAUTH_REDIRECT_URI", "https://example.test/v1/payments/clover/oauth/callback");
@@ -502,12 +538,8 @@ describe("payments service", () => {
     await app.close();
   });
 
-  it("returns misconfiguration errors when live Clover mode is enabled without required env", async () => {
-    vi.stubEnv("CLOVER_PROVIDER_MODE", "live");
-    vi.stubEnv("CLOVER_BEARER_TOKEN", "");
-    vi.stubEnv("CLOVER_MERCHANT_ID", "");
-    vi.stubEnv("CLOVER_CHARGE_ENDPOINT", "");
-    vi.stubEnv("CLOVER_REFUND_ENDPOINT", "");
+  it("returns credentials-unavailable errors when live Clover has no stored OAuth connection", async () => {
+    vi.stubEnv("PAYMENTS_PROVIDER_MODE", "live");
 
     const app = await buildApp();
     const response = await app.inject({
@@ -524,7 +556,7 @@ describe("payments service", () => {
     });
 
     expect(response.statusCode).toBe(503);
-    expect(response.json()).toMatchObject({ code: "PROVIDER_MISCONFIGURED" });
+    expect(response.json()).toMatchObject({ code: "CLOVER_CREDENTIALS_UNAVAILABLE" });
     await app.close();
   });
 
@@ -569,21 +601,39 @@ describe("payments service", () => {
   });
 
   it("supports live Clover charge + refund via configured endpoints", async () => {
-    vi.stubEnv("CLOVER_PROVIDER_MODE", "live");
-    vi.stubEnv("CLOVER_BEARER_TOKEN", "test-bearer-token");
-    vi.stubEnv("CLOVER_MERCHANT_ID", "merchant-sbx");
-    vi.stubEnv("CLOVER_CHARGE_ENDPOINT", "https://sandbox.clover.test/v1/merchants/{merchantId}/charges");
-    vi.stubEnv(
-      "CLOVER_REFUND_ENDPOINT",
-      "https://sandbox.clover.test/v1/merchants/{merchantId}/payments/{paymentId}/refunds"
-    );
+    stubLiveCloverOauthEnv();
 
     const fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal("fetch", fetchMock);
     fetchMock.mockImplementation(async (input, init) => {
       const url = typeof input === "string" ? input : input.toString();
-      if (url === "https://sandbox.clover.test/v1/merchants/merchant-sbx/charges") {
+      if (url === "https://apisandbox.dev.clover.com/oauth/v2/token") {
+        return new Response(
+          JSON.stringify({
+            access_token: "oauth-access-token-1",
+            refresh_token: "oauth-refresh-token-1",
+            token_type: "Bearer",
+            access_token_expiration: Math.floor(Date.now() / 1000) + 3600,
+            refresh_token_expiration: Math.floor(Date.now() / 1000) + 7200
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      if (url === "https://scl-sandbox.dev.clover.com/pakms/apikey") {
+        return new Response(
+          JSON.stringify({
+            apiAccessKey: "oauth-api-access-key-1"
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      if (url === "https://scl-sandbox.dev.clover.com/v1/charges") {
+        const headers = new Headers(init?.headers);
+        expect(headers.get("authorization")).toBe("Bearer oauth-access-token-1");
         expect(JSON.parse(String(init?.body ?? "{}"))).toMatchObject({
+          merchantId: "merchant-sbx",
           source: "clv_card_source_token"
         });
         return new Response(
@@ -597,7 +647,7 @@ describe("payments service", () => {
         );
       }
 
-      if (url === "https://sandbox.clover.test/v1/merchants/merchant-sbx/payments/clv-charge-1/refunds") {
+      if (url === "https://scl-sandbox.dev.clover.com/v1/refunds") {
         return new Response(
           JSON.stringify({
             id: "clv-refund-1",
@@ -612,6 +662,7 @@ describe("payments service", () => {
     });
 
     const app = await buildApp();
+    await connectCloverOauth(app, "merchant-sbx");
 
     const chargeResponse = await app.inject({
       method: "POST",
@@ -654,24 +705,39 @@ describe("payments service", () => {
       status: "REFUNDED"
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     await app.close();
   });
 
   it("accepts live order submission when Clover print_event fails after order creation", async () => {
-    vi.stubEnv("CLOVER_PROVIDER_MODE", "live");
-    vi.stubEnv("CLOVER_BEARER_TOKEN", "test-bearer-token");
-    vi.stubEnv("CLOVER_MERCHANT_ID", "merchant-sbx");
-    vi.stubEnv("CLOVER_CHARGE_ENDPOINT", "https://sandbox.clover.test/v1/merchants/{merchantId}/charges");
-    vi.stubEnv(
-      "CLOVER_REFUND_ENDPOINT",
-      "https://sandbox.clover.test/v1/merchants/{merchantId}/payments/{paymentId}/refunds"
-    );
+    stubLiveCloverOauthEnv();
 
     const fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal("fetch", fetchMock);
     fetchMock.mockImplementation(async (input) => {
       const url = typeof input === "string" ? input : input.toString();
+      if (url === "https://apisandbox.dev.clover.com/oauth/v2/token") {
+        return new Response(
+          JSON.stringify({
+            access_token: "oauth-access-token-1",
+            refresh_token: "oauth-refresh-token-1",
+            token_type: "Bearer",
+            access_token_expiration: Math.floor(Date.now() / 1000) + 3600,
+            refresh_token_expiration: Math.floor(Date.now() / 1000) + 7200
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      if (url === "https://scl-sandbox.dev.clover.com/pakms/apikey") {
+        return new Response(
+          JSON.stringify({
+            apiAccessKey: "oauth-api-access-key-1"
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
       if (url === "https://apisandbox.dev.clover.com/v3/merchants/merchant-sbx/orders") {
         return new Response(JSON.stringify({ id: "clover-order-1" }), {
           status: 200,
@@ -697,6 +763,7 @@ describe("payments service", () => {
     });
 
     const app = await buildApp();
+    await connectCloverOauth(app, "merchant-sbx");
     const response = await app.inject({
       method: "POST",
       url: "/v1/payments/orders/submit",
@@ -738,23 +805,39 @@ describe("payments service", () => {
       accepted: true,
       merchantId: "merchant-sbx"
     });
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
     await app.close();
   });
 
   it("uses apiAccessKey tokenization auth for live Apple Pay wallet charges", async () => {
-    vi.stubEnv("CLOVER_PROVIDER_MODE", "live");
-    vi.stubEnv("CLOVER_BEARER_TOKEN", "test-bearer-token");
-    vi.stubEnv("CLOVER_API_ACCESS_KEY", "test-public-api-access-key");
-    vi.stubEnv("CLOVER_MERCHANT_ID", "merchant-sbx");
-    vi.stubEnv("CLOVER_CHARGE_ENDPOINT", "https://scl-sandbox.dev.clover.com/v1/charges");
-    vi.stubEnv("CLOVER_REFUND_ENDPOINT", "https://scl-sandbox.dev.clover.com/v1/refunds");
-    vi.stubEnv("CLOVER_APPLE_PAY_TOKENIZE_ENDPOINT", "https://token-sandbox.dev.clover.com/v1/tokens");
+    stubLiveCloverOauthEnv();
 
     const fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal("fetch", fetchMock);
     fetchMock.mockImplementation(async (input, init) => {
       const url = typeof input === "string" ? input : input.toString();
+      if (url === "https://apisandbox.dev.clover.com/oauth/v2/token") {
+        return new Response(
+          JSON.stringify({
+            access_token: "oauth-access-token-1",
+            refresh_token: "oauth-refresh-token-1",
+            token_type: "Bearer",
+            access_token_expiration: Math.floor(Date.now() / 1000) + 3600,
+            refresh_token_expiration: Math.floor(Date.now() / 1000) + 7200
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      if (url === "https://scl-sandbox.dev.clover.com/pakms/apikey") {
+        return new Response(
+          JSON.stringify({
+            apiAccessKey: "test-public-api-access-key"
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
       if (url === "https://token-sandbox.dev.clover.com/v1/tokens") {
         const headers = new Headers(init?.headers);
         expect(headers.get("apikey")).toBe("test-public-api-access-key");
@@ -779,7 +862,7 @@ describe("payments service", () => {
 
       if (url === "https://scl-sandbox.dev.clover.com/v1/charges") {
         const headers = new Headers(init?.headers);
-        expect(headers.get("authorization")).toBe("Bearer test-bearer-token");
+        expect(headers.get("authorization")).toBe("Bearer oauth-access-token-1");
         expect(headers.get("apikey")).toBeNull();
 
         return new Response(
@@ -797,6 +880,7 @@ describe("payments service", () => {
     });
 
     const app = await buildApp();
+    await connectCloverOauth(app, "merchant-sbx");
 
     const chargeResponse = await app.inject({
       method: "POST",
@@ -826,19 +910,12 @@ describe("payments service", () => {
       status: "SUCCEEDED",
       approved: true
     });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     await app.close();
   });
 
   it("stores Clover OAuth credentials from callback and uses them for live wallet charges", async () => {
-    vi.stubEnv("CLOVER_PROVIDER_MODE", "live");
-    vi.stubEnv("CLOVER_APP_ID", "clover-app-id");
-    vi.stubEnv("CLOVER_APP_SECRET", "clover-app-secret");
-    vi.stubEnv("CLOVER_OAUTH_REDIRECT_URI", "https://example.test/v1/payments/clover/oauth/callback");
-    vi.stubEnv("CLOVER_MERCHANT_ID", "merchant-oauth-1");
-    vi.stubEnv("CLOVER_CHARGE_ENDPOINT", "https://scl-sandbox.dev.clover.com/v1/charges");
-    vi.stubEnv("CLOVER_REFUND_ENDPOINT", "https://scl-sandbox.dev.clover.com/v1/refunds");
-    vi.stubEnv("CLOVER_APPLE_PAY_TOKENIZE_ENDPOINT", "https://token-sandbox.dev.clover.com/v1/tokens");
+    stubLiveCloverOauthEnv();
 
     const fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal("fetch", fetchMock);
@@ -909,20 +986,7 @@ describe("payments service", () => {
     });
 
     const app = await buildApp();
-    const connectResponse = await app.inject({
-      method: "GET",
-      url: "/v1/payments/clover/oauth/connect"
-    });
-    expect(connectResponse.statusCode).toBe(200);
-
-    const authorizeUrl = new URL((connectResponse.json() as { authorizeUrl: string }).authorizeUrl);
-    const state = authorizeUrl.searchParams.get("state");
-    expect(state).toEqual(expect.any(String));
-
-    const callbackResponse = await app.inject({
-      method: "GET",
-      url: `/v1/payments/clover/oauth/callback?code=oauth-code-1&state=${encodeURIComponent(String(state))}&merchant_id=merchant-oauth-1`
-    });
+    const callbackResponse = await connectCloverOauth(app, "merchant-oauth-1");
     expect(callbackResponse.statusCode).toBe(200);
     expect(callbackResponse.json()).toMatchObject({
       providerMode: "live",

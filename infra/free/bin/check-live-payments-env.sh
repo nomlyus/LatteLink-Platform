@@ -14,7 +14,7 @@ set -a
 source "${ENV_FILE}"
 set +a
 
-MODE="${CLOVER_PROVIDER_MODE:-${PAYMENTS_PROVIDER_MODE:-simulated}}"
+MODE="${PAYMENTS_PROVIDER_MODE:-simulated}"
 
 if [ "${MODE}" != "live" ]; then
   echo "[check-live-payments-env] PASS: payments provider mode is ${MODE}; live Clover validation skipped."
@@ -48,11 +48,7 @@ require_https_url() {
   esac
 }
 
-require_value "CLOVER_MERCHANT_ID"
 require_value "CLOVER_WEBHOOK_SHARED_SECRET"
-require_https_url "CLOVER_CHARGE_ENDPOINT"
-require_https_url "CLOVER_REFUND_ENDPOINT"
-require_https_url "CLOVER_APPLE_PAY_TOKENIZE_ENDPOINT"
 
 CLOVER_OAUTH_ENVIRONMENT_VALUE="${CLOVER_OAUTH_ENVIRONMENT:-sandbox}"
 case "${CLOVER_OAUTH_ENVIRONMENT_VALUE}" in
@@ -61,11 +57,6 @@ case "${CLOVER_OAUTH_ENVIRONMENT_VALUE}" in
     errors+=("CLOVER_OAUTH_ENVIRONMENT must be sandbox or production; received: ${CLOVER_OAUTH_ENVIRONMENT_VALUE}")
     ;;
 esac
-
-has_direct_charge_credentials=0
-if [ -n "${CLOVER_BEARER_TOKEN:-${CLOVER_API_KEY:-}}" ]; then
-  has_direct_charge_credentials=1
-fi
 
 oauth_missing=()
 for name in CLOVER_APP_ID CLOVER_APP_SECRET CLOVER_OAUTH_REDIRECT_URI CLOVER_OAUTH_STATE_SECRET; do
@@ -94,25 +85,8 @@ if [ "${has_oauth_bootstrap}" -eq 1 ]; then
   require_https_url "CLOVER_OAUTH_REDIRECT_URI"
 fi
 
-has_wallet_tokenization_credentials=0
-if [ -n "${CLOVER_API_ACCESS_KEY:-}" ] || [ "${has_oauth_bootstrap}" -eq 1 ]; then
-  has_wallet_tokenization_credentials=1
-fi
-
-if [ "${has_direct_charge_credentials}" -eq 0 ] && [ "${has_oauth_bootstrap}" -eq 0 ]; then
-  errors+=(
-    "live Clover mode needs either direct charge credentials (CLOVER_BEARER_TOKEN or CLOVER_API_KEY) or a full Clover OAuth bootstrap configuration"
-  )
-fi
-
-if [ "${has_wallet_tokenization_credentials}" -eq 0 ]; then
-  errors+=(
-    "mobile Apple Pay wallet charges require either CLOVER_API_ACCESS_KEY or a full Clover OAuth bootstrap configuration"
-  )
-fi
-
-if [ -n "${CLOVER_BEARER_TOKEN:-}" ] && [ "${has_oauth_bootstrap}" -eq 1 ]; then
-  warnings+=("both direct Clover bearer credentials and Clover OAuth bootstrap are configured; confirm the intended credential source")
+if [ "${has_oauth_bootstrap}" -eq 0 ]; then
+  errors+=("live Clover mode requires a complete Clover OAuth bootstrap configuration")
 fi
 
 if [ "${#errors[@]}" -gt 0 ]; then
