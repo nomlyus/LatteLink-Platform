@@ -112,20 +112,6 @@ function buildMagicLinkUrl(baseUrl: string, token: string) {
   return url.toString();
 }
 
-function deriveCustomerDisplayName(user: { name?: string; email?: string } | undefined) {
-  const name = user?.name?.trim();
-  if (name) {
-    return name;
-  }
-
-  const email = user?.email?.trim();
-  if (!email) {
-    return undefined;
-  }
-
-  return email.split("@")[0] || undefined;
-}
-
 function buildCustomerMeResponse(input: {
   userId: string;
   user: {
