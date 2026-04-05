@@ -13,6 +13,8 @@ import {
   adminMenuItemUpdateSchema,
   adminStoreConfigUpdateSchema,
   appConfigSchema,
+  homeNewsCardCreateSchema,
+  homeNewsCardSchema,
   isLoyaltyVisible,
   isOrderTrackingEnabled,
   isPlatformManagedMenu,
@@ -36,7 +38,7 @@ const operatorOrderSchema = orderSchema.extend({
 export type OperatorOrder = z.output<typeof operatorOrderSchema>;
 export type OperatorOrderStatus = z.output<typeof orderStatusSchema>;
 export type OperatorOrderFilter = "all" | "active" | "completed";
-export type DashboardSection = "overview" | "orders" | "menu" | "store" | "team";
+export type DashboardSection = "overview" | "orders" | "menu" | "cards" | "store" | "team";
 export type OperatorCapability = z.output<typeof operatorCapabilitySchema>;
 export type OperatorUser = z.output<typeof operatorUserSchema>;
 export const operatorMenuItemSchema = adminMenuItemSchema.extend({
@@ -52,9 +54,13 @@ export const operatorMenuResponseSchema = z.object({
 export const operatorMenuItemUpdateSchema = adminMenuItemUpdateSchema.extend({
   customizationGroups: z.array(menuItemCustomizationGroupSchema).optional()
 });
+export const operatorNewsCardSchema = homeNewsCardSchema;
+export const operatorNewsCardCreateSchema = homeNewsCardCreateSchema;
 export type OperatorMenuItem = z.output<typeof operatorMenuItemSchema>;
 export type OperatorMenuCategory = z.output<typeof operatorMenuCategorySchema>;
 export type OperatorMenuResponse = z.output<typeof operatorMenuResponseSchema>;
+export type OperatorNewsCard = z.output<typeof operatorNewsCardSchema>;
+export type OperatorNewsCardCreate = z.output<typeof operatorNewsCardCreateSchema>;
 
 export type OperatorOrderAction = {
   status: "IN_PREP" | "READY" | "COMPLETED";
@@ -192,6 +198,9 @@ export function getAvailableSections(
   }
   if (canAccessCapability(operator, "menu:read") && isPlatformManagedMenu(appConfig)) {
     sections.push("menu");
+  }
+  if (canAccessCapability(operator, "menu:read")) {
+    sections.push("cards");
   }
   if (canAccessCapability(operator, "store:read")) {
     sections.push("store");

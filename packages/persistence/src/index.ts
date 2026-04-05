@@ -265,6 +265,20 @@ export interface CatalogMenuItemTable {
   updated_at: Generated<string>;
 }
 
+export interface CatalogHomeNewsCardTable {
+  brand_id: string;
+  location_id: string;
+  card_id: string;
+  label: string;
+  title: string;
+  body: string;
+  note: string | null;
+  visible: boolean;
+  sort_order: number;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
 export interface CatalogStoreConfigTable {
   brand_id: string;
   location_id: string;
@@ -310,6 +324,7 @@ export interface PersistenceDatabase {
   notifications_outbox: NotificationsOutboxTable;
   catalog_menu_categories: CatalogMenuCategoryTable;
   catalog_menu_items: CatalogMenuItemTable;
+  catalog_home_news_cards: CatalogHomeNewsCardTable;
   catalog_store_configs: CatalogStoreConfigTable;
   catalog_app_configs: CatalogAppConfigTable;
 }
@@ -724,6 +739,38 @@ export async function ensurePersistenceTables(db: PersistenceDb) {
   await sql`
     CREATE INDEX IF NOT EXISTS catalog_menu_items_location_category_sort_idx
     ON catalog_menu_items (location_id, category_id, sort_order)
+  `.execute(trx);
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS catalog_home_news_cards (
+      brand_id TEXT NOT NULL DEFAULT 'gazelle-default',
+      location_id TEXT NOT NULL,
+      card_id TEXT NOT NULL,
+      label TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      note TEXT,
+      visible BOOLEAN NOT NULL,
+      sort_order INTEGER NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (location_id, card_id)
+    )
+  `.execute(trx);
+
+  await sql`
+    ALTER TABLE catalog_home_news_cards
+    ADD COLUMN IF NOT EXISTS brand_id TEXT NOT NULL DEFAULT 'gazelle-default'
+  `.execute(trx);
+
+  await sql`
+    ALTER TABLE catalog_home_news_cards
+    ADD COLUMN IF NOT EXISTS note TEXT
+  `.execute(trx);
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS catalog_home_news_cards_location_sort_idx
+    ON catalog_home_news_cards (location_id, sort_order)
   `.execute(trx);
 
   await sql`

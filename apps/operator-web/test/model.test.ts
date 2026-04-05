@@ -239,7 +239,14 @@ describe("operator-web model", () => {
       "orders tab"
     ]);
 
-    expect(getAvailableSections(sampleOperator, sampleAppConfig)).toEqual(["overview", "orders", "menu", "store", "team"]);
+    expect(getAvailableSections(sampleOperator, sampleAppConfig)).toEqual([
+      "overview",
+      "orders",
+      "menu",
+      "cards",
+      "store",
+      "team"
+    ]);
     expect(
       getAvailableSections(
         { ...sampleOperator, capabilities: ["menu:read"] },
@@ -254,7 +261,7 @@ describe("operator-web model", () => {
           }
         }
       )
-    ).toEqual(["overview", "menu"]);
+    ).toEqual(["overview", "menu", "cards"]);
     expect(
       getAvailableSections(
         { ...sampleOperator, capabilities: ["menu:read"] },
@@ -268,7 +275,7 @@ describe("operator-web model", () => {
           }
         }
       )
-    ).toEqual(["overview"]);
+    ).toEqual(["overview", "cards"]);
   });
 
   it("resolves role labels and capability access", () => {

@@ -9,7 +9,12 @@ import {
   internalLocationBootstrapSchema,
   internalLocationListResponseSchema,
   internalLocationParamsSchema,
-  internalLocationSummarySchema
+  internalLocationSummarySchema,
+  homeNewsCardCreateSchema,
+  homeNewsCardUpdateSchema,
+  homeNewsCardVisibilityUpdateSchema,
+  homeNewsCardsResponseSchema,
+  homeNewsCardSchema
 } from "@gazelle/contracts-catalog";
 import { z } from "zod";
 import { createCatalogRepository } from "./repository.js";
@@ -20,6 +25,9 @@ const payloadSchema = z.object({
 
 const menuItemParamsSchema = z.object({
   itemId: z.string().min(1)
+});
+const cardParamsSchema = z.object({
+  cardId: z.string().min(1)
 });
 const adminMenuItemUpdateWithCustomizationsSchema = adminMenuItemUpdateSchema.extend({
   customizationGroups: z.array(z.unknown()).optional()
@@ -141,6 +149,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.get("/v1/app-config", async () => repository.getAppConfig());
   app.get("/v1/menu", async () => repository.getMenu());
+  app.get("/v1/cards", async () => homeNewsCardsResponseSchema.parse(await repository.getHomeNewsCards()));
 
   app.get("/v1/store/config", async () => repository.getStoreConfig());
 
@@ -150,6 +159,92 @@ export async function registerRoutes(app: FastifyInstance) {
       preHandler: [app.rateLimit(gatewayReadRateLimit), requireGatewayAccess]
     },
     async () => repository.getAdminMenu()
+  );
+
+  app.get(
+    "/v1/catalog/admin/cards",
+    {
+      preHandler: [app.rateLimit(gatewayReadRateLimit), requireGatewayAccess]
+    },
+    async () => repository.getAdminHomeNewsCards()
+  );
+
+  app.post(
+    "/v1/catalog/admin/cards",
+    {
+      preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess]
+    },
+    async (request) => {
+      const input = homeNewsCardCreateSchema.parse(request.body);
+      return homeNewsCardSchema.parse(await repository.createAdminHomeNewsCard(input));
+    }
+  );
+
+  app.put(
+    "/v1/catalog/admin/cards/:cardId",
+    {
+      preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess]
+    },
+    async (request, reply) => {
+      const { cardId } = cardParamsSchema.parse(request.params);
+      const input = homeNewsCardUpdateSchema.parse(request.body);
+      const updatedCard = await repository.updateAdminHomeNewsCard({
+        cardId,
+        ...input
+      });
+
+      if (!updatedCard) {
+        return reply.status(404).send(
+          serviceErrorSchema.parse({
+            code: "HOME_NEWS_CARD_NOT_FOUND",
+            message: "Home news card not found",
+            requestId: request.id,
+            details: { cardId }
+          })
+        );
+      }
+
+      return homeNewsCardSchema.parse(updatedCard);
+    }
+  );
+
+  app.patch(
+    "/v1/catalog/admin/cards/:cardId/visibility",
+    {
+      preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess]
+    },
+    async (request, reply) => {
+      const { cardId } = cardParamsSchema.parse(request.params);
+      const input = homeNewsCardVisibilityUpdateSchema.parse(request.body);
+      const updatedCard = await repository.updateAdminHomeNewsCardVisibility({
+        cardId,
+        ...input
+      });
+
+      if (!updatedCard) {
+        return reply.status(404).send(
+          serviceErrorSchema.parse({
+            code: "HOME_NEWS_CARD_NOT_FOUND",
+            message: "Home news card not found",
+            requestId: request.id,
+            details: { cardId }
+          })
+        );
+      }
+
+      return homeNewsCardSchema.parse(updatedCard);
+    }
+  );
+
+  app.delete(
+    "/v1/catalog/admin/cards/:cardId",
+    {
+      preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess]
+    },
+    async (request) => {
+      const { cardId } = cardParamsSchema.parse(request.params);
+      return adminMutationSuccessSchema.parse(await repository.deleteAdminHomeNewsCard(cardId));
+    }
   );
 
   app.put(

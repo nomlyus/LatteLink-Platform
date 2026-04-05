@@ -15,7 +15,12 @@ import {
   adminMutationSuccessSchema,
   adminStoreConfigSchema,
   adminStoreConfigUpdateSchema,
-  appConfigSchema
+  appConfigSchema,
+  homeNewsCardCreateSchema,
+  homeNewsCardSchema,
+  homeNewsCardUpdateSchema,
+  homeNewsCardVisibilityUpdateSchema,
+  homeNewsCardsResponseSchema
 } from "@gazelle/contracts-catalog";
 import { orderSchema } from "@gazelle/contracts-orders";
 import {
@@ -23,11 +28,13 @@ import {
   normalizeMenuItemForm,
   operatorMenuItemSchema,
   operatorMenuResponseSchema,
+  operatorNewsCardSchema,
   normalizeOperatorUserCreateForm,
   normalizeOperatorUserUpdateForm,
   normalizeStoreConfigForm,
   type OperatorOrder,
-  type OperatorMenuResponse
+  type OperatorMenuResponse,
+  type OperatorNewsCard
 } from "./model.js";
 
 const ordersSchema = z.array(orderSchema);
@@ -43,6 +50,7 @@ export type OperatorDashboardSnapshot = {
   appConfig: z.output<typeof appConfigSchema>;
   orders: OperatorOrder[];
   menu: OperatorMenuResponse;
+  cards: OperatorNewsCard[];
   storeConfig: z.output<typeof adminStoreConfigSchema>;
   staff: OperatorUser[];
 };
@@ -76,6 +84,42 @@ function parseJsonSafely(rawValue: string): unknown {
   } catch {
     return rawValue;
   }
+}
+
+function normalizeNewsCardCreateForm(input: {
+  label?: unknown;
+  title?: unknown;
+  body?: unknown;
+  note?: unknown;
+  visible?: unknown;
+  sortOrder?: unknown;
+}) {
+  const sortOrder = typeof input.sortOrder === "number" ? input.sortOrder : Number(input.sortOrder ?? 0);
+  return {
+    label: String(input.label ?? "").trim(),
+    title: String(input.title ?? "").trim(),
+    body: String(input.body ?? "").trim(),
+    note: typeof input.note === "string" ? input.note.trim() || undefined : undefined,
+    visible: input.visible === true || input.visible === "true" || input.visible === "on" || input.visible === "yes",
+    sortOrder: Number.isFinite(sortOrder) ? Math.max(0, Math.trunc(sortOrder)) : 0
+  };
+}
+
+function normalizeNewsCardUpdateForm(input: {
+  label?: unknown;
+  title?: unknown;
+  body?: unknown;
+  note?: unknown;
+  visible?: unknown;
+  sortOrder?: unknown;
+}) {
+  return homeNewsCardUpdateSchema.parse(normalizeNewsCardCreateForm(input));
+}
+
+function normalizeNewsCardVisibilityForm(input: { visible: unknown }) {
+  return homeNewsCardVisibilityUpdateSchema.parse({
+    visible: input.visible === true || input.visible === "true" || input.visible === "on" || input.visible === "yes"
+  });
 }
 
 export function normalizeApiBaseUrl(input: string) {
@@ -247,7 +291,7 @@ export async function logoutOperatorSession(session: OperatorSession) {
 
 export async function fetchOperatorSnapshot(session: OperatorSession): Promise<OperatorDashboardSnapshot> {
   const capabilitySet = new Set(session.operator.capabilities);
-  const [appConfig, orders, menu, storeConfig, staffResponse] = await Promise.all([
+  const [appConfig, orders, menu, cards, storeConfig, staffResponse] = await Promise.all([
     requestJson({
       apiBaseUrl: session.apiBaseUrl,
       path: "/app-config",
@@ -269,6 +313,14 @@ export async function fetchOperatorSnapshot(session: OperatorSession): Promise<O
           schema: operatorMenuResponseSchema
         })
       : Promise.resolve(operatorMenuResponseSchema.parse({ locationId: session.operator.locationId, categories: [] })),
+    capabilitySet.has("menu:read")
+      ? requestJson({
+          apiBaseUrl: session.apiBaseUrl,
+          accessToken: session.accessToken,
+          path: "/admin/cards",
+          schema: homeNewsCardsResponseSchema
+        })
+      : Promise.resolve(homeNewsCardsResponseSchema.parse({ locationId: session.operator.locationId, cards: [] })),
     capabilitySet.has("store:read")
       ? requestJson({
           apiBaseUrl: session.apiBaseUrl,
@@ -298,6 +350,7 @@ export async function fetchOperatorSnapshot(session: OperatorSession): Promise<O
     appConfig,
     orders: orders as OperatorOrder[],
     menu,
+    cards: cards.cards.map((card) => operatorNewsCardSchema.parse(card)),
     storeConfig,
     staff: staffResponse.users
   };
@@ -369,6 +422,53 @@ export function deleteOperatorMenuItem(session: OperatorSession, itemId: string)
     apiBaseUrl: session.apiBaseUrl,
     accessToken: session.accessToken,
     path: `/admin/menu/${itemId}`,
+    method: "DELETE",
+    schema: adminMutationSuccessSchema
+  });
+}
+
+export function createOperatorNewsCard(session: OperatorSession, input: Parameters<typeof normalizeNewsCardCreateForm>[0]) {
+  return requestJson({
+    apiBaseUrl: session.apiBaseUrl,
+    accessToken: session.accessToken,
+    path: "/admin/cards",
+    method: "POST",
+    body: homeNewsCardCreateSchema.parse(normalizeNewsCardCreateForm(input)),
+    schema: operatorNewsCardSchema
+  });
+}
+
+export function updateOperatorNewsCard(
+  session: OperatorSession,
+  cardId: string,
+  input: Parameters<typeof normalizeNewsCardUpdateForm>[0]
+) {
+  return requestJson({
+    apiBaseUrl: session.apiBaseUrl,
+    accessToken: session.accessToken,
+    path: `/admin/cards/${cardId}`,
+    method: "PUT",
+    body: normalizeNewsCardUpdateForm(input),
+    schema: operatorNewsCardSchema
+  });
+}
+
+export function updateOperatorNewsCardVisibility(session: OperatorSession, cardId: string, visible: boolean | string) {
+  return requestJson({
+    apiBaseUrl: session.apiBaseUrl,
+    accessToken: session.accessToken,
+    path: `/admin/cards/${cardId}/visibility`,
+    method: "PATCH",
+    body: normalizeNewsCardVisibilityForm({ visible }),
+    schema: operatorNewsCardSchema
+  });
+}
+
+export function deleteOperatorNewsCard(session: OperatorSession, cardId: string) {
+  return requestJson({
+    apiBaseUrl: session.apiBaseUrl,
+    accessToken: session.accessToken,
+    path: `/admin/cards/${cardId}`,
     method: "DELETE",
     schema: adminMutationSuccessSchema
   });
