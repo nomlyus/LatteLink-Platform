@@ -21,6 +21,7 @@ import {
   resolveDefaultApiBaseUrl,
   signInOperatorWithPassword,
   startOperatorGoogleSignIn,
+  replaceOperatorNewsCards,
   updateOperatorMenuItem,
   updateOperatorMenuItemVisibility,
   updateOperatorOrderStatus,
@@ -51,6 +52,7 @@ import {
   type DashboardSection,
   type OperatorMenuCategory,
   type OperatorMenuItem,
+  type OperatorNewsCard,
   type OperatorOrder,
   type OperatorOrderFilter
 } from "./model.js";
@@ -81,6 +83,7 @@ type AppState = {
   orderFilter: OperatorOrderFilter;
   menuCategories: OperatorMenuCategory[];
   menuCustomizationDrafts: Record<string, MenuItemCustomizationGroup[]>;
+  newsCards: OperatorNewsCard[];
   storeConfig: AdminStoreConfig | null;
   teamUsers: OperatorUser[];
   selectedOrderId: string | null;
@@ -88,9 +91,13 @@ type AppState = {
   busyMenuItemId: string | null;
   busyMenuVisibilityItemId: string | null;
   busyDeleteMenuItemId: string | null;
+  busyNewsCardId: string | null;
+  busyNewsCardVisibilityId: string | null;
+  busyDeleteNewsCardId: string | null;
   busyTeamUserId: string | null;
   savingStore: boolean;
   creatingMenuItem: boolean;
+  creatingNewsCard: boolean;
   creatingTeamUser: boolean;
   lastRefreshedAt: number | null;
   autoRefreshHandle: ReturnType<typeof setInterval> | null;
@@ -131,6 +138,7 @@ const state: AppState = {
   orderFilter: "active",
   menuCategories: [],
   menuCustomizationDrafts: {},
+  newsCards: [],
   storeConfig: null,
   teamUsers: [],
   selectedOrderId: null,
@@ -138,9 +146,13 @@ const state: AppState = {
   busyMenuItemId: null,
   busyMenuVisibilityItemId: null,
   busyDeleteMenuItemId: null,
+  busyNewsCardId: null,
+  busyNewsCardVisibilityId: null,
+  busyDeleteNewsCardId: null,
   busyTeamUserId: null,
   savingStore: false,
   creatingMenuItem: false,
+  creatingNewsCard: false,
   creatingTeamUser: false,
   lastRefreshedAt: null,
   autoRefreshHandle: null,
@@ -524,6 +536,7 @@ const dashboardSectionLabels: Record<DashboardSection, string> = {
   overview: "Overview",
   orders: "Orders",
   menu: "Menu",
+  cards: "News cards",
   team: "Team",
   store: "Settings"
 };
@@ -715,6 +728,7 @@ function resetDashboardData() {
   state.orders = [];
   state.menuCategories = [];
   state.menuCustomizationDrafts = {};
+  state.newsCards = [];
   state.storeConfig = null;
   state.teamUsers = [];
   state.selectedOrderId = null;
@@ -723,9 +737,13 @@ function resetDashboardData() {
   state.busyMenuItemId = null;
   state.busyMenuVisibilityItemId = null;
   state.busyDeleteMenuItemId = null;
+  state.busyNewsCardId = null;
+  state.busyNewsCardVisibilityId = null;
+  state.busyDeleteNewsCardId = null;
   state.busyTeamUserId = null;
   state.savingStore = false;
   state.creatingMenuItem = false;
+  state.creatingNewsCard = false;
   state.creatingTeamUser = false;
 }
 
@@ -792,6 +810,7 @@ async function loadDashboard() {
     state.orders = snapshot.orders;
     state.menuCategories = snapshot.menu.categories;
     state.menuCustomizationDrafts = snapshotCustomizationDrafts(snapshot.menu.categories);
+    state.newsCards = snapshot.cards;
     state.storeConfig = snapshot.storeConfig;
     state.teamUsers = snapshot.staff;
     state.lastRefreshedAt = Date.now();
@@ -1326,6 +1345,84 @@ function renderOrdersSection() {
   `;
 }
 
+function createNewsCardId(title: string) {
+  const slug = title
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return `${slug.length > 0 ? slug : "card"}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function renderNewsCard(card: OperatorNewsCard, canWrite: boolean, canToggleVisibility: boolean) {
+  const visibilityButton = canToggleVisibility
+    ? `
+        <button
+          class="button ${card.visible ? "button--secondary" : "button--ghost"}"
+          type="button"
+          data-action="toggle-news-card-visibility"
+          data-card-id="${card.cardId}"
+          data-visible="${card.visible ? "false" : "true"}"
+          ${state.busyNewsCardVisibilityId === card.cardId ? "disabled" : ""}
+        >
+          ${state.busyNewsCardVisibilityId === card.cardId ? "Saving…" : card.visible ? "Hide" : "Show"}
+        </button>
+      `
+    : "";
+
+  return `
+    <form class="dash-data-row dash-data-row--news-card" data-form="news-card" data-card-id="${card.cardId}">
+      <div class="dash-data-row__identity">
+        <strong>${escapeHtml(card.title)}</strong>
+        <span>${escapeHtml(card.label)} · ${escapeHtml(card.cardId)}</span>
+      </div>
+      <div class="dash-data-row__fields">
+        <label class="field dash-field-inline">
+          <span>Label</span>
+          <input name="label" value="${escapeHtml(card.label)}" ${canWrite ? "" : "disabled"} required />
+        </label>
+        <label class="field dash-field-inline">
+          <span>Title</span>
+          <input name="title" value="${escapeHtml(card.title)}" ${canWrite ? "" : "disabled"} required />
+        </label>
+        <label class="field dash-field-inline">
+          <span>Body</span>
+          <textarea name="body" rows="3" ${canWrite ? "" : "disabled"} required>${escapeHtml(card.body)}</textarea>
+        </label>
+        <label class="field dash-field-inline">
+          <span>Note</span>
+          <textarea name="note" rows="2" ${canWrite ? "" : "disabled"}>${escapeHtml(card.note ?? "")}</textarea>
+        </label>
+        <label class="field dash-field-inline">
+          <span>Sort order</span>
+          <input name="sortOrder" type="number" min="0" step="1" value="${card.sortOrder}" ${canWrite ? "" : "disabled"} required />
+        </label>
+        <label class="toggle dash-toggle-inline">
+          <input type="checkbox" name="visible" ${card.visible ? "checked" : ""} ${canWrite ? "" : "disabled"} />
+          <span>${card.visible ? "Visible" : "Hidden"}</span>
+        </label>
+      </div>
+      <div class="dash-data-row__actions">
+        <span class="dash-status-badge dash-status-badge--${card.visible ? "success" : "neutral"}">${card.visible ? "Visible" : "Hidden"}</span>
+        ${
+          canWrite
+            ? `
+                <button class="button button--secondary" type="submit" ${state.busyNewsCardId === card.cardId ? "disabled" : ""}>
+                  ${state.busyNewsCardId === card.cardId ? "Saving…" : "Save"}
+                </button>
+                <button class="button button--ghost" type="button" data-action="delete-news-card" data-card-id="${card.cardId}" ${state.busyDeleteNewsCardId === card.cardId ? "disabled" : ""}>
+                  ${state.busyDeleteNewsCardId === card.cardId ? "Removing…" : "Remove"}
+                </button>
+              `
+            : ""
+        }
+        ${visibilityButton}
+      </div>
+    </form>
+  `;
+}
+
 function renderMenuCategory(category: OperatorMenuCategory, canWrite: boolean, canToggleVisibility: boolean) {
   return `
     <section class="dash-data-group">
@@ -1688,6 +1785,83 @@ function renderMenuSection() {
   `;
 }
 
+function renderCardsSection() {
+  const canWrite = canAccessCapability(state.session?.operator ?? null, "menu:write");
+  const canToggleVisibility = canAccessCapability(state.session?.operator ?? null, "menu:visibility");
+  const accessNotice =
+    !canWrite
+      ? `<article class="dash-surface dash-empty-surface"><p class="muted-copy">Your account can review home cards, but editing is disabled for this role.</p></article>`
+      : "";
+
+  return `
+    <section class="dash-section">
+      ${renderSectionHeading({
+        eyebrow: "Home",
+        title: "News cards",
+        description: "Manage the rotating cards shown on the mobile home page."
+      })}
+      ${accessNotice}
+      ${
+        canWrite
+          ? `
+              <article class="dash-surface">
+                <div class="dash-surface-head">
+                  <div>
+                    <div class="dash-panel-title">Create card</div>
+                    <h3 class="dash-surface-title">Add a homepage card</h3>
+                  </div>
+                </div>
+                <form class="dash-inline-form dash-inline-form--menu" data-form="news-card-create">
+                  <label class="field dash-field-inline">
+                    <span>Label</span>
+                    <input name="label" placeholder="NEW DRINK" required />
+                  </label>
+                  <label class="field dash-field-inline">
+                    <span>Title</span>
+                    <input name="title" placeholder="Seasonal highlight" required />
+                  </label>
+                  <label class="field dash-field-inline">
+                    <span>Body</span>
+                    <textarea name="body" rows="3" placeholder="Card body copy" required></textarea>
+                  </label>
+                  <label class="field dash-field-inline">
+                    <span>Note</span>
+                    <textarea name="note" rows="2" placeholder="Optional note"></textarea>
+                  </label>
+                  <label class="field dash-field-inline">
+                    <span>Sort order</span>
+                    <input
+                      name="sortOrder"
+                      type="number"
+                      min="0"
+                      step="1"
+                      value="${state.newsCards.reduce((max, card) => Math.max(max, card.sortOrder), -1) + 1}"
+                      required
+                    />
+                  </label>
+                  <label class="toggle dash-toggle-inline">
+                    <input type="checkbox" name="visible" checked />
+                    <span>Visible</span>
+                  </label>
+                  <button class="button button--primary" type="submit" ${state.creatingNewsCard ? "disabled" : ""}>
+                    ${state.creatingNewsCard ? "Creating…" : "Create card"}
+                  </button>
+                </form>
+              </article>
+            `
+          : ""
+      }
+      <article class="dash-surface">
+        ${
+          state.newsCards.length > 0
+            ? state.newsCards.map((card) => renderNewsCard(card, canWrite, canToggleVisibility)).join("")
+            : `<div class="dash-empty-surface"><p class="muted-copy">No homepage cards are configured yet.</p></div>`
+        }
+      </article>
+    </section>
+  `;
+}
+
 function renderStoreSection() {
   if (!state.storeConfig) {
     return `
@@ -1912,6 +2086,8 @@ function renderDashboardContent() {
       return renderOrdersSection();
     case "menu":
       return renderMenuSection();
+    case "cards":
+      return renderCardsSection();
     case "store":
       return renderStoreSection();
     case "team":
@@ -2389,6 +2565,161 @@ async function handleMenuItemDelete(itemId: string) {
   }
 }
 
+async function handleNewsCardCreateSubmit(form: HTMLFormElement) {
+  if (!state.session) {
+    return;
+  }
+
+  if (!canAccessCapability(state.session.operator, "menu:write")) {
+    setError("Home card creation is unavailable for your account.");
+    render();
+    return;
+  }
+
+  const formData = new FormData(form);
+  const visibleField = form.elements.namedItem("visible");
+  const title = String(formData.get("title") ?? "").trim();
+  const sortOrderInput = Number(formData.get("sortOrder") ?? 0);
+  const nextCard = {
+    cardId: createNewsCardId(title || "card"),
+    label: String(formData.get("label") ?? "").trim(),
+    title,
+    body: String(formData.get("body") ?? "").trim(),
+    note: (() => {
+      const next = String(formData.get("note") ?? "").trim();
+      return next.length > 0 ? next : undefined;
+    })(),
+    sortOrder: Number.isFinite(sortOrderInput) ? Math.max(0, Math.trunc(sortOrderInput)) : 0,
+    visible: visibleField instanceof HTMLInputElement ? visibleField.checked : true
+  };
+
+  try {
+    state.creatingNewsCard = true;
+    setError(null);
+    render();
+    const response = await replaceOperatorNewsCards(state.session, [...state.newsCards, nextCard]);
+    state.newsCards = response.cards;
+    setNotice("Created home card.");
+    form.reset();
+  } catch (error) {
+    await handleOperatorActionError(error, "Unable to create home card.");
+  } finally {
+    state.creatingNewsCard = false;
+    render();
+  }
+}
+
+async function handleNewsCardSubmit(form: HTMLFormElement) {
+  if (!state.session) {
+    return;
+  }
+
+  if (!canAccessCapability(state.session.operator, "menu:write")) {
+    setError("Home card editing is unavailable for your account.");
+    render();
+    return;
+  }
+
+  const cardId = form.dataset.cardId;
+  if (!cardId) {
+    return;
+  }
+
+  const formData = new FormData(form);
+  const visibleField = form.elements.namedItem("visible");
+  const visible = visibleField instanceof HTMLInputElement ? visibleField.checked : false;
+  const sortOrder = Math.max(0, Math.trunc(Number(formData.get("sortOrder") ?? 0) || 0));
+  const updatedCard = {
+    cardId,
+    label: String(formData.get("label") ?? "").trim(),
+    title: String(formData.get("title") ?? "").trim(),
+    body: String(formData.get("body") ?? "").trim(),
+    note: (() => {
+      const next = String(formData.get("note") ?? "").trim();
+      return next.length > 0 ? next : undefined;
+    })(),
+    sortOrder,
+    visible
+  };
+
+  try {
+    state.busyNewsCardId = cardId;
+    setError(null);
+    render();
+    const nextCards = state.newsCards
+      .map((card) => (card.cardId === cardId ? updatedCard : card))
+      .sort((left, right) => left.sortOrder - right.sortOrder || left.cardId.localeCompare(right.cardId));
+    const response = await replaceOperatorNewsCards(state.session, nextCards);
+    state.newsCards = response.cards;
+    setNotice(`Saved ${cardId}.`);
+  } catch (error) {
+    await handleOperatorActionError(error, "Unable to save home card.");
+  } finally {
+    state.busyNewsCardId = null;
+    render();
+  }
+}
+
+async function handleNewsCardVisibilityToggle(cardId: string, visible: boolean) {
+  if (!state.session) {
+    return;
+  }
+
+  if (!canAccessCapability(state.session.operator, "menu:visibility")) {
+    setError("Home card visibility controls are unavailable for your account.");
+    render();
+    return;
+  }
+
+  try {
+    state.busyNewsCardVisibilityId = cardId;
+    setError(null);
+    render();
+    const nextCards = state.newsCards
+      .map((card) => (card.cardId === cardId ? { ...card, visible } : card))
+      .sort((left, right) => left.sortOrder - right.sortOrder || left.cardId.localeCompare(right.cardId));
+    const response = await replaceOperatorNewsCards(state.session, nextCards);
+    state.newsCards = response.cards;
+    setNotice(visible ? "Home card is visible in the app." : "Home card was hidden from the app.");
+  } catch (error) {
+    await handleOperatorActionError(error, "Unable to change home card visibility.");
+  } finally {
+    state.busyNewsCardVisibilityId = null;
+    render();
+  }
+}
+
+async function handleNewsCardDelete(cardId: string) {
+  if (!state.session) {
+    return;
+  }
+
+  if (!canAccessCapability(state.session.operator, "menu:write")) {
+    setError("Home card removal is unavailable for your account.");
+    render();
+    return;
+  }
+
+  if (typeof window !== "undefined" && !window.confirm("Remove this homepage card?")) {
+    return;
+  }
+
+  try {
+    state.busyDeleteNewsCardId = cardId;
+    setError(null);
+    render();
+    const nextCards = state.newsCards.filter((card) => card.cardId !== cardId);
+    const response = await replaceOperatorNewsCards(state.session, nextCards);
+    state.newsCards = response.cards;
+    setNotice("Home card removed.");
+  } catch (error) {
+    await handleOperatorActionError(error, "Unable to remove the home card.");
+  } finally {
+    state.busyDeleteNewsCardId = null;
+    render();
+  }
+}
+
 root.addEventListener("submit", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLFormElement)) {
@@ -2407,6 +2738,14 @@ root.addEventListener("submit", (event) => {
   }
   if (formType === "menu-item") {
     void handleMenuItemSubmit(target);
+    return;
+  }
+  if (formType === "news-card-create") {
+    void handleNewsCardCreateSubmit(target);
+    return;
+  }
+  if (formType === "news-card") {
+    void handleNewsCardSubmit(target);
     return;
   }
   if (formType === "store-config") {
@@ -2459,7 +2798,7 @@ root.addEventListener("click", (event) => {
 
   if (action === "set-section") {
     const section = actionElement.dataset.section;
-    if (section === "overview" || section === "orders" || section === "menu" || section === "store" || section === "team") {
+    if (section === "overview" || section === "orders" || section === "menu" || section === "cards" || section === "store" || section === "team") {
       if (!getAvailableDashboardSections().includes(section)) {
         setError("That dashboard section is unavailable for this store or your current role.");
         render();
@@ -2647,6 +2986,24 @@ root.addEventListener("click", (event) => {
     if (itemId) {
       void handleMenuItemDelete(itemId);
     }
+    return;
+  }
+
+  if (action === "toggle-news-card-visibility") {
+    const cardId = actionElement.dataset.cardId;
+    const visible = actionElement.dataset.visible;
+    if (cardId && (visible === "true" || visible === "false")) {
+      void handleNewsCardVisibilityToggle(cardId, visible === "true");
+    }
+    return;
+  }
+
+  if (action === "delete-news-card") {
+    const cardId = actionElement.dataset.cardId;
+    if (cardId) {
+      void handleNewsCardDelete(cardId);
+    }
+    return;
   }
 });
 

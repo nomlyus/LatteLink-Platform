@@ -3,6 +3,9 @@ import type { FastifyBaseLogger } from "fastify";
 import {
   adminMenuItemCreateSchema,
   adminMenuItemSchema,
+  homeNewsCardCreateSchema,
+  homeNewsCardSchema,
+  homeNewsCardsResponseSchema,
   internalLocationBootstrapSchema,
   internalLocationSummarySchema,
   adminStoreConfigSchema,
@@ -216,9 +219,52 @@ const defaultStoreConfigRecord: StoreConfigRecord = {
   pickupInstructions: "Pickup at the flagship order counter."
 };
 
+const defaultHomeNewsCardsPayload = homeNewsCardsResponseSchema.parse({
+  locationId: DEFAULT_LOCATION_ID,
+  cards: [
+    {
+      cardId: "honey-cardamom-cold-brew",
+      label: "NEW DRINK",
+      title: "Honey Cardamom Cold Brew",
+      body: "Placeholder feature card for a seasonal drink launch with oat foam and orange peel.",
+      note: "Available this week only.",
+      sortOrder: 0,
+      visible: true
+    },
+    {
+      cardId: "afternoon-promo",
+      label: "DISCOUNT",
+      title: "20% Off After 3 PM",
+      body: "Placeholder promo card for an afternoon pickup offer on any handcrafted drink.",
+      note: "Weekdays only. In-store pickup.",
+      sortOrder: 1,
+      visible: true
+    },
+    {
+      cardId: "memorial-day-hours",
+      label: "HOLIDAY HOURS",
+      title: "Adjusted Hours For Memorial Day",
+      body: "Placeholder notice for holiday operations so guests can check changes before arriving.",
+      note: "Open 8:00 AM to 2:00 PM.",
+      sortOrder: 2,
+      visible: true
+    },
+    {
+      cardId: "mobile-orders-resume",
+      label: "STORE UPDATE",
+      title: "Mobile Orders Resume At 7 AM",
+      body: "Placeholder operations card for service changes, maintenance windows, or staffing updates.",
+      note: "Thanks for your patience.",
+      sortOrder: 3,
+      visible: true
+    }
+  ]
+});
+
 type MenuResponse = z.output<typeof menuResponseSchema>;
 type StoreConfigResponse = z.output<typeof storeConfigResponseSchema>;
 type MenuItem = z.output<typeof menuItemSchema>;
+type HomeNewsCardsResponse = z.output<typeof homeNewsCardsResponseSchema>;
 const adminMenuItemWithCustomizationsSchema = adminMenuItemSchema.extend({
   customizationGroups: z.array(menuItemCustomizationGroupSchema).default([])
 });
@@ -233,6 +279,8 @@ const adminMenuResponseWithCustomizationsSchema = z.object({
 });
 type AdminMenuItemWithCustomizations = z.output<typeof adminMenuItemWithCustomizationsSchema>;
 type AdminMenuResponseWithCustomizations = z.output<typeof adminMenuResponseWithCustomizationsSchema>;
+type AdminHomeNewsCard = z.output<typeof homeNewsCardSchema>;
+type AdminHomeNewsCardsResponse = z.output<typeof homeNewsCardsResponseSchema>;
 
 type CatalogRepository = {
   backend: "memory" | "postgres";
@@ -241,6 +289,24 @@ type CatalogRepository = {
   getInternalLocationSummary(locationId: string): Promise<InternalLocationSummary | undefined>;
   bootstrapInternalLocation(input: InternalLocationBootstrap): Promise<InternalLocationSummary>;
   getAdminMenu(): Promise<AdminMenuResponseWithCustomizations>;
+  getHomeNewsCards(): Promise<HomeNewsCardsResponse>;
+  getAdminHomeNewsCards(): Promise<AdminHomeNewsCardsResponse>;
+  replaceAdminHomeNewsCards(input: HomeNewsCardsResponse): Promise<AdminHomeNewsCardsResponse>;
+  createAdminHomeNewsCard(input: z.output<typeof homeNewsCardCreateSchema>): Promise<AdminHomeNewsCard>;
+  updateAdminHomeNewsCard(input: {
+    cardId: string;
+    label: string;
+    title: string;
+    body: string;
+    note?: string;
+    visible: boolean;
+    sortOrder: number;
+  }): Promise<AdminHomeNewsCard | undefined>;
+  updateAdminHomeNewsCardVisibility(input: {
+    cardId: string;
+    visible: boolean;
+  }): Promise<AdminHomeNewsCard | undefined>;
+  deleteAdminHomeNewsCard(cardId: string): Promise<z.output<typeof adminMutationSuccessSchema>>;
   createAdminMenuItem(input: z.output<typeof adminMenuItemCreateSchema>): Promise<AdminMenuItemWithCustomizations | undefined>;
   updateAdminMenuItem(input: {
     itemId: string;
@@ -278,6 +344,50 @@ function toBadgeCodes(value: unknown) {
 
 function toCustomizationGroups(value: unknown) {
   return parseJsonValue(z.array(menuItemCustomizationGroupSchema), value);
+}
+
+function toHomeNewsCard(input: {
+  cardId: string;
+  label: string;
+  title: string;
+  body: string;
+  note?: string | null;
+  sortOrder: number;
+  visible: boolean;
+}) {
+  return homeNewsCardSchema.parse({
+    cardId: input.cardId,
+    label: input.label,
+    title: input.title,
+    body: input.body,
+    note: input.note === undefined || input.note === null ? undefined : input.note,
+    sortOrder: input.sortOrder,
+    visible: input.visible
+  });
+}
+
+function sortHomeNewsCards(cards: AdminHomeNewsCard[]) {
+  return [...cards].sort((left, right) => left.sortOrder - right.sortOrder || left.cardId.localeCompare(right.cardId));
+}
+
+function buildHomeNewsCardsResponse(params: {
+  locationId: string;
+  cards: AdminHomeNewsCard[];
+}) {
+  return homeNewsCardsResponseSchema.parse({
+    locationId: params.locationId,
+    cards: sortHomeNewsCards(params.cards)
+  });
+}
+
+function createHomeNewsCardId(title: string) {
+  const slug = title
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return `${slug.length > 0 ? slug : "card"}-${randomUUID().slice(0, 8)}`;
 }
 
 function toAdminMenuItem(input: {
@@ -401,6 +511,9 @@ function createInMemoryRepository(): CatalogRepository {
   const menusByLocation = new Map<string, MenuResponse>([[DEFAULT_LOCATION_ID, structuredClone(defaultMenuPayload)]]);
   const storeConfigsByLocation = new Map<string, StoreConfigRecord>([
     [DEFAULT_LOCATION_ID, structuredClone(defaultStoreConfigRecord)]
+  ]);
+  const homeNewsCardsByLocation = new Map<string, HomeNewsCardsResponse>([
+    [DEFAULT_LOCATION_ID, structuredClone(defaultHomeNewsCardsPayload)]
   ]);
   const adminStoreConfigsByLocation = new Map<string, AdminStoreConfig>([
     [
@@ -531,6 +644,114 @@ function createInMemoryRepository(): CatalogRepository {
           )
         }))
       });
+    },
+    async getHomeNewsCards() {
+      return homeNewsCardsByLocation.get(DEFAULT_LOCATION_ID) ?? buildHomeNewsCardsResponse({
+        locationId: DEFAULT_LOCATION_ID,
+        cards: []
+      });
+    },
+    async getAdminHomeNewsCards() {
+      return homeNewsCardsByLocation.get(DEFAULT_LOCATION_ID) ?? buildHomeNewsCardsResponse({
+        locationId: DEFAULT_LOCATION_ID,
+        cards: []
+      });
+    },
+    async replaceAdminHomeNewsCards(input) {
+      const nextCards = buildHomeNewsCardsResponse({
+        locationId: input.locationId,
+        cards: input.cards.map((card) =>
+          toHomeNewsCard({
+            cardId: card.cardId,
+            label: card.label,
+            title: card.title,
+            body: card.body,
+            note: card.note,
+            sortOrder: card.sortOrder,
+            visible: card.visible
+          })
+        )
+      });
+
+      homeNewsCardsByLocation.set(input.locationId, nextCards);
+      return nextCards;
+    },
+    async createAdminHomeNewsCard(input) {
+      const currentCards = homeNewsCardsByLocation.get(DEFAULT_LOCATION_ID)?.cards ?? defaultHomeNewsCardsPayload.cards;
+      const nextSortOrder = input.sortOrder ?? (currentCards.reduce((max, card) => Math.max(max, card.sortOrder), -1) + 1);
+      const cardId = createHomeNewsCardId(input.title);
+      const nextCards = buildHomeNewsCardsResponse({
+        locationId: DEFAULT_LOCATION_ID,
+        cards: [
+          ...currentCards,
+          toHomeNewsCard({
+            cardId,
+            label: input.label,
+            title: input.title,
+            body: input.body,
+            note: input.note,
+            sortOrder: nextSortOrder,
+            visible: input.visible
+          })
+        ]
+      });
+
+      homeNewsCardsByLocation.set(DEFAULT_LOCATION_ID, nextCards);
+      return nextCards.cards.find((card) => card.cardId === cardId)!;
+    },
+    async updateAdminHomeNewsCard(input) {
+      const existingCards = homeNewsCardsByLocation.get(DEFAULT_LOCATION_ID)?.cards ?? defaultHomeNewsCardsPayload.cards;
+      const existingCard = existingCards.find((card) => card.cardId === input.cardId);
+      if (!existingCard) {
+        return undefined;
+      }
+
+      const nextCards = buildHomeNewsCardsResponse({
+        locationId: DEFAULT_LOCATION_ID,
+        cards: existingCards.map((card) =>
+          card.cardId === input.cardId
+            ? toHomeNewsCard({
+                cardId: card.cardId,
+                label: input.label,
+                title: input.title,
+                body: input.body,
+                note: input.note,
+                sortOrder: input.sortOrder,
+                visible: input.visible
+              })
+            : card
+        )
+      });
+
+      homeNewsCardsByLocation.set(DEFAULT_LOCATION_ID, nextCards);
+      return nextCards.cards.find((card) => card.cardId === input.cardId);
+    },
+    async updateAdminHomeNewsCardVisibility(input) {
+      const existingCards = homeNewsCardsByLocation.get(DEFAULT_LOCATION_ID)?.cards ?? defaultHomeNewsCardsPayload.cards;
+      const existingCard = existingCards.find((card) => card.cardId === input.cardId);
+      if (!existingCard) {
+        return undefined;
+      }
+
+      const nextCards = buildHomeNewsCardsResponse({
+        locationId: DEFAULT_LOCATION_ID,
+        cards: existingCards.map((card) =>
+          card.cardId === input.cardId ? { ...card, visible: input.visible } : card
+        )
+      });
+
+      homeNewsCardsByLocation.set(DEFAULT_LOCATION_ID, nextCards);
+      return nextCards.cards.find((card) => card.cardId === input.cardId);
+    },
+    async deleteAdminHomeNewsCard(cardId) {
+      const existingCards = homeNewsCardsByLocation.get(DEFAULT_LOCATION_ID)?.cards ?? defaultHomeNewsCardsPayload.cards;
+      const nextCards = buildHomeNewsCardsResponse({
+        locationId: DEFAULT_LOCATION_ID,
+        cards: existingCards.filter((card) => card.cardId !== cardId)
+      });
+
+      homeNewsCardsByLocation.set(DEFAULT_LOCATION_ID, nextCards);
+      return { success: true };
     },
     async createAdminMenuItem(input) {
       const currentMenu = menusByLocation.get(DEFAULT_LOCATION_ID) ?? defaultMenuPayload;
@@ -761,6 +982,33 @@ async function seedCatalogDefaults(db: PersistenceDb) {
         .execute();
 
     });
+  }
+
+  const existingHomeNewsCard = await db
+    .selectFrom("catalog_home_news_cards")
+    .select("card_id")
+    .where("brand_id", "=", DEFAULT_BRAND_ID)
+    .where("location_id", "=", defaultHomeNewsCardsPayload.locationId)
+    .executeTakeFirst();
+
+  if (!existingHomeNewsCard) {
+    await db
+      .insertInto("catalog_home_news_cards")
+      .values(
+        defaultHomeNewsCardsPayload.cards.map((card) => ({
+          brand_id: DEFAULT_BRAND_ID,
+          location_id: defaultHomeNewsCardsPayload.locationId,
+          card_id: card.cardId,
+          label: card.label,
+          title: card.title,
+          body: card.body,
+          note: card.note ?? null,
+          visible: card.visible,
+          sort_order: card.sortOrder
+        }))
+      )
+      .onConflict((oc) => oc.columns(["location_id", "card_id"]).doNothing())
+      .execute();
   }
 
   await db
@@ -1040,6 +1288,219 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
           items: itemsByCategory.get(category.category_id) ?? []
         }))
       });
+    },
+    async getHomeNewsCards() {
+      return buildHomeNewsCardsResponse({
+        locationId: defaultHomeNewsCardsPayload.locationId,
+        cards: await db
+          .selectFrom("catalog_home_news_cards")
+          .selectAll()
+          .where("brand_id", "=", DEFAULT_BRAND_ID)
+          .where("location_id", "=", defaultHomeNewsCardsPayload.locationId)
+          .orderBy("sort_order", "asc")
+          .orderBy("card_id", "asc")
+          .execute()
+          .then((rows) =>
+            rows.map((row) =>
+              toHomeNewsCard({
+                cardId: row.card_id,
+                label: row.label,
+                title: row.title,
+                body: row.body,
+                note: row.note,
+                sortOrder: row.sort_order,
+                visible: row.visible
+              })
+            )
+          )
+      });
+    },
+    async getAdminHomeNewsCards() {
+      return buildHomeNewsCardsResponse({
+        locationId: defaultHomeNewsCardsPayload.locationId,
+        cards: await db
+          .selectFrom("catalog_home_news_cards")
+          .selectAll()
+          .where("brand_id", "=", DEFAULT_BRAND_ID)
+          .where("location_id", "=", defaultHomeNewsCardsPayload.locationId)
+          .orderBy("sort_order", "asc")
+          .orderBy("card_id", "asc")
+          .execute()
+          .then((rows) =>
+            rows.map((row) =>
+              toHomeNewsCard({
+                cardId: row.card_id,
+                label: row.label,
+                title: row.title,
+                body: row.body,
+                note: row.note,
+                sortOrder: row.sort_order,
+                visible: row.visible
+              })
+            )
+          )
+      });
+    },
+    async replaceAdminHomeNewsCards(input) {
+      const cards = input.cards.map((card) =>
+        toHomeNewsCard({
+          cardId: card.cardId,
+          label: card.label,
+          title: card.title,
+          body: card.body,
+          note: card.note,
+          sortOrder: card.sortOrder,
+          visible: card.visible
+        })
+      );
+
+      await db.transaction().execute(async (trx) => {
+        await trx
+          .deleteFrom("catalog_home_news_cards")
+          .where("brand_id", "=", DEFAULT_BRAND_ID)
+          .where("location_id", "=", input.locationId)
+          .execute();
+
+        if (cards.length > 0) {
+          await trx
+            .insertInto("catalog_home_news_cards")
+            .values(
+              cards.map((card) => ({
+                brand_id: DEFAULT_BRAND_ID,
+                location_id: input.locationId,
+                card_id: card.cardId,
+                label: card.label,
+                title: card.title,
+                body: card.body,
+                note: card.note ?? null,
+                visible: card.visible,
+                sort_order: card.sortOrder
+              }))
+            )
+            .execute();
+        }
+      });
+
+      return buildHomeNewsCardsResponse({
+        locationId: input.locationId,
+        cards
+      });
+    },
+    async createAdminHomeNewsCard(input) {
+      const nextSortOrderResult = await db
+        .selectFrom("catalog_home_news_cards")
+        .select((eb) => eb.fn.max<number>("sort_order").as("max_sort_order"))
+        .where("brand_id", "=", DEFAULT_BRAND_ID)
+        .where("location_id", "=", defaultHomeNewsCardsPayload.locationId)
+        .executeTakeFirst();
+      const nextSortOrder = input.sortOrder ?? (nextSortOrderResult?.max_sort_order ?? -1) + 1;
+      const cardId = createHomeNewsCardId(input.title);
+
+      await db
+        .insertInto("catalog_home_news_cards")
+        .values({
+          brand_id: DEFAULT_BRAND_ID,
+          location_id: defaultHomeNewsCardsPayload.locationId,
+          card_id: cardId,
+          label: input.label,
+          title: input.title,
+          body: input.body,
+          note: input.note ?? null,
+          visible: input.visible,
+          sort_order: nextSortOrder
+        })
+        .execute();
+
+      return toHomeNewsCard({
+        cardId,
+        label: input.label,
+        title: input.title,
+        body: input.body,
+        note: input.note,
+        sortOrder: nextSortOrder,
+        visible: input.visible
+      });
+    },
+    async updateAdminHomeNewsCard(input) {
+      const existingRow = await db
+        .selectFrom("catalog_home_news_cards")
+        .selectAll()
+        .where("brand_id", "=", DEFAULT_BRAND_ID)
+        .where("location_id", "=", defaultHomeNewsCardsPayload.locationId)
+        .where("card_id", "=", input.cardId)
+        .executeTakeFirst();
+
+      if (!existingRow) {
+        return undefined;
+      }
+
+      await db
+        .updateTable("catalog_home_news_cards")
+        .set({
+          label: input.label,
+          title: input.title,
+          body: input.body,
+          note: input.note ?? null,
+          visible: input.visible,
+          sort_order: input.sortOrder
+        })
+        .where("brand_id", "=", DEFAULT_BRAND_ID)
+        .where("location_id", "=", defaultHomeNewsCardsPayload.locationId)
+        .where("card_id", "=", input.cardId)
+        .executeTakeFirst();
+
+      return toHomeNewsCard({
+        cardId: existingRow.card_id,
+        label: input.label,
+        title: input.title,
+        body: input.body,
+        note: input.note,
+        sortOrder: input.sortOrder,
+        visible: input.visible
+      });
+    },
+    async updateAdminHomeNewsCardVisibility(input) {
+      const existingRow = await db
+        .selectFrom("catalog_home_news_cards")
+        .selectAll()
+        .where("brand_id", "=", DEFAULT_BRAND_ID)
+        .where("location_id", "=", defaultHomeNewsCardsPayload.locationId)
+        .where("card_id", "=", input.cardId)
+        .executeTakeFirst();
+
+      if (!existingRow) {
+        return undefined;
+      }
+
+      await db
+        .updateTable("catalog_home_news_cards")
+        .set({
+          visible: input.visible
+        })
+        .where("brand_id", "=", DEFAULT_BRAND_ID)
+        .where("location_id", "=", defaultHomeNewsCardsPayload.locationId)
+        .where("card_id", "=", input.cardId)
+        .executeTakeFirst();
+
+      return toHomeNewsCard({
+        cardId: existingRow.card_id,
+        label: existingRow.label,
+        title: existingRow.title,
+        body: existingRow.body,
+        note: existingRow.note,
+        sortOrder: existingRow.sort_order,
+        visible: input.visible
+      });
+    },
+    async deleteAdminHomeNewsCard(cardId) {
+      await db
+        .deleteFrom("catalog_home_news_cards")
+        .where("brand_id", "=", DEFAULT_BRAND_ID)
+        .where("location_id", "=", defaultHomeNewsCardsPayload.locationId)
+        .where("card_id", "=", cardId)
+        .executeTakeFirst();
+
+      return { success: true };
     },
     async createAdminMenuItem(input) {
       const category = await db

@@ -3,10 +3,13 @@ import {
   appConfigSchema,
   isLoyaltyVisible,
   isOrderTrackingEnabled,
+  homeNewsCardsResponseSchema,
   menuItemCustomizationGroupSchema,
   menuResponseSchema,
   storeConfigResponseSchema,
   type AppConfig,
+  type HomeNewsCard,
+  type HomeNewsCardsResponse,
   type MenuCategory,
   type MenuItem,
   type MenuItemCustomizationGroup,
@@ -340,6 +343,20 @@ export function useMenuQuery() {
   });
 }
 
+export function useHomeNewsCardsQuery() {
+  return useQuery({
+    queryKey: ["catalog", "home-news-cards"],
+    queryFn: async (): Promise<HomeNewsCardsResponse> => {
+      const response = homeNewsCardsResponseSchema.parse(await apiClient.get<unknown>("/store/cards"));
+      return {
+        ...response,
+        cards: response.cards.filter((card) => card.visible).sort((left, right) => left.sortOrder - right.sortOrder)
+      };
+    },
+    staleTime: 60_000
+  });
+}
+
 export function useStoreConfigQuery() {
   return useQuery({
     queryKey: ["catalog", "store-config"],
@@ -417,6 +434,8 @@ export function toCategoryById(categories: MenuCategory[]): Record<string, MenuC
 
 export type {
   AppConfig,
+  HomeNewsCard,
+  HomeNewsCardsResponse,
   MenuCategory,
   MenuItem,
   MenuItemCustomizationGroup,

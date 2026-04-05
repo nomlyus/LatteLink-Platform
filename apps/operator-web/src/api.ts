@@ -15,7 +15,8 @@ import {
   adminMutationSuccessSchema,
   adminStoreConfigSchema,
   adminStoreConfigUpdateSchema,
-  appConfigSchema
+  appConfigSchema,
+  homeNewsCardsResponseSchema
 } from "@gazelle/contracts-catalog";
 import { orderSchema } from "@gazelle/contracts-orders";
 import {
@@ -27,7 +28,8 @@ import {
   normalizeOperatorUserUpdateForm,
   normalizeStoreConfigForm,
   type OperatorOrder,
-  type OperatorMenuResponse
+  type OperatorMenuResponse,
+  type OperatorNewsCard
 } from "./model.js";
 
 const ordersSchema = z.array(orderSchema);
@@ -43,6 +45,7 @@ export type OperatorDashboardSnapshot = {
   appConfig: z.output<typeof appConfigSchema>;
   orders: OperatorOrder[];
   menu: OperatorMenuResponse;
+  cards: OperatorNewsCard[];
   storeConfig: z.output<typeof adminStoreConfigSchema>;
   staff: OperatorUser[];
 };
@@ -76,6 +79,24 @@ function parseJsonSafely(rawValue: string): unknown {
   } catch {
     return rawValue;
   }
+}
+
+function normalizeNewsCardsPayload(input: {
+  locationId: string;
+  cards: Array<{
+    cardId: string;
+    label: string;
+    title: string;
+    body: string;
+    note?: string | null;
+    sortOrder: number;
+    visible: boolean;
+  }>;
+}) {
+  return homeNewsCardsResponseSchema.parse({
+    locationId: input.locationId,
+    cards: input.cards
+  });
 }
 
 export function normalizeApiBaseUrl(input: string) {
@@ -247,7 +268,7 @@ export async function logoutOperatorSession(session: OperatorSession) {
 
 export async function fetchOperatorSnapshot(session: OperatorSession): Promise<OperatorDashboardSnapshot> {
   const capabilitySet = new Set(session.operator.capabilities);
-  const [appConfig, orders, menu, storeConfig, staffResponse] = await Promise.all([
+  const [appConfig, orders, menu, cards, storeConfig, staffResponse] = await Promise.all([
     requestJson({
       apiBaseUrl: session.apiBaseUrl,
       path: "/app-config",
@@ -269,6 +290,14 @@ export async function fetchOperatorSnapshot(session: OperatorSession): Promise<O
           schema: operatorMenuResponseSchema
         })
       : Promise.resolve(operatorMenuResponseSchema.parse({ locationId: session.operator.locationId, categories: [] })),
+    capabilitySet.has("menu:read")
+      ? requestJson({
+          apiBaseUrl: session.apiBaseUrl,
+          accessToken: session.accessToken,
+          path: "/admin/cards",
+          schema: homeNewsCardsResponseSchema
+        })
+      : Promise.resolve(homeNewsCardsResponseSchema.parse({ locationId: session.operator.locationId, cards: [] })),
     capabilitySet.has("store:read")
       ? requestJson({
           apiBaseUrl: session.apiBaseUrl,
@@ -298,6 +327,9 @@ export async function fetchOperatorSnapshot(session: OperatorSession): Promise<O
     appConfig,
     orders: orders as OperatorOrder[],
     menu,
+    cards: cards.cards.map((card) => ({
+      ...card
+    })),
     storeConfig,
     staff: staffResponse.users
   };
@@ -371,6 +403,20 @@ export function deleteOperatorMenuItem(session: OperatorSession, itemId: string)
     path: `/admin/menu/${itemId}`,
     method: "DELETE",
     schema: adminMutationSuccessSchema
+  });
+}
+
+export function replaceOperatorNewsCards(session: OperatorSession, cards: OperatorNewsCard[]) {
+  return requestJson({
+    apiBaseUrl: session.apiBaseUrl,
+    accessToken: session.accessToken,
+    path: "/admin/cards",
+    method: "PUT",
+    body: normalizeNewsCardsPayload({
+      locationId: session.operator.locationId,
+      cards
+    }),
+    schema: homeNewsCardsResponseSchema
   });
 }
 
