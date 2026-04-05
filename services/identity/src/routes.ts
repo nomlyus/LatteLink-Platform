@@ -40,6 +40,14 @@ import { createIdentityRepository, type IdentityRepository } from "./repository.
 import { createMailSender, type MailSender } from "./mail.js";
 import { provisionOwnerAccess } from "./provisioning.js";
 
+type CustomerSession = NonNullable<Awaited<ReturnType<IdentityRepository["getSessionByAccessToken"]>>>;
+
+declare module "fastify" {
+  interface FastifyRequest {
+    customerSession?: CustomerSession;
+  }
+}
+
 const payloadSchema = z.object({
   id: z.string().uuid().optional()
 });
@@ -145,7 +153,7 @@ async function getAuthenticatedCustomerSession(input: {
   request: FastifyRequest;
   reply: FastifyReply;
   repository: IdentityRepository;
-}) {
+}): Promise<CustomerSession | undefined> {
   const { request, reply, repository } = input;
   const parsed = authHeaderSchema.safeParse(request.headers);
 
@@ -572,6 +580,15 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
   const passkeyVerifyRateLimit = {
     max: toPositiveInteger(process.env.IDENTITY_RATE_LIMIT_PASSKEY_VERIFY_MAX, defaultPasskeyVerifyRateLimitMax),
     timeWindow: rateLimitWindowMs
+  };
+
+  const requireCustomerAuth = async (request: FastifyRequest, reply: FastifyReply) => {
+    const session = await getAuthenticatedCustomerSession({ request, reply, repository });
+    if (!session) {
+      return;
+    }
+
+    request.customerSession = session;
   };
 
   app.addHook("onClose", async () => {
@@ -1054,10 +1071,10 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
   app.get(
     "/v1/auth/me",
     {
-      preHandler: app.rateLimit(authReadRateLimit)
+      preHandler: [app.rateLimit(authReadRateLimit), requireCustomerAuth]
     },
-    async (request, reply) => {
-      const session = await getAuthenticatedCustomerSession({ request, reply, repository });
+    async (request) => {
+      const session = request.customerSession;
       if (!session) {
         return;
       }
@@ -1078,10 +1095,10 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
   app.post(
     "/v1/auth/profile",
     {
-      preHandler: app.rateLimit(authWriteRateLimit)
+      preHandler: [app.rateLimit(authWriteRateLimit), requireCustomerAuth]
     },
     async (request, reply) => {
-      const session = await getAuthenticatedCustomerSession({ request, reply, repository });
+      const session = request.customerSession;
       if (!session) {
         return;
       }
