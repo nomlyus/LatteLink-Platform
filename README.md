@@ -1,6 +1,6 @@
-# GazelleMobilePlatform
+# LatteLink Platform
 
-Public monorepo for Gazelle's mobile ordering platform.
+Public monorepo for LatteLink’s coffee‑shop mobile ordering platform.
 
 ## Scope
 
@@ -14,6 +14,8 @@ Public monorepo for Gazelle's mobile ordering platform.
 ## Architecture
 
 See [architecture-overview.md](docs/architecture/architecture-overview.md).
+
+Note: Internal package names and test fixtures may still reference “Gazelle” during the pilot phase. Those will migrate after pilot; external branding and copy reflect LatteLink.
 
 ## Quickstart
 

@@ -1,8 +1,8 @@
 {
-  "name": "gazelle-mobile-platform",
+  "name": "lattelink-platform",
   "private": true,
   "version": "0.1.0",
-  "description": "Gazelle mobile ordering platform monorepo",
+  "description": "LatteLink coffee-shop mobile ordering platform monorepo",
   "license": "MIT",
   "packageManager": "pnpm@10.5.2",
   "engines": {
