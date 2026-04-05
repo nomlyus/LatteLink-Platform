@@ -103,9 +103,8 @@ export default function AccountScreen() {
   const loyaltyBalance = loyaltyBalanceQuery.data;
   const identity = identityQuery.data;
   const accountGreeting =
-    identity?.name?.trim() ||
     identity?.displayName?.trim() ||
-    identity?.email?.trim() ||
+    identity?.name?.trim() ||
     "Welcome back";
   const headerOffset = insets.top + ACCOUNT_HEADER_HEIGHT;
   const contentBottomInset = Math.max(getTabBarBottomOffset(insets.bottom > 0) + TAB_BAR_HEIGHT + 24 - insets.bottom, 24);

@@ -44,7 +44,7 @@ function resolveBundleIdentifier(variant: AppVariant) {
 function resolveAssociatedDomains() {
   return (process.env.IOS_ASSOCIATED_DOMAINS ?? "")
     .split(",")
-    .map((entry) => entry.trim())
+    .map((entry: string) => entry.trim())
     .filter(Boolean);
 }
 
