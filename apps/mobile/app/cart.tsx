@@ -462,12 +462,10 @@ export default function CartModalScreen() {
               <View style={styles.checkoutDeck}>
                 {storeConfig ? (
                   <View style={styles.pickupMethodBlock}>
-                    <Text style={styles.pickupMethodLabel}>Pickup method</Text>
                     <View style={styles.pickupMethodRow}>
-                      <Text style={styles.pickupMethodName}>Counter pickup</Text>
-                      <Text style={styles.pickupMethodEta}>{`${storeConfig.prepEtaMinutes} min`}</Text>
+                      <Ionicons name="location-outline" size={13} color={uiPalette.textMuted} />
+                      <Text style={styles.pickupMethodText}>{`Counter Pickup · ${storeConfig.prepEtaMinutes} min`}</Text>
                     </View>
-                    <Text style={styles.pickupMethodBody}>{storeConfig.pickupInstructions}</Text>
                   </View>
                 ) : null}
 
@@ -879,44 +877,22 @@ const styles = StyleSheet.create({
     paddingTop: 2
   },
   pickupMethodBlock: {
-    marginBottom: 18
+    marginBottom: 0
   },
   checkoutContent: {
     marginTop: 16
   },
-  pickupMethodLabel: {
-    fontSize: 11,
-    lineHeight: 14,
-    textTransform: "uppercase",
-    letterSpacing: 1.1,
-    color: uiPalette.textMuted,
-    fontWeight: "700"
-  },
   pickupMethodRow: {
-    marginTop: 8,
     flexDirection: "row",
-    alignItems: "baseline",
-    justifyContent: "space-between",
-    gap: 12
+    alignItems: "center",
+    gap: 5,
+    marginBottom: 12
   },
-  pickupMethodName: {
-    fontSize: 16,
-    lineHeight: 20,
-    fontWeight: "600",
-    color: uiPalette.text,
-    fontFamily: uiTypography.displayFamily
-  },
-  pickupMethodEta: {
+  pickupMethodText: {
     fontSize: 13,
     lineHeight: 17,
-    color: uiPalette.textMuted,
-    fontWeight: "600"
-  },
-  pickupMethodBody: {
-    marginTop: 8,
-    fontSize: 13,
-    lineHeight: 20,
-    color: uiPalette.textSecondary
+    color: uiPalette.textSecondary,
+    fontWeight: "500"
   },
   deckDivider: {
     height: 1,
