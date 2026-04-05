@@ -24,10 +24,11 @@ describe("catalog service", () => {
 
     if (previousFulfillmentMode === undefined) {
       delete process.env.ORDER_FULFILLMENT_MODE;
-      return;
+    } else {
+      process.env.ORDER_FULFILLMENT_MODE = previousFulfillmentMode;
     }
 
-    process.env.ORDER_FULFILLMENT_MODE = previousFulfillmentMode;
+    vi.useRealTimers();
   });
 
   it("responds on /health", async () => {
@@ -78,12 +79,30 @@ describe("catalog service", () => {
   });
 
   it("returns v1 store config payload", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-03-10T17:00:00.000Z"));
     const app = await buildApp();
     const response = await app.inject({ method: "GET", url: "/v1/store/config" });
 
     expect(response.statusCode).toBe(200);
     const parsed = storeConfigResponseSchema.parse(response.json());
+    expect(parsed.hoursText).toContain("Daily");
+    expect(parsed.isOpen).toBe(true);
+    expect(parsed.nextOpenAt).toBeNull();
     expect(parsed.prepEtaMinutes).toBeGreaterThan(0);
+    await app.close();
+  });
+
+  it("marks the store closed outside configured hours", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-03-10T02:00:00.000Z"));
+    const app = await buildApp();
+    const response = await app.inject({ method: "GET", url: "/v1/store/config" });
+
+    expect(response.statusCode).toBe(200);
+    const parsed = storeConfigResponseSchema.parse(response.json());
+    expect(parsed.isOpen).toBe(false);
+    expect(parsed.nextOpenAt).toBeTruthy();
     await app.close();
   });
 

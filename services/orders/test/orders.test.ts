@@ -103,6 +103,18 @@ describe("orders service", () => {
           ? (JSON.parse(init.body) as Record<string, unknown>)
           : {};
 
+      if (url.endsWith("/v1/store/config") && method === "GET") {
+        return paymentsResponse({
+          locationId: "flagship-01",
+          hoursText: "Daily · 7:00 AM - 6:00 PM",
+          isOpen: true,
+          nextOpenAt: null,
+          prepEtaMinutes: 12,
+          taxRateBasisPoints: 600,
+          pickupInstructions: "Pickup at the flagship order counter."
+        });
+      }
+
       if (url.endsWith("/v1/payments/charges") && method === "POST") {
         const expectedInternalToken = process.env.ORDERS_INTERNAL_API_TOKEN;
         const headers = new Headers(init?.headers);

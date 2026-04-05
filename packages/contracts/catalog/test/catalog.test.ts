@@ -88,12 +88,17 @@ describe("contracts-catalog", () => {
   it("validates store config payload", () => {
     const config = storeConfigResponseSchema.parse({
       locationId: "flagship-01",
+      hoursText: "Daily · 7:00 AM - 6:00 PM",
+      isOpen: true,
+      nextOpenAt: null,
       prepEtaMinutes: 12,
       taxRateBasisPoints: 600,
       pickupInstructions: "Pickup at the flagship order counter."
     });
 
     expect(config.taxRateBasisPoints).toBe(600);
+    expect(config.isOpen).toBe(true);
+    expect(config.nextOpenAt).toBeNull();
   });
 
   it("validates app config payload", () => {
@@ -209,6 +214,8 @@ describe("contracts-catalog", () => {
 
   it("exposes app-config contract metadata", () => {
     expect(catalogContract.routes.appConfig.path).toBe("/app-config");
+    expect(catalogContract.routes.menu.path).toBe("/menu");
+    expect(catalogContract.routes.storeConfig.path).toBe("/store/config");
   });
 
   it("validates admin menu and store config payloads", () => {
@@ -311,6 +318,9 @@ describe("contracts-catalog", () => {
     expect(() =>
       storeConfigResponseSchema.parse({
         locationId: "flagship-01",
+        hoursText: "Daily · 7:00 AM - 6:00 PM",
+        isOpen: true,
+        nextOpenAt: null,
         prepEtaMinutes: 12,
         taxRateBasisPoints: 10001,
         pickupInstructions: "Pickup at the flagship order counter."

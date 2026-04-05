@@ -75,6 +75,7 @@ async function createTestDeps(
 
   const deps: OrderServiceDeps = {
     repository,
+    catalogBaseUrl: "http://catalog.test",
     paymentsBaseUrl: "http://payments.test",
     paymentsInternalToken,
     loyaltyBaseUrl: "http://loyalty.test",
@@ -133,11 +134,13 @@ async function createQuotedOrder(
 describe("orders service layer", () => {
   const fetchMock = vi.fn<typeof fetch>();
   const repositories: OrdersRepository[] = [];
+  let storeConfigIsOpen = true;
 
   beforeEach(() => {
     fetchMock.mockReset();
     vi.stubGlobal("fetch", fetchMock);
     vi.stubEnv("DATABASE_URL", "");
+    storeConfigIsOpen = true;
 
     const defaultUserId = "123e4567-e89b-12d3-a456-426614174000";
     const loyaltyIdempotency = new Map<
@@ -164,6 +167,18 @@ describe("orders service layer", () => {
         typeof init?.body === "string" && init.body.length > 0
           ? (JSON.parse(init.body) as Record<string, unknown>)
           : {};
+
+      if (url.endsWith("/v1/store/config") && method === "GET") {
+        return paymentsResponse({
+          locationId: "flagship-01",
+          hoursText: "Daily · 7:00 AM - 6:00 PM",
+          isOpen: storeConfigIsOpen,
+          nextOpenAt: storeConfigIsOpen ? null : "2026-03-10T07:00:00.000Z",
+          prepEtaMinutes: 12,
+          taxRateBasisPoints: 600,
+          pickupInstructions: "Pickup at the flagship order counter."
+        });
+      }
 
       if (url.endsWith("/v1/payments/charges") && method === "POST") {
         const headers = new Headers(init?.headers);
@@ -871,6 +886,57 @@ describe("orders service layer", () => {
         status: "PENDING_PAYMENT",
         pickupCode: initialOrderResult.order.pickupCode
       }
+    });
+  });
+
+  it("rejects quote and createOrder when the store is closed", async () => {
+    const { deps } = await createTestDeps(repositories);
+
+    storeConfigIsOpen = false;
+    const closedQuoteResult = await createQuote({
+      input: sampleQuotePayload,
+      deps
+    });
+    expect("error" in closedQuoteResult).toBe(true);
+    if (!("error" in closedQuoteResult)) {
+      throw new Error("Expected closed-store quote error");
+    }
+    expect(closedQuoteResult.error).toMatchObject({
+      statusCode: 409,
+      code: "STORE_CLOSED",
+      message: "The store is currently closed"
+    });
+
+    storeConfigIsOpen = true;
+    const openQuoteResult = await createQuote({
+      input: sampleQuotePayload,
+      deps
+    });
+    if ("error" in openQuoteResult) {
+      throw new Error(`Quote creation failed: ${openQuoteResult.error.code}`);
+    }
+
+    await deps.repository.saveQuote(openQuoteResult.quote);
+
+    storeConfigIsOpen = false;
+    const closedCreateResult = await createOrder({
+      input: {
+        quoteId: openQuoteResult.quote.quoteId,
+        quoteHash: openQuoteResult.quote.quoteHash
+      },
+      requestId: "closed-store-create-order",
+      requestUserContext: { userId: defaultTestUserId },
+      deps
+    });
+
+    expect("error" in closedCreateResult).toBe(true);
+    if (!("error" in closedCreateResult)) {
+      throw new Error("Expected closed-store createOrder error");
+    }
+    expect(closedCreateResult.error).toMatchObject({
+      statusCode: 409,
+      code: "STORE_CLOSED",
+      message: "The store is currently closed"
     });
   });
 });

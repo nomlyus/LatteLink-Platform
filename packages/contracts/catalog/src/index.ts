@@ -233,6 +233,9 @@ export const menuResponseSchema = z.object({
 
 export const storeConfigResponseSchema = z.object({
   locationId: z.string().min(1),
+  hoursText: z.string().min(1),
+  isOpen: z.boolean(),
+  nextOpenAt: z.string().datetime().nullable(),
   prepEtaMinutes: z.number().int().positive(),
   taxRateBasisPoints: z.number().int().min(0).max(10_000),
   pickupInstructions: z.string()

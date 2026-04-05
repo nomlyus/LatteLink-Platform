@@ -49,6 +49,9 @@ describe("sdk-mobile", () => {
         new Response(
           JSON.stringify({
             locationId: "flagship-01",
+            hoursText: "Daily · 7:00 AM - 6:00 PM",
+            isOpen: true,
+            nextOpenAt: null,
             prepEtaMinutes: 12,
             taxRateBasisPoints: 600,
             pickupInstructions: "Pickup at the flagship order counter."
@@ -120,6 +123,7 @@ describe("sdk-mobile", () => {
 
     expect(menu.categories[0]?.items[0]?.name).toBe("Latte");
     expect(storeConfig.taxRateBasisPoints).toBe(600);
+    expect(storeConfig.nextOpenAt).toBeNull();
     expect(appConfig.brand.brandName).toBe("Gazelle Coffee");
     expect(appConfig.fulfillment.mode).toBe("time_based");
   });

@@ -1,10 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
-import { BlurView } from "expo-blur";
-import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
 import { useRouter } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import {
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -18,88 +15,13 @@ import Animated, { Extrapolation, interpolate, useAnimatedScrollHandler, useAnim
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { resolveAppConfigData, resolveStoreConfigData, useAppConfigQuery, useStoreConfigQuery } from "../../src/menu/catalog";
 import { TAB_BAR_HEIGHT, getTabBarBottomOffset } from "../../src/navigation/tabBarMetrics";
-import { GlassCard, ScreenBackdrop, TabBarDepthBackdrop, uiPalette, uiTypography } from "../../src/ui/system";
+import { ScreenBackdrop, TabBarDepthBackdrop, uiPalette, uiTypography } from "../../src/ui/system";
 
 const HEADER_TOP_PADDING = 18;
 const HEADER_EXPANDED_HEIGHT = 212;
 const HEADER_COLLAPSED_HEIGHT = 92;
 const HEADER_SNAP_VELOCITY_THRESHOLD = 0.2;
 const HEADER_SNAP_EDGE_TOLERANCE = 2;
-
-const HOME_NEWS_ITEMS = [
-  {
-    label: "NEW DRINK",
-    title: "Honey Cardamom Cold Brew",
-    body: "Placeholder feature card for a seasonal drink launch with oat foam and orange peel.",
-    note: "Available this week only."
-  },
-  {
-    label: "DISCOUNT",
-    title: "20% Off After 3 PM",
-    body: "Placeholder promo card for an afternoon pickup offer on any handcrafted drink.",
-    note: "Weekdays only. In-store pickup."
-  },
-  {
-    label: "HOLIDAY HOURS",
-    title: "Adjusted Hours For Memorial Day",
-    body: "Placeholder notice for holiday operations so guests can check changes before arriving.",
-    note: "Open 8:00 AM to 2:00 PM."
-  },
-  {
-    label: "STORE UPDATE",
-    title: "Mobile Orders Resume At 7 AM",
-    body: "Placeholder operations card for service changes, maintenance windows, or staffing updates.",
-    note: "Thanks for your patience."
-  }
-] as const;
-
-type NewsLabel = (typeof HOME_NEWS_ITEMS)[number]["label"];
-
-function canUseLiquidGlassTag() {
-  if (Platform.OS !== "ios") return false;
-
-  try {
-    return isLiquidGlassAvailable();
-  } catch {
-    return false;
-  }
-}
-
-function HomeNewsTag({ label }: { label: NewsLabel }) {
-  const useLiquidGlass = canUseLiquidGlassTag();
-
-  const content = (
-    <View
-      style={[
-        styles.newsLabelInner,
-        useLiquidGlass
-          ? styles.newsLabelInnerGlass
-          : styles.newsLabelInnerFallback
-      ]}
-    >
-      <Text style={styles.newsLabelText}>{label}</Text>
-    </View>
-  );
-
-  return (
-    <View style={styles.newsLabelShell}>
-      {useLiquidGlass ? (
-        <GlassView
-          glassEffectStyle="regular"
-          colorScheme="auto"
-          isInteractive
-          style={styles.newsLabelFrame}
-        >
-          {content}
-        </GlassView>
-      ) : (
-        <BlurView tint="light" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.newsLabelFrame}>
-          {content}
-        </BlurView>
-      )}
-    </View>
-  );
-}
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -241,7 +163,7 @@ export default function HomeScreen() {
             progressViewOffset={insets.top + 12}
           />
         }
-        contentContainerStyle={[
+      contentContainerStyle={[
           styles.scrollContent,
           {
             paddingTop: headerExpandedHeight,
@@ -249,22 +171,7 @@ export default function HomeScreen() {
           }
         ]}
       >
-        <View style={styles.cardGrid}>
-          {HOME_NEWS_ITEMS.map((item) => (
-            <GlassCard key={item.title} style={styles.newsCard} contentStyle={styles.newsCardContent}>
-              <View style={styles.newsCardHeader}>
-                <HomeNewsTag label={item.label} />
-              </View>
-
-              <View style={styles.newsCopy}>
-                <Text style={styles.newsTitle}>{item.title}</Text>
-                <Text style={styles.newsBody}>{item.body}</Text>
-              </View>
-
-              <Text style={styles.newsNote}>{item.note}</Text>
-            </GlassCard>
-          ))}
-        </View>
+        <View />
       </Animated.ScrollView>
 
       <Animated.View style={[styles.headerShell, { paddingTop: insets.top + HEADER_TOP_PADDING }, headerStyle]}>
@@ -278,7 +185,11 @@ export default function HomeScreen() {
         <Animated.View style={[styles.storeRail, storeRailStyle]}>
           <View style={styles.storeCopy}>
             <Animated.View style={[styles.pickupMetaWrap, pickupMetaStyle]}>
-              <Text style={styles.storeMeta}>{`Estimated pick-up is ${storeConfig.prepEtaMinutes} mins`}</Text>
+              <Text style={[styles.storeMeta, !storeConfig.isOpen ? styles.storeMetaClosed : null]}>
+                {storeConfig.isOpen
+                  ? `Estimated pick-up is ${storeConfig.prepEtaMinutes} mins`
+                  : `Closed now · Orders resume during ${storeConfig.hoursText}`}
+              </Text>
             </Animated.View>
             <Animated.Text style={[styles.storeTitle, storeTitleStyle]}>{appConfig.brand.marketLabel}</Animated.Text>
           </View>
@@ -356,6 +267,9 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     color: uiPalette.textSecondary
   },
+  storeMetaClosed: {
+    color: uiPalette.warning
+  },
   storeTitle: {
     marginTop: 6,
     fontSize: 19,
@@ -377,80 +291,4 @@ const styles = StyleSheet.create({
     color: uiPalette.text,
     fontWeight: "600"
   },
-  cardGrid: {
-    paddingTop: 14,
-    gap: 14
-  },
-  newsCard: {
-    width: "100%",
-    minHeight: 142
-  },
-  newsCardContent: {
-    minHeight: 142,
-    justifyContent: "space-between",
-    gap: 14
-  },
-  newsCardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between"
-  },
-  newsLabelShell: {
-    alignSelf: "flex-start",
-    borderRadius: 999,
-    overflow: "hidden",
-    shadowColor: "#000000",
-    shadowOpacity: 0.06,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 4
-  },
-  newsLabelFrame: {
-    borderRadius: 999,
-    overflow: "hidden"
-  },
-  newsLabelInner: {
-    alignSelf: "flex-start",
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 999,
-    borderWidth: 1
-  },
-  newsLabelInnerGlass: {
-    backgroundColor: "rgba(255,255,255,0.02)",
-    borderColor: "rgba(255,255,255,0.16)"
-  },
-  newsLabelInnerFallback: {
-    backgroundColor: "rgba(255,255,255,0.36)",
-    borderColor: "rgba(255,255,255,0.28)"
-  },
-  newsLabelText: {
-    fontSize: 11,
-    lineHeight: 13,
-    letterSpacing: 1.1,
-    fontWeight: "700",
-    color: uiPalette.textSecondary
-  },
-  newsCopy: {
-    gap: 6
-  },
-  newsTitle: {
-    fontSize: 24,
-    lineHeight: 28,
-    color: uiPalette.text,
-    fontFamily: uiTypography.displayFamily,
-    fontWeight: "600",
-    letterSpacing: -0.5
-  },
-  newsBody: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: uiPalette.textSecondary
-  },
-  newsNote: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: uiPalette.textMuted,
-    fontWeight: "500"
-  }
 });

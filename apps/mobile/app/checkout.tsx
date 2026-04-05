@@ -97,11 +97,15 @@ export default function CheckoutScreen() {
   const storeConfig = storeConfigQuery.data ? resolveStoreConfigData(storeConfigQuery.data) : null;
   const pricingSummary = buildPricingSummary(subtotalCents, storeConfig?.taxRateBasisPoints ?? 0);
   const checkoutMutation = useApplePayCheckoutMutation();
+  const storeClosedMessage =
+    storeConfig && !storeConfig.isOpen
+      ? "The store is currently closed. Come back during opening hours."
+      : null;
   const checkoutUnavailableMessage = !storeConfig
     ? "Store details are temporarily unavailable. Retry loading checkout before paying."
     : !appConfig
       ? "Checkout configuration is temporarily unavailable. Retry loading checkout before paying."
-      : null;
+      : storeClosedMessage;
   const checkoutReady = checkoutUnavailableMessage === null;
   const cardCapabilityEnabled = Boolean(appConfig?.paymentCapabilities.card);
   const cardEntryConfigQuery = useCloverCardEntryConfigQuery(checkoutReady && cardCapabilityEnabled);
@@ -149,6 +153,12 @@ export default function CheckoutScreen() {
   ) {
     if (!storeConfig || !appConfig) {
       setStatusMessage(checkoutUnavailableMessage ?? "Checkout is temporarily unavailable.");
+      setStatusTone("warning");
+      return;
+    }
+
+    if (!storeConfig.isOpen) {
+      setStatusMessage(storeClosedMessage ?? "The store is currently closed.");
       setStatusTone("warning");
       return;
     }
@@ -233,6 +243,12 @@ export default function CheckoutScreen() {
       return;
     }
 
+    if (!storeConfig.isOpen) {
+      setStatusMessage(storeClosedMessage ?? "The store is currently closed.");
+      setStatusTone("warning");
+      return;
+    }
+
     setCardCheckoutPending(true);
     setStatusMessage("Securing card details with Clover…");
     setStatusTone("info");
@@ -270,7 +286,11 @@ export default function CheckoutScreen() {
           <View style={styles.headerCopy}>
             <Text style={styles.headerTitle}>Checkout</Text>
             <Text style={styles.headerSubtitle}>
-              {storeConfig ? `Estimated wait is ${storeConfig.prepEtaMinutes} min` : "Checkout details unavailable"}
+              {storeConfig
+                ? storeConfig.isOpen
+                  ? `Estimated wait is ${storeConfig.prepEtaMinutes} min`
+                  : "Store closed"
+                : "Checkout details unavailable"}
             </Text>
           </View>
           {checkoutUnavailableMessage ? (
