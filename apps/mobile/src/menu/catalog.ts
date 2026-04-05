@@ -3,10 +3,13 @@ import {
   appConfigSchema,
   isLoyaltyVisible,
   isOrderTrackingEnabled,
+  homeNewsCardsResponseSchema,
   menuItemCustomizationGroupSchema,
   menuResponseSchema,
   storeConfigResponseSchema,
   type AppConfig,
+  type HomeNewsCard,
+  type HomeNewsCardsResponse,
   type MenuCategory,
   type MenuItem,
   type MenuItemCustomizationGroup,
@@ -242,8 +245,52 @@ const fallbackMenu = menuResponseSchema.parse({
   ]
 });
 
+const fallbackHomeNewsCards = homeNewsCardsResponseSchema.parse({
+  locationId: "flagship-01",
+  cards: [
+    {
+      cardId: "honey-cardamom-cold-brew",
+      label: "NEW DRINK",
+      title: "Honey Cardamom Cold Brew",
+      body: "Placeholder feature card for a seasonal drink launch with oat foam and orange peel.",
+      note: "Available this week only.",
+      sortOrder: 0,
+      visible: true
+    },
+    {
+      cardId: "afternoon-promo",
+      label: "DISCOUNT",
+      title: "20% Off After 3 PM",
+      body: "Placeholder promo card for an afternoon pickup offer on any handcrafted drink.",
+      note: "Weekdays only. In-store pickup.",
+      sortOrder: 1,
+      visible: true
+    },
+    {
+      cardId: "memorial-day-hours",
+      label: "HOLIDAY HOURS",
+      title: "Adjusted Hours For Memorial Day",
+      body: "Placeholder notice for holiday operations so guests can check changes before arriving.",
+      note: "Open 8:00 AM to 2:00 PM.",
+      sortOrder: 2,
+      visible: true
+    },
+    {
+      cardId: "mobile-orders-resume",
+      label: "STORE UPDATE",
+      title: "Mobile Orders Resume At 7 AM",
+      body: "Placeholder operations card for service changes, maintenance windows, or staffing updates.",
+      note: "Thanks for your patience.",
+      sortOrder: 3,
+      visible: true
+    }
+  ]
+});
+
 const fallbackStoreConfig = storeConfigResponseSchema.parse({
   locationId: "flagship-01",
+  hoursText: "Daily · 7:00 AM - 6:00 PM",
+  isOpen: true,
   prepEtaMinutes: 12,
   taxRateBasisPoints: 600,
   pickupInstructions: "Pickup at the flagship order counter."
@@ -337,6 +384,20 @@ export function useMenuQuery() {
   });
 }
 
+export function useHomeNewsCardsQuery() {
+  return useQuery({
+    queryKey: ["catalog", "home-news-cards"],
+    queryFn: async (): Promise<HomeNewsCardsResponse> => {
+      const response = homeNewsCardsResponseSchema.parse(await apiClient.get<unknown>("/cards"));
+      return {
+        ...response,
+        cards: response.cards.filter((card) => card.visible).sort((left, right) => left.sortOrder - right.sortOrder)
+      };
+    },
+    staleTime: 60_000
+  });
+}
+
 export function useStoreConfigQuery() {
   return useQuery({
     queryKey: ["catalog", "store-config"],
@@ -373,6 +434,17 @@ export function resolveMenuData(menu: MenuResponse | undefined): MenuResponse {
   }
 
   return menu;
+}
+
+export function resolveHomeNewsCardsData(cards: HomeNewsCardsResponse | undefined): HomeNewsCardsResponse {
+  if (!cards || cards.cards.length === 0) {
+    return fallbackHomeNewsCards;
+  }
+
+  return {
+    ...cards,
+    cards: [...cards.cards].sort((left, right) => left.sortOrder - right.sortOrder)
+  };
 }
 
 export function resolveStoreConfigData(config: StoreConfigResponse | undefined): StoreConfigResponse {
@@ -412,4 +484,13 @@ export function toCategoryById(categories: MenuCategory[]): Record<string, MenuC
   }, {});
 }
 
-export type { AppConfig, MenuCategory, MenuItem, MenuItemCustomizationGroup, MenuItemCustomizationInput, MenuItemCustomizationOption };
+export type {
+  AppConfig,
+  HomeNewsCard,
+  HomeNewsCardsResponse,
+  MenuCategory,
+  MenuItem,
+  MenuItemCustomizationGroup,
+  MenuItemCustomizationInput,
+  MenuItemCustomizationOption
+};

@@ -2,8 +2,10 @@ import { createHash, randomUUID } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
 import {
   priceMenuItemCustomization,
+  storeConfigResponseSchema,
   type AppConfigFulfillment,
-  type CustomizationGroupSelectionSnapshot
+  type CustomizationGroupSelectionSnapshot,
+  type StoreConfigResponse
 } from "@gazelle/contracts-catalog";
 import {
   applePayWalletSchema,
@@ -187,6 +189,7 @@ export type PosAdapter = {
 
 export type OrderServiceDeps = {
   repository: OrdersRepository;
+  catalogBaseUrl: string;
   paymentsBaseUrl: string;
   paymentsInternalToken?: string;
   loyaltyBaseUrl: string;
@@ -217,6 +220,8 @@ type ChargeRequestResult =
 type RefundRequestResult =
   | { response: PaymentsRefundResponse }
   | { error: ServiceError; snapshot?: PaymentsRefundResponse };
+type StoreConfigLookupResult = StoreConfigResponse | ServiceError;
+type StoreAvailabilityResult = { storeConfig: StoreConfigResponse } | { error: ServiceError };
 
 const noopPosAdapter: PosAdapter = {
   async submitOrder() {
@@ -265,6 +270,27 @@ function buildActiveOrderExistsError(order: Order) {
       status: order.status,
       pickupCode: order.pickupCode
     }
+  });
+}
+
+function buildStoreClosedError(storeConfig: StoreConfigResponse) {
+  return buildServiceError({
+    statusCode: 409,
+    code: "STORE_CLOSED",
+    message: `The store is currently closed. Orders are accepted during ${storeConfig.hoursText}.`,
+    details: {
+      locationId: storeConfig.locationId,
+      hoursText: storeConfig.hoursText
+    }
+  });
+}
+
+function buildStoreConfigUnavailableError(details?: Record<string, unknown>) {
+  return buildServiceError({
+    statusCode: 502,
+    code: "STORE_CONFIG_UNAVAILABLE",
+    message: "Store hours are temporarily unavailable",
+    details
   });
 }
 
@@ -328,6 +354,53 @@ function resolveRequestUserId(context: RequestUserContext | undefined) {
   }
 
   return context?.userId ?? buildMissingRequestUserContextError();
+}
+
+async function fetchStoreConfig(deps: OrderServiceDeps): Promise<StoreConfigLookupResult> {
+  let storeConfigResponse: Response;
+  try {
+    storeConfigResponse = await fetch(`${deps.catalogBaseUrl}/v1/store/config`, {
+      headers: {
+        "content-type": "application/json"
+      }
+    });
+  } catch (error) {
+    deps.logger.warn({ error }, "catalog store config request failed before response");
+    return buildStoreConfigUnavailableError();
+  }
+
+  const parsedBody = parseJsonSafely(await storeConfigResponse.text());
+  if (!storeConfigResponse.ok) {
+    return buildStoreConfigUnavailableError({
+      upstreamStatus: storeConfigResponse.status,
+      upstreamBody: parsedBody
+    });
+  }
+
+  const parsedStoreConfig = storeConfigResponseSchema.safeParse(parsedBody);
+  if (!parsedStoreConfig.success) {
+    return buildStoreConfigUnavailableError({
+      upstreamBody: parsedBody,
+      validation: parsedStoreConfig.error.flatten()
+    });
+  }
+
+  return parsedStoreConfig.data;
+}
+
+async function ensureStoreIsOpen(deps: OrderServiceDeps): Promise<StoreAvailabilityResult> {
+  const storeConfig = await fetchStoreConfig(deps);
+  if (isServiceError(storeConfig)) {
+    return { error: storeConfig };
+  }
+
+  if (!storeConfig.isOpen) {
+    return {
+      error: buildStoreClosedError(storeConfig)
+    };
+  }
+
+  return { storeConfig };
 }
 
 async function applyLoyaltyMutation(params: {
@@ -1000,6 +1073,11 @@ export async function createQuote(params: {
   deps: OrderServiceDeps;
 }): Promise<{ quote: OrderQuote } | { error: ServiceError }> {
   try {
+    const storeAvailability = await ensureStoreIsOpen(params.deps);
+    if ("error" in storeAvailability) {
+      return storeAvailability;
+    }
+
     const quote = await buildQuote(params.input, params.deps.repository);
     return { quote };
   } catch (error) {
@@ -1068,6 +1146,11 @@ export async function createOrder(params: {
     return {
       error: buildActiveOrderExistsError(activeOrder)
     };
+  }
+
+  const storeAvailability = await ensureStoreIsOpen(deps);
+  if ("error" in storeAvailability) {
+    return storeAvailability;
   }
 
   const order = createOrderFromQuote(quote);

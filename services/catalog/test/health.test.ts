@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   adminMenuItemSchema,
   adminMenuResponseSchema,
+  homeNewsCardSchema,
+  homeNewsCardsResponseSchema,
   adminStoreConfigSchema,
   appConfigSchema,
   internalLocationListResponseSchema,
@@ -24,10 +26,11 @@ describe("catalog service", () => {
 
     if (previousFulfillmentMode === undefined) {
       delete process.env.ORDER_FULFILLMENT_MODE;
-      return;
+    } else {
+      process.env.ORDER_FULFILLMENT_MODE = previousFulfillmentMode;
     }
 
-    process.env.ORDER_FULFILLMENT_MODE = previousFulfillmentMode;
+    vi.useRealTimers();
   });
 
   it("responds on /health", async () => {
@@ -45,6 +48,17 @@ describe("catalog service", () => {
     expect(response.statusCode).toBe(200);
     const parsed = menuResponseSchema.parse(response.json());
     expect(parsed.categories.length).toBeGreaterThan(0);
+    await app.close();
+  });
+
+  it("returns v1 home cards payload", async () => {
+    const app = await buildApp();
+    const response = await app.inject({ method: "GET", url: "/v1/cards" });
+
+    expect(response.statusCode).toBe(200);
+    const parsed = homeNewsCardsResponseSchema.parse(response.json());
+    expect(parsed.cards.length).toBeGreaterThan(0);
+    expect(parsed.cards.every((card) => card.visible)).toBe(true);
     await app.close();
   });
 
@@ -78,12 +92,28 @@ describe("catalog service", () => {
   });
 
   it("returns v1 store config payload", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-03-10T17:00:00.000Z"));
     const app = await buildApp();
     const response = await app.inject({ method: "GET", url: "/v1/store/config" });
 
     expect(response.statusCode).toBe(200);
     const parsed = storeConfigResponseSchema.parse(response.json());
+    expect(parsed.hoursText).toContain("Daily");
+    expect(parsed.isOpen).toBe(true);
     expect(parsed.prepEtaMinutes).toBeGreaterThan(0);
+    await app.close();
+  });
+
+  it("marks the store closed outside configured hours", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-03-10T02:00:00.000Z"));
+    const app = await buildApp();
+    const response = await app.inject({ method: "GET", url: "/v1/store/config" });
+
+    expect(response.statusCode).toBe(200);
+    const parsed = storeConfigResponseSchema.parse(response.json());
+    expect(parsed.isOpen).toBe(false);
     await app.close();
   });
 
@@ -104,6 +134,17 @@ describe("catalog service", () => {
     expect(
       Array.isArray((adminMenuResponse.json() as { categories: Array<{ items: Array<{ customizationGroups?: unknown }> }> }).categories[0]?.items[0]?.customizationGroups)
     ).toBe(true);
+
+    const adminCardsResponse = await app.inject({
+      method: "GET",
+      url: "/v1/catalog/admin/cards",
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      }
+    });
+    expect(adminCardsResponse.statusCode).toBe(200);
+    const adminCards = homeNewsCardsResponseSchema.parse(adminCardsResponse.json());
+    expect(adminCards.cards.length).toBeGreaterThan(0);
 
     const updateResponse = await app.inject({
       method: "PUT",
@@ -148,6 +189,68 @@ describe("catalog service", () => {
         }
       ]
     });
+
+    const cardCreateResponse = await app.inject({
+      method: "POST",
+      url: "/v1/catalog/admin/cards",
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        label: "STORE UPDATE",
+        title: "Evening Espresso Window",
+        body: "We are extending espresso service through 8 PM.",
+        note: "Weeknights only.",
+        visible: true,
+        sortOrder: 8
+      }
+    });
+    expect(cardCreateResponse.statusCode).toBe(200);
+    const createdCard = homeNewsCardSchema.parse(cardCreateResponse.json());
+    expect(createdCard.title).toBe("Evening Espresso Window");
+
+    const cardUpdateResponse = await app.inject({
+      method: "PUT",
+      url: `/v1/catalog/admin/cards/${createdCard.cardId}`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        label: "STORE UPDATE",
+        title: "Extended Espresso Window",
+        body: "We are extending espresso service through 9 PM.",
+        note: "Weeknights only.",
+        visible: true,
+        sortOrder: 9
+      }
+    });
+    expect(cardUpdateResponse.statusCode).toBe(200);
+    const updatedCard = homeNewsCardSchema.parse(cardUpdateResponse.json());
+    expect(updatedCard.sortOrder).toBe(9);
+
+    const cardVisibilityResponse = await app.inject({
+      method: "PATCH",
+      url: `/v1/catalog/admin/cards/${createdCard.cardId}/visibility`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        visible: false
+      }
+    });
+    expect(cardVisibilityResponse.statusCode).toBe(200);
+    const hiddenCard = homeNewsCardSchema.parse(cardVisibilityResponse.json());
+    expect(hiddenCard.visible).toBe(false);
+
+    const cardDeleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/v1/catalog/admin/cards/${createdCard.cardId}`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      }
+    });
+    expect(cardDeleteResponse.statusCode).toBe(200);
+    expect(cardDeleteResponse.json()).toMatchObject({ success: true });
 
     const adminStoreConfigResponse = await app.inject({
       method: "GET",

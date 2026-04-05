@@ -221,6 +221,21 @@ function buildNotificationsHarnessApp() {
   return app;
 }
 
+function buildCatalogHarnessApp() {
+  const app = Fastify();
+
+  app.get("/v1/store/config", async () => ({
+    locationId: "flagship-01",
+    hoursText: "Daily · 7:00 AM - 6:00 PM",
+    isOpen: true,
+    prepEtaMinutes: 12,
+    taxRateBasisPoints: 600,
+    pickupInstructions: "Pickup at the flagship order counter."
+  }));
+
+  return app;
+}
+
 describe.sequential("orders + payments e2e", () => {
   let ordersApp: FastifyInstance | undefined;
   let paymentsApp: FastifyInstance | undefined;
@@ -229,7 +244,9 @@ describe.sequential("orders + payments e2e", () => {
   let previousPaymentsBaseUrl: string | undefined;
   let previousLoyaltyBaseUrl: string | undefined;
   let previousNotificationsBaseUrl: string | undefined;
+  let previousCatalogBaseUrl: string | undefined;
   let previousOrdersInternalToken: string | undefined;
+  let catalogApp: FastifyInstance | undefined;
 
   async function createOrder(input?: { pointsToRedeem?: number; userId?: string }) {
     if (!ordersApp) {
@@ -267,6 +284,7 @@ describe.sequential("orders + payments e2e", () => {
     previousPaymentsBaseUrl = process.env.PAYMENTS_SERVICE_BASE_URL;
     previousLoyaltyBaseUrl = process.env.LOYALTY_SERVICE_BASE_URL;
     previousNotificationsBaseUrl = process.env.NOTIFICATIONS_SERVICE_BASE_URL;
+    previousCatalogBaseUrl = process.env.CATALOG_SERVICE_BASE_URL;
     previousOrdersInternalToken = process.env.ORDERS_INTERNAL_API_TOKEN;
 
     process.env.ORDERS_INTERNAL_API_TOKEN = internalPaymentsToken;
@@ -291,9 +309,17 @@ describe.sequential("orders + payments e2e", () => {
       throw new Error("Failed to resolve notifications test port");
     }
 
+    catalogApp = buildCatalogHarnessApp();
+    await catalogApp.listen({ host: "127.0.0.1", port: 0 });
+    const catalogAddress = catalogApp.server.address() as AddressInfo | null;
+    if (!catalogAddress || typeof catalogAddress.port !== "number") {
+      throw new Error("Failed to resolve catalog test port");
+    }
+
     process.env.PAYMENTS_SERVICE_BASE_URL = `http://127.0.0.1:${paymentsAddress.port}`;
     process.env.LOYALTY_SERVICE_BASE_URL = `http://127.0.0.1:${loyaltyAddress.port}`;
     process.env.NOTIFICATIONS_SERVICE_BASE_URL = `http://127.0.0.1:${notificationsAddress.port}`;
+    process.env.CATALOG_SERVICE_BASE_URL = `http://127.0.0.1:${catalogAddress.port}`;
     ordersApp = await buildOrdersApp();
   });
 
@@ -318,6 +344,11 @@ describe.sequential("orders + payments e2e", () => {
       notificationsApp = undefined;
     }
 
+    if (catalogApp) {
+      await catalogApp.close();
+      catalogApp = undefined;
+    }
+
     if (previousPaymentsBaseUrl === undefined) {
       delete process.env.PAYMENTS_SERVICE_BASE_URL;
     } else {
@@ -334,6 +365,12 @@ describe.sequential("orders + payments e2e", () => {
       delete process.env.NOTIFICATIONS_SERVICE_BASE_URL;
     } else {
       process.env.NOTIFICATIONS_SERVICE_BASE_URL = previousNotificationsBaseUrl;
+    }
+
+    if (previousCatalogBaseUrl === undefined) {
+      delete process.env.CATALOG_SERVICE_BASE_URL;
+    } else {
+      process.env.CATALOG_SERVICE_BASE_URL = previousCatalogBaseUrl;
     }
 
     if (previousOrdersInternalToken === undefined) {

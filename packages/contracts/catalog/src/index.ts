@@ -231,8 +231,47 @@ export const menuResponseSchema = z.object({
   categories: z.array(menuCategorySchema)
 });
 
+export const homeNewsCardSchema = z.object({
+  cardId: z.string().min(1),
+  label: z.string().min(1),
+  title: z.string().min(1),
+  body: z.string().min(1),
+  note: z.string().min(1).optional(),
+  sortOrder: z.number().int().nonnegative(),
+  visible: z.boolean()
+});
+
+export const homeNewsCardsResponseSchema = z.object({
+  locationId: z.string().min(1),
+  cards: z.array(homeNewsCardSchema)
+});
+
+export const homeNewsCardCreateSchema = z.object({
+  label: z.string().min(1),
+  title: z.string().min(1),
+  body: z.string().min(1),
+  note: z.string().min(1).optional(),
+  visible: z.boolean(),
+  sortOrder: z.number().int().nonnegative().optional()
+});
+
+export const homeNewsCardUpdateSchema = z.object({
+  label: z.string().min(1),
+  title: z.string().min(1),
+  body: z.string().min(1),
+  note: z.string().min(1).optional(),
+  visible: z.boolean(),
+  sortOrder: z.number().int().nonnegative()
+});
+
+export const homeNewsCardVisibilityUpdateSchema = z.object({
+  visible: z.boolean()
+});
+
 export const storeConfigResponseSchema = z.object({
   locationId: z.string().min(1),
+  hoursText: z.string().min(1),
+  isOpen: z.boolean(),
   prepEtaMinutes: z.number().int().positive(),
   taxRateBasisPoints: z.number().int().min(0).max(10_000),
   pickupInstructions: z.string()
@@ -582,10 +621,15 @@ export type MenuItemCustomizationInput = z.output<typeof menuItemCustomizationIn
 export type MenuItem = z.output<typeof menuItemSchema>;
 export type MenuCategory = z.output<typeof menuCategorySchema>;
 export type MenuResponse = z.output<typeof menuResponseSchema>;
+export type HomeNewsCard = z.output<typeof homeNewsCardSchema>;
+export type HomeNewsCardsResponse = z.output<typeof homeNewsCardsResponseSchema>;
 export type StoreConfigResponse = z.output<typeof storeConfigResponseSchema>;
 export type AdminMenuItem = z.output<typeof adminMenuItemSchema>;
 export type AdminMenuCategory = z.output<typeof adminMenuCategorySchema>;
 export type AdminMenuResponse = z.output<typeof adminMenuResponseSchema>;
+export type HomeNewsCardCreate = z.output<typeof homeNewsCardCreateSchema>;
+export type HomeNewsCardUpdate = z.output<typeof homeNewsCardUpdateSchema>;
+export type HomeNewsCardVisibilityUpdate = z.output<typeof homeNewsCardVisibilityUpdateSchema>;
 export type AdminStoreConfig = z.output<typeof adminStoreConfigSchema>;
 export type AdminMenuItemCreate = z.output<typeof adminMenuItemCreateSchema>;
 export type AdminMenuItemVisibilityUpdate = z.output<typeof adminMenuItemVisibilityUpdateSchema>;
@@ -901,6 +945,12 @@ export const catalogContract = {
       request: z.undefined(),
       response: menuResponseSchema
     },
+    cards: {
+      method: "GET",
+      path: "/cards",
+      request: z.undefined(),
+      response: homeNewsCardsResponseSchema
+    },
     storeConfig: {
       method: "GET",
       path: "/store/config",
@@ -918,6 +968,36 @@ export const catalogContract = {
       path: "/admin/menu/:itemId",
       request: adminMenuItemUpdateSchema,
       response: adminMenuItemSchema
+    },
+    adminCards: {
+      method: "GET",
+      path: "/admin/cards",
+      request: z.undefined(),
+      response: homeNewsCardsResponseSchema
+    },
+    adminCardCreate: {
+      method: "POST",
+      path: "/admin/cards",
+      request: homeNewsCardCreateSchema,
+      response: homeNewsCardSchema
+    },
+    adminCardUpdate: {
+      method: "PUT",
+      path: "/admin/cards/:cardId",
+      request: homeNewsCardUpdateSchema,
+      response: homeNewsCardSchema
+    },
+    adminCardVisibility: {
+      method: "PATCH",
+      path: "/admin/cards/:cardId/visibility",
+      request: homeNewsCardVisibilityUpdateSchema,
+      response: homeNewsCardSchema
+    },
+    adminCardDelete: {
+      method: "DELETE",
+      path: "/admin/cards/:cardId",
+      request: z.undefined(),
+      response: adminMutationSuccessSchema
     },
     adminStoreConfig: {
       method: "GET",

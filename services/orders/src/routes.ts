@@ -297,6 +297,7 @@ export async function registerRoutes(app: FastifyInstance) {
   const paymentsBaseUrl = process.env.PAYMENTS_SERVICE_BASE_URL ?? "http://127.0.0.1:3003";
   const loyaltyBaseUrl = process.env.LOYALTY_SERVICE_BASE_URL ?? "http://127.0.0.1:3004";
   const notificationsBaseUrl = process.env.NOTIFICATIONS_SERVICE_BASE_URL ?? "http://127.0.0.1:3005";
+  const catalogBaseUrl = process.env.CATALOG_SERVICE_BASE_URL ?? "http://127.0.0.1:3002";
   const internalApiToken = trimToUndefined(process.env.ORDERS_INTERNAL_API_TOKEN);
   const loyaltyInternalApiToken = trimToUndefined(process.env.LOYALTY_INTERNAL_API_TOKEN);
   const notificationsInternalApiToken = trimToUndefined(process.env.NOTIFICATIONS_INTERNAL_API_TOKEN);
@@ -317,6 +318,7 @@ export async function registerRoutes(app: FastifyInstance) {
   const repository = await createOrdersRepository(app.log);
   const sharedDeps = {
     repository,
+    catalogBaseUrl,
     paymentsBaseUrl,
     paymentsInternalToken: internalApiToken,
     loyaltyBaseUrl,

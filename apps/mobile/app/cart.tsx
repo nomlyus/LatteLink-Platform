@@ -267,11 +267,15 @@ export default function CartModalScreen() {
   const appConfig = appConfigQuery.data ? resolveAppConfigData(appConfigQuery.data) : null;
   const storeConfig = storeConfigQuery.data ? resolveStoreConfigData(storeConfigQuery.data) : null;
   const pricingSummary = buildPricingSummary(subtotalCents, storeConfig?.taxRateBasisPoints ?? 0);
+  const storeClosedMessage =
+    storeConfig && !storeConfig.isOpen
+      ? `The store is closed right now. Orders are accepted during ${storeConfig.hoursText}.`
+      : null;
   const checkoutUnavailableMessage = !storeConfig
     ? "Store details are temporarily unavailable. Retry loading checkout before paying."
     : !appConfig
       ? "Checkout configuration is temporarily unavailable. Retry loading checkout before paying."
-      : null;
+      : storeClosedMessage;
   const checkoutReady = checkoutUnavailableMessage === null;
   const quoteItems = useMemo(() => toQuoteItems(items), [items]);
   const retryableOrder = retryOrder && quoteItemsEqual(quoteItems, retryOrder.quoteItems) ? retryOrder : undefined;
@@ -285,21 +289,23 @@ export default function CartModalScreen() {
     [items, pendingRemovalLineId]
   );
   const [clearSheetOpen, setClearSheetOpen] = useState(false);
-  const stickyActionDisabled = isAuthenticated ? !checkoutReady : false;
-  const stickyActionLabel = isAuthenticated
-    ? !checkoutReady
-      ? "Checkout unavailable"
-      : retryableOrder
+  const stickyActionDisabled = !checkoutReady;
+  const stickyActionLabel = !checkoutReady
+    ? storeClosedMessage
+      ? "Store closed"
+      : "Checkout unavailable"
+    : isAuthenticated
+      ? retryableOrder
         ? "Retry payment"
         : "Continue to checkout"
-    : getCheckoutRecoveryActionLabel(authRecoveryState);
-  const stickyActionIcon: keyof typeof Ionicons.glyphMap = isAuthenticated
-    ? checkoutReady
+      : getCheckoutRecoveryActionLabel(authRecoveryState);
+  const stickyActionIcon: keyof typeof Ionicons.glyphMap = !checkoutReady
+    ? "alert-circle-outline"
+    : isAuthenticated
       ? retryableOrder
         ? "refresh-outline"
         : "card-outline"
-      : "alert-circle-outline"
-    : "log-in-outline";
+      : "log-in-outline";
   const stickyActionValue = formatUsd(checkoutReady ? pricingSummary.totalCents : subtotalCents);
 
   useEffect(() => {
@@ -351,7 +357,11 @@ export default function CartModalScreen() {
             <View style={styles.headerCopy}>
               <Text style={styles.headerTitle}>Order Review</Text>
               <Text style={styles.headerSubtitle}>
-                {storeConfig ? `Estimated wait is ${storeConfig.prepEtaMinutes} min` : "Checkout details unavailable"}
+                {storeConfig
+                  ? storeConfig.isOpen
+                    ? `Estimated wait is ${storeConfig.prepEtaMinutes} min`
+                    : `Closed now · Orders resume during ${storeConfig.hoursText}`
+                  : "Checkout details unavailable"}
               </Text>
             </View>
             {checkoutUnavailableMessage ? (

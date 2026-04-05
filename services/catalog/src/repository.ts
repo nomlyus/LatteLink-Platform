@@ -13,6 +13,11 @@ import {
   type AppConfigStoreCapabilities,
   type InternalLocationBootstrap,
   type InternalLocationSummary,
+  homeNewsCardCreateSchema,
+  homeNewsCardSchema,
+  homeNewsCardUpdateSchema,
+  homeNewsCardVisibilityUpdateSchema,
+  homeNewsCardsResponseSchema,
   menuItemCustomizationGroupSchema,
   menuItemSchema,
   menuResponseSchema,
@@ -207,16 +212,64 @@ const defaultMenuPayload = menuResponseSchema.parse({
   ]
 });
 
-const defaultStoreConfigPayload = storeConfigResponseSchema.parse({
+const defaultHomeNewsCardsPayload = homeNewsCardsResponseSchema.parse({
   locationId: DEFAULT_LOCATION_ID,
+  cards: [
+    {
+      cardId: "honey-cardamom-cold-brew",
+      label: "NEW DRINK",
+      title: "Honey Cardamom Cold Brew",
+      body: "Placeholder feature card for a seasonal drink launch with oat foam and orange peel.",
+      note: "Available this week only.",
+      sortOrder: 0,
+      visible: true
+    },
+    {
+      cardId: "afternoon-promo",
+      label: "DISCOUNT",
+      title: "20% Off After 3 PM",
+      body: "Placeholder promo card for an afternoon pickup offer on any handcrafted drink.",
+      note: "Weekdays only. In-store pickup.",
+      sortOrder: 1,
+      visible: true
+    },
+    {
+      cardId: "memorial-day-hours",
+      label: "HOLIDAY HOURS",
+      title: "Adjusted Hours For Memorial Day",
+      body: "Placeholder notice for holiday operations so guests can check changes before arriving.",
+      note: "Open 8:00 AM to 2:00 PM.",
+      sortOrder: 2,
+      visible: true
+    },
+    {
+      cardId: "mobile-orders-resume",
+      label: "STORE UPDATE",
+      title: "Mobile Orders Resume At 7 AM",
+      body: "Placeholder operations card for service changes, maintenance windows, or staffing updates.",
+      note: "Thanks for your patience.",
+      sortOrder: 3,
+      visible: true
+    }
+  ]
+});
+
+const defaultStoreConfigRecord: StoreConfigRecord = {
+  locationId: DEFAULT_LOCATION_ID,
+  hoursText: DEFAULT_STORE_HOURS,
   prepEtaMinutes: 12,
   taxRateBasisPoints: 600,
   pickupInstructions: "Pickup at the flagship order counter."
-});
+};
 
 type MenuResponse = z.output<typeof menuResponseSchema>;
+type HomeNewsCard = z.output<typeof homeNewsCardSchema>;
+type HomeNewsCardsResponse = z.output<typeof homeNewsCardsResponseSchema>;
 type StoreConfigResponse = z.output<typeof storeConfigResponseSchema>;
 type MenuItem = z.output<typeof menuItemSchema>;
+const homeNewsCardCreateWithDefaultsSchema = homeNewsCardCreateSchema;
+const homeNewsCardUpdateWithDefaultsSchema = homeNewsCardUpdateSchema;
+const homeNewsCardVisibilityUpdateWithDefaultsSchema = homeNewsCardVisibilityUpdateSchema;
 const adminMenuItemWithCustomizationsSchema = adminMenuItemSchema.extend({
   customizationGroups: z.array(menuItemCustomizationGroupSchema).default([])
 });
@@ -231,6 +284,10 @@ const adminMenuResponseWithCustomizationsSchema = z.object({
 });
 type AdminMenuItemWithCustomizations = z.output<typeof adminMenuItemWithCustomizationsSchema>;
 type AdminMenuResponseWithCustomizations = z.output<typeof adminMenuResponseWithCustomizationsSchema>;
+const homeNewsCardWithDefaultsSchema = homeNewsCardSchema;
+const homeNewsCardsResponseWithDefaultsSchema = homeNewsCardsResponseSchema;
+type AdminHomeNewsCard = z.output<typeof homeNewsCardWithDefaultsSchema>;
+type AdminHomeNewsCardsResponse = z.output<typeof homeNewsCardsResponseWithDefaultsSchema>;
 
 type CatalogRepository = {
   backend: "memory" | "postgres";
@@ -239,6 +296,23 @@ type CatalogRepository = {
   getInternalLocationSummary(locationId: string): Promise<InternalLocationSummary | undefined>;
   bootstrapInternalLocation(input: InternalLocationBootstrap): Promise<InternalLocationSummary>;
   getAdminMenu(): Promise<AdminMenuResponseWithCustomizations>;
+  getHomeNewsCards(): Promise<HomeNewsCardsResponse>;
+  getAdminHomeNewsCards(): Promise<AdminHomeNewsCardsResponse>;
+  createAdminHomeNewsCard(input: z.output<typeof homeNewsCardCreateWithDefaultsSchema>): Promise<AdminHomeNewsCard>;
+  updateAdminHomeNewsCard(input: {
+    cardId: string;
+    label: string;
+    title: string;
+    body: string;
+    note?: string;
+    visible: boolean;
+    sortOrder: number;
+  }): Promise<AdminHomeNewsCard | undefined>;
+  updateAdminHomeNewsCardVisibility(input: {
+    cardId: string;
+    visible: boolean;
+  }): Promise<AdminHomeNewsCard | undefined>;
+  deleteAdminHomeNewsCard(cardId: string): Promise<z.output<typeof adminMutationSuccessSchema>>;
   createAdminMenuItem(input: z.output<typeof adminMenuItemCreateSchema>): Promise<AdminMenuItemWithCustomizations | undefined>;
   updateAdminMenuItem(input: {
     itemId: string;
@@ -276,6 +350,46 @@ function toBadgeCodes(value: unknown) {
 
 function toCustomizationGroups(value: unknown) {
   return parseJsonValue(z.array(menuItemCustomizationGroupSchema), value);
+}
+
+function toHomeNewsCard(input: {
+  cardId: string;
+  label: string;
+  title: string;
+  body: string;
+  note?: string | null;
+  sortOrder: number;
+  visible: boolean;
+}) {
+  return homeNewsCardWithDefaultsSchema.parse({
+    cardId: input.cardId,
+    label: input.label,
+    title: input.title,
+    body: input.body,
+    note: input.note === undefined || input.note === null ? undefined : input.note,
+    sortOrder: input.sortOrder,
+    visible: input.visible
+  });
+}
+
+function buildHomeNewsCardsResponse(params: {
+  locationId: string;
+  cards: AdminHomeNewsCard[];
+}) {
+  return homeNewsCardsResponseWithDefaultsSchema.parse({
+    locationId: params.locationId,
+    cards: params.cards
+  });
+}
+
+function createHomeNewsCardId(title: string) {
+  const slug = title
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return `${slug.length > 0 ? slug : "card"}-${randomUUID().slice(0, 8)}`;
 }
 
 function toAdminMenuItem(input: {
@@ -338,6 +452,190 @@ function buildAdminStoreConfig(input: {
   return adminStoreConfigSchema.parse(input);
 }
 
+const defaultStoreTimeZone = "America/Detroit";
+
+type StoreConfigRecord = {
+  locationId: string;
+  hoursText: string;
+  prepEtaMinutes: number;
+  taxRateBasisPoints: number;
+  pickupInstructions: string;
+};
+
+const weekdayIndexByLabel = new Map<string, number>([
+  ["sun", 0],
+  ["sunday", 0],
+  ["mon", 1],
+  ["monday", 1],
+  ["tue", 2],
+  ["tues", 2],
+  ["tuesday", 2],
+  ["wed", 3],
+  ["weds", 3],
+  ["wednesday", 3],
+  ["thu", 4],
+  ["thur", 4],
+  ["thurs", 4],
+  ["thursday", 4],
+  ["fri", 5],
+  ["friday", 5],
+  ["sat", 6],
+  ["saturday", 6]
+]);
+
+function resolveStoreTimeZone() {
+  return process.env.STORE_TIME_ZONE?.trim() || defaultStoreTimeZone;
+}
+
+function parseClockTime(value: string) {
+  const match = value.trim().match(/^(\d{1,2})(?::(\d{2}))?\s*([ap]m)$/i);
+  if (!match) {
+    return undefined;
+  }
+
+  const hour = Number.parseInt(match[1] ?? "", 10);
+  const minute = Number.parseInt(match[2] ?? "0", 10);
+  const period = match[3]?.toUpperCase();
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 1 || hour > 12 || minute < 0 || minute > 59) {
+    return undefined;
+  }
+
+  const normalizedHour = hour % 12;
+  return (period === "PM" ? normalizedHour + 12 : normalizedHour) * 60 + minute;
+}
+
+function resolveDaySet(dayLabel: string) {
+  const normalized = dayLabel.trim().toLowerCase();
+  if (!normalized) {
+    return undefined;
+  }
+
+  if (normalized === "daily" || normalized === "every day" || normalized === "everyday") {
+    return new Set([0, 1, 2, 3, 4, 5, 6]);
+  }
+
+  if (normalized === "weekdays") {
+    return new Set([1, 2, 3, 4, 5]);
+  }
+
+  if (normalized === "weekends") {
+    return new Set([0, 6]);
+  }
+
+  const days = new Set<number>();
+  const tokens = normalized.split(/(?:,|\/|&|\band\b)/).map((token) => token.trim()).filter(Boolean);
+  for (const token of tokens) {
+    const rangeParts = token.split("-").map((part) => part.trim()).filter(Boolean);
+    if (rangeParts.length === 2) {
+      const startDay = weekdayIndexByLabel.get(rangeParts[0] ?? "");
+      const endDay = weekdayIndexByLabel.get(rangeParts[1] ?? "");
+      if (startDay === undefined || endDay === undefined) {
+        return undefined;
+      }
+
+      let current = startDay;
+      while (true) {
+        days.add(current);
+        if (current === endDay) {
+          break;
+        }
+        current = (current + 1) % 7;
+      }
+      continue;
+    }
+
+    const dayIndex = weekdayIndexByLabel.get(token);
+    if (dayIndex === undefined) {
+      return undefined;
+    }
+
+    days.add(dayIndex);
+  }
+
+  return days.size > 0 ? days : undefined;
+}
+
+function resolveZonedDateParts(now: Date, timeZone: string) {
+  try {
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      weekday: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23"
+    });
+    const parts = formatter.formatToParts(now);
+    const weekdayLabel = parts.find((part) => part.type === "weekday")?.value?.toLowerCase();
+    const hour = Number.parseInt(parts.find((part) => part.type === "hour")?.value ?? "", 10);
+    const minute = Number.parseInt(parts.find((part) => part.type === "minute")?.value ?? "", 10);
+    const weekday = weekdayLabel ? weekdayIndexByLabel.get(weekdayLabel) : undefined;
+
+    if (weekday === undefined || !Number.isFinite(hour) || !Number.isFinite(minute)) {
+      return undefined;
+    }
+
+    return {
+      weekday,
+      minutes: hour * 60 + minute
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function isStoreOpenAt(hoursText: string, now = new Date()) {
+  const [dayLabel, timeLabel] = hoursText.split(/\s*·\s*/);
+  if (!dayLabel || !timeLabel) {
+    return false;
+  }
+
+  const daySet = resolveDaySet(dayLabel);
+  if (!daySet) {
+    return false;
+  }
+
+  const timeParts = timeLabel.split(/\s*[-–—]\s*/).filter(Boolean);
+  if (timeParts.length !== 2) {
+    return false;
+  }
+
+  const startMinutes = parseClockTime(timeParts[0] ?? "");
+  const endMinutes = parseClockTime(timeParts[1] ?? "");
+  if (startMinutes === undefined || endMinutes === undefined) {
+    return false;
+  }
+
+  if (startMinutes === endMinutes) {
+    return true;
+  }
+
+  const zonedDateParts = resolveZonedDateParts(now, resolveStoreTimeZone());
+  if (!zonedDateParts) {
+    return false;
+  }
+
+  if (startMinutes < endMinutes) {
+    return daySet.has(zonedDateParts.weekday) && zonedDateParts.minutes >= startMinutes && zonedDateParts.minutes < endMinutes;
+  }
+
+  const previousWeekday = (zonedDateParts.weekday + 6) % 7;
+  return (
+    (daySet.has(zonedDateParts.weekday) && zonedDateParts.minutes >= startMinutes) ||
+    (daySet.has(previousWeekday) && zonedDateParts.minutes < endMinutes)
+  );
+}
+
+function buildStoreConfigResponse(input: StoreConfigRecord) {
+  return storeConfigResponseSchema.parse({
+    locationId: input.locationId,
+    hoursText: input.hoursText,
+    isOpen: isStoreOpenAt(input.hoursText),
+    prepEtaMinutes: input.prepEtaMinutes,
+    taxRateBasisPoints: input.taxRateBasisPoints,
+    pickupInstructions: input.pickupInstructions
+  });
+}
+
 function buildInternalLocationSummary(input: {
   brandId: string;
   brandName: string;
@@ -376,8 +674,11 @@ function createInMemoryRepository(): CatalogRepository {
   const defaultAppConfig = structuredClone(resolveDefaultAppConfigPayload());
   const appConfigsByLocation = new Map<string, AppConfig>([[DEFAULT_LOCATION_ID, defaultAppConfig]]);
   const menusByLocation = new Map<string, MenuResponse>([[DEFAULT_LOCATION_ID, structuredClone(defaultMenuPayload)]]);
-  const storeConfigsByLocation = new Map<string, StoreConfigResponse>([
-    [DEFAULT_LOCATION_ID, structuredClone(defaultStoreConfigPayload)]
+  const homeNewsCardsByLocation = new Map<string, HomeNewsCardsResponse>([
+    [DEFAULT_LOCATION_ID, structuredClone(defaultHomeNewsCardsPayload)]
+  ]);
+  const storeConfigsByLocation = new Map<string, StoreConfigRecord>([
+    [DEFAULT_LOCATION_ID, structuredClone(defaultStoreConfigRecord)]
   ]);
   const adminStoreConfigsByLocation = new Map<string, AdminStoreConfig>([
     [
@@ -386,7 +687,7 @@ function createInMemoryRepository(): CatalogRepository {
         locationId: DEFAULT_LOCATION_ID,
         storeName: DEFAULT_LOCATION_NAME,
         hours: DEFAULT_STORE_HOURS,
-        pickupInstructions: defaultStoreConfigPayload.pickupInstructions,
+        pickupInstructions: defaultStoreConfigRecord.pickupInstructions,
         capabilities: defaultAppConfig.storeCapabilities
       })
     ]
@@ -455,20 +756,34 @@ function createInMemoryRepository(): CatalogRepository {
         locationId: input.locationId,
         storeName: input.storeName ?? input.locationName,
         hours: input.hours ?? DEFAULT_STORE_HOURS,
-        pickupInstructions: input.pickupInstructions ?? defaultStoreConfigPayload.pickupInstructions,
+        pickupInstructions: input.pickupInstructions ?? defaultStoreConfigRecord.pickupInstructions,
         capabilities: nextAppConfig.storeCapabilities
       });
-      const nextStoreConfig = storeConfigResponseSchema.parse({
-        ...defaultStoreConfigPayload,
+      const nextStoreConfig: StoreConfigRecord = {
         locationId: input.locationId,
+        hoursText: nextAdminStoreConfig.hours,
+        prepEtaMinutes: defaultStoreConfigRecord.prepEtaMinutes,
+        taxRateBasisPoints: defaultStoreConfigRecord.taxRateBasisPoints,
         pickupInstructions: nextAdminStoreConfig.pickupInstructions
-      });
+      };
 
       appConfigsByLocation.set(input.locationId, nextAppConfig);
       adminStoreConfigsByLocation.set(input.locationId, nextAdminStoreConfig);
       storeConfigsByLocation.set(input.locationId, nextStoreConfig);
       if (!menusByLocation.has(input.locationId)) {
         menusByLocation.set(input.locationId, buildProvisionedMenuPayload(input.locationId));
+      }
+      if (!homeNewsCardsByLocation.has(input.locationId)) {
+        homeNewsCardsByLocation.set(
+          input.locationId,
+          buildHomeNewsCardsResponse({
+            locationId: input.locationId,
+            cards: structuredClone(defaultHomeNewsCardsPayload.cards).map((card) => ({
+              ...card,
+              visible: card.visible
+            }))
+          })
+        );
       }
 
       return buildInternalLocationSummary({
@@ -506,6 +821,109 @@ function createInMemoryRepository(): CatalogRepository {
           )
         }))
       });
+    },
+    async getHomeNewsCards() {
+      const cards = homeNewsCardsByLocation.get(DEFAULT_LOCATION_ID) ?? defaultHomeNewsCardsPayload;
+      return buildHomeNewsCardsResponse({
+        locationId: cards.locationId,
+        cards: cards.cards.filter((card) => card.visible)
+      });
+    },
+    async getAdminHomeNewsCards() {
+      return homeNewsCardsByLocation.get(DEFAULT_LOCATION_ID) ?? defaultHomeNewsCardsPayload;
+    },
+    async createAdminHomeNewsCard(input) {
+      const currentCards = homeNewsCardsByLocation.get(DEFAULT_LOCATION_ID) ?? defaultHomeNewsCardsPayload;
+      const nextSortOrder =
+        input.sortOrder ?? Math.max(0, ...currentCards.cards.map((card) => card.sortOrder)) + 1;
+      const nextCard = toHomeNewsCard({
+        cardId: createHomeNewsCardId(input.title),
+        label: input.label,
+        title: input.title,
+        body: input.body,
+        note: input.note,
+        sortOrder: nextSortOrder,
+        visible: input.visible
+      });
+      const nextCards = homeNewsCardsResponseWithDefaultsSchema.parse({
+        ...currentCards,
+        cards: [...currentCards.cards, nextCard].sort(
+          (left, right) => left.sortOrder - right.sortOrder || left.cardId.localeCompare(right.cardId)
+        )
+      });
+
+      homeNewsCardsByLocation.set(DEFAULT_LOCATION_ID, nextCards);
+      return nextCard;
+    },
+    async updateAdminHomeNewsCard(input) {
+      const currentCards = homeNewsCardsByLocation.get(DEFAULT_LOCATION_ID) ?? defaultHomeNewsCardsPayload;
+      let updatedCard: AdminHomeNewsCard | undefined;
+      const nextCards = homeNewsCardsResponseWithDefaultsSchema.parse({
+        ...currentCards,
+        cards: currentCards.cards.map((card) => {
+          if (card.cardId !== input.cardId) {
+            return card;
+          }
+
+          updatedCard = toHomeNewsCard({
+            cardId: card.cardId,
+            label: input.label,
+            title: input.title,
+            body: input.body,
+            note: input.note,
+            sortOrder: input.sortOrder,
+            visible: input.visible
+          });
+
+          return updatedCard;
+        })
+      });
+
+      if (updatedCard) {
+        homeNewsCardsByLocation.set(DEFAULT_LOCATION_ID, nextCards);
+      }
+
+      return updatedCard;
+    },
+    async updateAdminHomeNewsCardVisibility(input) {
+      const currentCards = homeNewsCardsByLocation.get(DEFAULT_LOCATION_ID) ?? defaultHomeNewsCardsPayload;
+      let updatedCard: AdminHomeNewsCard | undefined;
+      const nextCards = homeNewsCardsResponseWithDefaultsSchema.parse({
+        ...currentCards,
+        cards: currentCards.cards.map((card) => {
+          if (card.cardId !== input.cardId) {
+            return card;
+          }
+
+          updatedCard = toHomeNewsCard({
+            cardId: card.cardId,
+            label: card.label,
+            title: card.title,
+            body: card.body,
+            note: card.note,
+            sortOrder: card.sortOrder,
+            visible: input.visible
+          });
+
+          return updatedCard;
+        })
+      });
+
+      if (updatedCard) {
+        homeNewsCardsByLocation.set(DEFAULT_LOCATION_ID, nextCards);
+      }
+
+      return updatedCard;
+    },
+    async deleteAdminHomeNewsCard(cardId) {
+      const currentCards = homeNewsCardsByLocation.get(DEFAULT_LOCATION_ID) ?? defaultHomeNewsCardsPayload;
+      const nextCards = homeNewsCardsResponseWithDefaultsSchema.parse({
+        ...currentCards,
+        cards: currentCards.cards.filter((card) => card.cardId !== cardId)
+      });
+      homeNewsCardsByLocation.set(DEFAULT_LOCATION_ID, nextCards);
+
+      return { success: true };
     },
     async createAdminMenuItem(input) {
       const currentMenu = menusByLocation.get(DEFAULT_LOCATION_ID) ?? defaultMenuPayload;
@@ -645,6 +1063,7 @@ function createInMemoryRepository(): CatalogRepository {
     },
     async updateAdminStoreConfig(input) {
       const currentAppConfig = appConfigsByLocation.get(DEFAULT_LOCATION_ID) ?? defaultAppConfig;
+      const currentStoreConfig = storeConfigsByLocation.get(DEFAULT_LOCATION_ID) ?? defaultStoreConfigRecord;
       const nextAdminStoreConfig = buildAdminStoreConfig({
         locationId: DEFAULT_LOCATION_ID,
         storeName: input.storeName,
@@ -652,10 +1071,11 @@ function createInMemoryRepository(): CatalogRepository {
         pickupInstructions: input.pickupInstructions,
         capabilities: input.capabilities ?? currentAppConfig.storeCapabilities
       });
-      const nextStoreConfig = storeConfigResponseSchema.parse({
-        ...(storeConfigsByLocation.get(DEFAULT_LOCATION_ID) ?? defaultStoreConfigPayload),
+      const nextStoreConfig: StoreConfigRecord = {
+        ...currentStoreConfig,
+        hoursText: input.hours,
         pickupInstructions: input.pickupInstructions
-      });
+      };
       const nextAppConfig = appConfigSchema.parse({
         ...currentAppConfig,
         brand: {
@@ -674,7 +1094,7 @@ function createInMemoryRepository(): CatalogRepository {
       return menusByLocation.get(DEFAULT_LOCATION_ID) ?? defaultMenuPayload;
     },
     async getStoreConfig() {
-      return storeConfigsByLocation.get(DEFAULT_LOCATION_ID) ?? defaultStoreConfigPayload;
+      return buildStoreConfigResponse(storeConfigsByLocation.get(DEFAULT_LOCATION_ID) ?? defaultStoreConfigRecord);
     },
     async pingDb() {
       // no-op for in-memory
@@ -732,19 +1152,55 @@ async function seedCatalogDefaults(db: PersistenceDb) {
         )
         .onConflict((oc) => oc.columns(["location_id", "item_id"]).doNothing())
         .execute();
+
+      await trx
+        .insertInto("catalog_home_news_cards")
+        .values(
+          defaultHomeNewsCardsPayload.cards.map((card) => ({
+            brand_id: DEFAULT_BRAND_ID,
+            location_id: defaultHomeNewsCardsPayload.locationId,
+            card_id: card.cardId,
+            label: card.label,
+            title: card.title,
+            body: card.body,
+            note: card.note ?? null,
+            visible: card.visible,
+            sort_order: card.sortOrder
+          }))
+        )
+        .onConflict((oc) => oc.columns(["location_id", "card_id"]).doNothing())
+        .execute();
     });
   }
+
+  await db
+    .insertInto("catalog_home_news_cards")
+    .values(
+      defaultHomeNewsCardsPayload.cards.map((card) => ({
+        brand_id: DEFAULT_BRAND_ID,
+        location_id: defaultHomeNewsCardsPayload.locationId,
+        card_id: card.cardId,
+        label: card.label,
+        title: card.title,
+        body: card.body,
+        note: card.note ?? null,
+        visible: card.visible,
+        sort_order: card.sortOrder
+      }))
+    )
+    .onConflict((oc) => oc.columns(["location_id", "card_id"]).doNothing())
+    .execute();
 
   await db
     .insertInto("catalog_store_configs")
     .values({
       brand_id: DEFAULT_BRAND_ID,
-      location_id: defaultStoreConfigPayload.locationId,
+      location_id: defaultStoreConfigRecord.locationId,
       store_name: DEFAULT_LOCATION_NAME,
       hours_text: DEFAULT_STORE_HOURS,
-      prep_eta_minutes: defaultStoreConfigPayload.prepEtaMinutes,
-      tax_rate_basis_points: defaultStoreConfigPayload.taxRateBasisPoints,
-      pickup_instructions: defaultStoreConfigPayload.pickupInstructions
+      prep_eta_minutes: defaultStoreConfigRecord.prepEtaMinutes,
+      tax_rate_basis_points: defaultStoreConfigRecord.taxRateBasisPoints,
+      pickup_instructions: defaultStoreConfigRecord.pickupInstructions
     })
     .onConflict((oc) => oc.column("location_id").doNothing())
     .execute();
@@ -874,7 +1330,7 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
       });
       const storeName = input.storeName ?? input.locationName;
       const hours = input.hours ?? DEFAULT_STORE_HOURS;
-      const pickupInstructions = input.pickupInstructions ?? defaultStoreConfigPayload.pickupInstructions;
+      const pickupInstructions = input.pickupInstructions ?? defaultStoreConfigRecord.pickupInstructions;
       const seededMenu = buildProvisionedMenuPayload(input.locationId);
 
       await db.transaction().execute(async (trx) => {
@@ -885,9 +1341,9 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
             location_id: input.locationId,
             store_name: storeName,
             hours_text: hours,
-            prep_eta_minutes: existingStoreConfigRow?.prep_eta_minutes ?? defaultStoreConfigPayload.prepEtaMinutes,
+            prep_eta_minutes: existingStoreConfigRow?.prep_eta_minutes ?? defaultStoreConfigRecord.prepEtaMinutes,
             tax_rate_basis_points:
-              existingStoreConfigRow?.tax_rate_basis_points ?? defaultStoreConfigPayload.taxRateBasisPoints,
+              existingStoreConfigRow?.tax_rate_basis_points ?? defaultStoreConfigRecord.taxRateBasisPoints,
             pickup_instructions: pickupInstructions
           })
           .onConflict((oc) =>
@@ -950,6 +1406,24 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
           )
           .onConflict((oc) => oc.columns(["location_id", "item_id"]).doNothing())
           .execute();
+
+        await trx
+          .insertInto("catalog_home_news_cards")
+          .values(
+            defaultHomeNewsCardsPayload.cards.map((card) => ({
+              brand_id: persistedBrandId,
+              location_id: input.locationId,
+              card_id: card.cardId,
+              label: card.label,
+              title: card.title,
+              body: card.body,
+              note: card.note ?? null,
+              visible: card.visible,
+              sort_order: card.sortOrder
+            }))
+          )
+          .onConflict((oc) => oc.columns(["location_id", "card_id"]).doNothing())
+          .execute();
       });
 
       return buildInternalLocationSummary({
@@ -1011,6 +1485,171 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
           items: itemsByCategory.get(category.category_id) ?? []
         }))
       });
+    },
+    async getHomeNewsCards() {
+      const cards = await db
+        .selectFrom("catalog_home_news_cards")
+        .selectAll()
+        .where("brand_id", "=", DEFAULT_BRAND_ID)
+        .where("location_id", "=", defaultHomeNewsCardsPayload.locationId)
+        .where("visible", "=", true)
+        .orderBy("sort_order", "asc")
+        .execute();
+
+      return buildHomeNewsCardsResponse({
+        locationId: defaultHomeNewsCardsPayload.locationId,
+        cards: cards.map((card) =>
+          toHomeNewsCard({
+            cardId: card.card_id,
+            label: card.label,
+            title: card.title,
+            body: card.body,
+            note: card.note,
+            sortOrder: card.sort_order,
+            visible: card.visible
+          })
+        )
+      });
+    },
+    async getAdminHomeNewsCards() {
+      const cards = await db
+        .selectFrom("catalog_home_news_cards")
+        .selectAll()
+        .where("brand_id", "=", DEFAULT_BRAND_ID)
+        .where("location_id", "=", defaultHomeNewsCardsPayload.locationId)
+        .orderBy("sort_order", "asc")
+        .execute();
+
+      return buildHomeNewsCardsResponse({
+        locationId: defaultHomeNewsCardsPayload.locationId,
+        cards: cards.map((card) =>
+          toHomeNewsCard({
+            cardId: card.card_id,
+            label: card.label,
+            title: card.title,
+            body: card.body,
+            note: card.note,
+            sortOrder: card.sort_order,
+            visible: card.visible
+          })
+        )
+      });
+    },
+    async createAdminHomeNewsCard(input) {
+      const nextSortOrderResult = await db
+        .selectFrom("catalog_home_news_cards")
+        .select((eb) => eb.fn.max<number>("sort_order").as("max_sort_order"))
+        .where("brand_id", "=", DEFAULT_BRAND_ID)
+        .where("location_id", "=", defaultHomeNewsCardsPayload.locationId)
+        .executeTakeFirst();
+      const nextSortOrder = input.sortOrder ?? (nextSortOrderResult?.max_sort_order ?? -1) + 1;
+      const cardId = createHomeNewsCardId(input.title);
+
+      await db
+        .insertInto("catalog_home_news_cards")
+        .values({
+          brand_id: DEFAULT_BRAND_ID,
+          location_id: defaultHomeNewsCardsPayload.locationId,
+          card_id: cardId,
+          label: input.label,
+          title: input.title,
+          body: input.body,
+          note: input.note ?? null,
+          visible: input.visible,
+          sort_order: nextSortOrder
+        })
+        .execute();
+
+      return toHomeNewsCard({
+        cardId,
+        label: input.label,
+        title: input.title,
+        body: input.body,
+        note: input.note,
+        sortOrder: nextSortOrder,
+        visible: input.visible
+      });
+    },
+    async updateAdminHomeNewsCard(input) {
+      const existingRow = await db
+        .selectFrom("catalog_home_news_cards")
+        .selectAll()
+        .where("brand_id", "=", DEFAULT_BRAND_ID)
+        .where("location_id", "=", defaultHomeNewsCardsPayload.locationId)
+        .where("card_id", "=", input.cardId)
+        .executeTakeFirst();
+
+      if (!existingRow) {
+        return undefined;
+      }
+
+      await db
+        .updateTable("catalog_home_news_cards")
+        .set({
+          label: input.label,
+          title: input.title,
+          body: input.body,
+          note: input.note ?? null,
+          visible: input.visible,
+          sort_order: input.sortOrder
+        })
+        .where("brand_id", "=", DEFAULT_BRAND_ID)
+        .where("location_id", "=", defaultHomeNewsCardsPayload.locationId)
+        .where("card_id", "=", input.cardId)
+        .executeTakeFirst();
+
+      return toHomeNewsCard({
+        cardId: existingRow.card_id,
+        label: input.label,
+        title: input.title,
+        body: input.body,
+        note: input.note,
+        sortOrder: input.sortOrder,
+        visible: input.visible
+      });
+    },
+    async updateAdminHomeNewsCardVisibility(input) {
+      const existingRow = await db
+        .selectFrom("catalog_home_news_cards")
+        .selectAll()
+        .where("brand_id", "=", DEFAULT_BRAND_ID)
+        .where("location_id", "=", defaultHomeNewsCardsPayload.locationId)
+        .where("card_id", "=", input.cardId)
+        .executeTakeFirst();
+
+      if (!existingRow) {
+        return undefined;
+      }
+
+      await db
+        .updateTable("catalog_home_news_cards")
+        .set({
+          visible: input.visible
+        })
+        .where("brand_id", "=", DEFAULT_BRAND_ID)
+        .where("location_id", "=", defaultHomeNewsCardsPayload.locationId)
+        .where("card_id", "=", input.cardId)
+        .executeTakeFirst();
+
+      return toHomeNewsCard({
+        cardId: existingRow.card_id,
+        label: existingRow.label,
+        title: existingRow.title,
+        body: existingRow.body,
+        note: existingRow.note,
+        sortOrder: existingRow.sort_order,
+        visible: input.visible
+      });
+    },
+    async deleteAdminHomeNewsCard(cardId) {
+      await db
+        .deleteFrom("catalog_home_news_cards")
+        .where("brand_id", "=", DEFAULT_BRAND_ID)
+        .where("location_id", "=", defaultHomeNewsCardsPayload.locationId)
+        .where("card_id", "=", cardId)
+        .executeTakeFirst();
+
+      return { success: true };
     },
     async createAdminMenuItem(input) {
       const category = await db
@@ -1221,7 +1860,7 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         .selectFrom("catalog_store_configs")
         .selectAll()
         .where("brand_id", "=", DEFAULT_BRAND_ID)
-        .where("location_id", "=", defaultStoreConfigPayload.locationId)
+        .where("location_id", "=", defaultStoreConfigRecord.locationId)
         .executeTakeFirst();
 
       if (!row) {
@@ -1229,7 +1868,7 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
           locationId: DEFAULT_LOCATION_ID,
           storeName: DEFAULT_LOCATION_NAME,
           hours: DEFAULT_STORE_HOURS,
-          pickupInstructions: defaultStoreConfigPayload.pickupInstructions,
+          pickupInstructions: defaultStoreConfigRecord.pickupInstructions,
           capabilities: defaultAppConfigPayload.storeCapabilities
         });
       }
@@ -1273,20 +1912,19 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         },
         storeCapabilities: input.capabilities ?? currentAppConfig.storeCapabilities
       });
-
       await db.transaction().execute(async (trx) => {
         await trx
           .insertInto("catalog_store_configs")
-          .values({
-            brand_id: DEFAULT_BRAND_ID,
-            location_id: defaultStoreConfigPayload.locationId,
-            store_name: input.storeName,
-            hours_text: input.hours,
-            prep_eta_minutes: existingStoreConfigRow?.prep_eta_minutes ?? defaultStoreConfigPayload.prepEtaMinutes,
-            tax_rate_basis_points:
-              existingStoreConfigRow?.tax_rate_basis_points ?? defaultStoreConfigPayload.taxRateBasisPoints,
-            pickup_instructions: input.pickupInstructions
-          })
+        .values({
+          brand_id: DEFAULT_BRAND_ID,
+          location_id: defaultStoreConfigRecord.locationId,
+          store_name: input.storeName,
+          hours_text: input.hours,
+          prep_eta_minutes: existingStoreConfigRow?.prep_eta_minutes ?? defaultStoreConfigRecord.prepEtaMinutes,
+          tax_rate_basis_points:
+            existingStoreConfigRow?.tax_rate_basis_points ?? defaultStoreConfigRecord.taxRateBasisPoints,
+          pickup_instructions: input.pickupInstructions
+        })
           .onConflict((oc) =>
             oc.column("location_id").doUpdateSet({
               brand_id: DEFAULT_BRAND_ID,
@@ -1325,15 +1963,16 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         .selectFrom("catalog_store_configs")
         .selectAll()
         .where("brand_id", "=", DEFAULT_BRAND_ID)
-        .where("location_id", "=", defaultStoreConfigPayload.locationId)
+        .where("location_id", "=", defaultStoreConfigRecord.locationId)
         .executeTakeFirst();
 
       if (!row) {
-        return defaultStoreConfigPayload;
+        return buildStoreConfigResponse(defaultStoreConfigRecord);
       }
 
-      return storeConfigResponseSchema.parse({
+      return buildStoreConfigResponse({
         locationId: row.location_id,
+        hoursText: row.hours_text,
         prepEtaMinutes: row.prep_eta_minutes,
         taxRateBasisPoints: row.tax_rate_basis_points,
         pickupInstructions: row.pickup_instructions

@@ -16,7 +16,14 @@ import {
 } from "react-native";
 import Animated, { Extrapolation, interpolate, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { resolveAppConfigData, resolveStoreConfigData, useAppConfigQuery, useStoreConfigQuery } from "../../src/menu/catalog";
+import {
+  resolveAppConfigData,
+  resolveHomeNewsCardsData,
+  resolveStoreConfigData,
+  useAppConfigQuery,
+  useHomeNewsCardsQuery,
+  useStoreConfigQuery
+} from "../../src/menu/catalog";
 import { TAB_BAR_HEIGHT, getTabBarBottomOffset } from "../../src/navigation/tabBarMetrics";
 import { GlassCard, ScreenBackdrop, TabBarDepthBackdrop, uiPalette, uiTypography } from "../../src/ui/system";
 
@@ -26,34 +33,7 @@ const HEADER_COLLAPSED_HEIGHT = 92;
 const HEADER_SNAP_VELOCITY_THRESHOLD = 0.2;
 const HEADER_SNAP_EDGE_TOLERANCE = 2;
 
-const HOME_NEWS_ITEMS = [
-  {
-    label: "NEW DRINK",
-    title: "Honey Cardamom Cold Brew",
-    body: "Placeholder feature card for a seasonal drink launch with oat foam and orange peel.",
-    note: "Available this week only."
-  },
-  {
-    label: "DISCOUNT",
-    title: "20% Off After 3 PM",
-    body: "Placeholder promo card for an afternoon pickup offer on any handcrafted drink.",
-    note: "Weekdays only. In-store pickup."
-  },
-  {
-    label: "HOLIDAY HOURS",
-    title: "Adjusted Hours For Memorial Day",
-    body: "Placeholder notice for holiday operations so guests can check changes before arriving.",
-    note: "Open 8:00 AM to 2:00 PM."
-  },
-  {
-    label: "STORE UPDATE",
-    title: "Mobile Orders Resume At 7 AM",
-    body: "Placeholder operations card for service changes, maintenance windows, or staffing updates.",
-    note: "Thanks for your patience."
-  }
-] as const;
-
-type NewsLabel = (typeof HOME_NEWS_ITEMS)[number]["label"];
+type NewsLabel = string;
 
 function canUseLiquidGlassTag() {
   if (Platform.OS !== "ios") return false;
@@ -105,9 +85,11 @@ export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const appConfigQuery = useAppConfigQuery();
+  const homeNewsCardsQuery = useHomeNewsCardsQuery();
   const storeConfigQuery = useStoreConfigQuery();
   const [isManualRefresh, setIsManualRefresh] = useState(false);
   const appConfig = resolveAppConfigData(appConfigQuery.data);
+  const homeNewsCards = resolveHomeNewsCardsData(homeNewsCardsQuery.data);
   const storeConfig = resolveStoreConfigData(storeConfigQuery.data);
   const scrollViewRef = useRef<ScrollView | null>(null);
   const scrollY = useSharedValue(0);
@@ -250,7 +232,7 @@ export default function HomeScreen() {
         ]}
       >
         <View style={styles.cardGrid}>
-          {HOME_NEWS_ITEMS.map((item) => (
+          {homeNewsCards.cards.map((item) => (
             <GlassCard key={item.title} style={styles.newsCard} contentStyle={styles.newsCardContent}>
               <View style={styles.newsCardHeader}>
                 <HomeNewsTag label={item.label} />
@@ -278,7 +260,11 @@ export default function HomeScreen() {
         <Animated.View style={[styles.storeRail, storeRailStyle]}>
           <View style={styles.storeCopy}>
             <Animated.View style={[styles.pickupMetaWrap, pickupMetaStyle]}>
-              <Text style={styles.storeMeta}>{`Estimated pick-up is ${storeConfig.prepEtaMinutes} mins`}</Text>
+              <Text style={[styles.storeMeta, !storeConfig.isOpen ? styles.storeMetaClosed : null]}>
+                {storeConfig.isOpen
+                  ? `Estimated pick-up is ${storeConfig.prepEtaMinutes} mins`
+                  : `Closed now · Orders resume during ${storeConfig.hoursText}`}
+              </Text>
             </Animated.View>
             <Animated.Text style={[styles.storeTitle, storeTitleStyle]}>{appConfig.brand.marketLabel}</Animated.Text>
           </View>
@@ -355,6 +341,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     color: uiPalette.textSecondary
+  },
+  storeMetaClosed: {
+    color: uiPalette.warning
   },
   storeTitle: {
     marginTop: 6,
