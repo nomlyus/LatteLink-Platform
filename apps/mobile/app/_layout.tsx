@@ -56,6 +56,14 @@ export default function RootLayout() {
                       }}
                     />
                     <Stack.Screen
+                      name="profile-setup"
+                      options={{
+                        presentation: "modal",
+                        animation: "slide_from_bottom",
+                        contentStyle: { backgroundColor: "transparent" }
+                      }}
+                    />
+                    <Stack.Screen
                       name="checkout"
                       options={{
                         presentation: "modal",

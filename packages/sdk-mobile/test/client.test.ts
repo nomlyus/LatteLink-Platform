@@ -208,6 +208,7 @@ describe("sdk-mobile", () => {
           displayName: "Avery Quinn",
           phoneNumber: "+13135550123",
           birthday: "1992-04-12",
+          profileCompleted: true,
           methods: ["apple"]
         }),
         { status: 200, headers: { "content-type": "application/json" } }
@@ -215,8 +216,9 @@ describe("sdk-mobile", () => {
     );
 
     const client = new GazelleApiClient({ baseUrl: "https://api.gazellecoffee.com/v1" });
-    const me = await client.updateMe({
+    const me = await client.saveCustomerProfile({
       name: "Avery Quinn",
+      displayName: "Avery Quinn",
       phoneNumber: "+13135550123",
       birthday: "1992-04-12"
     });
@@ -341,6 +343,7 @@ describe("sdk-mobile", () => {
           JSON.stringify({
             userId: "123e4567-e89b-12d3-a456-426614174000",
             email: "owner@gazellecoffee.com",
+            profileCompleted: false,
             methods: ["apple"]
           }),
           { status: 200, headers: { "content-type": "application/json" } }

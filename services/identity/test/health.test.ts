@@ -116,6 +116,7 @@ describe("identity service", () => {
     expect(me.json()).toMatchObject({
       userId: session.userId,
       email: customerEmail,
+      profileCompleted: false,
       methods: ["apple"],
       memberSince: expect.any(String),
       createdAt: expect.any(String),
@@ -143,13 +144,14 @@ describe("identity service", () => {
     const session = exchange.json();
 
     const update = await app.inject({
-      method: "PUT",
-      url: "/v1/auth/me",
+      method: "POST",
+      url: "/v1/auth/profile",
       headers: {
         authorization: `Bearer ${session.accessToken}`
       },
       payload: {
         name: "Avery Quinn",
+        displayName: "Avery Quinn",
         phoneNumber: "+13135550123",
         birthday: "1992-04-12"
       }
@@ -162,6 +164,7 @@ describe("identity service", () => {
       displayName: "Avery Quinn",
       phoneNumber: "+13135550123",
       birthday: "1992-04-12",
+      profileCompleted: true,
       methods: ["apple"]
     });
 
@@ -178,7 +181,8 @@ describe("identity service", () => {
       name: "Avery Quinn",
       displayName: "Avery Quinn",
       phoneNumber: "+13135550123",
-      birthday: "1992-04-12"
+      birthday: "1992-04-12",
+      profileCompleted: true
     });
 
     await app.close();

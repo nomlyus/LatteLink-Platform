@@ -32,8 +32,10 @@ type PersistedIdentityUserRow = {
   apple_sub: string | null;
   email: string | null;
   name: string | null;
+  display_name: string | null;
   phone_number: string | null;
-  birthday: string | null;
+  birthday: string | Date | null;
+  profile_completed_at: string | Date | null;
   created_at: string | Date;
   updated_at: string | Date;
 };
@@ -135,8 +137,10 @@ export type IdentityUserRecord = {
   appleSub?: string;
   email?: string;
   name?: string;
+  displayName?: string;
   phoneNumber?: string;
   birthday?: string;
+  profileCompletedAt?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -172,7 +176,7 @@ export type IdentityRepository = {
   getUserById(userId: string): Promise<IdentityUserRecord | undefined>;
   updateCustomerProfile(
     userId: string,
-    input: { name: string; phoneNumber: string; birthday: string }
+    input: { name: string; phoneNumber?: string; birthday?: string }
   ): Promise<IdentityUserRecord | undefined>;
   listAuthMethodsForUser(userId: string): Promise<CustomerAuthMethod[]>;
   rotateRefreshSession(
@@ -236,6 +240,23 @@ function parseIsoDate(value: unknown) {
   }
 
   return new Date(String(value)).toISOString();
+}
+
+function parseDbDate(value: unknown) {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString().slice(0, 10);
+  }
+
+  const rawValue = String(value).trim();
+  if (!rawValue) {
+    return undefined;
+  }
+
+  return rawValue.slice(0, 10);
 }
 
 function isAccessSessionActive(session: AuthSession, revokedAt: string | undefined) {
@@ -327,8 +348,10 @@ function toIdentityUserRecord(row: PersistedIdentityUserRow): IdentityUserRecord
     appleSub: row.apple_sub ?? undefined,
     email: row.email ? normalizeEmail(row.email) : undefined,
     name: row.name?.trim() || undefined,
+    displayName: row.display_name?.trim() || undefined,
     phoneNumber: row.phone_number?.trim() || undefined,
-    birthday: row.birthday?.trim() || undefined,
+    birthday: parseDbDate(row.birthday),
+    profileCompletedAt: row.profile_completed_at ? parseIsoDate(row.profile_completed_at) : undefined,
     createdAt: parseIsoDate(row.created_at),
     updatedAt: parseIsoDate(row.updated_at)
   };
@@ -511,8 +534,10 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
         appleSub,
         email: normalizedEmail ?? existingUser?.email,
         name: existingUser?.name,
+        displayName: existingUser?.displayName,
         phoneNumber: existingUser?.phoneNumber,
         birthday: existingUser?.birthday,
+        profileCompletedAt: existingUser?.profileCompletedAt,
         createdAt: existingUser?.createdAt ?? now,
         updatedAt: now
       });
@@ -534,8 +559,10 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
           appleSub: existingUser?.appleSub,
           email: normalizedEmail,
           name: existingUser?.name,
+          displayName: existingUser?.displayName,
           phoneNumber: existingUser?.phoneNumber,
           birthday: existingUser?.birthday,
+          profileCompletedAt: existingUser?.profileCompletedAt,
           createdAt: existingUser?.createdAt ?? now,
           updatedAt: now
         });
@@ -564,8 +591,10 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
       const updated: IdentityUserRecord = {
         ...existing,
         name: input.name.trim(),
-        phoneNumber: input.phoneNumber.trim(),
-        birthday: input.birthday,
+        displayName: input.name.trim(),
+        phoneNumber: input.phoneNumber !== undefined ? input.phoneNumber.trim() : existing.phoneNumber,
+        birthday: input.birthday !== undefined ? input.birthday.trim() : existing.birthday,
+        profileCompletedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
 
@@ -1277,8 +1306,10 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         .updateTable("identity_users")
         .set({
           name: input.name.trim(),
-          phone_number: input.phoneNumber.trim(),
-          birthday: input.birthday,
+          display_name: input.name.trim(),
+          ...(input.phoneNumber !== undefined ? { phone_number: input.phoneNumber.trim() } : {}),
+          ...(input.birthday !== undefined ? { birthday: input.birthday.trim() } : {}),
+          profile_completed_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
         .where("user_id", "=", userId)

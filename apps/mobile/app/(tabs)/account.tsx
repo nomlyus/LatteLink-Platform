@@ -7,6 +7,7 @@ import { useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { apiClient } from "../../src/api/client";
+import { customerProfileQueryKey } from "../../src/auth/profile";
 import { getAccountRecoveryCopy } from "../../src/auth/recovery";
 import { useAuthSession } from "../../src/auth/session";
 import { useLoyaltyBalanceQuery, useLoyaltyLedgerQuery } from "../../src/account/data";
@@ -92,7 +93,7 @@ export default function AccountScreen() {
   const appConfig = resolveAppConfigData(appConfigQuery.data);
   const loyaltyEnabled = isMobileLoyaltyVisible(appConfigQuery.data);
   const identityQuery = useQuery({
-    queryKey: ["account", "identity"],
+    queryKey: customerProfileQueryKey,
     enabled: isAuthenticated,
     queryFn: async (): Promise<AccountIdentity> => apiClient.me()
   });
@@ -103,8 +104,9 @@ export default function AccountScreen() {
   const loyaltyBalance = loyaltyBalanceQuery.data;
   const identity = identityQuery.data;
   const accountGreeting =
-    identity?.name?.trim() ||
     identity?.displayName?.trim() ||
+    identity?.name?.trim() ||
+    identity?.email?.split("@")[0] ||
     "Welcome back";
   const headerOffset = insets.top + ACCOUNT_HEADER_HEIGHT;
   const contentBottomInset = Math.max(getTabBarBottomOffset(insets.bottom > 0) + TAB_BAR_HEIGHT + 24 - insets.bottom, 24);

@@ -177,6 +177,8 @@ describe("gateway JWT customer auth", () => {
           JSON.stringify({
             userId,
             email: "owner@gazellecoffee.com",
+            displayName: "Avery Quinn",
+            profileCompleted: false,
             methods: ["apple", "passkey", "magic-link"]
           }),
           { status: 200, headers: { "content-type": "application/json" } }

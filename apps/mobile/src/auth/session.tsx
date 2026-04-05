@@ -21,6 +21,9 @@ type SessionContextValue = {
   isAuthenticated: boolean;
   isHydrating: boolean;
   authRecoveryState: AuthRecoveryState;
+  profileSetupDeferred: boolean;
+  deferProfileSetup: () => void;
+  completeProfileSetup: () => void;
   signIn: (nextSession: AuthSession) => Promise<void>;
   signOut: (options?: SignOutOptions) => Promise<void>;
   refreshSession: () => Promise<AuthSession | null>;
@@ -33,6 +36,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [isHydrating, setIsHydrating] = useState(true);
   const [authRecoveryState, setAuthRecoveryState] = useState<AuthRecoveryState>("idle");
+  const [profileSetupDeferred, setProfileSetupDeferred] = useState(false);
   const sessionRef = useRef<AuthSession | null>(null);
   const refreshInFlightRef = useRef<Promise<AuthSession | null> | null>(null);
 
@@ -47,6 +51,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
       sessionRef.current = null;
       setSession(null);
       setAuthRecoveryState(recoveryState);
+      setProfileSetupDeferred(false);
       try {
         await Promise.all([clearStoredSession(), clearAccountQueries()]);
       } catch {
@@ -58,6 +63,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback(async (nextSession: AuthSession) => {
     setAuthRecoveryState("idle");
+    setProfileSetupDeferred(false);
     apiClient.setAccessToken(nextSession.accessToken);
     sessionRef.current = nextSession;
     setSession(nextSession);
@@ -83,6 +89,14 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     },
     [clearLocalSession, session?.refreshToken]
   );
+
+  const deferProfileSetup = useCallback(() => {
+    setProfileSetupDeferred(true);
+  }, []);
+
+  const completeProfileSetup = useCallback(() => {
+    setProfileSetupDeferred(false);
+  }, []);
 
   const refreshSession = useCallback(async (): Promise<AuthSession | null> => {
     if (refreshInFlightRef.current) {
@@ -207,11 +221,24 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
       isHydrating,
       isAuthenticated: session !== null,
       authRecoveryState,
+      profileSetupDeferred,
+      deferProfileSetup,
+      completeProfileSetup,
       signIn,
       signOut,
       refreshSession
     }),
-    [authRecoveryState, isHydrating, refreshSession, session, signIn, signOut]
+    [
+      authRecoveryState,
+      completeProfileSetup,
+      deferProfileSetup,
+      isHydrating,
+      profileSetupDeferred,
+      refreshSession,
+      session,
+      signIn,
+      signOut
+    ]
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

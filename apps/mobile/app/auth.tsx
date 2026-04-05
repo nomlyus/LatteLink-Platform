@@ -1,14 +1,13 @@
 import * as AppleAuthentication from "expo-apple-authentication";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getAuthScreenRecoveryCopy } from "../src/auth/recovery";
+import { useCustomerProfileQuery, isCustomerProfileComplete } from "../src/auth/profile";
 import { useAppleExchangeMutation } from "../src/auth/useAuth";
 import { generateAuthNonce } from "../src/auth/nonce";
 import { useAuthSession } from "../src/auth/session";
-import { apiClient } from "../src/api/client";
 import { Button, uiPalette, uiTypography } from "../src/ui/system";
 
 type ReturnToPath = "cart" | "/(tabs)/home" | "/(tabs)/orders" | "/(tabs)/account";
@@ -24,14 +23,6 @@ function resolveReturnToPath(input: string | string[] | undefined): ReturnToPath
 function formatExpiresAt(expiresAt: string): string {
   const date = new Date(expiresAt);
   return Number.isNaN(date.getTime()) ? expiresAt : date.toLocaleString();
-}
-
-function isCustomerProfileComplete(profile: {
-  name?: string;
-  phoneNumber?: string;
-  birthday?: string;
-} | null | undefined) {
-  return Boolean(profile?.name?.trim() && profile?.phoneNumber?.trim() && profile?.birthday?.trim());
 }
 
 function getReturnLabel(returnTo: ReturnToPath | null) {
@@ -52,61 +43,29 @@ function getReturnLabel(returnTo: ReturnToPath | null) {
 export default function AuthScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const queryClient = useQueryClient();
   const params = useLocalSearchParams<{ returnTo?: string | string[] }>();
-  const { session, isAuthenticated, isHydrating, authRecoveryState } = useAuthSession();
+  const { session, isAuthenticated, isHydrating, authRecoveryState, profileSetupDeferred } = useAuthSession();
 
   const [appleAvailable, setAppleAvailable] = useState(false);
-  const [profileName, setProfileName] = useState("");
-  const [profilePhoneNumber, setProfilePhoneNumber] = useState("");
-  const [profileBirthday, setProfileBirthday] = useState("");
-  const profileQuery = useQuery({
-    queryKey: ["account", "identity"],
-    enabled: isAuthenticated,
-    queryFn: async () => apiClient.me()
-  });
-  const profileUpdateMutation = useMutation({
-    mutationFn: async (input: { name: string; phoneNumber: string; birthday: string }) =>
-      apiClient.updateMe(input),
-    onSuccess: async (updatedProfile) => {
-      queryClient.setQueryData(["account", "identity"], updatedProfile);
-    }
-  });
-
   const appleExchange = useAppleExchangeMutation();
   const returnTo = useMemo(() => resolveReturnToPath(params.returnTo), [params.returnTo]);
   const topContentInset = insets.top + 52;
   const recoveryCopy = useMemo(() => getAuthScreenRecoveryCopy(authRecoveryState), [authRecoveryState]);
+  const profileQuery = useCustomerProfileQuery(isAuthenticated && !isHydrating);
   const profile = profileQuery.data;
-  const profileLoading = isAuthenticated && (profileQuery.isLoading || profileQuery.isFetching) && !profile;
-  const profileError = isAuthenticated && profileQuery.isError;
   const profileComplete = isCustomerProfileComplete(profile);
-  const profileNeedsCompletion = isAuthenticated && profileQuery.isSuccess && !profileComplete;
+  const profileNeedsSetup = isAuthenticated && profileQuery.isSuccess && !profileComplete && !profileSetupDeferred;
 
   useEffect(() => {
-    if (!profile) {
+    if (!isAuthenticated || isHydrating || profileQuery.isLoading) {
       return;
     }
 
-    setProfileName(profile.name ?? "");
-    setProfilePhoneNumber(profile.phoneNumber ?? "");
-    setProfileBirthday(profile.birthday ?? "");
-  }, [profile]);
-
-  useEffect(() => {
-    if (!isAuthenticated || !returnTo || profileLoading || !profileQuery.isSuccess || !profileComplete) return;
-
-    if (returnTo === "cart") {
-      if (router.canGoBack()) {
-        router.back();
-        return;
-      }
-      router.replace("/cart");
-      return;
+    if (!profileQuery.isSuccess || profileNeedsSetup) {
+      const nextRoute = returnTo ? { pathname: "/profile-setup", params: { returnTo } } : "/profile-setup";
+      router.replace(nextRoute);
     }
-
-    router.replace(returnTo);
-  }, [isAuthenticated, profileComplete, profileLoading, profileQuery.isSuccess, returnTo, router]);
+  }, [isAuthenticated, isHydrating, profileNeedsSetup, profileQuery.isLoading, profileQuery.isSuccess, returnTo, router]);
 
   useEffect(() => {
     let cancelled = false;
@@ -155,30 +114,8 @@ export default function AuthScreen() {
   }
 
   function continueIntoApp() {
-    if (returnTo === "cart") {
-      if (router.canGoBack()) {
-        router.back();
-        return;
-      }
-      router.replace("/cart");
-      return;
-    }
-
-    router.replace(returnTo ?? "/(tabs)/menu");
-  }
-
-  async function handleProfileCompletion() {
-    if (profileUpdateMutation.isPending) {
-      return;
-    }
-
-    const input = {
-      name: profileName.trim(),
-      phoneNumber: profilePhoneNumber.trim(),
-      birthday: profileBirthday.trim()
-    };
-
-    profileUpdateMutation.mutate(input);
+    const destination = returnTo === "cart" ? "/cart" : returnTo ?? "/(tabs)/menu";
+    router.replace(destination);
   }
 
   if (isHydrating) {
@@ -205,7 +142,7 @@ export default function AuthScreen() {
       </View>
       <View style={[styles.centerContent, { paddingTop: topContentInset }]}>
         {isAuthenticated ? (
-          profileLoading ? (
+          profileQuery.isLoading ? (
             <>
               <Text style={styles.title}>Checking your profile…</Text>
               <View style={styles.loadingRow}>
@@ -213,60 +150,15 @@ export default function AuthScreen() {
                 <Text style={styles.body}>Preparing your account details.</Text>
               </View>
             </>
-          ) : profileError ? (
+          ) : profileQuery.isError ? (
             <>
               <Text style={styles.title}>We could not load your profile.</Text>
-              <Text style={styles.body}>Try again to finish signup and unlock the app.</Text>
+              <Text style={styles.body}>We’ll open profile setup so you can continue.</Text>
             </>
-          ) : profileNeedsCompletion ? (
+          ) : profileNeedsSetup ? (
             <>
               <Text style={styles.title}>Finish your signup.</Text>
-              <Text style={styles.body}>
-                Add your name, phone number, and birthday so we can personalize your account.
-              </Text>
-              <View style={styles.profileForm}>
-                <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>Name</Text>
-                  <TextInput
-                    autoCapitalize="words"
-                    autoComplete="name"
-                    autoCorrect={false}
-                    placeholder="Avery Quinn"
-                    placeholderTextColor={uiPalette.textMuted}
-                    style={styles.textInput}
-                    value={profileName}
-                    onChangeText={setProfileName}
-                  />
-                </View>
-                <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>Phone number</Text>
-                  <TextInput
-                    autoComplete="tel"
-                    autoCorrect={false}
-                    keyboardType="phone-pad"
-                    placeholder="+1 313 555 0123"
-                    placeholderTextColor={uiPalette.textMuted}
-                    style={styles.textInput}
-                    value={profilePhoneNumber}
-                    onChangeText={setProfilePhoneNumber}
-                  />
-                </View>
-                <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>Birthday</Text>
-                  <TextInput
-                    autoCapitalize="none"
-                    autoComplete="birthdate-full"
-                    autoCorrect={false}
-                    keyboardType="numbers-and-punctuation"
-                    placeholder="1992-04-12"
-                    placeholderTextColor={uiPalette.textMuted}
-                    style={styles.textInput}
-                    value={profileBirthday}
-                    onChangeText={setProfileBirthday}
-                  />
-                  <Text style={styles.fieldHint}>Use YYYY-MM-DD.</Text>
-                </View>
-              </View>
+              <Text style={styles.body}>We need a profile setup step before you can enter the app.</Text>
             </>
           ) : (
             <>
@@ -286,24 +178,10 @@ export default function AuthScreen() {
 
       <View style={[styles.bottomDock, { paddingBottom: Math.max(insets.bottom, 16) + 10 }]}>
         {isAuthenticated ? (
-          profileLoading ? (
-            <Button label="Checking Profile…" variant="secondary" disabled />
-          ) : profileNeedsCompletion ? (
-            <Button
-              label={profileUpdateMutation.isPending ? "Saving…" : "Save and Continue"}
-              onPress={() => {
-                void handleProfileCompletion();
-              }}
-              disabled={profileUpdateMutation.isPending}
-            />
-          ) : profileError ? (
-            <Button
-              label="Try Again"
-              variant="secondary"
-              onPress={() => {
-                void profileQuery.refetch();
-              }}
-            />
+          profileNeedsSetup ? (
+            <Button label="Open Profile Setup" onPress={() => router.replace("/profile-setup")} />
+          ) : profileQuery.isError ? (
+            <Button label="Open Profile Setup" onPress={() => router.replace("/profile-setup")} />
           ) : (
             <Button label={getReturnLabel(returnTo)} onPress={continueIntoApp} />
           )
@@ -374,39 +252,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10
-  },
-  profileForm: {
-    width: "100%",
-    maxWidth: 360,
-    marginTop: 24,
-    gap: 14
-  },
-  fieldGroup: {
-    gap: 8
-  },
-  fieldLabel: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: uiPalette.textSecondary,
-    textTransform: "uppercase",
-    letterSpacing: 0.8
-  },
-  textInput: {
-    minHeight: 52,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: uiPalette.borderStrong,
-    backgroundColor: uiPalette.surfaceStrong,
-    color: uiPalette.text,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    lineHeight: 20
-  },
-  fieldHint: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: uiPalette.textMuted
   },
   bottomDock: {
     paddingHorizontal: 20,

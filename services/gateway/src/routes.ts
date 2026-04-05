@@ -11,7 +11,7 @@ import {
   internalOwnerProvisionRequestSchema,
   internalOwnerProvisionResponseSchema,
   internalOwnerSummarySchema,
-  customerProfileUpdateSchema,
+  customerProfileRequestSchema,
   logoutRequestSchema,
   magicLinkRequestSchema,
   magicLinkVerifySchema,
@@ -1392,60 +1392,21 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   );
 
-  app.put(
-    "/v1/auth/me",
+  app.post(
+    "/v1/auth/profile",
     {
       preHandler: [app.rateLimit(authWriteRateLimit), requireBearerAuth]
     },
     async (request, reply) => {
-    const input = customerProfileUpdateSchema.parse(request.body);
+    const input = customerProfileRequestSchema.parse(request.body);
 
     return proxyUpstream({
       request,
       reply,
       baseUrl: identityBaseUrl,
       serviceLabel: "Identity",
-      method: "PUT",
-      path: "/v1/auth/me",
-      body: input,
-      responseSchema: meResponseSchema
-    });
-    }
-  );
-
-  app.get(
-    "/v1/me",
-    {
-      preHandler: [app.rateLimit(authReadRateLimit), requireBearerAuth]
-    },
-    async (request, reply) => {
-    return proxyUpstream({
-      request,
-      reply,
-      baseUrl: identityBaseUrl,
-      serviceLabel: "Identity",
-      method: "GET",
-      path: "/v1/auth/me",
-      responseSchema: meResponseSchema
-    });
-    }
-  );
-
-  app.put(
-    "/v1/me",
-    {
-      preHandler: [app.rateLimit(authWriteRateLimit), requireBearerAuth]
-    },
-    async (request, reply) => {
-    const input = customerProfileUpdateSchema.parse(request.body);
-
-    return proxyUpstream({
-      request,
-      reply,
-      baseUrl: identityBaseUrl,
-      serviceLabel: "Identity",
-      method: "PUT",
-      path: "/v1/auth/me",
+      method: "POST",
+      path: "/v1/auth/profile",
       body: input,
       responseSchema: meResponseSchema
     });

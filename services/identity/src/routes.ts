@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import {
@@ -15,7 +15,7 @@ import {
   internalOwnerProvisionRequestSchema,
   internalOwnerProvisionResponseSchema,
   internalOwnerSummarySchema,
-  customerProfileUpdateSchema,
+  customerProfileRequestSchema,
   logoutRequestSchema,
   magicLinkRequestSchema,
   magicLinkVerifySchema,
@@ -124,6 +124,70 @@ function deriveCustomerDisplayName(user: { name?: string; email?: string } | und
   }
 
   return email.split("@")[0] || undefined;
+}
+
+function buildCustomerMeResponse(input: {
+  userId: string;
+  user: {
+    email?: string;
+    name?: string;
+    displayName?: string;
+    phoneNumber?: string;
+    birthday?: string;
+    profileCompletedAt?: string;
+    createdAt: string;
+    updatedAt: string;
+  } | undefined;
+  methods: Array<"apple" | "passkey" | "magic-link">;
+}) {
+  return meResponseSchema.parse({
+    userId: input.userId,
+    email: input.user?.email,
+    name: input.user?.name?.trim() || undefined,
+    displayName: input.user?.displayName?.trim() || undefined,
+    phoneNumber: input.user?.phoneNumber?.trim() || undefined,
+    birthday: input.user?.birthday?.trim() || undefined,
+    profileCompleted: Boolean(input.user?.profileCompletedAt),
+    memberSince: input.user?.createdAt,
+    createdAt: input.user?.createdAt,
+    updatedAt: input.user?.updatedAt,
+    methods: input.methods
+  });
+}
+
+async function getAuthenticatedCustomerSession(input: {
+  request: FastifyRequest;
+  reply: FastifyReply;
+  repository: IdentityRepository;
+}) {
+  const { request, reply, repository } = input;
+  const parsed = authHeaderSchema.safeParse(request.headers);
+
+  if (!parsed.success || !parsed.data.authorization) {
+    reply.status(401).send(
+      apiErrorSchema.parse({
+        code: "UNAUTHORIZED",
+        message: "Missing or invalid auth token",
+        requestId: request.id
+      })
+    );
+    return undefined;
+  }
+
+  const accessToken = parsed.data.authorization.slice("Bearer ".length);
+  const session = await repository.getSessionByAccessToken(accessToken);
+  if (!session) {
+    reply.status(401).send(
+      apiErrorSchema.parse({
+        code: "UNAUTHORIZED",
+        message: "Missing or invalid auth token",
+        requestId: request.id
+      })
+    );
+    return undefined;
+  }
+
+  return session;
 }
 
 function buildOperatorMagicLinkUrl(baseUrl: string, token: string) {
@@ -1007,28 +1071,9 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
       preHandler: app.rateLimit(authReadRateLimit)
     },
     async (request, reply) => {
-      const parsed = authHeaderSchema.safeParse(request.headers);
-
-      if (!parsed.success || !parsed.data.authorization) {
-        return reply.status(401).send(
-          apiErrorSchema.parse({
-            code: "UNAUTHORIZED",
-            message: "Missing or invalid auth token",
-            requestId: request.id
-          })
-        );
-      }
-
-      const accessToken = parsed.data.authorization.slice("Bearer ".length);
-      const session = await repository.getSessionByAccessToken(accessToken);
+      const session = await getAuthenticatedCustomerSession({ request, reply, repository });
       if (!session) {
-        return reply.status(401).send(
-          apiErrorSchema.parse({
-            code: "UNAUTHORIZED",
-            message: "Missing or invalid auth token",
-            requestId: request.id
-          })
-        );
+        return;
       }
 
       const [user, methods] = await Promise.all([
@@ -1036,52 +1081,26 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
         repository.listAuthMethodsForUser(session.userId)
       ]);
 
-      return meResponseSchema.parse({
+      return buildCustomerMeResponse({
         userId: session.userId,
-        email: user?.email,
-        name: user?.name,
-        displayName: deriveCustomerDisplayName(user),
-        phoneNumber: user?.phoneNumber,
-        birthday: user?.birthday,
-        memberSince: user?.createdAt,
-        createdAt: user?.createdAt,
-        updatedAt: user?.updatedAt,
+        user,
         methods
       });
     }
   );
 
-  app.put(
-    "/v1/auth/me",
+  app.post(
+    "/v1/auth/profile",
     {
       preHandler: app.rateLimit(authWriteRateLimit)
     },
     async (request, reply) => {
-      const parsed = authHeaderSchema.safeParse(request.headers);
-
-      if (!parsed.success || !parsed.data.authorization) {
-        return reply.status(401).send(
-          apiErrorSchema.parse({
-            code: "UNAUTHORIZED",
-            message: "Missing or invalid auth token",
-            requestId: request.id
-          })
-        );
-      }
-
-      const accessToken = parsed.data.authorization.slice("Bearer ".length);
-      const session = await repository.getSessionByAccessToken(accessToken);
+      const session = await getAuthenticatedCustomerSession({ request, reply, repository });
       if (!session) {
-        return reply.status(401).send(
-          apiErrorSchema.parse({
-            code: "UNAUTHORIZED",
-            message: "Missing or invalid auth token",
-            requestId: request.id
-          })
-        );
+        return;
       }
 
-      const input = customerProfileUpdateSchema.parse(request.body);
+      const input = customerProfileRequestSchema.parse(request.body);
       const updatedUser = await repository.updateCustomerProfile(session.userId, input);
       if (!updatedUser) {
         return reply.status(404).send(
@@ -1098,16 +1117,9 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
       });
 
       const methods = await repository.listAuthMethodsForUser(session.userId);
-      return meResponseSchema.parse({
+      return buildCustomerMeResponse({
         userId: updatedUser.userId,
-        email: updatedUser.email,
-        name: updatedUser.name,
-        displayName: deriveCustomerDisplayName(updatedUser),
-        phoneNumber: updatedUser.phoneNumber,
-        birthday: updatedUser.birthday,
-        memberSince: updatedUser.createdAt,
-        createdAt: updatedUser.createdAt,
-        updatedAt: updatedUser.updatedAt,
+        user: updatedUser,
         methods
       });
     }

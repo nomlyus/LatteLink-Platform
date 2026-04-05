@@ -195,24 +195,10 @@
             "description": "Default Response"
           }
         }
-      },
-      "put": {
-        "responses": {
-          "200": {
-            "description": "Default Response"
-          }
-        }
       }
     },
-    "/me": {
-      "get": {
-        "responses": {
-          "200": {
-            "description": "Default Response"
-          }
-        }
-      },
-      "put": {
+    "/auth/profile": {
+      "post": {
         "responses": {
           "200": {
             "description": "Default Response"

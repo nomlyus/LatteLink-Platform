@@ -1,7 +1,7 @@
 export type { paths as Paths } from "./generated/types.js";
 import {
   appleExchangeRequestSchema,
-  customerProfileUpdateSchema,
+  customerProfileRequestSchema,
   logoutRequestSchema,
   magicLinkRequestSchema,
   magicLinkVerifySchema,
@@ -123,11 +123,11 @@ export class GazelleApiClient {
     return meResponseSchema.parse(data);
   }
 
-  async updateMe(
-    input: z.input<typeof customerProfileUpdateSchema>
+  async saveCustomerProfile(
+    input: z.input<typeof customerProfileRequestSchema>
   ): Promise<z.output<typeof meResponseSchema>> {
-    customerProfileUpdateSchema.parse(input);
-    const data = await this.put<unknown>("/auth/me", input);
+    customerProfileRequestSchema.parse(input);
+    const data = await this.post<unknown>("/auth/profile", input);
     return meResponseSchema.parse(data);
   }
 

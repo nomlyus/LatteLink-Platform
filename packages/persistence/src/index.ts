@@ -120,8 +120,10 @@ export interface IdentityUserTable {
   apple_sub: string | null;
   email: string | null;
   name: string | null;
+  display_name: string | null;
   phone_number: string | null;
   birthday: string | null;
+  profile_completed_at: string | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }
@@ -535,8 +537,10 @@ export async function ensurePersistenceTables(db: PersistenceDb) {
       apple_sub TEXT UNIQUE,
       email TEXT,
       name TEXT,
+      display_name TEXT,
       phone_number TEXT,
-      birthday TEXT,
+      birthday DATE,
+      profile_completed_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
