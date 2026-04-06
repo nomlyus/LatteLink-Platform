@@ -610,19 +610,7 @@ export function OrdersScreen() {
 
               <OrderProgress status={activeOrderStatus ?? activeOrder.status} />
 
-              <View style={styles.activeSupportBlock}>
-                <View style={styles.activeSupportRow}>
-                  <Text style={styles.activeSupportLabel}>Updated</Text>
-                  <Text style={styles.activeSupportValue}>{formatOrderDateTime(findLatestOrderTime(activeOrder))}</Text>
-                </View>
-                <View style={styles.activeSupportRow}>
-                  <Text style={styles.activeSupportLabel}>Order ref</Text>
-                  <Text style={[styles.activeSupportValue, styles.activeSupportMono]}>{formatOrderReference(activeOrder.id)}</Text>
-                </View>
-              </View>
-
               <Text style={styles.activeStatusNote}>{getLatestOrderTimelineNote(activeOrder)}</Text>
-              <Button label="Refresh Status" variant="secondary" onPress={refreshOrders} style={styles.activeRefreshButton} />
 
               {(activeOrderStatus ?? activeOrder.status) === "PENDING_PAYMENT" ? (
                 <View style={styles.paymentActionGroup}>
@@ -996,49 +984,11 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     color: uiPalette.danger
   },
-  activeSupportBlock: {
-    marginTop: 20,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: uiPalette.border,
-    gap: 12
-  },
-  activeSupportRow: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    justifyContent: "space-between",
-    gap: 16
-  },
-  activeSupportLabel: {
-    fontSize: 11,
-    lineHeight: 14,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    color: uiPalette.textMuted,
-    fontWeight: "700"
-  },
-  activeSupportValue: {
-    flexShrink: 1,
-    textAlign: "right",
-    fontSize: 14,
-    lineHeight: 20,
-    color: uiPalette.text,
-    fontFamily: uiTypography.displayFamily,
-    fontWeight: "600"
-  },
-  activeSupportMono: {
-    letterSpacing: 1.2,
-    fontFamily: uiTypography.monoFamily
-  },
   activeStatusNote: {
     marginTop: 16,
     fontSize: 14,
     lineHeight: 21,
     color: uiPalette.textSecondary
-  },
-  activeRefreshButton: {
-    marginTop: 18,
-    alignSelf: "flex-start"
   },
   sectionMessage: {
     marginTop: 18,
