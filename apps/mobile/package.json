@@ -16,7 +16,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@callstack/liquid-glass": "^0.7.0",
+    "@callstack/liquid-glass": "^0.7.1",
     "@devvie/bottom-sheet": "0.4.3",
     "@expo/metro-runtime": "~6.1.2",
     "@expo/vector-icons": "^15.1.1",
@@ -27,7 +27,7 @@
     "@gorhom/bottom-sheet": "^5.2.8",
     "@react-native-community/datetimepicker": "^8.3.0",
     "@react-native-picker/picker": "^2.9.0",
-    "@tanstack/react-query": "^5.66.11",
+    "@tanstack/react-query": "^5.96.2",
     "expo": "^54.0.33",
     "expo-apple-authentication": "^8.0.8",
     "expo-blur": "~15.0.8",
@@ -41,7 +41,7 @@
     "expo-secure-store": "^15.0.8",
     "expo-splash-screen": "~31.0.13",
     "expo-updates": "~29.0.16",
-    "nativewind": "^4.1.23",
+    "nativewind": "^4.2.3",
     "react": "19.1.0",
     "react-native": "0.81.5",
     "react-native-css-interop": "^0.2.2",
