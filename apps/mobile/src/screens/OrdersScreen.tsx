@@ -560,12 +560,6 @@ export function OrdersScreen() {
           <View style={styles.loggedOutStaticBody}>
             <Text style={styles.loggedOutStaticTitle}>{recoveryCopy.title}</Text>
             <Text style={styles.loggedOutStaticText}>{recoveryCopy.body}</Text>
-            <Button
-              label={recoveryCopy.actionLabel}
-              variant="secondary"
-              onPress={() => router.push({ pathname: "/auth", params: { returnTo: "/(tabs)/orders" } })}
-              style={styles.loggedOutStaticAction}
-            />
           </View>
         </ScreenStatic>
 
@@ -764,10 +758,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 24,
     color: uiPalette.textSecondary
-  },
-  loggedOutStaticAction: {
-    marginTop: 20,
-    alignSelf: "flex-start"
   },
   sectionBlock: {
     marginTop: 28

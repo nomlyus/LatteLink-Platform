@@ -7,13 +7,11 @@ function resolveAppVariant(): AppVariant {
   if (rawVariant === "internal" || rawVariant === "beta" || rawVariant === "production") {
     return rawVariant;
   }
-
   return "internal";
 }
 
 function resolveDisplayName(variant: AppVariant) {
   const baseName = process.env.APP_DISPLAY_NAME_BASE ?? "LatteLink";
-
   switch (variant) {
     case "production":
       return process.env.APP_DISPLAY_NAME ?? baseName;
@@ -29,12 +27,11 @@ function resolveBundleIdentifier(variant: AppVariant) {
   if (process.env.IOS_BUNDLE_IDENTIFIER) {
     return process.env.IOS_BUNDLE_IDENTIFIER;
   }
-
   switch (variant) {
     case "production":
       return "com.lattelink.mobile";
     case "beta":
-      return "com.lattelink.mobile.beta";
+      return "com.lattelink.rawaq.beta";
     case "internal":
     default:
       return "com.lattelink.mobile.internal";
@@ -49,6 +46,7 @@ function resolveAssociatedDomains() {
 }
 
 const variant = resolveAppVariant();
+
 const config: ExpoConfig = {
   name: resolveDisplayName(variant),
   slug: process.env.EXPO_SLUG ?? "lattelink-mobile",
@@ -68,7 +66,10 @@ const config: ExpoConfig = {
   extra: {
     appVariant: variant,
     easBuildProfile: process.env.EAS_BUILD_PROFILE ?? null,
-    apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL ?? null
+    apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL ?? null,
+    eas: {
+      projectId: "18320a67-0f15-4860-9f84-845eb0f4c31c"
+    }
   },
   plugins: ["expo-router", "expo-secure-store", "expo-font", "expo-apple-authentication"]
 };
