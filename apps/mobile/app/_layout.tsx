@@ -2,10 +2,10 @@ import "react-native-gesture-handler";
 import "../global.css";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import * as SplashScreen from "expo-splash-screen";
-import { Stack } from "expo-router";
+import { Stack, usePathname, useRootNavigationState } from "expo-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useEffect } from "react";
-import { StatusBar } from "react-native";
+import { useEffect, useRef } from "react";
+import { InteractionManager, StatusBar } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthSessionProvider } from "../src/auth/session";
@@ -24,16 +24,41 @@ const queryClient = new QueryClient({
   }
 });
 
-SplashScreen.preventAutoHideAsync();
+const MIN_SPLASH_DURATION_MS = 2400;
+const splashStartedAt = Date.now();
+
+void SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      SplashScreen.hideAsync();
-    }, 2000);
+  const pathname = usePathname();
+  const navigationState = useRootNavigationState();
+  const hasHiddenSplash = useRef(false);
 
-    return () => clearTimeout(timer);
-  }, []);
+  useEffect(() => {
+    if (hasHiddenSplash.current) {
+      return;
+    }
+
+    if (!navigationState?.key || !pathname || pathname === "/") {
+      return;
+    }
+
+    const remainingDelay = Math.max(MIN_SPLASH_DURATION_MS - (Date.now() - splashStartedAt), 0);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const interaction = InteractionManager.runAfterInteractions(() => {
+      timer = setTimeout(() => {
+        hasHiddenSplash.current = true;
+        void SplashScreen.hideAsync();
+      }, remainingDelay);
+    });
+
+    return () => {
+      interaction.cancel();
+      if (timer) {
+        clearTimeout(timer);
+      }
+    };
+  }, [navigationState?.key, pathname]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
