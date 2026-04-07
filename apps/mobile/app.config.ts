@@ -31,7 +31,7 @@ function resolveBundleIdentifier(variant: AppVariant) {
     case "production":
       return "com.lattelink.mobile";
     case "beta":
-      return "com.lattelink.mobile.beta";
+      return "com.lattelink.rawaq.beta";
     case "internal":
     default:
       return "com.lattelink.mobile.internal";

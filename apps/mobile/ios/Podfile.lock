@@ -1,5 +1,10 @@
 PODS:
+  - EASClient (1.0.8):
+    - ExpoModulesCore
   - EXConstants (18.0.13):
+    - ExpoModulesCore
+  - EXJSONUtils (0.15.0)
+  - EXManifests (1.0.10):
     - ExpoModulesCore
   - Expo (54.0.33):
     - ExpoModulesCore
@@ -74,6 +79,37 @@ PODS:
     - Yoga
   - ExpoSecureStore (15.0.8):
     - ExpoModulesCore
+  - EXStructuredHeaders (5.0.0)
+  - EXUpdates (29.0.16):
+    - EASClient
+    - EXManifests
+    - ExpoModulesCore
+    - EXStructuredHeaders
+    - EXUpdatesInterface
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - ReachabilitySwift
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
+  - EXUpdatesInterface (2.0.0):
+    - ExpoModulesCore
   - FBLazyVector (0.81.5)
   - hermes-engine (0.81.5):
     - hermes-engine/Pre-built (= 0.81.5)
@@ -106,6 +142,7 @@ PODS:
     - FBLazyVector (= 0.81.5)
     - RCTRequired (= 0.81.5)
     - React-Core (= 0.81.5)
+  - ReachabilitySwift (5.2.4)
   - React (0.81.5):
     - React-Core (= 0.81.5)
     - React-Core/DevSupport (= 0.81.5)
@@ -1798,6 +1835,50 @@ PODS:
     - React-utils (= 0.81.5)
     - ReactNativeDependencies
   - ReactNativeDependencies (0.81.5)
+  - RNCPicker (2.11.4):
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
+  - RNDateTimePicker (8.6.0):
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
   - RNGestureHandler (2.30.0):
     - hermes-engine
     - RCTRequired
@@ -2015,7 +2096,10 @@ PODS:
   - Yoga (0.0.0)
 
 DEPENDENCIES:
+  - "EASClient (from `../../../node_modules/.pnpm/expo-eas-client@1.0.8/node_modules/expo-eas-client/ios`)"
   - "EXConstants (from `../../../node_modules/.pnpm/expo-constants@18.0.13_expo@54.0.33_react-native@0.81.5_@babel+core@7.29.0_@types+react@19.1.17_react@19.1.0_/node_modules/expo-constants/ios`)"
+  - "EXJSONUtils (from `../../../node_modules/.pnpm/expo-json-utils@0.15.0/node_modules/expo-json-utils/ios`)"
+  - "EXManifests (from `../../../node_modules/.pnpm/expo-manifests@1.0.10_expo@54.0.33/node_modules/expo-manifests/ios`)"
   - "Expo (from `../../../node_modules/.pnpm/expo@54.0.33_@babel+core@7.29.0_@expo+metro-runtime@6.1.2_expo-router@6.0.23_react-nati_565b6db172422c96ef98beeabc19b506/node_modules/expo`)"
   - "ExpoAppleAuthentication (from `../../../node_modules/.pnpm/expo-apple-authentication@8.0.8_expo@54.0.33_react-native@0.81.5_@babel+core@7.29.0_@types+react@19.1.17_react@19.1.0_/node_modules/expo-apple-authentication/ios`)"
   - "ExpoAsset (from `../../../node_modules/.pnpm/expo-asset@12.0.12_expo@54.0.33_react-native@0.81.5_@babel+core@7.29.0_@types+react@19.1.17_react@19.1.0__react@19.1.0/node_modules/expo-asset/ios`)"
@@ -2030,6 +2114,9 @@ DEPENDENCIES:
   - "ExpoLinking (from `../../../node_modules/.pnpm/expo-linking@8.0.11_expo@54.0.33_react-native@0.81.5_@babel+core@7.29.0_@types+react@19.1.17_react@19.1.0__react@19.1.0/node_modules/expo-linking/ios`)"
   - "ExpoModulesCore (from `../../../node_modules/.pnpm/expo-modules-core@3.0.29_react-native@0.81.5_@babel+core@7.29.0_@types+react@19.1.17_react@19.1.0__react@19.1.0/node_modules/expo-modules-core`)"
   - "ExpoSecureStore (from `../../../node_modules/.pnpm/expo-secure-store@15.0.8_expo@54.0.33/node_modules/expo-secure-store/ios`)"
+  - "EXStructuredHeaders (from `../../../node_modules/.pnpm/expo-structured-headers@5.0.0/node_modules/expo-structured-headers/ios`)"
+  - "EXUpdates (from `../../../node_modules/.pnpm/expo-updates@29.0.16_expo@54.0.33_react-native@0.81.5_@babel+core@7.29.0_@types+react@19.1.17_react@19.1.0__react@19.1.0/node_modules/expo-updates/ios`)"
+  - "EXUpdatesInterface (from `../../../node_modules/.pnpm/expo-updates-interface@2.0.0_expo@54.0.33/node_modules/expo-updates-interface/ios`)"
   - "FBLazyVector (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.0_@types+react@19.1.17_react@19.1.0/node_modules/react-native/Libraries/FBLazyVector`)"
   - "hermes-engine (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.0_@types+react@19.1.17_react@19.1.0/node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec`)"
   - "LiquidGlass (from `../../../node_modules/.pnpm/@callstack+liquid-glass@0.7.0_react-native@0.81.5_@babel+core@7.29.0_@types+react@19.1.17_react@19.1.0__react@19.1.0/node_modules/@callstack/liquid-glass`)"
@@ -2099,15 +2186,27 @@ DEPENDENCIES:
   - ReactCodegen (from `build/generated/ios`)
   - "ReactCommon/turbomodule/core (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.0_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon`)"
   - "ReactNativeDependencies (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.0_@types+react@19.1.17_react@19.1.0/node_modules/react-native/third-party-podspecs/ReactNativeDependencies.podspec`)"
+  - "RNCPicker (from `../../../node_modules/.pnpm/@react-native-picker+picker@2.11.4_react-native@0.81.5_@babel+core@7.29.0_@types+react@_59a2f1860c799dba07d5e6b40086f7e0/node_modules/@react-native-picker/picker`)"
+  - "RNDateTimePicker (from `../../../node_modules/.pnpm/@react-native-community+datetimepicker@8.6.0_expo@54.0.33_react-native@0.81.5_@babel+co_ff022088b7ef50a62a47232a029f1690/node_modules/@react-native-community/datetimepicker`)"
   - "RNGestureHandler (from `../../../node_modules/.pnpm/react-native-gesture-handler@2.30.0_react-native@0.81.5_@babel+core@7.29.0_@types+react_6ef2c81f3585bc86c96c19f556e1911d/node_modules/react-native-gesture-handler`)"
   - "RNReanimated (from `../../../node_modules/.pnpm/react-native-reanimated@4.1.6_@babel+core@7.29.0_react-native-worklets@0.5.1_@babel+cor_c33458af958f6a1a13ad1f486411e1e5/node_modules/react-native-reanimated`)"
   - "RNScreens (from `../../../node_modules/.pnpm/react-native-screens@4.16.0_react-native@0.81.5_@babel+core@7.29.0_@types+react@19.1.17_react@19.1.0__react@19.1.0/node_modules/react-native-screens`)"
   - "RNWorklets (from `../../../node_modules/.pnpm/react-native-worklets@0.5.1_@babel+core@7.29.0_react-native@0.81.5_@babel+core@7.29.0_@_e33ee53926cb739c160046f5657a922f/node_modules/react-native-worklets`)"
   - "Yoga (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.0_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/yoga`)"
 
+SPEC REPOS:
+  trunk:
+    - ReachabilitySwift
+
 EXTERNAL SOURCES:
+  EASClient:
+    :path: "../../../node_modules/.pnpm/expo-eas-client@1.0.8/node_modules/expo-eas-client/ios"
   EXConstants:
     :path: "../../../node_modules/.pnpm/expo-constants@18.0.13_expo@54.0.33_react-native@0.81.5_@babel+core@7.29.0_@types+react@19.1.17_react@19.1.0_/node_modules/expo-constants/ios"
+  EXJSONUtils:
+    :path: "../../../node_modules/.pnpm/expo-json-utils@0.15.0/node_modules/expo-json-utils/ios"
+  EXManifests:
+    :path: "../../../node_modules/.pnpm/expo-manifests@1.0.10_expo@54.0.33/node_modules/expo-manifests/ios"
   Expo:
     :path: "../../../node_modules/.pnpm/expo@54.0.33_@babel+core@7.29.0_@expo+metro-runtime@6.1.2_expo-router@6.0.23_react-nati_565b6db172422c96ef98beeabc19b506/node_modules/expo"
   ExpoAppleAuthentication:
@@ -2136,6 +2235,12 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/.pnpm/expo-modules-core@3.0.29_react-native@0.81.5_@babel+core@7.29.0_@types+react@19.1.17_react@19.1.0__react@19.1.0/node_modules/expo-modules-core"
   ExpoSecureStore:
     :path: "../../../node_modules/.pnpm/expo-secure-store@15.0.8_expo@54.0.33/node_modules/expo-secure-store/ios"
+  EXStructuredHeaders:
+    :path: "../../../node_modules/.pnpm/expo-structured-headers@5.0.0/node_modules/expo-structured-headers/ios"
+  EXUpdates:
+    :path: "../../../node_modules/.pnpm/expo-updates@29.0.16_expo@54.0.33_react-native@0.81.5_@babel+core@7.29.0_@types+react@19.1.17_react@19.1.0__react@19.1.0/node_modules/expo-updates/ios"
+  EXUpdatesInterface:
+    :path: "../../../node_modules/.pnpm/expo-updates-interface@2.0.0_expo@54.0.33/node_modules/expo-updates-interface/ios"
   FBLazyVector:
     :path: "../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.0_@types+react@19.1.17_react@19.1.0/node_modules/react-native/Libraries/FBLazyVector"
   hermes-engine:
@@ -2273,6 +2378,10 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.0_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon"
   ReactNativeDependencies:
     :podspec: "../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.0_@types+react@19.1.17_react@19.1.0/node_modules/react-native/third-party-podspecs/ReactNativeDependencies.podspec"
+  RNCPicker:
+    :path: "../../../node_modules/.pnpm/@react-native-picker+picker@2.11.4_react-native@0.81.5_@babel+core@7.29.0_@types+react@_59a2f1860c799dba07d5e6b40086f7e0/node_modules/@react-native-picker/picker"
+  RNDateTimePicker:
+    :path: "../../../node_modules/.pnpm/@react-native-community+datetimepicker@8.6.0_expo@54.0.33_react-native@0.81.5_@babel+co_ff022088b7ef50a62a47232a029f1690/node_modules/@react-native-community/datetimepicker"
   RNGestureHandler:
     :path: "../../../node_modules/.pnpm/react-native-gesture-handler@2.30.0_react-native@0.81.5_@babel+core@7.29.0_@types+react_6ef2c81f3585bc86c96c19f556e1911d/node_modules/react-native-gesture-handler"
   RNReanimated:
@@ -2285,7 +2394,10 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.0_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/yoga"
 
 SPEC CHECKSUMS:
+  EASClient: 40dd9e740684782610c49becab2643782ea1a20c
   EXConstants: fce59a631a06c4151602843667f7cfe35f81e271
+  EXJSONUtils: 1d3e4590438c3ee593684186007028a14b3686cd
+  EXManifests: a8d97683e5c7a3b026ffbd58559c64dc655b747b
   Expo: aadbcc8c6c14ff3105a9154f1683cb1424ff0d2a
   ExpoAppleAuthentication: 9413ae9a5e631a424cc04c1b13b0694dbab7d594
   ExpoAsset: f867e55ceb428aab99e1e8c082b5aee7c159ea18
@@ -2300,12 +2412,16 @@ SPEC CHECKSUMS:
   ExpoLinking: 8f0aaf69aa56f832913030503b6263dc6f647f37
   ExpoModulesCore: f3da4f1ab5a8375d0beafab763739dbee8446583
   ExpoSecureStore: d32f751874a2ceb5aaeebeb3578e165c1ba2b24a
+  EXStructuredHeaders: c951e77f2d936f88637421e9588c976da5827368
+  EXUpdates: fd3ce349c439b18fd8ff05080499789cebbcab76
+  EXUpdatesInterface: 5adf50cb41e079c861da6d9b4b954c3db9a50734
   FBLazyVector: e95a291ad2dadb88e42b06e0c5fb8262de53ec12
   hermes-engine: 9f4dfe93326146a1c99eb535b1cb0b857a3cd172
   LiquidGlass: 2bbbcea458d5a2b018c2dd024040c4023d73eec8
   RCTDeprecation: 943572d4be82d480a48f4884f670135ae30bf990
   RCTRequired: 8f3cfc90cc25cf6e420ddb3e7caaaabc57df6043
   RCTTypeSafety: 16a4144ca3f959583ab019b57d5633df10b5e97c
+  ReachabilitySwift: 32793e867593cfc1177f5d16491e3a197d2fccda
   React: 914f8695f9bf38e6418228c2ffb70021e559f92f
   React-callinvoker: 1c0808402aee0c6d4a0d8e7220ce6547af9fba71
   React-Core: c61410ef0ca6055e204a963992e363227e0fd1c5
@@ -2368,6 +2484,8 @@ SPEC CHECKSUMS:
   ReactCodegen: c9eb09d19d92ef0ac865c03ed4f467b331842f58
   ReactCommon: 08810150b1206cc44aecf5f6ae19af32f29151a8
   ReactNativeDependencies: 71ce9c28beb282aa720ea7b46980fff9669f428a
+  RNCPicker: c8a3584b74133464ee926224463fcc54dfdaebca
+  RNDateTimePicker: 9c0a849bbe1c256f0854fea255734b715f5ea876
   RNGestureHandler: e0d0bce5599f6120b7adf90c38d2805e2935795f
   RNReanimated: d06051007f5921d1edf15ef90d91f793f37074e9
   RNScreens: d8d6f1792f6e7ac12b0190d33d8d390efc0c1845

@@ -30,7 +30,7 @@
         <key>CFBundleURLSchemes</key>
         <array>
           <string>lattelink</string>
-          <string>com.lattelink.mobile.beta</string>
+          <string>com.lattelink.rawaq.beta</string>
         </array>
       </dict>
     </array>
