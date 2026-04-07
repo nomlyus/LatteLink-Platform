@@ -25,7 +25,13 @@ const queryClient = new QueryClient({
 });
 
 const MIN_SPLASH_DURATION_MS = 2400;
+const SPLASH_FADE_DURATION_MS = 600;
 const splashStartedAt = Date.now();
+
+SplashScreen.setOptions({
+  fade: true,
+  duration: SPLASH_FADE_DURATION_MS
+});
 
 void SplashScreen.preventAutoHideAsync();
 
