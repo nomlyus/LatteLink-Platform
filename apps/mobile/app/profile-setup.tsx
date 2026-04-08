@@ -1,6 +1,8 @@
+import DateTimePicker from "@react-native-community/datetimepicker";
+import BottomSheet, { BottomSheetBackdrop, BottomSheetView } from "@gorhom/bottom-sheet";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
+import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { apiClient } from "../src/api/client";
@@ -17,6 +19,63 @@ function resolveReturnToPath(input: string | string[] | undefined): ReturnToPath
     return input;
   }
   return null;
+}
+
+function DateSheet({
+  sheetRef,
+  value,
+  onChange
+}: {
+  sheetRef: React.RefObject<ComponentRef<typeof BottomSheet>>;
+  value: Date | null;
+  onChange: (d: Date) => void;
+}) {
+  const snapPoints = useMemo(() => [300], []);
+  const renderBackdrop = useCallback(
+    (props: React.ComponentProps<typeof BottomSheetBackdrop>) => (
+      <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} opacity={0.36} pressBehavior="close" />
+    ),
+    []
+  );
+  const maxDate = new Date();
+  const defaultDate = value ?? new Date(new Date().getFullYear() - 25, 0, 1);
+
+  return (
+    <BottomSheet
+      ref={sheetRef}
+      index={-1}
+      snapPoints={snapPoints}
+      enablePanDownToClose
+      animateOnMount={false}
+      backdropComponent={renderBackdrop}
+      backgroundStyle={styles.sheetBg}
+      handleIndicatorStyle={styles.sheetHandle}
+    >
+      <BottomSheetView>
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>Birthday</Text>
+          <TouchableOpacity onPress={() => sheetRef.current?.close()} style={styles.sheetDone}>
+            <Text style={styles.sheetDoneText}>Done</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.datePickerWrap}>
+          <DateTimePicker
+            value={defaultDate}
+            mode="date"
+            display="spinner"
+            maximumDate={maxDate}
+            onChange={(_, date) => {
+              if (date) {
+                onChange(date);
+              }
+            }}
+            style={styles.datePicker}
+            textColor={uiPalette.text}
+          />
+        </View>
+      </BottomSheetView>
+    </BottomSheet>
+  );
 }
 
 export default function ProfileSetupScreen() {
@@ -36,7 +95,8 @@ export default function ProfileSetupScreen() {
   const profileComplete = isCustomerProfileComplete(profile);
   const [name, setName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
-  const [birthday, setBirthday] = useState("");
+  const [birthday, setBirthday] = useState<Date | null>(null);
+  const dateSheetRef = useRef<ComponentRef<typeof BottomSheet>>(null) as React.RefObject<ComponentRef<typeof BottomSheet>>;
 
   const saveProfileMutation = useMutation({
     mutationFn: async (input: { name: string; phoneNumber?: string; birthday?: string }) =>
@@ -60,7 +120,13 @@ export default function ProfileSetupScreen() {
 
     setName(profile.name ?? profile.displayName ?? "");
     setPhoneNumber(profile.phoneNumber ?? "");
-    setBirthday(profile.birthday ?? "");
+    if (profile.birthday) {
+      const parsedBirthday = new Date(profile.birthday + "T00:00:00");
+      setBirthday(!isNaN(parsedBirthday.getTime()) ? parsedBirthday : null);
+      return;
+    }
+
+    setBirthday(null);
   }, [profile]);
 
   useEffect(() => {
@@ -86,7 +152,7 @@ export default function ProfileSetupScreen() {
     saveProfileMutation.mutate({
       name: trimmedName,
       phoneNumber: phoneNumber.trim() || undefined,
-      birthday: birthday.trim() || undefined
+      birthday: birthday ? birthday.toISOString().slice(0, 10) : undefined
     });
   }
 
@@ -153,17 +219,11 @@ export default function ProfileSetupScreen() {
 
           <View style={styles.fieldGroup}>
             <Text style={styles.fieldLabel}>Birthday</Text>
-            <TextInput
-              autoCapitalize="none"
-              autoComplete="birthdate-full"
-              autoCorrect={false}
-              keyboardType="numbers-and-punctuation"
-              placeholder="1992-04-12"
-              placeholderTextColor={uiPalette.textMuted}
-              style={styles.textInput}
-              value={birthday}
-              onChangeText={setBirthday}
-            />
+            <TouchableOpacity style={styles.textInputButton} onPress={() => dateSheetRef.current?.snapToIndex(0)}>
+              <Text style={birthday ? styles.textInput : styles.textInputPlaceholder}>
+                {birthday ? birthday.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "Not set"}
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
       </View>
@@ -175,6 +235,8 @@ export default function ProfileSetupScreen() {
           <GlassActionPill label={saveProfileMutation.isPending ? "Saving…" : "Continue"} onPress={handleContinue} tone="dark" disabled={saveProfileMutation.isPending || name.trim().length === 0} />
           <GlassActionPill label="Skip for now" onPress={handleSkip} />
         </View>
+
+      <DateSheet sheetRef={dateSheetRef} value={birthday} onChange={setBirthday} />
     </View>
   );
 }
@@ -258,6 +320,19 @@ const styles = StyleSheet.create({
     color: uiPalette.text,
     fontSize: 16
   },
+  textInputButton: {
+    minHeight: 54,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "rgba(23, 21, 19, 0.1)",
+    backgroundColor: uiPalette.surfaceStrong,
+    paddingHorizontal: 16,
+    justifyContent: "center"
+  },
+  textInputPlaceholder: {
+    color: uiPalette.textMuted,
+    fontSize: 16
+  },
   bottomDock: {
     paddingHorizontal: 20,
     paddingTop: 18,
@@ -270,5 +345,48 @@ const styles = StyleSheet.create({
     color: "#8A2B0D",
     textAlign: "center",
     fontSize: 13
+  },
+  sheetBg: {
+    backgroundColor: uiPalette.surfaceStrong,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    borderWidth: 1,
+    borderColor: uiPalette.borderStrong
+  },
+  sheetHandle: {
+    backgroundColor: "rgba(151,160,154,0.52)"
+  },
+  sheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingTop: 4,
+    paddingBottom: 2
+  },
+  sheetTitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    letterSpacing: 0.3,
+    textTransform: "uppercase",
+    color: uiPalette.textMuted
+  },
+  sheetDone: {
+    paddingVertical: 6,
+    paddingLeft: 16
+  },
+  sheetDoneText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: uiPalette.primary
+  },
+  datePickerWrap: {
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  datePicker: {
+    width: "100%",
+    height: 200,
+    alignSelf: "center"
   }
 });
