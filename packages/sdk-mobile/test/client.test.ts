@@ -18,6 +18,38 @@ describe("sdk-mobile", () => {
     expect(client).toBeInstanceOf(GazelleApiClient);
   });
 
+  it("requests a customer dev-access session", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          accessToken: "customer-access-token",
+          refreshToken: "customer-refresh-token",
+          expiresAt: "2030-01-01T00:30:00.000Z",
+          userId: "123e4567-e89b-12d3-a456-426614174000"
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      )
+    );
+
+    const client = new GazelleApiClient({ baseUrl: "https://api.gazellecoffee.com/v1" });
+    const session = await client.devAccess({
+      email: "dev@rawaq.local",
+      name: "Rawaq Dev"
+    });
+
+    expect(session).toMatchObject({
+      accessToken: "customer-access-token",
+      refreshToken: "customer-refresh-token",
+      userId: "123e4567-e89b-12d3-a456-426614174000"
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.gazellecoffee.com/v1/auth/dev-access",
+      expect.objectContaining({
+        method: "POST"
+      })
+    );
+  });
+
   it("parses menu and store config responses", async () => {
     fetchMock
       .mockResolvedValueOnce(

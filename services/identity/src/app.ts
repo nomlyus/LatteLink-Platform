@@ -8,6 +8,7 @@ import type { IdentityRepository } from "./repository.js";
 import { registerRoutes } from "./routes.js";
 
 export type BuildAppOptions = {
+  allowDevCustomerAccess?: boolean;
   allowDevOperatorAccess?: boolean;
   mailSender?: MailSender;
   repository?: IdentityRepository;

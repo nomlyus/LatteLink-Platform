@@ -77,6 +77,11 @@ export const magicLinkVerifySchema = z.object({
   token: z.string().min(1)
 });
 
+export const customerDevAccessRequestSchema = z.object({
+  email: z.string().trim().email(),
+  name: z.string().trim().min(1).optional()
+});
+
 export const refreshRequestSchema = z.object({
   refreshToken: z.string().min(1)
 });
@@ -274,6 +279,12 @@ export const authContract = {
       method: "POST",
       path: "/magic-link/verify",
       request: magicLinkVerifySchema,
+      response: authSessionSchema
+    },
+    devAccess: {
+      method: "POST",
+      path: "/dev-access",
+      request: customerDevAccessRequestSchema,
       response: authSessionSchema
     },
     refresh: {

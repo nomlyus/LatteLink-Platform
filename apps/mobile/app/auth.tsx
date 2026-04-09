@@ -1,16 +1,19 @@
 import * as AppleAuthentication from "expo-apple-authentication";
+import Constants, { AppOwnership } from "expo-constants";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getAuthScreenRecoveryCopy } from "../src/auth/recovery";
 import { useCustomerProfileQuery, isCustomerProfileComplete } from "../src/auth/profile";
-import { useAppleExchangeMutation } from "../src/auth/useAuth";
+import { useAppleExchangeMutation, useDevAccessMutation } from "../src/auth/useAuth";
 import { generateAuthNonce } from "../src/auth/nonce";
 import { useAuthSession } from "../src/auth/session";
 import { Button, uiPalette, uiTypography } from "../src/ui/system";
 
 type ReturnToPath = "cart" | "/(tabs)/home" | "/(tabs)/orders" | "/(tabs)/account";
+const DEFAULT_DEV_ACCESS_EMAIL = "dev@rawaq.local";
+const DEFAULT_DEV_ACCESS_NAME = "Rawaq Dev";
 
 function resolveReturnToPath(input: string | string[] | undefined): ReturnToPath | null {
   if (Array.isArray(input)) return resolveReturnToPath(input[0]);
@@ -40,6 +43,34 @@ function getReturnLabel(returnTo: ReturnToPath | null) {
   }
 }
 
+function resolveAppleSignInErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+
+  if (message.includes("APPLE_SIGN_IN_NOT_CONFIGURED")) {
+    return "Apple Sign In is not configured on the backend for this environment.";
+  }
+
+  if (message.includes("INVALID_APPLE_IDENTITY")) {
+    return "Apple could not verify this sign-in response. Try again.";
+  }
+
+  if (message.includes("APPLE_TOKEN_EXCHANGE_FAILED")) {
+    return "Apple Sign In could not finish exchanging credentials. Use a development build or TestFlight instead of Expo Go.";
+  }
+
+  return "Apple Sign In could not complete right now. Try again in a moment.";
+}
+
+function resolveDevAccessErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+
+  if (message.includes("DEV_CUSTOMER_ACCESS_DISABLED")) {
+    return "Dev sign in is disabled on the backend for this environment.";
+  }
+
+  return "Dev sign in could not complete right now. Try again in a moment.";
+}
+
 export default function AuthScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -48,6 +79,7 @@ export default function AuthScreen() {
 
   const [appleAvailable, setAppleAvailable] = useState(false);
   const appleExchange = useAppleExchangeMutation();
+  const devAccess = useDevAccessMutation();
   const returnTo = useMemo(() => resolveReturnToPath(params.returnTo), [params.returnTo]);
   const topContentInset = insets.top + 52;
   const recoveryCopy = useMemo(() => getAuthScreenRecoveryCopy(authRecoveryState), [authRecoveryState]);
@@ -55,6 +87,15 @@ export default function AuthScreen() {
   const profile = profileQuery.data;
   const profileComplete = isCustomerProfileComplete(profile);
   const profileNeedsSetup = isAuthenticated && profileQuery.isSuccess && !profileComplete && !profileSetupDeferred;
+  const isExpoGo = Constants.appOwnership === AppOwnership.Expo;
+  const devAccessEmail = process.env.EXPO_PUBLIC_DEV_SIGN_IN_EMAIL?.trim() || DEFAULT_DEV_ACCESS_EMAIL;
+  const devAccessName = process.env.EXPO_PUBLIC_DEV_SIGN_IN_NAME?.trim() || DEFAULT_DEV_ACCESS_NAME;
+  const appleSignInMessage = isExpoGo
+    ? "Apple Sign In can't complete in Expo Go for this app. Use your dev build or TestFlight instead."
+    : appleExchange.isError
+      ? resolveAppleSignInErrorMessage(appleExchange.error)
+      : null;
+  const devAccessMessage = __DEV__ && devAccess.isError ? resolveDevAccessErrorMessage(devAccess.error) : null;
 
   useEffect(() => {
     if (!isAuthenticated || isHydrating || profileQuery.isLoading) {
@@ -91,13 +132,14 @@ export default function AuthScreen() {
   }, []);
 
   async function handleNativeAppleSignIn() {
-    if (appleExchange.isPending) return;
+    if (appleExchange.isPending || devAccess.isPending) return;
 
-    if (!appleAvailable) {
+    if (!appleAvailable || isExpoGo) {
       return;
     }
 
     try {
+      appleExchange.reset();
       const safeNonce = generateAuthNonce();
       const credential = await AppleAuthentication.signInAsync({
         nonce: safeNonce,
@@ -122,6 +164,18 @@ export default function AuthScreen() {
         return;
       }
     }
+  }
+
+  function handleDevAccessSignIn() {
+    if (devAccess.isPending || appleExchange.isPending) {
+      return;
+    }
+
+    devAccess.reset();
+    devAccess.mutate({
+      email: devAccessEmail,
+      name: devAccessName
+    });
   }
 
   function continueIntoApp() {
@@ -206,16 +260,43 @@ export default function AuthScreen() {
           ) : (
             <Button label={getReturnLabel(returnTo)} onPress={continueIntoApp} />
           )
-        ) : appleAvailable ? (
-          <AppleAuthentication.AppleAuthenticationButton
-            buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-            buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
-            cornerRadius={18}
-            style={styles.appleButton}
-            onPress={handleNativeAppleSignIn}
-          />
+        ) : appleAvailable && !isExpoGo ? (
+          <>
+            <AppleAuthentication.AppleAuthenticationButton
+              buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+              buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+              cornerRadius={18}
+              style={styles.appleButton}
+              onPress={handleNativeAppleSignIn}
+            />
+            {__DEV__ ? (
+              <Button
+                label={devAccess.isPending ? "Signing In…" : "Dev Sign In"}
+                variant="secondary"
+                onPress={handleDevAccessSignIn}
+                disabled={devAccess.isPending || appleExchange.isPending}
+              />
+            ) : null}
+            {appleSignInMessage ? <Text style={styles.notice}>{appleSignInMessage}</Text> : null}
+            {devAccessMessage ? <Text style={styles.notice}>{devAccessMessage}</Text> : null}
+          </>
         ) : (
-          <Button label="Sign In Unavailable" variant="secondary" disabled />
+          <>
+            <Button
+              label={isExpoGo ? "Use TestFlight or Dev Build" : "Sign In Unavailable"}
+              variant="secondary"
+              disabled
+            />
+            {__DEV__ ? (
+              <Button
+                label={devAccess.isPending ? "Signing In…" : "Dev Sign In"}
+                onPress={handleDevAccessSignIn}
+                disabled={devAccess.isPending || appleExchange.isPending}
+              />
+            ) : null}
+            {appleSignInMessage ? <Text style={styles.notice}>{appleSignInMessage}</Text> : null}
+            {devAccessMessage ? <Text style={styles.notice}>{devAccessMessage}</Text> : null}
+          </>
         )}
       </View>
     </View>
@@ -276,10 +357,18 @@ const styles = StyleSheet.create({
   },
   bottomDock: {
     paddingHorizontal: 20,
-    paddingTop: 16
+    paddingTop: 16,
+    gap: 12
   },
   appleButton: {
     width: "100%",
     height: 54
+  },
+  notice: {
+    marginTop: 12,
+    fontSize: 14,
+    lineHeight: 20,
+    color: uiPalette.textSecondary,
+    textAlign: "center"
   }
 });

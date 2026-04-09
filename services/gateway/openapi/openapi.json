@@ -170,6 +170,15 @@
         }
       }
     },
+    "/auth/dev-access": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/auth/refresh": {
       "post": {
         "responses": {

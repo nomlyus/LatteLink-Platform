@@ -9,6 +9,7 @@ import {
 } from "@simplewebauthn/server";
 import {
   appleExchangeRequestSchema,
+  customerDevAccessRequestSchema,
   googleOAuthStartRequestSchema,
   googleOAuthStartResponseSchema,
   internalOwnerProvisionParamsSchema,
@@ -510,6 +511,24 @@ function logIdentityMutation(
   );
 }
 
+function deriveDevCustomerName(email: string) {
+  const localPart = email.split("@")[0]?.trim() ?? "";
+  if (!localPart) {
+    return "Dev Customer";
+  }
+
+  const normalized = localPart.replace(/[._-]+/g, " ").trim();
+  if (!normalized) {
+    return "Dev Customer";
+  }
+
+  return normalized
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ");
+}
+
 async function resolveOperatorFromBearer(params: {
   repository: IdentityRepository;
   authorizationHeader: string | undefined;
@@ -533,6 +552,7 @@ async function resolveOperatorFromBearer(params: {
 }
 
 export type RegisterRoutesOptions = {
+  allowDevCustomerAccess?: boolean;
   allowDevOperatorAccess?: boolean;
   mailSender?: MailSender;
   repository?: IdentityRepository;
@@ -547,6 +567,9 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
   const magicLinkExpiryMinutes = toPositiveInteger(process.env.MAGIC_LINK_EXPIRY_MINUTES, 15);
   const magicLinkBaseUrl = process.env.MAGIC_LINK_BASE_URL?.trim() || "http://localhost:8080";
   const operatorMagicLinkBaseUrl = process.env.OPERATOR_MAGIC_LINK_BASE_URL?.trim() || "http://localhost:5173";
+  const allowDevCustomerAccess =
+    options.allowDevCustomerAccess ??
+    (process.env.ALLOW_DEV_CUSTOMER_LOGIN === "true" || process.env.NODE_ENV !== "production");
   const allowDevOperatorAccess =
     options.allowDevOperatorAccess ??
     (process.env.ALLOW_DEV_OPERATOR_LOGIN === "true" || process.env.NODE_ENV !== "production");
@@ -1042,6 +1065,47 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
         userId,
         authMethod: "magic-link"
       });
+    }
+  );
+
+  app.post(
+    "/v1/auth/dev-access",
+    {
+      preHandler: app.rateLimit(authWriteRateLimit)
+    },
+    async (request, reply) => {
+      if (!allowDevCustomerAccess) {
+        return reply
+          .status(404)
+          .send(buildApiError(request.id, "DEV_CUSTOMER_ACCESS_DISABLED", "Dev customer access is disabled"));
+      }
+
+      const input = customerDevAccessRequestSchema.parse(request.body);
+      const userId = await repository.findOrCreateUserByEmail(input.email);
+      const existingUser = await repository.getUserById(userId);
+
+      if (!existingUser) {
+        return reply.status(404).send(buildApiError(request.id, "USER_NOT_FOUND", "Customer account was not found"));
+      }
+
+      if (!existingUser.profileCompletedAt) {
+        await repository.updateCustomerProfile(userId, {
+          name: input.name?.trim() || deriveDevCustomerName(input.email)
+        });
+      }
+
+      const session = await issueSession({
+        repository,
+        seed: `dev-access:${input.email}:${Date.now()}`,
+        userId,
+        authMethod: "refresh"
+      });
+      logIdentityMutation(request, "customer session issued", {
+        userId: session.userId,
+        email: input.email,
+        authMethod: "dev-access"
+      });
+      return session;
     }
   );
 

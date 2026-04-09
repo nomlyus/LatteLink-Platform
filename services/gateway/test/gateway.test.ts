@@ -121,6 +121,19 @@ describe("gateway", () => {
         });
       }
 
+      if (url.endsWith("/v1/auth/dev-access") && method === "POST") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { email?: string };
+        return new Response(
+          JSON.stringify({
+            accessToken: "customer-access-token",
+            refreshToken: "customer-refresh-token",
+            expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+            userId: "123e4567-e89b-12d3-a456-426614174000"
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
       if (url.endsWith("/v1/operator/auth/dev-access") && method === "POST") {
         const body = JSON.parse(String(init?.body ?? "{}")) as { email?: string };
         return new Response(
@@ -1376,6 +1389,25 @@ describe("gateway", () => {
         email: "owner@gazellecoffee.com",
         role: "owner"
       }
+    });
+    await app.close();
+  });
+
+  it("proxies customer dev access sessions", async () => {
+    const app = await buildApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/auth/dev-access",
+      payload: {
+        email: "dev@rawaq.local",
+        name: "Rawaq Dev"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      accessToken: "customer-access-token",
+      refreshToken: "customer-refresh-token"
     });
     await app.close();
   });

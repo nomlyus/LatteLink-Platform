@@ -87,6 +87,7 @@ Recommended:
 
 Optional:
 
+- `FREE_ALLOW_DEV_CUSTOMER_LOGIN` if you want the hosted identity service to allow the Expo Go dev sign-in route
 - `FREE_CORS_ALLOWED_ORIGINS`
 - `FREE_CLIENT_DASHBOARD_DOMAIN` if you want the workflow to derive the dashboard CORS origin automatically
 - `FREE_GOOGLE_OAUTH_ALLOWED_REDIRECT_URIS`
@@ -155,6 +156,7 @@ The workflow writes the server-side `.env` file from GitHub vars and secrets. Th
   - `CORS_ALLOWED_ORIGINS`
   - `PUBLIC_API_BASE_URL`
   - `PASSKEY_RP_ID`
+  - `ALLOW_DEV_CUSTOMER_LOGIN`
 - optional Apple Sign In runtime
   - `APPLE_TEAM_ID`
   - `APPLE_KEY_ID`

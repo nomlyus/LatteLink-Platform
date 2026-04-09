@@ -263,6 +263,47 @@ describe("magic link auth", () => {
     await app.close();
   });
 
+  it("issues a seeded customer session through the dev-access route", async () => {
+    const repository = createInMemoryIdentityRepository();
+    const { sender } = createCapturingMailSender();
+    const app = await buildApp({ repository, mailSender: sender, allowDevCustomerAccess: true });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/auth/dev-access",
+      payload: {
+        email: "dev@rawaq.local",
+        name: "Rawaq Dev"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      accessToken: expect.any(String),
+      refreshToken: expect.any(String),
+      userId: expect.stringMatching(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      )
+    });
+
+    const meResponse = await app.inject({
+      method: "GET",
+      url: "/v1/auth/me",
+      headers: {
+        authorization: `Bearer ${response.json().accessToken}`
+      }
+    });
+
+    expect(meResponse.statusCode).toBe(200);
+    expect(meResponse.json()).toMatchObject({
+      email: "dev@rawaq.local",
+      name: "Rawaq Dev",
+      profileCompleted: true
+    });
+
+    await app.close();
+  });
+
   it("issues a seeded operator session through password sign-in", async () => {
     const repository = createInMemoryIdentityRepository();
     const { sender } = createCapturingMailSender();

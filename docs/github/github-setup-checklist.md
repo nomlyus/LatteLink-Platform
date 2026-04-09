@@ -53,6 +53,7 @@ Merge methods may stay enabled, but they are no longer part of the required ship
 - [ ] `FREE_DEPLOY_PATH`
 - [ ] `FREE_IMAGE_REGISTRY_PREFIX`
 - [ ] `FREE_PASSKEY_RP_ID`
+- [ ] `FREE_ALLOW_DEV_CUSTOMER_LOGIN`
 - [ ] `FREE_CORS_ALLOWED_ORIGINS`
 - [ ] `FREE_CLIENT_DASHBOARD_DOMAIN`
 - [ ] `FREE_GOOGLE_OAUTH_ALLOWED_REDIRECT_URIS`

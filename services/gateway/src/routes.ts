@@ -5,6 +5,7 @@ import { apiErrorSchema, authSessionSchema } from "@gazelle/contracts-core";
 import {
   appleExchangeRequestSchema,
   authContract,
+  customerDevAccessRequestSchema,
   googleOAuthStartRequestSchema,
   googleOAuthStartResponseSchema,
   internalOwnerProvisionParamsSchema,
@@ -1328,6 +1329,27 @@ export async function registerRoutes(app: FastifyInstance) {
       path: "/v1/auth/magic-link/verify",
       body: input,
       responseSchema: authSessionSchema
+    });
+    }
+  );
+
+  app.post(
+    "/v1/auth/dev-access",
+    {
+      preHandler: app.rateLimit(authWriteRateLimit)
+    },
+    async (request, reply) => {
+    const input = customerDevAccessRequestSchema.parse(request.body);
+
+    return proxyUpstream({
+      request,
+      reply,
+      baseUrl: identityBaseUrl,
+      serviceLabel: "Identity",
+      method: "POST",
+      path: "/v1/auth/dev-access",
+      body: input,
+      responseSchema: authContract.routes.devAccess.response
     });
     }
   );

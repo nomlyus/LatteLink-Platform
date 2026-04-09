@@ -14,6 +14,17 @@ export function useAppleExchangeMutation() {
   });
 }
 
+export function useDevAccessMutation() {
+  const { signIn } = useAuthSession();
+
+  return useMutation({
+    mutationFn: (input: { email: string; name?: string }) => apiClient.devAccess(input),
+    onSuccess: async (session) => {
+      await signIn(session);
+    }
+  });
+}
+
 type PasskeyVerifyPayload = {
   id: string;
   rawId: string;
