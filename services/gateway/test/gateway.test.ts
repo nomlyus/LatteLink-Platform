@@ -122,7 +122,6 @@ describe("gateway", () => {
       }
 
       if (url.endsWith("/v1/auth/dev-access") && method === "POST") {
-        const body = JSON.parse(String(init?.body ?? "{}")) as { email?: string };
         return new Response(
           JSON.stringify({
             accessToken: "customer-access-token",
