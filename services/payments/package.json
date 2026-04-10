@@ -16,10 +16,10 @@
   "dependencies": {
     "@gazelle/persistence": "workspace:*",
     "@gazelle/contracts-orders": "workspace:*",
-    "@fastify/rate-limit": "^9.1.0",
-    "@fastify/swagger": "^8.15.0",
-    "@fastify/swagger-ui": "^3.1.0",
-    "fastify": "^4.28.1",
+    "@fastify/rate-limit": "^10.3.0",
+    "@fastify/swagger": "^9.7.0",
+    "@fastify/swagger-ui": "^5.2.5",
+    "fastify": "^5.8.4",
     "pino-pretty": "^13.0.0",
     "zod": "^3.24.2"
   },
