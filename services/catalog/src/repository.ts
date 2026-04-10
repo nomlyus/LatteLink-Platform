@@ -34,7 +34,6 @@ import { z } from "zod";
 import {
   DEFAULT_BRAND_ID,
   DEFAULT_BRAND_NAME,
-  DEFAULT_LOCATION_NAME,
   DEFAULT_LOCATION_ID,
   DEFAULT_STORE_HOURS,
   resolveDefaultAppConfigPayload,

@@ -231,13 +231,15 @@ describe("contracts-catalog", () => {
     });
     const adminStoreConfig = adminStoreConfigSchema.parse({
       locationId: "flagship-01",
-      storeName: "Gazelle Coffee Flagship",
+      storeName: "Gazelle Coffee",
+      locationName: "Ann Arbor, MI",
       hours: "Daily · 7:00 AM - 6:00 PM",
       pickupInstructions: "Pickup at the flagship order counter."
     });
 
     expect(adminItem.categoryTitle).toBe("Espresso Bar");
-    expect(adminStoreConfig.storeName).toBe("Gazelle Coffee Flagship");
+    expect(adminStoreConfig.storeName).toBe("Gazelle Coffee");
+    expect(adminStoreConfig.locationName).toBe("Ann Arbor, MI");
     expect(adminStoreConfig.capabilities.operations.dashboardEnabled).toBe(true);
   });
 
@@ -249,6 +251,7 @@ describe("contracts-catalog", () => {
     });
     const storeUpdate = adminStoreConfigUpdateSchema.parse({
       storeName: "Gazelle Coffee Downtown",
+      locationName: "Ann Arbor, MI",
       hours: "Weekdays · 6:30 AM - 5:00 PM",
       pickupInstructions: "Use the front pickup shelves.",
       capabilities: {
