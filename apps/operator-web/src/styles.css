@@ -2475,13 +2475,14 @@ body::before {
   gap: 6px;
   width: 100%;
   align-content: start;
+  grid-auto-rows: max-content;
 }
 
 .dash-nav-item {
   width: auto;
   max-width: 100%;
   justify-content: space-between;
-  align-self: stretch;
+  justify-self: stretch;
   min-height: 44px;
   padding: 11px 14px;
   border: 1px solid transparent;
