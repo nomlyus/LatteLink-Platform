@@ -1140,8 +1140,6 @@ function renderCancelButton(order: OperatorOrder) {
 function renderOrderDetail(order: OperatorOrder, appConfig: AppConfig | null) {
   const manualStatusControlsEnabled = canAdvanceOrderStatus(state.session?.operator ?? null, appConfig);
   const cancelControlsEnabled = canCancelOrder(state.session?.operator ?? null, appConfig, order);
-  const manualStatusControlsMessage = getOrderControlUnavailableMessage(state.session?.operator ?? null, appConfig);
-  const cancelControlsMessage = getOrderCancelUnavailableMessage(state.session?.operator ?? null, appConfig, order);
   const fulfillmentMode = resolveAppConfigFulfillmentMode(appConfig);
   const actions = getOrderActions(order, fulfillmentMode);
   const timeline = order.timeline
