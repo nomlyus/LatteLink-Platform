@@ -2,7 +2,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MailSender } from "../src/mail.js";
 import { buildApp } from "../src/app.js";
 import { createInMemoryIdentityRepository } from "../src/repository.js";
+import { provisionOwnerAccess } from "../src/provisioning.js";
 import { internalOwnerProvisionResponseSchema, internalOwnerSummarySchema } from "@gazelle/contracts-auth";
+
+const ownerEmail = "owner@gazellecoffee.com";
+const ownerPassword = "LatteLinkOwner123!";
+const staffEmail = "staff@gazellecoffee.com";
+const staffPassword = "LatteLinkStaff123!";
+const locationId = "rawaqcoffee01";
 
 function createCapturingMailSender() {
   const sender: MailSender = {
@@ -28,6 +35,26 @@ async function signInOperator(app: Awaited<ReturnType<typeof buildApp>>, email: 
   return response.json();
 }
 
+async function provisionOwner(repository: ReturnType<typeof createInMemoryIdentityRepository>) {
+  return provisionOwnerAccess(repository, {
+    allowInMemory: true,
+    displayName: "Store Owner",
+    email: ownerEmail,
+    locationId,
+    password: ownerPassword
+  });
+}
+
+async function provisionStaff(repository: ReturnType<typeof createInMemoryIdentityRepository>) {
+  await repository.createOperatorUser({
+    displayName: "Lead Barista",
+    email: staffEmail,
+    role: "staff",
+    locationId,
+    password: staffPassword
+  });
+}
+
 describe("operator auth", () => {
   const previousGatewayToken = process.env.GATEWAY_INTERNAL_API_TOKEN;
 
@@ -42,10 +69,11 @@ describe("operator auth", () => {
 
   it("supports refresh rotation and invalidates prior operator access tokens after logout", async () => {
     const repository = createInMemoryIdentityRepository();
+    await provisionOwner(repository);
     const { sender } = createCapturingMailSender();
     const app = await buildApp({ repository, mailSender: sender });
 
-    const session = await signInOperator(app, "owner@gazellecoffee.com", "LatteLinkOwner123!");
+    const session = await signInOperator(app, ownerEmail, ownerPassword);
 
     const me = await app.inject({
       method: "GET",
@@ -56,7 +84,7 @@ describe("operator auth", () => {
     });
     expect(me.statusCode).toBe(200);
     expect(me.json()).toMatchObject({
-      email: "owner@gazellecoffee.com",
+      email: ownerEmail,
       role: "owner"
     });
 
@@ -128,9 +156,10 @@ describe("operator auth", () => {
     vi.setSystemTime(new Date("2030-01-01T00:00:00.000Z"));
 
     const repository = createInMemoryIdentityRepository();
+    await provisionOwner(repository);
     const { sender } = createCapturingMailSender();
     const app = await buildApp({ repository, mailSender: sender });
-    const session = await signInOperator(app, "owner@gazellecoffee.com", "LatteLinkOwner123!");
+    const session = await signInOperator(app, ownerEmail, ownerPassword);
 
     vi.setSystemTime(new Date("2030-01-01T00:31:00.000Z"));
 
@@ -167,11 +196,13 @@ describe("operator auth", () => {
 
   it("enforces owner-only staff management boundaries", async () => {
     const repository = createInMemoryIdentityRepository();
+    await provisionOwner(repository);
+    await provisionStaff(repository);
     const { sender } = createCapturingMailSender();
     const app = await buildApp({ repository, mailSender: sender });
 
-    const ownerSession = await signInOperator(app, "owner@gazellecoffee.com", "LatteLinkOwner123!");
-    const staffSession = await signInOperator(app, "staff@gazellecoffee.com", "LatteLinkStaff123!");
+    const ownerSession = await signInOperator(app, ownerEmail, ownerPassword);
+    const staffSession = await signInOperator(app, staffEmail, staffPassword);
 
     const ownerList = await app.inject({
       method: "GET",
@@ -181,7 +212,12 @@ describe("operator auth", () => {
       }
     });
     expect(ownerList.statusCode).toBe(200);
-    expect(ownerList.json().users.length).toBeGreaterThanOrEqual(3);
+    expect(ownerList.json().users).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ email: ownerEmail, role: "owner" }),
+        expect.objectContaining({ email: staffEmail, role: "staff" })
+      ])
+    );
 
     const staffList = await app.inject({
       method: "GET",
@@ -289,6 +325,20 @@ describe("operator auth", () => {
     const repository = createInMemoryIdentityRepository();
     const { sender } = createCapturingMailSender();
     const app = await buildApp({ repository, mailSender: sender });
+
+    const emptySummaryResponse = await app.inject({
+      method: "GET",
+      url: "/v1/identity/internal/locations/pilot-01/owner",
+      headers: {
+        "x-gateway-token": "identity-gateway-token"
+      }
+    });
+
+    expect(emptySummaryResponse.statusCode).toBe(200);
+    expect(internalOwnerSummarySchema.parse(emptySummaryResponse.json())).toEqual({
+      locationId: "pilot-01",
+      owner: null
+    });
 
     const response = await app.inject({
       method: "POST",

@@ -22,6 +22,8 @@ import * as migration0014 from "../src/migrations/0014_identity_customer_profile
 import * as migration0015 from "../src/migrations/0015_identity_customer_birthday.js";
 import * as migration0016 from "../src/migrations/0016_identity_customer_profile_completion.js";
 import * as migration0017 from "../src/migrations/0017_identity_apple_refresh_tokens.js";
+import * as migration0018 from "../src/migrations/0018_internal_admin_access.js";
+import * as migration0019 from "../src/migrations/0019_remove_legacy_seeded_operator_users.js";
 import { resolveMigrationFolderPath } from "../src/migrate.js";
 
 describe("persistence", () => {
@@ -73,7 +75,9 @@ describe("persistence", () => {
       "0014_identity_customer_profile_fields": migration0014,
       "0015_identity_customer_birthday": migration0015,
       "0016_identity_customer_profile_completion": migration0016,
-      "0017_identity_apple_refresh_tokens": migration0017
+      "0017_identity_apple_refresh_tokens": migration0017,
+      "0018_internal_admin_access": migration0018,
+      "0019_remove_legacy_seeded_operator_users": migration0019
     };
 
     expect(basename(resolveMigrationFolderPath())).toBe("migrations");
@@ -94,7 +98,9 @@ describe("persistence", () => {
       "0014_identity_customer_profile_fields",
       "0015_identity_customer_birthday",
       "0016_identity_customer_profile_completion",
-      "0017_identity_apple_refresh_tokens"
+      "0017_identity_apple_refresh_tokens",
+      "0018_internal_admin_access",
+      "0019_remove_legacy_seeded_operator_users"
     ]);
 
     for (const migration of Object.values(migrations)) {

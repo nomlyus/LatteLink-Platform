@@ -18,7 +18,6 @@ import {
   sql
 } from "@gazelle/persistence";
 import { z } from "zod";
-import { DEFAULT_OPERATOR_LOCATION_ID } from "./defaults.js";
 
 type AuthSession = z.output<typeof authSessionSchema>;
 
@@ -450,56 +449,6 @@ function toSortedCustomerAuthMethods(methods: Iterable<CustomerAuthMethod>): Cus
   return ordered;
 }
 
-function getDefaultOperatorLocationId() {
-  const configured = process.env.DEFAULT_OPERATOR_LOCATION_ID?.trim();
-  return configured && configured.length > 0 ? configured : DEFAULT_OPERATOR_LOCATION_ID;
-}
-
-function getDefaultOperatorPassword(role: OperatorRole) {
-  switch (role) {
-    case "owner":
-      return process.env.DEFAULT_OPERATOR_OWNER_PASSWORD?.trim() || "LatteLinkOwner123!";
-    case "manager":
-      return process.env.DEFAULT_OPERATOR_MANAGER_PASSWORD?.trim() || "LatteLinkManager123!";
-    case "staff":
-    default:
-      return process.env.DEFAULT_OPERATOR_STAFF_PASSWORD?.trim() || "LatteLinkStaff123!";
-  }
-}
-
-function getDefaultOperatorSeeds(): Array<{
-  displayName: string;
-  email: string;
-  role: OperatorRole;
-  locationId: string;
-  password: string;
-}> {
-  const locationId = getDefaultOperatorLocationId();
-  return [
-    {
-      displayName: process.env.DEFAULT_OPERATOR_OWNER_NAME?.trim() || "Store Owner",
-      email: normalizeEmail(process.env.DEFAULT_OPERATOR_OWNER_EMAIL?.trim() || "owner@gazellecoffee.com"),
-      role: "owner",
-      locationId,
-      password: getDefaultOperatorPassword("owner")
-    },
-    {
-      displayName: process.env.DEFAULT_OPERATOR_MANAGER_NAME?.trim() || "Store Manager",
-      email: normalizeEmail(process.env.DEFAULT_OPERATOR_MANAGER_EMAIL?.trim() || "manager@gazellecoffee.com"),
-      role: "manager",
-      locationId,
-      password: getDefaultOperatorPassword("manager")
-    },
-    {
-      displayName: process.env.DEFAULT_OPERATOR_STAFF_NAME?.trim() || "Lead Barista",
-      email: normalizeEmail(process.env.DEFAULT_OPERATOR_STAFF_EMAIL?.trim() || "staff@gazellecoffee.com"),
-      role: "staff",
-      locationId,
-      password: getDefaultOperatorPassword("staff")
-    }
-  ];
-}
-
 function getDefaultInternalAdminSeeds(): Array<{
   displayName: string;
   email: string;
@@ -621,25 +570,6 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
   const internalAdminUsersById = new Map<string, InternalAdminUserRecord>();
   const internalAdminUserIdByEmail = new Map<string, string>();
   const internalAdminPasswordHashByUserId = new Map<string, string>();
-
-  for (const seed of getDefaultOperatorSeeds()) {
-    const now = new Date().toISOString();
-    const operatorUserId = randomUUID();
-    const record: OperatorUserRecord = {
-      operatorUserId,
-      displayName: seed.displayName,
-      email: seed.email,
-      role: seed.role,
-      locationId: seed.locationId,
-      active: true,
-      capabilities: resolveOperatorCapabilities(seed.role),
-      createdAt: now,
-      updatedAt: now
-    };
-    operatorUsersById.set(operatorUserId, record);
-    operatorUserIdByEmail.set(record.email, operatorUserId);
-    operatorPasswordHashByUserId.set(operatorUserId, hashOperatorPassword(seed.password));
-  }
 
   for (const seed of getDefaultInternalAdminSeeds()) {
     const now = new Date().toISOString();
@@ -1310,42 +1240,6 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
   };
 }
 
-async function ensureDefaultOperatorUsers(db: ReturnType<typeof createPostgresDb>) {
-  for (const seed of getDefaultOperatorSeeds()) {
-    await db
-      .insertInto("operator_users")
-      .values({
-        operator_user_id: randomUUID(),
-        email: seed.email,
-        display_name: seed.displayName,
-        password_hash: hashOperatorPassword(seed.password),
-        role: seed.role,
-        location_id: seed.locationId,
-        active: true
-      })
-      .onConflict((oc) =>
-        oc.column("email").doUpdateSet({
-          display_name: seed.displayName,
-          role: seed.role,
-          location_id: seed.locationId,
-          active: true,
-          updated_at: new Date().toISOString()
-        })
-      )
-      .execute();
-
-    await db
-      .updateTable("operator_users")
-      .set({
-        password_hash: hashOperatorPassword(seed.password),
-        updated_at: new Date().toISOString()
-      })
-      .where("email", "=", seed.email)
-      .where("password_hash", "is", null)
-      .execute();
-  }
-}
-
 async function ensureDefaultInternalAdminUsers(db: ReturnType<typeof createPostgresDb>) {
   for (const seed of getDefaultInternalAdminSeeds()) {
     await db
@@ -1373,7 +1267,6 @@ async function ensureDefaultInternalAdminUsers(db: ReturnType<typeof createPostg
 async function createPostgresRepository(connectionString: string): Promise<IdentityRepository> {
   const db = createPostgresDb(connectionString);
   await runMigrations(db);
-  await ensureDefaultOperatorUsers(db);
   await ensureDefaultInternalAdminUsers(db);
 
   return {

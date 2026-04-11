@@ -107,11 +107,6 @@ type AppState = {
 
 const ordersRefreshIntervalMs = 30_000;
 const cancelConfirmTimeoutMs = 10_000;
-const devCredentialProfiles = [
-  { label: "Store owner", email: "owner@gazellecoffee.com", password: "LatteLinkOwner123!" },
-  { label: "Manager", email: "manager@gazellecoffee.com", password: "LatteLinkManager123!" },
-  { label: "Staff", email: "staff@gazellecoffee.com", password: "LatteLinkStaff123!" }
-] as const;
 
 const appRoot = document.querySelector<HTMLDivElement>("#app");
 if (!appRoot) {
@@ -898,19 +893,6 @@ function renderAuthScreen() {
       : googleSsoConfigured
         ? "Use your store Google account"
         : "Unavailable for this environment";
-  const devCredentials = showLocalDevHints
-    ? devCredentialProfiles
-        .map(
-          (profile) => `
-            <div class="credential-row">
-              <strong>${escapeHtml(profile.label)}</strong>
-              <span>${escapeHtml(profile.email)}</span>
-              <code>${escapeHtml(profile.password)}</code>
-            </div>
-          `
-        )
-        .join("")
-    : "";
 
   return `
     <div class="auth-page">
@@ -984,20 +966,6 @@ function renderAuthScreen() {
               </span>
             </button>
           </div>
-
-          ${
-            showLocalDevHints
-              ? `
-                  <section class="credential-hint">
-                    <div class="credential-hint__header">
-                      <p class="eyebrow">Local test credentials</p>
-                      <p class="muted-copy">Use these only for localhost development unless you overrode the defaults in env.</p>
-                    </div>
-                    <div class="credential-list">${devCredentials}</div>
-                  </section>
-                `
-              : ""
-          }
         </section>
       </main>
     </div>

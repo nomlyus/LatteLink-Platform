@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MailSender } from "../src/mail.js";
 import { buildApp } from "../src/app.js";
 import { createInMemoryIdentityRepository } from "../src/repository.js";
+import { provisionOwnerAccess } from "../src/provisioning.js";
 import { createSignedAppleIdentityToken, installAppleAuthEnv, installAppleAuthFetchMock } from "./apple-test-helpers.js";
+
+const operatorEmail = "owner@gazellecoffee.com";
+const operatorPassword = "LatteLinkOwner123!";
+const operatorLocationId = "rawaqcoffee01";
 
 function createCapturingMailSender() {
   const sent: Array<{ to: string; magicLinkUrl: string }> = [];
@@ -23,6 +28,16 @@ function extractTokenFromUrl(url: string) {
   }
 
   return token;
+}
+
+async function provisionOwner(repository: ReturnType<typeof createInMemoryIdentityRepository>) {
+  await provisionOwnerAccess(repository, {
+    allowInMemory: true,
+    displayName: "Store Owner",
+    email: operatorEmail,
+    locationId: operatorLocationId,
+    password: operatorPassword
+  });
 }
 
 describe("magic link auth", () => {
@@ -236,8 +251,9 @@ describe("magic link auth", () => {
     await app.close();
   });
 
-  it("issues a seeded operator session through the dev-access route", async () => {
+  it("issues an operator session through the dev-access route after explicit provisioning", async () => {
     const repository = createInMemoryIdentityRepository();
+    await provisionOwner(repository);
     const { sender } = createCapturingMailSender();
     const app = await buildApp({ repository, mailSender: sender, allowDevOperatorAccess: true });
 
@@ -245,7 +261,7 @@ describe("magic link auth", () => {
       method: "POST",
       url: "/v1/operator/auth/dev-access",
       payload: {
-        email: "owner@gazellecoffee.com"
+        email: operatorEmail
       }
     });
 
@@ -254,9 +270,9 @@ describe("magic link auth", () => {
       accessToken: expect.any(String),
       refreshToken: expect.any(String),
       operator: {
-        email: "owner@gazellecoffee.com",
+        email: operatorEmail,
         role: "owner",
-        locationId: "rawaqcoffee01"
+        locationId: operatorLocationId
       }
     });
 
@@ -304,8 +320,9 @@ describe("magic link auth", () => {
     await app.close();
   });
 
-  it("issues a seeded operator session through password sign-in", async () => {
+  it("issues an operator session through password sign-in after explicit provisioning", async () => {
     const repository = createInMemoryIdentityRepository();
+    await provisionOwner(repository);
     const { sender } = createCapturingMailSender();
     const app = await buildApp({ repository, mailSender: sender });
 
@@ -313,8 +330,8 @@ describe("magic link auth", () => {
       method: "POST",
       url: "/v1/operator/auth/sign-in",
       payload: {
-        email: "owner@gazellecoffee.com",
-        password: "LatteLinkOwner123!"
+        email: operatorEmail,
+        password: operatorPassword
       }
     });
 
@@ -323,9 +340,9 @@ describe("magic link auth", () => {
       accessToken: expect.any(String),
       refreshToken: expect.any(String),
       operator: {
-        email: "owner@gazellecoffee.com",
+        email: operatorEmail,
         role: "owner",
-        locationId: "rawaqcoffee01"
+        locationId: operatorLocationId
       }
     });
 
@@ -334,6 +351,7 @@ describe("magic link auth", () => {
 
   it("rejects invalid operator passwords", async () => {
     const repository = createInMemoryIdentityRepository();
+    await provisionOwner(repository);
     const { sender } = createCapturingMailSender();
     const app = await buildApp({ repository, mailSender: sender });
 
@@ -341,7 +359,7 @@ describe("magic link auth", () => {
       method: "POST",
       url: "/v1/operator/auth/sign-in",
       payload: {
-        email: "owner@gazellecoffee.com",
+        email: operatorEmail,
         password: "WrongPassword123!"
       }
     });

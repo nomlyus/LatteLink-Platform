@@ -50,7 +50,6 @@ import {
 import { createIdentityRepository, type IdentityRepository } from "./repository.js";
 import { createMailSender, type MailSender } from "./mail.js";
 import { provisionOwnerAccess } from "./provisioning.js";
-import { DEFAULT_OPERATOR_LOCATION_ID } from "./defaults.js";
 
 type CustomerSession = NonNullable<Awaited<ReturnType<IdentityRepository["getSessionByAccessToken"]>>>;
 
@@ -1907,7 +1906,7 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
 
       const created = await repository.createOperatorUser({
         ...input,
-        locationId: operator.locationId || DEFAULT_OPERATOR_LOCATION_ID
+        locationId: operator.locationId
       });
       logIdentityMutation(request, "operator user created", {
         actorOperatorUserId: operator.operatorUserId,
