@@ -1,5 +1,5 @@
 {
-  "name": "@gazelle/terraform-prod",
+  "name": "@lattelink/terraform-prod",
   "version": "0.1.0",
   "private": true,
   "scripts": {

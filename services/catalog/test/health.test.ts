@@ -8,7 +8,7 @@ import {
   internalLocationSummarySchema,
   menuResponseSchema,
   storeConfigResponseSchema
-} from "@gazelle/contracts-catalog";
+} from "@lattelink/contracts-catalog";
 import { buildApp } from "../src/app.js";
 import {
   DEFAULT_BRAND_NAME,

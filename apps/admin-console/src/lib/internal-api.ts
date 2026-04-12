@@ -2,13 +2,13 @@ import type {
   InternalOwnerProvisionRequest,
   InternalOwnerProvisionResponse,
   InternalOwnerSummary
-} from "@gazelle/contracts-auth";
+} from "@lattelink/contracts-auth";
 import type {
   AppConfigStoreCapabilities,
   InternalLocationBootstrap,
   InternalLocationListResponse,
   InternalLocationSummary
-} from "@gazelle/contracts-catalog";
+} from "@lattelink/contracts-catalog";
 import { requireAdminSession } from "@/lib/auth";
 import { getInternalAdminApiBaseUrl, getOptionalClientDashboardUrl, hasInternalAdminApiBaseUrl } from "@/lib/config";
 

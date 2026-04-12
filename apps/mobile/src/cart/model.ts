@@ -8,7 +8,7 @@ import {
   type CustomizationGroupSelectionSnapshot,
   type MenuItemCustomizationGroup,
   type MenuItemCustomizationInput
-} from "@gazelle/contracts-catalog";
+} from "@lattelink/contracts-catalog";
 
 export type CartCustomization = MenuItemCustomizationInput;
 export type CartCustomizationGroupSelection = CustomizationGroupSelectionSnapshot;

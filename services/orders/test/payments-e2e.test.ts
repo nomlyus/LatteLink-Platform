@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { orderQuoteSchema, orderSchema } from "@gazelle/contracts-orders";
+import { orderQuoteSchema, orderSchema } from "@lattelink/contracts-orders";
 import { buildApp as buildOrdersApp } from "../src/app.js";
 import { buildApp as buildPaymentsApp } from "../../payments/src/app.js";
 

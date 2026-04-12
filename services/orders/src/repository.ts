@@ -1,6 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
-import { normalizeCustomizationGroups, type MenuItemCustomizationGroup } from "@gazelle/contracts-catalog";
-import { orderQuoteSchema, orderSchema } from "@gazelle/contracts-orders";
+import { normalizeCustomizationGroups, type MenuItemCustomizationGroup } from "@lattelink/contracts-catalog";
+import { orderQuoteSchema, orderSchema } from "@lattelink/contracts-orders";
 import {
   allowsInMemoryPersistence,
   buildPersistenceStartupError,
@@ -8,7 +8,7 @@ import {
   getDatabaseUrl,
   runMigrations,
   sql
-} from "@gazelle/persistence";
+} from "@lattelink/persistence";
 import { z } from "zod";
 
 type OrderQuote = z.output<typeof orderQuoteSchema>;

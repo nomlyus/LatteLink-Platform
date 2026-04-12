@@ -40,7 +40,7 @@ Pricing and line merge behavior lives in `src/cart/model.ts`:
 ## Verification
 
 ```bash
-pnpm --filter @gazelle/mobile lint
-pnpm --filter @gazelle/mobile typecheck
-pnpm --filter @gazelle/mobile test
+pnpm --filter @lattelink/mobile lint
+pnpm --filter @lattelink/mobile typecheck
+pnpm --filter @lattelink/mobile test
 ```

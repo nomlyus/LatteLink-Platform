@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { loyaltyBalanceSchema, loyaltyLedgerEntrySchema } from "@gazelle/contracts-loyalty";
+import { loyaltyBalanceSchema, loyaltyLedgerEntrySchema } from "@lattelink/contracts-loyalty";
 import { z } from "zod";
 import { buildApp } from "../src/app.js";
 

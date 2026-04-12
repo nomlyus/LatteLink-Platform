@@ -32,4 +32,4 @@ fi
 API_URL="http://${DEV_MACHINE_IP}:8080/v1"
 echo "[dev-mobile:lan] EXPO_PUBLIC_API_BASE_URL=${API_URL}"
 
-EXPO_PUBLIC_API_BASE_URL="${API_URL}" pnpm -C "${ROOT_DIR}" --filter @gazelle/mobile dev
+EXPO_PUBLIC_API_BASE_URL="${API_URL}" pnpm -C "${ROOT_DIR}" --filter @lattelink/mobile dev

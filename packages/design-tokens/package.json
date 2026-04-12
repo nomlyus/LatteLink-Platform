@@ -1,5 +1,5 @@
 {
-  "name": "@gazelle/design-tokens",
+  "name": "@lattelink/design-tokens",
   "version": "0.1.0",
   "private": false,
   "type": "module",
@@ -13,8 +13,8 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@gazelle/config-eslint": "workspace:*",
-    "@gazelle/config-typescript": "workspace:*",
+    "@lattelink/config-eslint": "workspace:*",
+    "@lattelink/config-typescript": "workspace:*",
     "eslint": "^9.21.0",
     "typescript": "^5.8.2",
     "vitest": "^3.0.8"

@@ -1,5 +1,5 @@
 {
-  "name": "@gazelle/contracts-core",
+  "name": "@lattelink/contracts-core",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -15,8 +15,8 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
-    "@gazelle/config-eslint": "workspace:*",
-    "@gazelle/config-typescript": "workspace:*",
+    "@lattelink/config-eslint": "workspace:*",
+    "@lattelink/config-typescript": "workspace:*",
     "eslint": "^9.21.0",
     "typescript": "^5.8.2",
     "vitest": "^3.0.8"

@@ -2,11 +2,11 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { authContract } from "@gazelle/contracts-auth";
-import { catalogContract } from "@gazelle/contracts-catalog";
-import { loyaltyContract } from "@gazelle/contracts-loyalty";
-import { notificationsContract } from "@gazelle/contracts-notifications";
-import { ordersContract } from "@gazelle/contracts-orders";
+import { authContract } from "@lattelink/contracts-auth";
+import { catalogContract } from "@lattelink/contracts-catalog";
+import { loyaltyContract } from "@lattelink/contracts-loyalty";
+import { notificationsContract } from "@lattelink/contracts-notifications";
+import { ordersContract } from "@lattelink/contracts-orders";
 import { buildApp } from "../src/app.js";
 
 type ContractRoute = {

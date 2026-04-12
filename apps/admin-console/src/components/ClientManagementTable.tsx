@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import type { InternalLocationSummary } from "@gazelle/contracts-catalog";
+import type { InternalLocationSummary } from "@lattelink/contracts-catalog";
 
 type ClientManagementTableProps = {
   locations: InternalLocationSummary[];

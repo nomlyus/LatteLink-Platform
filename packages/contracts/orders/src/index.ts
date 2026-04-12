@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { moneySchema } from "@gazelle/contracts-core";
-import { menuItemCustomizationInputSchema } from "@gazelle/contracts-catalog";
+import { moneySchema } from "@lattelink/contracts-core";
+import { menuItemCustomizationInputSchema } from "@lattelink/contracts-catalog";
 
 export const orderStatusSchema = z.enum([
   "PENDING_PAYMENT",

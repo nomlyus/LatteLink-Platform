@@ -141,8 +141,8 @@ If the deployment wants a different brand or location, the catalog defaults shou
 ## Verification
 
 ```bash
-pnpm --filter @gazelle/contracts-catalog test
-pnpm --filter @gazelle/catalog test
-pnpm --filter @gazelle/sdk-mobile test
-pnpm --filter @gazelle/mobile test
+pnpm --filter @lattelink/contracts-catalog test
+pnpm --filter @lattelink/catalog test
+pnpm --filter @lattelink/sdk-mobile test
+pnpm --filter @lattelink/mobile test
 ```

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { orderQuoteSchema, orderSchema } from "@gazelle/contracts-orders";
+import { orderQuoteSchema, orderSchema } from "@lattelink/contracts-orders";
 import { buildApp } from "../src/app.js";
 
 const sampleQuotePayload = {

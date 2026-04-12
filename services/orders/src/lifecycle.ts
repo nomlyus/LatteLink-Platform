@@ -1,4 +1,4 @@
-import { orderSchema, orderStatusSchema, orderTimelineEntrySchema } from "@gazelle/contracts-orders";
+import { orderSchema, orderStatusSchema, orderTimelineEntrySchema } from "@lattelink/contracts-orders";
 import { z } from "zod";
 
 type Order = z.output<typeof orderSchema>;

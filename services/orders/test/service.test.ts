@@ -1,6 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_APP_CONFIG_FULFILLMENT } from "@gazelle/contracts-catalog";
+import { DEFAULT_APP_CONFIG_FULFILLMENT } from "@lattelink/contracts-catalog";
 import type { OrdersRepository } from "../src/repository.js";
 import { createOrdersRepository } from "../src/repository.js";
 import {

@@ -8,7 +8,7 @@ import {
   operatorSessionSchema,
   operatorUserListResponseSchema,
   operatorUserSchema
-} from "@gazelle/contracts-auth";
+} from "@lattelink/contracts-auth";
 import {
   adminMenuItemCreateSchema,
   adminMenuItemVisibilityUpdateSchema,
@@ -17,8 +17,8 @@ import {
   adminStoreConfigUpdateSchema,
   appConfigSchema,
   homeNewsCardsResponseSchema
-} from "@gazelle/contracts-catalog";
-import { orderSchema } from "@gazelle/contracts-orders";
+} from "@lattelink/contracts-catalog";
+import { orderSchema } from "@lattelink/contracts-orders";
 import {
   normalizeMenuItemCreateForm,
   normalizeMenuItemForm,

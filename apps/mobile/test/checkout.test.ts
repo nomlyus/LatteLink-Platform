@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeCustomizationGroups } from "@gazelle/contracts-catalog";
+import { normalizeCustomizationGroups } from "@lattelink/contracts-catalog";
 import { createCartItem, DEFAULT_CUSTOMIZATION } from "../src/cart/model";
 import {
   CheckoutSubmissionError,

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { authSessionSchema } from "@gazelle/contracts-core";
+import { authSessionSchema } from "@lattelink/contracts-core";
 
 export const appleExchangeRequestSchema = z.object({
   identityToken: z.string().min(1),

@@ -7,7 +7,7 @@ import {
   type AdminStoreConfig,
   type AppConfig,
   type MenuItemCustomizationGroup
-} from "@gazelle/contracts-catalog";
+} from "@lattelink/contracts-catalog";
 import {
   createOperatorMenuItem,
   createOperatorStaffUser,

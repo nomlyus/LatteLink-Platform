@@ -1,5 +1,5 @@
 {
-  "name": "@gazelle/client-dashboard",
+  "name": "@lattelink/client-dashboard",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,14 +12,14 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@gazelle/contracts-auth": "workspace:*",
-    "@gazelle/contracts-catalog": "workspace:*",
-    "@gazelle/contracts-orders": "workspace:*",
+    "@lattelink/contracts-auth": "workspace:*",
+    "@lattelink/contracts-catalog": "workspace:*",
+    "@lattelink/contracts-orders": "workspace:*",
     "zod": "^3.24.2"
   },
   "devDependencies": {
-    "@gazelle/config-eslint": "workspace:*",
-    "@gazelle/config-typescript": "workspace:*",
+    "@lattelink/config-eslint": "workspace:*",
+    "@lattelink/config-typescript": "workspace:*",
     "eslint": "^9.21.0",
     "typescript": "^5.8.2",
     "vite": "^7.3.1",

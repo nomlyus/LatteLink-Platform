@@ -20,7 +20,7 @@ import {
   menuItemSchema,
   menuResponseSchema,
   storeConfigResponseSchema
-} from "@gazelle/contracts-catalog";
+} from "@lattelink/contracts-catalog";
 import {
   allowsInMemoryPersistence,
   buildPersistenceStartupError,
@@ -29,7 +29,7 @@ import {
   runMigrations,
   sql,
   type PersistenceDb
-} from "@gazelle/persistence";
+} from "@lattelink/persistence";
 import { z } from "zod";
 import {
   DEFAULT_BRAND_ID,

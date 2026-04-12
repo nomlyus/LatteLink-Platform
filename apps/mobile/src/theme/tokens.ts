@@ -1,4 +1,4 @@
-import { colorTokens, motionTokens, typographyTokens } from "@gazelle/design-tokens";
+import { colorTokens, motionTokens, typographyTokens } from "@lattelink/design-tokens";
 
 export const mobileTheme = {
   colorTokens,

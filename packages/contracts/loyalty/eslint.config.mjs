@@ -1,3 +1,3 @@
-import config from "@gazelle/config-eslint";
+import config from "@lattelink/config-eslint";
 
 export default config;

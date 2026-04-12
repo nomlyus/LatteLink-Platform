@@ -391,7 +391,7 @@ Workflow steps:
 
 1. fetch the client mobile release profile from the internal admin API
 2. generate env for the requested profile
-3. run `pnpm --filter @gazelle/mobile release:check -- <profile>`
+3. run `pnpm --filter @lattelink/mobile release:check -- <profile>`
 4. run `eas build --platform ios --profile <profile>`
 5. save build URL and build ID
 6. update the client release record

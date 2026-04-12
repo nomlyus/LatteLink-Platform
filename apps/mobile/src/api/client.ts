@@ -1,5 +1,5 @@
-import { orderSchema, type Order } from "@gazelle/contracts-orders";
-import { GazelleApiClient } from "@gazelle/sdk-mobile";
+import { orderSchema, type Order } from "@lattelink/contracts-orders";
+import { GazelleApiClient } from "@lattelink/sdk-mobile";
 import { z } from "zod";
 
 const DEFAULT_LOCAL_API_BASE_URL = "http://127.0.0.1:8080/v1";

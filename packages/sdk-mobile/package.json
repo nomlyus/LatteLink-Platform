@@ -1,5 +1,5 @@
 {
-  "name": "@gazelle/sdk-mobile",
+  "name": "@lattelink/sdk-mobile",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -13,17 +13,17 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@gazelle/contracts-auth": "workspace:*",
-    "@gazelle/contracts-catalog": "workspace:*",
-    "@gazelle/contracts-core": "workspace:*",
-    "@gazelle/contracts-loyalty": "workspace:*",
-    "@gazelle/contracts-notifications": "workspace:*",
-    "@gazelle/contracts-orders": "workspace:*",
+    "@lattelink/contracts-auth": "workspace:*",
+    "@lattelink/contracts-catalog": "workspace:*",
+    "@lattelink/contracts-core": "workspace:*",
+    "@lattelink/contracts-loyalty": "workspace:*",
+    "@lattelink/contracts-notifications": "workspace:*",
+    "@lattelink/contracts-orders": "workspace:*",
     "zod": "^3.24.2"
   },
   "devDependencies": {
-    "@gazelle/config-eslint": "workspace:*",
-    "@gazelle/config-typescript": "workspace:*",
+    "@lattelink/config-eslint": "workspace:*",
+    "@lattelink/config-typescript": "workspace:*",
     "eslint": "^9.21.0",
     "openapi-typescript": "^7.6.1",
     "typescript": "^5.8.2",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeCustomizationGroups } from "@gazelle/contracts-catalog";
+import { normalizeCustomizationGroups } from "@lattelink/contracts-catalog";
 import {
   DEFAULT_CUSTOMIZATION,
   addCartItem,

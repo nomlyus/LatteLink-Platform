@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { apiErrorSchema, authSessionSchema } from "@gazelle/contracts-core";
+import { apiErrorSchema, authSessionSchema } from "@lattelink/contracts-core";
 import {
   appleExchangeRequestSchema,
   authContract,
@@ -33,7 +33,7 @@ import {
   passkeyChallengeResponseSchema,
   passkeyVerifyRequestSchema,
   refreshRequestSchema
-} from "@gazelle/contracts-auth";
+} from "@lattelink/contracts-auth";
 import {
   adminMenuItemCreateSchema,
   adminMenuItemSchema,
@@ -56,7 +56,7 @@ import {
   internalLocationSummarySchema,
   menuResponseSchema,
   storeConfigResponseSchema
-} from "@gazelle/contracts-catalog";
+} from "@lattelink/contracts-catalog";
 import {
   ordersContract,
   createOrderRequestSchema,
@@ -64,13 +64,13 @@ import {
   orderSchema,
   payOrderRequestSchema,
   quoteRequestSchema
-} from "@gazelle/contracts-orders";
-import { loyaltyBalanceSchema, loyaltyContract, loyaltyLedgerEntrySchema } from "@gazelle/contracts-loyalty";
+} from "@lattelink/contracts-orders";
+import { loyaltyBalanceSchema, loyaltyContract, loyaltyLedgerEntrySchema } from "@lattelink/contracts-loyalty";
 import {
   notificationsContract,
   pushTokenUpsertResponseSchema,
   pushTokenUpsertSchema
-} from "@gazelle/contracts-notifications";
+} from "@lattelink/contracts-notifications";
 
 declare module "fastify" {
   interface FastifyRequest {

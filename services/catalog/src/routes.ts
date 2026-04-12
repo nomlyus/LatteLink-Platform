@@ -15,7 +15,7 @@ import {
   homeNewsCardVisibilityUpdateSchema,
   homeNewsCardsResponseSchema,
   homeNewsCardSchema
-} from "@gazelle/contracts-catalog";
+} from "@lattelink/contracts-catalog";
 import { z } from "zod";
 import { createCatalogRepository } from "./repository.js";
 

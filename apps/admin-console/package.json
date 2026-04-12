@@ -10,8 +10,8 @@
     "lint": "eslint src --max-warnings=0"
   },
   "dependencies": {
-    "@gazelle/contracts-auth": "workspace:*",
-    "@gazelle/contracts-catalog": "workspace:*",
+    "@lattelink/contracts-auth": "workspace:*",
+    "@lattelink/contracts-catalog": "workspace:*",
     "next": "^15.1.0",
     "react": "19.1.0",
     "react-dom": "19.1.0"

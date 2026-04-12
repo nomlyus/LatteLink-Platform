@@ -35,10 +35,10 @@ importers:
 
   apps/admin-console:
     dependencies:
-      '@gazelle/contracts-auth':
+      '@lattelink/contracts-auth':
         specifier: workspace:*
         version: link:../../packages/contracts/auth
-      '@gazelle/contracts-catalog':
+      '@lattelink/contracts-catalog':
         specifier: workspace:*
         version: link:../../packages/contracts/catalog
       next:
@@ -112,16 +112,16 @@ importers:
       '@expo/vector-icons':
         specifier: ^15.1.1
         version: 15.1.1(expo-font@14.0.11(expo@54.0.33)(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
-      '@gazelle/contracts-catalog':
+      '@lattelink/contracts-catalog':
         specifier: workspace:*
         version: link:../../packages/contracts/catalog
-      '@gazelle/contracts-orders':
+      '@lattelink/contracts-orders':
         specifier: workspace:*
         version: link:../../packages/contracts/orders
-      '@gazelle/design-tokens':
+      '@lattelink/design-tokens':
         specifier: workspace:*
         version: link:../../packages/design-tokens
-      '@gazelle/sdk-mobile':
+      '@lattelink/sdk-mobile':
         specifier: workspace:*
         version: link:../../packages/sdk-mobile
       '@gorhom/bottom-sheet':
@@ -212,7 +212,7 @@ importers:
       '@expo/ngrok':
         specifier: ^4.1.0
         version: 4.1.3
-      '@gazelle/config-eslint':
+      '@lattelink/config-eslint':
         specifier: workspace:*
         version: link:../../packages/config-eslint
       '@types/react':
@@ -236,23 +236,23 @@ importers:
 
   apps/client-dashboard:
     dependencies:
-      '@gazelle/contracts-auth':
+      '@lattelink/contracts-auth':
         specifier: workspace:*
         version: link:../../packages/contracts/auth
-      '@gazelle/contracts-catalog':
+      '@lattelink/contracts-catalog':
         specifier: workspace:*
         version: link:../../packages/contracts/catalog
-      '@gazelle/contracts-orders':
+      '@lattelink/contracts-orders':
         specifier: workspace:*
         version: link:../../packages/contracts/orders
       zod:
         specifier: ^3.24.2
         version: 3.25.76
     devDependencies:
-      '@gazelle/config-eslint':
+      '@lattelink/config-eslint':
         specifier: workspace:*
         version: link:../../packages/config-eslint
-      '@gazelle/config-typescript':
+      '@lattelink/config-typescript':
         specifier: workspace:*
         version: link:../../packages/config-typescript
       eslint:
@@ -290,17 +290,17 @@ importers:
 
   packages/contracts/auth:
     dependencies:
-      '@gazelle/contracts-core':
+      '@lattelink/contracts-core':
         specifier: workspace:*
         version: link:../core
       zod:
         specifier: ^3.24.2
         version: 3.25.76
     devDependencies:
-      '@gazelle/config-eslint':
+      '@lattelink/config-eslint':
         specifier: workspace:*
         version: link:../../config-eslint
-      '@gazelle/config-typescript':
+      '@lattelink/config-typescript':
         specifier: workspace:*
         version: link:../../config-typescript
       eslint:
@@ -315,17 +315,17 @@ importers:
 
   packages/contracts/catalog:
     dependencies:
-      '@gazelle/contracts-core':
+      '@lattelink/contracts-core':
         specifier: workspace:*
         version: link:../core
       zod:
         specifier: ^3.24.2
         version: 3.25.76
     devDependencies:
-      '@gazelle/config-eslint':
+      '@lattelink/config-eslint':
         specifier: workspace:*
         version: link:../../config-eslint
-      '@gazelle/config-typescript':
+      '@lattelink/config-typescript':
         specifier: workspace:*
         version: link:../../config-typescript
       eslint:
@@ -344,10 +344,10 @@ importers:
         specifier: ^3.24.2
         version: 3.25.76
     devDependencies:
-      '@gazelle/config-eslint':
+      '@lattelink/config-eslint':
         specifier: workspace:*
         version: link:../../config-eslint
-      '@gazelle/config-typescript':
+      '@lattelink/config-typescript':
         specifier: workspace:*
         version: link:../../config-typescript
       eslint:
@@ -366,10 +366,10 @@ importers:
         specifier: ^3.24.2
         version: 3.25.76
     devDependencies:
-      '@gazelle/config-eslint':
+      '@lattelink/config-eslint':
         specifier: workspace:*
         version: link:../../config-eslint
-      '@gazelle/config-typescript':
+      '@lattelink/config-typescript':
         specifier: workspace:*
         version: link:../../config-typescript
       eslint:
@@ -388,10 +388,10 @@ importers:
         specifier: ^3.24.2
         version: 3.25.76
     devDependencies:
-      '@gazelle/config-eslint':
+      '@lattelink/config-eslint':
         specifier: workspace:*
         version: link:../../config-eslint
-      '@gazelle/config-typescript':
+      '@lattelink/config-typescript':
         specifier: workspace:*
         version: link:../../config-typescript
       eslint:
@@ -406,20 +406,20 @@ importers:
 
   packages/contracts/orders:
     dependencies:
-      '@gazelle/contracts-catalog':
+      '@lattelink/contracts-catalog':
         specifier: workspace:*
         version: link:../catalog
-      '@gazelle/contracts-core':
+      '@lattelink/contracts-core':
         specifier: workspace:*
         version: link:../core
       zod:
         specifier: ^3.24.2
         version: 3.25.76
     devDependencies:
-      '@gazelle/config-eslint':
+      '@lattelink/config-eslint':
         specifier: workspace:*
         version: link:../../config-eslint
-      '@gazelle/config-typescript':
+      '@lattelink/config-typescript':
         specifier: workspace:*
         version: link:../../config-typescript
       eslint:
@@ -434,10 +434,10 @@ importers:
 
   packages/design-tokens:
     devDependencies:
-      '@gazelle/config-eslint':
+      '@lattelink/config-eslint':
         specifier: workspace:*
         version: link:../config-eslint
-      '@gazelle/config-typescript':
+      '@lattelink/config-typescript':
         specifier: workspace:*
         version: link:../config-typescript
       eslint:
@@ -459,10 +459,10 @@ importers:
         specifier: ^8.16.3
         version: 8.20.0
     devDependencies:
-      '@gazelle/config-eslint':
+      '@lattelink/config-eslint':
         specifier: workspace:*
         version: link:../config-eslint
-      '@gazelle/config-typescript':
+      '@lattelink/config-typescript':
         specifier: workspace:*
         version: link:../config-typescript
       '@types/node':
@@ -486,32 +486,32 @@ importers:
 
   packages/sdk-mobile:
     dependencies:
-      '@gazelle/contracts-auth':
+      '@lattelink/contracts-auth':
         specifier: workspace:*
         version: link:../contracts/auth
-      '@gazelle/contracts-catalog':
+      '@lattelink/contracts-catalog':
         specifier: workspace:*
         version: link:../contracts/catalog
-      '@gazelle/contracts-core':
+      '@lattelink/contracts-core':
         specifier: workspace:*
         version: link:../contracts/core
-      '@gazelle/contracts-loyalty':
+      '@lattelink/contracts-loyalty':
         specifier: workspace:*
         version: link:../contracts/loyalty
-      '@gazelle/contracts-notifications':
+      '@lattelink/contracts-notifications':
         specifier: workspace:*
         version: link:../contracts/notifications
-      '@gazelle/contracts-orders':
+      '@lattelink/contracts-orders':
         specifier: workspace:*
         version: link:../contracts/orders
       zod:
         specifier: ^3.24.2
         version: 3.25.76
     devDependencies:
-      '@gazelle/config-eslint':
+      '@lattelink/config-eslint':
         specifier: workspace:*
         version: link:../config-eslint
-      '@gazelle/config-typescript':
+      '@lattelink/config-typescript':
         specifier: workspace:*
         version: link:../config-typescript
       eslint:
@@ -538,10 +538,10 @@ importers:
       '@fastify/swagger-ui':
         specifier: ^5.2.5
         version: 5.2.5
-      '@gazelle/contracts-catalog':
+      '@lattelink/contracts-catalog':
         specifier: workspace:*
         version: link:../../packages/contracts/catalog
-      '@gazelle/persistence':
+      '@lattelink/persistence':
         specifier: workspace:*
         version: link:../../packages/persistence
       fastify:
@@ -554,10 +554,10 @@ importers:
         specifier: ^3.24.2
         version: 3.25.76
     devDependencies:
-      '@gazelle/config-eslint':
+      '@lattelink/config-eslint':
         specifier: workspace:*
         version: link:../../packages/config-eslint
-      '@gazelle/config-typescript':
+      '@lattelink/config-typescript':
         specifier: workspace:*
         version: link:../../packages/config-typescript
       '@types/node':
@@ -590,22 +590,22 @@ importers:
       '@fastify/swagger-ui':
         specifier: ^5.2.5
         version: 5.2.5
-      '@gazelle/contracts-auth':
+      '@lattelink/contracts-auth':
         specifier: workspace:*
         version: link:../../packages/contracts/auth
-      '@gazelle/contracts-catalog':
+      '@lattelink/contracts-catalog':
         specifier: workspace:*
         version: link:../../packages/contracts/catalog
-      '@gazelle/contracts-core':
+      '@lattelink/contracts-core':
         specifier: workspace:*
         version: link:../../packages/contracts/core
-      '@gazelle/contracts-loyalty':
+      '@lattelink/contracts-loyalty':
         specifier: workspace:*
         version: link:../../packages/contracts/loyalty
-      '@gazelle/contracts-notifications':
+      '@lattelink/contracts-notifications':
         specifier: workspace:*
         version: link:../../packages/contracts/notifications
-      '@gazelle/contracts-orders':
+      '@lattelink/contracts-orders':
         specifier: workspace:*
         version: link:../../packages/contracts/orders
       fastify:
@@ -618,10 +618,10 @@ importers:
         specifier: ^3.24.2
         version: 3.25.76
     devDependencies:
-      '@gazelle/config-eslint':
+      '@lattelink/config-eslint':
         specifier: workspace:*
         version: link:../../packages/config-eslint
-      '@gazelle/config-typescript':
+      '@lattelink/config-typescript':
         specifier: workspace:*
         version: link:../../packages/config-typescript
       '@types/node':
@@ -651,13 +651,13 @@ importers:
       '@fastify/swagger-ui':
         specifier: ^5.2.5
         version: 5.2.5
-      '@gazelle/contracts-auth':
+      '@lattelink/contracts-auth':
         specifier: workspace:*
         version: link:../../packages/contracts/auth
-      '@gazelle/contracts-core':
+      '@lattelink/contracts-core':
         specifier: workspace:*
         version: link:../../packages/contracts/core
-      '@gazelle/persistence':
+      '@lattelink/persistence':
         specifier: workspace:*
         version: link:../../packages/persistence
       '@simplewebauthn/server':
@@ -673,10 +673,10 @@ importers:
         specifier: ^3.24.2
         version: 3.25.76
     devDependencies:
-      '@gazelle/config-eslint':
+      '@lattelink/config-eslint':
         specifier: workspace:*
         version: link:../../packages/config-eslint
-      '@gazelle/config-typescript':
+      '@lattelink/config-typescript':
         specifier: workspace:*
         version: link:../../packages/config-typescript
       '@types/node':
@@ -706,10 +706,10 @@ importers:
       '@fastify/swagger-ui':
         specifier: ^5.2.5
         version: 5.2.5
-      '@gazelle/contracts-loyalty':
+      '@lattelink/contracts-loyalty':
         specifier: workspace:*
         version: link:../../packages/contracts/loyalty
-      '@gazelle/persistence':
+      '@lattelink/persistence':
         specifier: workspace:*
         version: link:../../packages/persistence
       fastify:
@@ -722,10 +722,10 @@ importers:
         specifier: ^3.24.2
         version: 3.25.76
     devDependencies:
-      '@gazelle/config-eslint':
+      '@lattelink/config-eslint':
         specifier: workspace:*
         version: link:../../packages/config-eslint
-      '@gazelle/config-typescript':
+      '@lattelink/config-typescript':
         specifier: workspace:*
         version: link:../../packages/config-typescript
       '@types/node':
@@ -755,10 +755,10 @@ importers:
       '@fastify/swagger-ui':
         specifier: ^5.2.5
         version: 5.2.5
-      '@gazelle/contracts-notifications':
+      '@lattelink/contracts-notifications':
         specifier: workspace:*
         version: link:../../packages/contracts/notifications
-      '@gazelle/persistence':
+      '@lattelink/persistence':
         specifier: workspace:*
         version: link:../../packages/persistence
       fastify:
@@ -771,10 +771,10 @@ importers:
         specifier: ^3.24.2
         version: 3.25.76
     devDependencies:
-      '@gazelle/config-eslint':
+      '@lattelink/config-eslint':
         specifier: workspace:*
         version: link:../../packages/config-eslint
-      '@gazelle/config-typescript':
+      '@lattelink/config-typescript':
         specifier: workspace:*
         version: link:../../packages/config-typescript
       '@types/node':
@@ -804,13 +804,13 @@ importers:
       '@fastify/swagger-ui':
         specifier: ^5.2.5
         version: 5.2.5
-      '@gazelle/contracts-catalog':
+      '@lattelink/contracts-catalog':
         specifier: workspace:*
         version: link:../../packages/contracts/catalog
-      '@gazelle/contracts-orders':
+      '@lattelink/contracts-orders':
         specifier: workspace:*
         version: link:../../packages/contracts/orders
-      '@gazelle/persistence':
+      '@lattelink/persistence':
         specifier: workspace:*
         version: link:../../packages/persistence
       fastify:
@@ -823,10 +823,10 @@ importers:
         specifier: ^3.24.2
         version: 3.25.76
     devDependencies:
-      '@gazelle/config-eslint':
+      '@lattelink/config-eslint':
         specifier: workspace:*
         version: link:../../packages/config-eslint
-      '@gazelle/config-typescript':
+      '@lattelink/config-typescript':
         specifier: workspace:*
         version: link:../../packages/config-typescript
       '@types/node':
@@ -856,10 +856,10 @@ importers:
       '@fastify/swagger-ui':
         specifier: ^5.2.5
         version: 5.2.5
-      '@gazelle/contracts-orders':
+      '@lattelink/contracts-orders':
         specifier: workspace:*
         version: link:../../packages/contracts/orders
-      '@gazelle/persistence':
+      '@lattelink/persistence':
         specifier: workspace:*
         version: link:../../packages/persistence
       fastify:
@@ -872,10 +872,10 @@ importers:
         specifier: ^3.24.2
         version: 3.25.76
     devDependencies:
-      '@gazelle/config-eslint':
+      '@lattelink/config-eslint':
         specifier: workspace:*
         version: link:../../packages/config-eslint
-      '@gazelle/config-typescript':
+      '@lattelink/config-typescript':
         specifier: workspace:*
         version: link:../../packages/config-typescript
       '@types/node':
@@ -896,17 +896,17 @@ importers:
 
   services/workers/menu-sync:
     dependencies:
-      '@gazelle/contracts-catalog':
+      '@lattelink/contracts-catalog':
         specifier: workspace:*
         version: link:../../../packages/contracts/catalog
       zod:
         specifier: ^3.24.2
         version: 3.25.76
     devDependencies:
-      '@gazelle/config-eslint':
+      '@lattelink/config-eslint':
         specifier: workspace:*
         version: link:../../../packages/config-eslint
-      '@gazelle/config-typescript':
+      '@lattelink/config-typescript':
         specifier: workspace:*
         version: link:../../../packages/config-typescript
       '@types/node':
@@ -931,10 +931,10 @@ importers:
         specifier: ^3.24.2
         version: 3.25.76
     devDependencies:
-      '@gazelle/config-eslint':
+      '@lattelink/config-eslint':
         specifier: workspace:*
         version: link:../../../packages/config-eslint
-      '@gazelle/config-typescript':
+      '@lattelink/config-typescript':
         specifier: workspace:*
         version: link:../../../packages/config-typescript
       '@types/node':

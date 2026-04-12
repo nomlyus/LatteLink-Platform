@@ -1,5 +1,5 @@
 {
-  "name": "@gazelle/notifications-dispatch-worker",
+  "name": "@lattelink/notifications-dispatch-worker",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -16,8 +16,8 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
-    "@gazelle/config-eslint": "workspace:*",
-    "@gazelle/config-typescript": "workspace:*",
+    "@lattelink/config-eslint": "workspace:*",
+    "@lattelink/config-typescript": "workspace:*",
     "@types/node": "^22.13.8",
     "eslint": "^9.21.0",
     "tsx": "^4.20.5",

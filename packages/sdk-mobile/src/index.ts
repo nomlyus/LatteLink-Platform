@@ -11,16 +11,16 @@ import {
   passkeyChallengeResponseSchema,
   passkeyVerifyRequestSchema,
   refreshRequestSchema
-} from "@gazelle/contracts-auth";
-import { appConfigSchema, menuResponseSchema, storeConfigResponseSchema } from "@gazelle/contracts-catalog";
-import { authSessionSchema } from "@gazelle/contracts-core";
+} from "@lattelink/contracts-auth";
+import { appConfigSchema, menuResponseSchema, storeConfigResponseSchema } from "@lattelink/contracts-catalog";
+import { authSessionSchema } from "@lattelink/contracts-core";
 import {
   createOrderRequestSchema,
   orderQuoteSchema,
   orderSchema,
   payOrderRequestSchema,
   quoteRequestSchema
-} from "@gazelle/contracts-orders";
+} from "@lattelink/contracts-orders";
 import { z } from "zod";
 
 const authSuccessSchema = z.object({

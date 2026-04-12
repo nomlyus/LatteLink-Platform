@@ -5,7 +5,7 @@ import {
   operatorUserCreateSchema,
   operatorUserSchema,
   operatorUserUpdateSchema
-} from "@gazelle/contracts-auth";
+} from "@lattelink/contracts-auth";
 import {
   adminMenuCategorySchema,
   adminMenuItemSchema,
@@ -21,8 +21,8 @@ import {
   isStaffDashboardEnabled,
   resolveAppConfigFulfillmentMode,
   type AppConfig
-} from "@gazelle/contracts-catalog";
-import { orderSchema, orderStatusSchema } from "@gazelle/contracts-orders";
+} from "@lattelink/contracts-catalog";
+import { orderSchema, orderStatusSchema } from "@lattelink/contracts-orders";
 
 const operatorCustomerSchema = z.object({
   name: z.string().min(1).optional(),

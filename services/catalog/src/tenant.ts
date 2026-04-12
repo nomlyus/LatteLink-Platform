@@ -5,7 +5,7 @@ import {
   appConfigSchema,
   type AppConfigStoreCapabilities,
   type AppConfig
-} from "@gazelle/contracts-catalog";
+} from "@lattelink/contracts-catalog";
 
 export const DEFAULT_BRAND_ID = "rawaqcoffee";
 export const DEFAULT_LOCATION_ID = "rawaqcoffee01";

@@ -3,7 +3,7 @@ import type { MailSender } from "../src/mail.js";
 import { buildApp } from "../src/app.js";
 import { createInMemoryIdentityRepository } from "../src/repository.js";
 import { provisionOwnerAccess } from "../src/provisioning.js";
-import { internalOwnerProvisionResponseSchema, internalOwnerSummarySchema } from "@gazelle/contracts-auth";
+import { internalOwnerProvisionResponseSchema, internalOwnerSummarySchema } from "@lattelink/contracts-auth";
 
 const ownerEmail = "owner@gazellecoffee.com";
 const ownerPassword = "LatteLinkOwner123!";

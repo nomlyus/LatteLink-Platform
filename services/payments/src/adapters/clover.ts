@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Order } from "@gazelle/contracts-orders";
+import type { Order } from "@lattelink/contracts-orders";
 import type { FastifyBaseLogger } from "fastify";
 import { z } from "zod";
 import type {

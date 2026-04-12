@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
-import type { OrderItem } from "@gazelle/contracts-orders";
+import type { OrderItem } from "@lattelink/contracts-orders";
 import type { CheckoutOrderSnapshot, CheckoutSubmissionStage } from "./checkout";
 
 export type CheckoutConfirmation = {

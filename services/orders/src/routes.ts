@@ -6,7 +6,7 @@ import {
   orderSchema,
   payOrderRequestSchema,
   quoteRequestSchema
-} from "@gazelle/contracts-orders";
+} from "@lattelink/contracts-orders";
 import { z } from "zod";
 import { createFulfillmentConfigCache } from "./fulfillment.js";
 import { createOrdersRepository } from "./repository.js";

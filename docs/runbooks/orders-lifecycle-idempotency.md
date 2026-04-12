@@ -105,10 +105,10 @@ Default:
 ## Verification
 
 ```bash
-pnpm --filter @gazelle/orders lint
-pnpm --filter @gazelle/orders typecheck
-pnpm --filter @gazelle/orders test
-pnpm --filter @gazelle/gateway lint
-pnpm --filter @gazelle/gateway typecheck
-pnpm --filter @gazelle/gateway test
+pnpm --filter @lattelink/orders lint
+pnpm --filter @lattelink/orders typecheck
+pnpm --filter @lattelink/orders test
+pnpm --filter @lattelink/gateway lint
+pnpm --filter @lattelink/gateway typecheck
+pnpm --filter @lattelink/gateway test
 ```

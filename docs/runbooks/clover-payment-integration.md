@@ -181,13 +181,13 @@ For dev simulation, a cancel reason containing `reject` returns a rejected refun
 ## Verification
 
 ```bash
-pnpm --filter @gazelle/persistence build
-pnpm --filter @gazelle/payments lint
-pnpm --filter @gazelle/payments typecheck
-pnpm --filter @gazelle/payments test
-pnpm --filter @gazelle/orders lint
-pnpm --filter @gazelle/orders typecheck
-pnpm --filter @gazelle/orders test
+pnpm --filter @lattelink/persistence build
+pnpm --filter @lattelink/payments lint
+pnpm --filter @lattelink/payments typecheck
+pnpm --filter @lattelink/payments test
+pnpm --filter @lattelink/orders lint
+pnpm --filter @lattelink/orders typecheck
+pnpm --filter @lattelink/orders test
 ```
 
 ## Free-First Rollout Mapping

@@ -1,5 +1,5 @@
 {
-  "name": "@gazelle/contracts-orders",
+  "name": "@lattelink/contracts-orders",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -13,13 +13,13 @@
     "openapi": "echo 'orders contracts are included via gateway openapi generation'"
   },
   "dependencies": {
-    "@gazelle/contracts-catalog": "workspace:*",
-    "@gazelle/contracts-core": "workspace:*",
+    "@lattelink/contracts-catalog": "workspace:*",
+    "@lattelink/contracts-core": "workspace:*",
     "zod": "^3.24.2"
   },
   "devDependencies": {
-    "@gazelle/config-eslint": "workspace:*",
-    "@gazelle/config-typescript": "workspace:*",
+    "@lattelink/config-eslint": "workspace:*",
+    "@lattelink/config-typescript": "workspace:*",
     "eslint": "^9.21.0",
     "typescript": "^5.8.2",
     "vitest": "^3.0.8"

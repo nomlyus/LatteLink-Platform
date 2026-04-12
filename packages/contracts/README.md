@@ -1,17 +1,17 @@
 # Contracts Packages
 
-- `@gazelle/contracts-core`
-- `@gazelle/contracts-auth`
-- `@gazelle/contracts-catalog`
-- `@gazelle/contracts-orders`
-- `@gazelle/contracts-loyalty`
-- `@gazelle/contracts-notifications`
+- `@lattelink/contracts-core`
+- `@lattelink/contracts-auth`
+- `@lattelink/contracts-catalog`
+- `@lattelink/contracts-orders`
+- `@lattelink/contracts-loyalty`
+- `@lattelink/contracts-notifications`
 
 These are the canonical API schemas for gateway, services, and SDK generation.
 
 ## Catalog Customization Model
 
-`@gazelle/contracts-catalog` now owns the canonical menu customization model used by catalog, mobile, and orders.
+`@lattelink/contracts-catalog` now owns the canonical menu customization model used by catalog, mobile, and orders.
 
 Core concepts:
 - `MenuItemCustomizationGroup`
@@ -31,7 +31,7 @@ Supported group behavior:
 - optional `displayStyle`
 - optional `available`
 
-Canonical helpers exported from `@gazelle/contracts-catalog`:
+Canonical helpers exported from `@lattelink/contracts-catalog`:
 - `normalizeCustomizationGroups(...)`
 - `normalizeCustomizationInput(...)`
 - `buildDefaultCustomizationInput(...)`
@@ -156,7 +156,7 @@ Item with no modifiers:
 
 ## Orders Quote Flow
 
-`@gazelle/contracts-orders` now accepts modifier-aware quote lines instead of just item IDs plus quantity.
+`@lattelink/contracts-orders` now accepts modifier-aware quote lines instead of just item IDs plus quantity.
 
 Quote request shape:
 

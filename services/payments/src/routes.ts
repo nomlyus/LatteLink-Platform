@@ -7,13 +7,13 @@ import {
   createPostgresDb,
   getDatabaseUrl,
   runMigrations
-} from "@gazelle/persistence";
+} from "@lattelink/persistence";
 import {
   applePayWalletSchema,
   orderSchema,
   ordersPaymentReconciliationResultSchema,
   ordersPaymentReconciliationSchema
-} from "@gazelle/contracts-orders";
+} from "@lattelink/contracts-orders";
 import {
   paymentWebhookDispatchResultSchema,
   type PaymentWebhookDispatchResult

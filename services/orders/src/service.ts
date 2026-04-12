@@ -6,7 +6,7 @@ import {
   type AppConfigFulfillment,
   type CustomizationGroupSelectionSnapshot,
   type StoreConfigResponse
-} from "@gazelle/contracts-catalog";
+} from "@lattelink/contracts-catalog";
 import {
   applePayWalletSchema,
   createOrderRequestSchema,
@@ -17,7 +17,7 @@ import {
   orderTimelineEntrySchema,
   payOrderRequestSchema,
   quoteRequestSchema
-} from "@gazelle/contracts-orders";
+} from "@lattelink/contracts-orders";
 import { z } from "zod";
 import { reconcileOrderFulfillmentState } from "./fulfillment.js";
 import {

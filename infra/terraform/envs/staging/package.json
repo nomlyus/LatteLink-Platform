@@ -1,5 +1,5 @@
 {
-  "name": "@gazelle/terraform-staging",
+  "name": "@lattelink/terraform-staging",
   "version": "0.1.0",
   "private": true,
   "scripts": {

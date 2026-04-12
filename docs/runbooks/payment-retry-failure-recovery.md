@@ -43,10 +43,10 @@ Scenarios:
 ## Verification
 
 ```bash
-pnpm --filter @gazelle/orders lint
-pnpm --filter @gazelle/orders typecheck
-pnpm --filter @gazelle/orders test
-pnpm --filter @gazelle/payments lint
-pnpm --filter @gazelle/payments typecheck
-pnpm --filter @gazelle/payments test
+pnpm --filter @lattelink/orders lint
+pnpm --filter @lattelink/orders typecheck
+pnpm --filter @lattelink/orders test
+pnpm --filter @lattelink/payments lint
+pnpm --filter @lattelink/payments typecheck
+pnpm --filter @lattelink/payments test
 ```

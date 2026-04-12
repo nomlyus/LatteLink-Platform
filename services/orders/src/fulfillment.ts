@@ -3,8 +3,8 @@ import {
   appConfigFulfillmentModeSchema,
   appConfigFulfillmentSchema,
   type AppConfigFulfillment
-} from "@gazelle/contracts-catalog";
-import { orderSchema, orderStatusSchema } from "@gazelle/contracts-orders";
+} from "@lattelink/contracts-catalog";
+import { orderSchema, orderStatusSchema } from "@lattelink/contracts-orders";
 import { z } from "zod";
 import { advanceOrderLifecycleToStatus, isTerminalOrderStatus } from "./lifecycle.js";
 

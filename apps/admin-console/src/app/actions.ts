@@ -1,6 +1,6 @@
 "use server";
 
-import type { AppConfigStoreCapabilities } from "@gazelle/contracts-catalog";
+import type { AppConfigStoreCapabilities } from "@lattelink/contracts-catalog";
 import { redirect } from "next/navigation";
 import {
   AdminAuthError,

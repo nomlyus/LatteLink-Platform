@@ -110,7 +110,7 @@ ALLOW_IN_MEMORY_PERSISTENCE=true
 Run migrations manually:
 
 ```bash
-pnpm --filter @gazelle/persistence migrate
+pnpm --filter @lattelink/persistence migrate
 ```
 
 Without `DATABASE_URL`, services now require `ALLOW_IN_MEMORY_PERSISTENCE=true` unless they are running under `NODE_ENV=test`.

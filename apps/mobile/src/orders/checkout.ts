@@ -1,7 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { apiClient } from "../api/client";
 import type { CartItem } from "../cart/model";
-import { quoteRequestItemSchema } from "@gazelle/contracts-orders";
+import { quoteRequestItemSchema } from "@lattelink/contracts-orders";
 import { z } from "zod";
 
 type PayOrderInput = Parameters<(typeof apiClient)["payOrder"]>[1];

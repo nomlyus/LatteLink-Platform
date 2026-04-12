@@ -1,5 +1,5 @@
 {
-  "name": "@gazelle/persistence",
+  "name": "@lattelink/persistence",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -17,8 +17,8 @@
     "pg": "^8.16.3"
   },
   "devDependencies": {
-    "@gazelle/config-eslint": "workspace:*",
-    "@gazelle/config-typescript": "workspace:*",
+    "@lattelink/config-eslint": "workspace:*",
+    "@lattelink/config-typescript": "workspace:*",
     "@types/node": "^22.13.8",
     "@types/pg": "^8.15.6",
     "eslint": "^9.21.0",

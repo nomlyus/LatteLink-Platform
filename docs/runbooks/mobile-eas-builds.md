@@ -86,14 +86,14 @@ Optional values:
 
 ## Build Commands
 
-Run from `apps/mobile` or use `pnpm --filter @gazelle/mobile exec ...`.
+Run from `apps/mobile` or use `pnpm --filter @lattelink/mobile exec ...`.
 
 Before starting a build, run the release preflight for the intended profile:
 
 ```bash
-pnpm --filter @gazelle/mobile release:check -- internal
-pnpm --filter @gazelle/mobile release:check -- beta
-pnpm --filter @gazelle/mobile release:check -- production
+pnpm --filter @lattelink/mobile release:check -- internal
+pnpm --filter @lattelink/mobile release:check -- beta
+pnpm --filter @lattelink/mobile release:check -- production
 ```
 
 The preflight validates that the env is complete and catches common mistakes such as:
@@ -116,7 +116,7 @@ eas build --platform ios --profile production
 
 Before creating a `beta` or `production` build:
 
-- run `pnpm --filter @gazelle/mobile release:check -- <profile>`
+- run `pnpm --filter @lattelink/mobile release:check -- <profile>`
 - confirm the target API base URL is correct
 - confirm the Apple Pay merchant identifier matches the target environment
 - confirm the privacy policy URL is live and public

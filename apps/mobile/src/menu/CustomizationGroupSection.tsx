@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
-import type { MenuItemCustomizationGroup, MenuItemCustomizationOption } from "@gazelle/contracts-catalog";
+import type { MenuItemCustomizationGroup, MenuItemCustomizationOption } from "@lattelink/contracts-catalog";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { type CartCustomization, isCustomizationOptionSelected } from "../cart/model";
 import { uiPalette, uiTypography } from "../ui/system";

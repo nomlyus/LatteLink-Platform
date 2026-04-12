@@ -7,7 +7,7 @@ import {
   describeCustomizationSelection,
   priceMenuItemCustomization,
   type CustomizationValidationIssue
-} from "@gazelle/contracts-catalog";
+} from "@lattelink/contracts-catalog";
 import {
   Animated as RNAnimated,
   Image,

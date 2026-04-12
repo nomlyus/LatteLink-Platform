@@ -4,7 +4,7 @@ import {
   type InternalAdminCapability,
   type InternalAdminRole,
   type InternalAdminSession
-} from "@gazelle/contracts-auth";
+} from "@lattelink/contracts-auth";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import {

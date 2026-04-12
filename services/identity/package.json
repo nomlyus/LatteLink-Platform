@@ -1,5 +1,5 @@
 {
-  "name": "@gazelle/identity",
+  "name": "@lattelink/identity",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -16,9 +16,9 @@
   },
   "dependencies": {
     "@fastify/rate-limit": "^10.3.0",
-    "@gazelle/contracts-auth": "workspace:*",
-    "@gazelle/contracts-core": "workspace:*",
-    "@gazelle/persistence": "workspace:*",
+    "@lattelink/contracts-auth": "workspace:*",
+    "@lattelink/contracts-core": "workspace:*",
+    "@lattelink/persistence": "workspace:*",
     "@simplewebauthn/server": "^13.2.2",
     "@fastify/swagger": "^9.7.0",
     "@fastify/swagger-ui": "^5.2.5",
@@ -27,8 +27,8 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
-    "@gazelle/config-eslint": "workspace:*",
-    "@gazelle/config-typescript": "workspace:*",
+    "@lattelink/config-eslint": "workspace:*",
+    "@lattelink/config-typescript": "workspace:*",
     "@types/node": "^22.13.8",
     "eslint": "^9.21.0",
     "tsx": "^4.20.5",

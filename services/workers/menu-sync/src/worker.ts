@@ -1,6 +1,6 @@
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { menuResponseSchema } from "@gazelle/contracts-catalog";
+import { menuResponseSchema } from "@lattelink/contracts-catalog";
 import { z } from "zod";
 
 export type MenuSyncConfig = {

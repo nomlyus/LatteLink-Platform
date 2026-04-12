@@ -17,7 +17,7 @@ import {
   type MenuItemCustomizationOption,
   type MenuResponse,
   type StoreConfigResponse
-} from "@gazelle/contracts-catalog";
+} from "@lattelink/contracts-catalog";
 import { apiClient, catalogApiClient } from "../api/client";
 
 const sizeGroup: MenuItemCustomizationGroup = menuItemCustomizationGroupSchema.parse({

@@ -136,26 +136,26 @@ High-signal file groups:
 
 Completed:
 
-- `pnpm --filter @gazelle/contracts-catalog test`
-- `pnpm --filter @gazelle/catalog test`
-- `pnpm --filter @gazelle/catalog typecheck`
-- `pnpm --filter @gazelle/gateway test`
-- `pnpm --filter @gazelle/gateway typecheck`
-- `pnpm --filter @gazelle/orders exec vitest run test/fulfillment.test.ts test/orders.test.ts`
-- `pnpm --filter @gazelle/payments test`
-- `pnpm --filter @gazelle/sdk-mobile test`
-- `pnpm --filter @gazelle/mobile test`
-- `pnpm --filter @gazelle/mobile typecheck`
-- `pnpm --filter @gazelle/client-dashboard test`
-- `pnpm --filter @gazelle/client-dashboard typecheck`
-- `pnpm --filter @gazelle/client-dashboard lint`
-- `pnpm --filter @gazelle/client-dashboard build`
-- `pnpm --filter @gazelle/gateway openapi`
-- `pnpm --filter @gazelle/sdk-mobile generate`
+- `pnpm --filter @lattelink/contracts-catalog test`
+- `pnpm --filter @lattelink/catalog test`
+- `pnpm --filter @lattelink/catalog typecheck`
+- `pnpm --filter @lattelink/gateway test`
+- `pnpm --filter @lattelink/gateway typecheck`
+- `pnpm --filter @lattelink/orders exec vitest run test/fulfillment.test.ts test/orders.test.ts`
+- `pnpm --filter @lattelink/payments test`
+- `pnpm --filter @lattelink/sdk-mobile test`
+- `pnpm --filter @lattelink/mobile test`
+- `pnpm --filter @lattelink/mobile typecheck`
+- `pnpm --filter @lattelink/client-dashboard test`
+- `pnpm --filter @lattelink/client-dashboard typecheck`
+- `pnpm --filter @lattelink/client-dashboard lint`
+- `pnpm --filter @lattelink/client-dashboard build`
+- `pnpm --filter @lattelink/gateway openapi`
+- `pnpm --filter @lattelink/sdk-mobile generate`
 
 Partially blocked:
 
-- `pnpm --filter @gazelle/orders test`
+- `pnpm --filter @lattelink/orders test`
   - the package-level run still includes `services/orders/test/payments-e2e.test.ts`
   - those tests fail in this environment with `listen EPERM: operation not permitted 127.0.0.1`
   - the narrowed non-socket orders suite passed

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_APP_CONFIG_FULFILLMENT } from "@gazelle/contracts-catalog";
-import { orderSchema } from "@gazelle/contracts-orders";
+import { DEFAULT_APP_CONFIG_FULFILLMENT } from "@lattelink/contracts-catalog";
+import { orderSchema } from "@lattelink/contracts-orders";
 import { reconcileOrderFulfillmentState } from "../src/fulfillment.js";
 import { advanceOrderLifecycleToStatus, OrderTransitionError, transitionOrderStatus } from "../src/lifecycle.js";
 

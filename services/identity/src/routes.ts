@@ -38,8 +38,8 @@ import {
   passkeyChallengeResponseSchema,
   passkeyVerifyRequestSchema,
   refreshRequestSchema
-} from "@gazelle/contracts-auth";
-import { apiErrorSchema, authSessionSchema } from "@gazelle/contracts-core";
+} from "@lattelink/contracts-auth";
+import { apiErrorSchema, authSessionSchema } from "@lattelink/contracts-core";
 import {
   AppleAuthError,
   exchangeAppleAuthorizationCode,

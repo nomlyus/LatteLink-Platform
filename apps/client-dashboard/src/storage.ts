@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { operatorSessionSchema } from "@gazelle/contracts-auth";
+import { operatorSessionSchema } from "@lattelink/contracts-auth";
 import { normalizeApiBaseUrl, resolveDefaultApiBaseUrl, type OperatorSession } from "./api.js";
 import type { DashboardSection } from "./model.js";
 

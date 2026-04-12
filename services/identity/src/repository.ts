@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
-import { authSessionSchema } from "@gazelle/contracts-core";
+import { authSessionSchema } from "@lattelink/contracts-core";
 import {
   resolveInternalAdminCapabilities,
   resolveOperatorCapabilities,
@@ -8,7 +8,7 @@ import {
   type InternalAdminUser,
   type OperatorRole,
   type OperatorUser
-} from "@gazelle/contracts-auth";
+} from "@lattelink/contracts-auth";
 import {
   allowsInMemoryPersistence,
   buildPersistenceStartupError,
@@ -16,7 +16,7 @@ import {
   getDatabaseUrl,
   runMigrations,
   sql
-} from "@gazelle/persistence";
+} from "@lattelink/persistence";
 import { z } from "zod";
 
 type AuthSession = z.output<typeof authSessionSchema>;

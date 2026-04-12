@@ -5,7 +5,7 @@ import {
   orderStateNotificationSchema,
   pushTokenUpsertResponseSchema,
   pushTokenUpsertSchema
-} from "@gazelle/contracts-notifications";
+} from "@lattelink/contracts-notifications";
 import { z } from "zod";
 import { createNotificationsRepository, type OutboxEntry } from "./repository.js";
 

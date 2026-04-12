@@ -4,7 +4,7 @@ Last reviewed: `2026-03-10`
 
 ## Purpose
 
-`@gazelle/menu-sync-worker` ingests menu data from the web content source and validates it against `@gazelle/contracts-catalog`.
+`@lattelink/menu-sync-worker` ingests menu data from the web content source and validates it against `@lattelink/contracts-catalog`.
 
 The worker now includes:
 - scheduled polling loop
@@ -29,7 +29,7 @@ The worker now includes:
 ## Local Run
 
 ```bash
-pnpm --filter @gazelle/menu-sync-worker dev
+pnpm --filter @lattelink/menu-sync-worker dev
 ```
 
 ## Failure Behavior

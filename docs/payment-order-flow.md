@@ -70,6 +70,6 @@ Failed webhook dispatches are not cached, so a retry can attempt finalization ag
 ## Verification
 
 ```bash
-pnpm --filter @gazelle/payments test
-pnpm --filter @gazelle/orders test
+pnpm --filter @lattelink/payments test
+pnpm --filter @lattelink/orders test
 ```

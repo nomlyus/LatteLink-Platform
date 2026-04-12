@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
-import { orderStateNotificationSchema, pushTokenUpsertSchema } from "@gazelle/contracts-notifications";
+import { orderStateNotificationSchema, pushTokenUpsertSchema } from "@lattelink/contracts-notifications";
 import {
   allowsInMemoryPersistence,
   buildPersistenceStartupError,
@@ -8,7 +8,7 @@ import {
   getDatabaseUrl,
   runMigrations,
   sql
-} from "@gazelle/persistence";
+} from "@lattelink/persistence";
 import { z } from "zod";
 
 type PushTokenInput = z.output<typeof pushTokenUpsertSchema>;

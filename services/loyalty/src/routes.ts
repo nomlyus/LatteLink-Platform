@@ -1,6 +1,6 @@
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { loyaltyBalanceSchema, loyaltyLedgerEntrySchema } from "@gazelle/contracts-loyalty";
+import { loyaltyBalanceSchema, loyaltyLedgerEntrySchema } from "@lattelink/contracts-loyalty";
 import {
   allowsInMemoryPersistence,
   buildPersistenceStartupError,
@@ -8,7 +8,7 @@ import {
   getDatabaseUrl,
   runMigrations,
   sql
-} from "@gazelle/persistence";
+} from "@lattelink/persistence";
 import { z } from "zod";
 
 const defaultRateLimitWindowMs = 60_000;

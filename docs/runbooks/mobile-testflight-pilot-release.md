@@ -38,7 +38,7 @@ Reference values are defined in:
 
 ### Build Inputs
 
-- run `pnpm --filter @gazelle/mobile release:check -- beta`
+- run `pnpm --filter @lattelink/mobile release:check -- beta`
 - confirm `APP_VARIANT=beta`
 - confirm `IOS_BUNDLE_IDENTIFIER` matches the pilot TestFlight app
 - confirm `EXPO_PUBLIC_API_BASE_URL` points to the pilot backend
