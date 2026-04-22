@@ -1308,27 +1308,23 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
 
         if (input.paymentProfile) {
           const now = new Date().toISOString();
+          const paymentProfile = buildPaymentProfile({
+            ...input.paymentProfile,
+            locationId: input.locationId,
+            createdAt: now,
+            updatedAt: now
+          });
           await trx
             .insertInto("catalog_payment_profiles")
             .values({
               brand_id: persistedBrandId,
               location_id: input.locationId,
-              payment_profile_json: buildPaymentProfile({
-                ...input.paymentProfile,
-                locationId: input.locationId,
-                createdAt: now,
-                updatedAt: now
-              })
+              payment_profile_json: paymentProfile
             })
             .onConflict((oc) =>
               oc.column("location_id").doUpdateSet({
                 brand_id: persistedBrandId,
-                payment_profile_json: buildPaymentProfile({
-                  ...input.paymentProfile,
-                  locationId: input.locationId,
-                  createdAt: now,
-                  updatedAt: now
-                })
+                payment_profile_json: paymentProfile
               })
             )
             .execute();

@@ -1098,7 +1098,7 @@ function requireStripeWebhookSecret(
   request: FastifyRequest,
   reply: FastifyReply,
   webhookSecret: string | undefined
-) {
+): webhookSecret is string {
   if (webhookSecret) {
     return true;
   }

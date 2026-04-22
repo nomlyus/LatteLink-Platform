@@ -62,6 +62,15 @@
         }
       }
     },
+    "/payments/stripe/mobile-session": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/payments/clover/webhooks/verification-code": {
       "get": {
         "responses": {
@@ -763,6 +772,42 @@
     },
     "/internal/locations/{locationId}": {
       "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "locationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/internal/locations/{locationId}/payment-profile": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "locationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "put": {
         "parameters": [
           {
             "schema": {
