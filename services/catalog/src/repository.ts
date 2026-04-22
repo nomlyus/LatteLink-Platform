@@ -555,6 +555,33 @@ function applyRuntimeFulfillmentMode(appConfig: AppConfig) {
   return appConfigSchema.parse(appConfig);
 }
 
+function applyPaymentProfileToAppConfig(appConfig: AppConfig, profile?: ClientPaymentProfile) {
+  if (!profile) {
+    return appConfigSchema.parse(appConfig);
+  }
+
+  const readiness = buildPaymentReadiness(profile);
+
+  return appConfigSchema.parse({
+    ...appConfig,
+    paymentCapabilities: {
+      ...appConfig.paymentCapabilities,
+      applePay: profile.applePayEnabled,
+      card: profile.cardEnabled,
+      refunds: profile.refundsEnabled,
+      stripe: {
+        enabled: Boolean(profile.stripeAccountId),
+        onboarded: readiness.ready,
+        dashboardEnabled: Boolean(profile.stripeDashboardEnabled && profile.stripeAccountId)
+      },
+      clover: {
+        ...appConfig.paymentCapabilities.clover,
+        enabled: profile.cloverPosEnabled
+      }
+    }
+  });
+}
+
 function createInMemoryRepository(): CatalogRepository {
   const defaultAppConfig = structuredClone(resolveDefaultAppConfigPayload());
   const appConfigsByLocation = new Map<string, AppConfig>([[DEFAULT_LOCATION_ID, defaultAppConfig]]);
@@ -584,7 +611,10 @@ function createInMemoryRepository(): CatalogRepository {
   return {
     backend: "memory",
     async getAppConfig() {
-      return applyRuntimeFulfillmentMode(appConfigsByLocation.get(DEFAULT_LOCATION_ID) ?? defaultAppConfig);
+      return applyPaymentProfileToAppConfig(
+        applyRuntimeFulfillmentMode(appConfigsByLocation.get(DEFAULT_LOCATION_ID) ?? defaultAppConfig),
+        paymentProfilesByLocation.get(DEFAULT_LOCATION_ID)
+      );
     },
     async listInternalLocations() {
       return Array.from(adminStoreConfigsByLocation.entries())
@@ -1150,12 +1180,18 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         .where("brand_id", "=", DEFAULT_BRAND_ID)
         .where("location_id", "=", DEFAULT_LOCATION_ID)
         .executeTakeFirst();
+      const paymentProfileRow = await db
+        .selectFrom("catalog_payment_profiles")
+        .select("payment_profile_json")
+        .where("location_id", "=", DEFAULT_LOCATION_ID)
+        .executeTakeFirst();
 
-      if (!row) {
-        return applyRuntimeFulfillmentMode(defaultAppConfigPayload);
-      }
+      const appConfig = row ? appConfigSchema.parse(row.app_config_json) : defaultAppConfigPayload;
+      const paymentProfile = paymentProfileRow
+        ? clientPaymentProfileSchema.parse(paymentProfileRow.payment_profile_json)
+        : undefined;
 
-      return applyRuntimeFulfillmentMode(appConfigSchema.parse(row.app_config_json));
+      return applyPaymentProfileToAppConfig(applyRuntimeFulfillmentMode(appConfig), paymentProfile);
     },
     async listInternalLocations() {
       const storeRows = await db.selectFrom("catalog_store_configs").selectAll().execute();

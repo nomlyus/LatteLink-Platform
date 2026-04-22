@@ -612,4 +612,57 @@ describe("catalog service", () => {
 
     await app.close();
   });
+
+  it("reflects the default location payment profile in public app-config", async () => {
+    process.env.GATEWAY_INTERNAL_API_TOKEN = "catalog-gateway-token";
+    const app = await buildApp();
+
+    const paymentProfileResponse = await app.inject({
+      method: "PUT",
+      url: `/v1/catalog/internal/locations/${DEFAULT_LOCATION_ID}/payment-profile`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        locationId: DEFAULT_LOCATION_ID,
+        stripeAccountId: "acct_default123",
+        stripeAccountType: "express",
+        stripeOnboardingStatus: "completed",
+        stripeDetailsSubmitted: true,
+        stripeChargesEnabled: true,
+        stripePayoutsEnabled: true,
+        stripeDashboardEnabled: true,
+        country: "US",
+        currency: "USD",
+        cardEnabled: true,
+        applePayEnabled: true,
+        refundsEnabled: true,
+        cloverPosEnabled: true
+      }
+    });
+
+    expect(paymentProfileResponse.statusCode).toBe(200);
+
+    const appConfigResponse = await app.inject({ method: "GET", url: "/v1/app-config" });
+
+    expect(appConfigResponse.statusCode).toBe(200);
+    expect(appConfigSchema.parse(appConfigResponse.json())).toMatchObject({
+      paymentCapabilities: {
+        applePay: true,
+        card: true,
+        refunds: true,
+        stripe: {
+          enabled: true,
+          onboarded: true,
+          dashboardEnabled: true
+        },
+        clover: {
+          enabled: true,
+          merchantRef: DEFAULT_LOCATION_ID
+        }
+      }
+    });
+
+    await app.close();
+  });
 });
