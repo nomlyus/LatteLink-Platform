@@ -34,6 +34,7 @@ import {
 } from "./model.js";
 
 const ordersSchema = z.array(orderSchema);
+const unreachableBackendMessage = "Unable to reach backend.";
 
 const storedOperatorSessionSchema = operatorSessionSchema.extend({
   apiBaseUrl: z.string().min(1)
@@ -103,14 +104,14 @@ function normalizeNewsCardsPayload(input: {
 export function normalizeApiBaseUrl(input: string) {
   const trimmed = input.trim();
   if (!trimmed) {
-    return DEFAULT_API_BASE_URL;
+    return "";
   }
 
   return trimmed.replace(/\/+$/, "").endsWith("/v1") ? trimmed.replace(/\/+$/, "") : `${trimmed.replace(/\/+$/, "")}/v1`;
 }
 
 export function resolveDefaultApiBaseUrl() {
-  return normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL);
+  return normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL ?? "");
 }
 
 export function buildOperatorHeaders(accessToken: string, includeJsonContentType = false): Record<string, string> {
@@ -147,6 +148,15 @@ function toStoredSession(apiBaseUrl: string, payload: z.output<typeof operatorSe
   });
 }
 
+function requireApiBaseUrl(apiBaseUrl: string) {
+  const normalized = normalizeApiBaseUrl(apiBaseUrl);
+  if (!normalized) {
+    throw new Error(unreachableBackendMessage);
+  }
+
+  return normalized;
+}
+
 async function requestJson<TSchema extends z.ZodTypeAny>(params: {
   apiBaseUrl: string;
   accessToken?: string;
@@ -156,11 +166,23 @@ async function requestJson<TSchema extends z.ZodTypeAny>(params: {
   schema: TSchema;
 }): Promise<z.output<TSchema>> {
   const { apiBaseUrl, accessToken, path, method = "GET", body, schema } = params;
-  const response = await fetch(`${normalizeApiBaseUrl(apiBaseUrl)}${path}`, {
-    method,
-    headers: accessToken ? buildOperatorHeaders(accessToken, body !== undefined) : body !== undefined ? { "content-type": "application/json" } : undefined,
-    body: body === undefined ? undefined : JSON.stringify(body)
-  });
+  const response = await (async () => {
+    try {
+      return await fetch(`${requireApiBaseUrl(apiBaseUrl)}${path}`, {
+        method,
+        headers: accessToken
+          ? buildOperatorHeaders(accessToken, body !== undefined)
+          : body !== undefined
+            ? { "content-type": "application/json" }
+            : undefined,
+        body: body === undefined ? undefined : JSON.stringify(body)
+      });
+    } catch (error) {
+      throw new Error(unreachableBackendMessage, {
+        cause: error instanceof Error ? error : undefined
+      });
+    }
+  })();
 
   const parsedPayload = parseJsonSafely(await response.text());
   if (!response.ok) {
@@ -464,5 +486,3 @@ export function updateOperatorStaffUser(
     schema: operatorUserSchema
   });
 }
-
-export const DEFAULT_API_BASE_URL = "http://127.0.0.1:8080/v1";

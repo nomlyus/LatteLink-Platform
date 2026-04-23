@@ -1,14 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiRequestError,
   buildOperatorHeaders,
   extractApiErrorMessage,
   isApiRequestError,
-  normalizeApiBaseUrl
+  normalizeApiBaseUrl,
+  signInOperatorWithPassword
 } from "../src/api";
 
 describe("client dashboard api helpers", () => {
   it("normalizes operator api base URLs onto /v1", () => {
+    expect(normalizeApiBaseUrl("")).toBe("");
     expect(normalizeApiBaseUrl("http://127.0.0.1:8080")).toBe("http://127.0.0.1:8080/v1");
     expect(normalizeApiBaseUrl("http://127.0.0.1:8080/")).toBe("http://127.0.0.1:8080/v1");
     expect(normalizeApiBaseUrl("http://127.0.0.1:8080/v1")).toBe("http://127.0.0.1:8080/v1");
@@ -36,5 +38,44 @@ describe("client dashboard api helpers", () => {
     expect(isApiRequestError(error)).toBe(true);
     expect(isApiRequestError(new Error("plain error"))).toBe(false);
     expect(error.statusCode).toBe(401);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("throws a stable backend reachability error when the api base URL is missing", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(
+      signInOperatorWithPassword({
+        apiBaseUrl: "",
+        email: "owner@store.com",
+        password: "password123"
+      })
+    ).rejects.toThrow("Unable to reach backend.");
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("throws a stable backend reachability error when fetch fails", async () => {
+    const fetchSpy = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(
+      signInOperatorWithPassword({
+        apiBaseUrl: "https://api.nomly.us",
+        email: "owner@store.com",
+        password: "password123"
+      })
+    ).rejects.toThrow("Unable to reach backend.");
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://api.nomly.us/v1/operator/auth/sign-in",
+      expect.objectContaining({
+        method: "POST"
+      })
+    );
   });
 });
