@@ -1,5 +1,6 @@
 import { renderAuthScreen } from "./views/auth.js";
 import { renderDashboard } from "./views/layout.js";
+import { renderToasts } from "./views/toasts.js";
 import { state } from "./state.js";
 
 const appRoot = document.querySelector<HTMLDivElement>("#app");
@@ -10,5 +11,5 @@ if (!appRoot) {
 export const root: HTMLDivElement = appRoot;
 
 export function render() {
-  root.innerHTML = state.session ? renderDashboard() : renderAuthScreen();
+  root.innerHTML = (state.session ? renderDashboard() : renderAuthScreen()) + renderToasts();
 }

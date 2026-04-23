@@ -1,5 +1,5 @@
 import { root, render } from "./render.js";
-import { setError, state } from "./state.js";
+import { setError, dismissToast, state } from "./state.js";
 import { persistSection } from "./storage.js";
 import {
   syncMenuCreateDraft,
@@ -100,6 +100,15 @@ export function registerEvents() {
       return;
     }
     const action = actionElement.dataset.action;
+
+    if (action === "dismiss-toast") {
+      const toastId = actionElement.dataset.toastId;
+      if (toastId) {
+        dismissToast(toastId);
+        render();
+      }
+      return;
+    }
 
     switch (action) {
       case "refresh":

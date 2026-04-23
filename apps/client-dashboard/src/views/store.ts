@@ -60,7 +60,7 @@ export function renderStoreSection() {
                   </label>
                   <div class="dash-form-actions dash-store-form__wide">
                     <button class="button button--primary" type="submit" ${state.savingStore ? "disabled" : ""}>
-                      ${state.savingStore ? "Saving…" : "Save store settings"}
+                      ${state.savingStore ? '<span class="spinner"></span>' : "Save store settings"}
                     </button>
                   </div>
                 </form>

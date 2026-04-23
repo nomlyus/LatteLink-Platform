@@ -213,7 +213,7 @@ export function renderOrdersSection() {
             ${renderOrderFilterRow(activeOrders.length, completedOrders.length)}
           </div>
           <button class="button button--ghost" type="button" data-action="refresh" ${state.loading ? "disabled" : ""}>
-            ${state.loading ? "Refreshing…" : "Refresh"}
+            ${state.loading ? '<span class="spinner"></span>' : "Refresh"}
           </button>
         `
       })}

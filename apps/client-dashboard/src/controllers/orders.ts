@@ -1,4 +1,4 @@
-import { setError, setNotice, state } from "../state.js";
+import { setError, state } from "../state.js";
 import { updateOperatorOrderStatus } from "../api.js";
 import {
   canAdvanceOrderStatus,
@@ -40,7 +40,6 @@ export async function handleOrderAdvance(
   try {
     state.busyOrderId = orderId;
     clearPendingCancel();
-    setNotice(null);
     setError(null);
     render();
     await updateOperatorOrderStatus(state.session, orderId, { status, note });

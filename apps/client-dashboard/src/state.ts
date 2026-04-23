@@ -59,6 +59,7 @@ export type AppState = {
     priceCents: string;
     visible: boolean;
   };
+  toasts: Array<{ id: string; message: string; tone: "success" | "error" | "notice" }>;
 };
 
 export const ordersRefreshIntervalMs = 30_000;
@@ -105,6 +106,7 @@ export const state: AppState = {
   autoRefreshHandle: null,
   pendingCancelOrderId: null,
   pendingCancelTimeoutHandle: null,
+  toasts: [],
   menuCreateDraft: {
     categoryId: "",
     name: "",
@@ -120,6 +122,16 @@ export function setError(message: string | null) {
 
 export function setNotice(message: string | null) {
   state.notice = message;
+}
+
+export function addToast(message: string, tone: "success" | "error" | "notice" = "notice") {
+  const id = Math.random().toString(36).slice(2);
+  state.toasts.push({ id, message, tone });
+  return id;
+}
+
+export function dismissToast(id: string) {
+  state.toasts = state.toasts.filter((t) => t.id !== id);
 }
 
 export function resetDashboardData() {

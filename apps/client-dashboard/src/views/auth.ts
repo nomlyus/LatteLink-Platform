@@ -70,7 +70,7 @@ export function renderAuthScreen() {
             }
 
             <button class="button button--primary" type="submit" ${state.signingIn ? "disabled" : ""}>
-              ${state.signingIn ? "Signing in…" : "Sign in"}
+              ${state.signingIn ? '<span class="spinner"></span>' : "Sign in"}
             </button>
           </form>
 

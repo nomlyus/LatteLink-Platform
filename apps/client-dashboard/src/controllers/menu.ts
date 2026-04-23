@@ -8,7 +8,7 @@ import {
   canCreateMenuItems,
   canToggleMenuItemVisibility
 } from "../model.js";
-import { setError, setNotice, state } from "../state.js";
+import { addToast, setError, state } from "../state.js";
 import { handleOperatorActionError, loadDashboard } from "../lifecycle.js";
 import { render } from "../render.js";
 import {
@@ -39,7 +39,7 @@ export async function handleMenuCreateSubmit(form: HTMLFormElement) {
       priceCents: state.menuCreateDraft.priceCents,
       visible: state.menuCreateDraft.visible
     });
-    setNotice("Created menu item.");
+    addToast("Created menu item.", "success");
     resetMenuCreateWizard();
     await loadDashboard();
   } catch (error) {
@@ -79,7 +79,7 @@ export async function handleMenuItemSubmit(form: HTMLFormElement) {
       visible,
       customizationGroups
     });
-    setNotice(`Saved ${itemId}.`);
+    addToast(`Saved ${itemId}.`, "success");
     await loadDashboard();
   } catch (error) {
     await handleOperatorActionError(error, "Unable to save menu item.");
@@ -104,7 +104,7 @@ export async function handleMenuVisibilityToggle(itemId: string, visible: boolea
     setError(null);
     render();
     await updateOperatorMenuItemVisibility(state.session, itemId, visible);
-    setNotice(visible ? "Item is visible in the app." : "Item was hidden from the app.");
+    addToast(visible ? "Item is visible in the app." : "Item was hidden from the app.", "success");
     await loadDashboard();
   } catch (error) {
     await handleOperatorActionError(error, "Unable to change item visibility.");
@@ -132,7 +132,7 @@ export async function handleMenuItemDelete(itemId: string) {
     setError(null);
     render();
     await deleteOperatorMenuItem(state.session, itemId);
-    setNotice("Menu item removed.");
+    addToast("Menu item removed.", "success");
     await loadDashboard();
   } catch (error) {
     await handleOperatorActionError(error, "Unable to remove the menu item.");

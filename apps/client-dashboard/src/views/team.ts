@@ -44,7 +44,7 @@ export function renderTeamSection() {
                     <input name="password" type="password" placeholder="Minimum 8 characters" minlength="8" required />
                   </label>
                   <button class="button button--primary" type="submit" ${state.creatingTeamUser ? "disabled" : ""}>
-                    ${state.creatingTeamUser ? "Creating…" : "Create account"}
+                    ${state.creatingTeamUser ? '<span class="spinner"></span>' : "Create account"}
                   </button>
                 </form>
               </article>

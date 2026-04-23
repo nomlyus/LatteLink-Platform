@@ -1,6 +1,6 @@
 import { createOperatorStaffUser, updateOperatorStaffUser } from "../api.js";
 import { canManageTeamMembers } from "../model.js";
-import { setError, setNotice, state } from "../state.js";
+import { addToast, setError, state } from "../state.js";
 import { handleOperatorActionError, loadDashboard } from "../lifecycle.js";
 import { render } from "../render.js";
 
@@ -26,7 +26,7 @@ export async function handleTeamCreateSubmit(form: HTMLFormElement) {
       role: formData.get("role"),
       password: formData.get("password")
     });
-    setNotice("Created team member account.");
+    addToast("Created team member account.", "success");
     form.reset();
     await loadDashboard();
   } catch (error) {
@@ -78,7 +78,7 @@ export async function handleTeamUserSubmit(form: HTMLFormElement) {
       password: formData.get("password"),
       active
     });
-    setNotice("Updated team member access.");
+    addToast("Updated team member access.", "success");
     await loadDashboard();
   } catch (error) {
     await handleOperatorActionError(error, "Unable to update team member access.");

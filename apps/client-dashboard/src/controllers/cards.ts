@@ -1,6 +1,6 @@
 import { replaceOperatorNewsCards } from "../api.js";
 import { canAccessCapability } from "../model.js";
-import { setError, setNotice, state } from "../state.js";
+import { addToast, setError, state } from "../state.js";
 import { handleOperatorActionError } from "../lifecycle.js";
 import { render } from "../render.js";
 
@@ -46,7 +46,7 @@ export async function handleNewsCardCreateSubmit(form: HTMLFormElement) {
     render();
     const response = await replaceOperatorNewsCards(state.session, [...state.newsCards, nextCard]);
     state.newsCards = response.cards;
-    setNotice("Created home card.");
+    addToast("Created home card.", "success");
     form.reset();
   } catch (error) {
     await handleOperatorActionError(error, "Unable to create home card.");
@@ -97,7 +97,7 @@ export async function handleNewsCardSubmit(form: HTMLFormElement) {
       .sort((left, right) => left.sortOrder - right.sortOrder || left.cardId.localeCompare(right.cardId));
     const response = await replaceOperatorNewsCards(state.session, nextCards);
     state.newsCards = response.cards;
-    setNotice(`Saved ${cardId}.`);
+    addToast(`Saved ${cardId}.`, "success");
   } catch (error) {
     await handleOperatorActionError(error, "Unable to save home card.");
   } finally {
@@ -125,7 +125,7 @@ export async function handleNewsCardVisibilityToggle(cardId: string, visible: bo
       .sort((left, right) => left.sortOrder - right.sortOrder || left.cardId.localeCompare(right.cardId));
     const response = await replaceOperatorNewsCards(state.session, nextCards);
     state.newsCards = response.cards;
-    setNotice(visible ? "Home card is visible in the app." : "Home card was hidden from the app.");
+    addToast(visible ? "Home card is visible in the app." : "Home card was hidden from the app.", "success");
   } catch (error) {
     await handleOperatorActionError(error, "Unable to change home card visibility.");
   } finally {
@@ -154,7 +154,7 @@ export async function handleNewsCardDelete(cardId: string) {
     const nextCards = state.newsCards.filter((card) => card.cardId !== cardId);
     const response = await replaceOperatorNewsCards(state.session, nextCards);
     state.newsCards = response.cards;
-    setNotice("Home card removed.");
+    addToast("Home card removed.", "success");
   } catch (error) {
     await handleOperatorActionError(error, "Unable to remove the home card.");
   } finally {

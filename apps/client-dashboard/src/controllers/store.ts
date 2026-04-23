@@ -1,6 +1,6 @@
 import { updateOperatorStoreConfig } from "../api.js";
 import { canUpdateStoreSettings } from "../model.js";
-import { setError, setNotice, state } from "../state.js";
+import { addToast, setError, state } from "../state.js";
 import { handleOperatorActionError, loadDashboard } from "../lifecycle.js";
 import { render } from "../render.js";
 
@@ -25,7 +25,7 @@ export async function handleStoreSubmit(form: HTMLFormElement) {
       hours: formData.get("hours"),
       pickupInstructions: formData.get("pickupInstructions")
     });
-    setNotice("Saved store settings.");
+    addToast("Saved store settings.", "success");
     await loadDashboard();
   } catch (error) {
     await handleOperatorActionError(error, "Unable to save store settings.");
