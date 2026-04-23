@@ -55,7 +55,7 @@ export function resolveDefaultAppConfigPayload(
       displayFontFamily: "Fraunces"
     },
     header: {
-      background: "#F0ECE4"
+      background: "#F7F4ED"
     },
     enabledTabs: ["home", "menu", "orders", "account"],
     featureFlags: {
