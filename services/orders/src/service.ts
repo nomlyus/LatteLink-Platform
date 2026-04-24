@@ -1358,6 +1358,7 @@ export async function listOrdersForRead(params: {
 
 export async function getOrderForRead(params: {
   orderId: string;
+  locationId?: string;
   requestId: string;
   deps: OrderServiceDeps;
 }): Promise<{ order: Order } | { error: ServiceError }> {
@@ -1374,6 +1375,17 @@ export async function getOrderForRead(params: {
     };
   }
 
+  if (params.locationId && order.locationId !== params.locationId) {
+    return {
+      error: buildServiceError({
+        statusCode: 404,
+        code: "ORDER_NOT_FOUND",
+        message: "Order not found",
+        details: { orderId: params.orderId, locationId: params.locationId }
+      })
+    };
+  }
+
   const reconciledOrder = await reconcilePersistedOrderFulfillmentState({
     order,
     requestId: params.requestId,
@@ -1386,11 +1398,12 @@ export async function cancelOrder(params: {
   orderId: string;
   input: { reason: string };
   cancelSource: CancelOrderSource;
+  locationId?: string;
   requestId: string;
   requestUserContext?: RequestUserContext;
   deps: OrderServiceDeps;
 }): Promise<{ order: Order } | { error: ServiceError }> {
-  const { orderId, input, cancelSource, requestId, requestUserContext, deps } = params;
+  const { orderId, input, cancelSource, locationId, requestId, requestUserContext, deps } = params;
   const existingOrder = await deps.repository.getOrder(orderId);
 
   if (!existingOrder) {
@@ -1400,6 +1413,17 @@ export async function cancelOrder(params: {
         code: "ORDER_NOT_FOUND",
         message: "Order not found",
         details: { orderId }
+      })
+    };
+  }
+
+  if (locationId && existingOrder.locationId !== locationId) {
+    return {
+      error: buildServiceError({
+        statusCode: 404,
+        code: "ORDER_NOT_FOUND",
+        message: "Order not found",
+        details: { orderId, locationId }
       })
     };
   }
@@ -1865,10 +1889,11 @@ export async function reconcilePaymentWebhook(params: {
 export async function advanceOrderStatus(params: {
   orderId: string;
   input: OrderStatusUpdateInput;
+  locationId?: string;
   requestId: string;
   deps: OrderServiceDeps;
 }): Promise<{ order: Order } | { error: ServiceError }> {
-  const { orderId, input, requestId, deps } = params;
+  const { orderId, input, locationId, requestId, deps } = params;
   const existingOrder = await deps.repository.getOrder(orderId);
 
   if (!existingOrder) {
@@ -1878,6 +1903,17 @@ export async function advanceOrderStatus(params: {
         code: "ORDER_NOT_FOUND",
         message: "Order not found",
         details: { orderId }
+      })
+    };
+  }
+
+  if (locationId && existingOrder.locationId !== locationId) {
+    return {
+      error: buildServiceError({
+        statusCode: 404,
+        code: "ORDER_NOT_FOUND",
+        message: "Order not found",
+        details: { orderId, locationId }
       })
     };
   }

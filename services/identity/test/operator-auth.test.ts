@@ -306,6 +306,77 @@ describe("operator auth", () => {
     await app.close();
   });
 
+  it("supports multi-location owner sessions and scoped team management", async () => {
+    const repository = createInMemoryIdentityRepository();
+    await provisionOwner(repository);
+    await provisionOwnerAccess(repository, {
+      allowInMemory: true,
+      displayName: "Store Owner",
+      email: ownerEmail,
+      locationId: "pilot-01",
+      password: ownerPassword
+    });
+    await repository.createOperatorUser({
+      displayName: "Pilot Lead",
+      email: "pilotlead@gazellecoffee.com",
+      role: "manager",
+      locationId: "pilot-01",
+      password: "PilotLead123!"
+    });
+    const app = await buildApp({ repository });
+
+    const ownerSession = await signInOperator(app, ownerEmail, ownerPassword);
+    expect(ownerSession.operator.locationIds).toEqual(expect.arrayContaining([locationId, "pilot-01"]));
+
+    const pilotList = await app.inject({
+      method: "GET",
+      url: "/v1/operator/users?locationId=pilot-01",
+      headers: {
+        authorization: `Bearer ${ownerSession.accessToken}`
+      }
+    });
+    expect(pilotList.statusCode).toBe(200);
+    expect(pilotList.json().users).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ email: ownerEmail, locationId: "pilot-01" }),
+        expect.objectContaining({ email: "pilotlead@gazellecoffee.com", locationId: "pilot-01" })
+      ])
+    );
+
+    const pilotCreate = await app.inject({
+      method: "POST",
+      url: "/v1/operator/users?locationId=pilot-01",
+      headers: {
+        authorization: `Bearer ${ownerSession.accessToken}`
+      },
+      payload: {
+        displayName: "Pilot Staff",
+        email: "pilotstaff@gazellecoffee.com",
+        role: "staff",
+        password: "PilotStaff123!"
+      }
+    });
+    expect(pilotCreate.statusCode).toBe(200);
+    expect(pilotCreate.json()).toMatchObject({
+      email: "pilotstaff@gazellecoffee.com",
+      locationId: "pilot-01"
+    });
+
+    const forbiddenLocation = await app.inject({
+      method: "GET",
+      url: "/v1/operator/users?locationId=unknown-01",
+      headers: {
+        authorization: `Bearer ${ownerSession.accessToken}`
+      }
+    });
+    expect(forbiddenLocation.statusCode).toBe(403);
+    expect(forbiddenLocation.json()).toMatchObject({
+      code: "FORBIDDEN"
+    });
+
+    await app.close();
+  });
+
   it("provisions a first owner through the gateway-protected internal route", async () => {
     process.env.GATEWAY_INTERNAL_API_TOKEN = "identity-gateway-token";
     const repository = createInMemoryIdentityRepository();

@@ -1,4 +1,4 @@
-import { state } from "../state.js";
+import { isAllLocationsSelected, state } from "../state.js";
 import { escapeHtml } from "../ui/format.js";
 import {
   canCreateMenuItems,
@@ -7,7 +7,7 @@ import {
 } from "../model.js";
 import { isPlatformManagedMenu } from "@lattelink/contracts-catalog";
 import { ensureMenuCustomizationDraft } from "../customizations.js";
-import { renderSectionHeading } from "./common.js";
+import { renderLocationSelectionNotice, renderSectionHeading } from "./common.js";
 
 function renderMenuCategory(
   category: OperatorMenuCategory,
@@ -304,6 +304,19 @@ function renderMenuCategory(
 }
 
 export function renderMenuSection() {
+  if (isAllLocationsSelected()) {
+    return `
+      <section class="dash-section">
+        ${renderSectionHeading({
+          eyebrow: "Menu",
+          title: "Location-specific menu management",
+          description: "Choose one location to edit items, pricing, visibility, and customizations."
+        })}
+        ${renderLocationSelectionNotice("Menu controls stay scoped to a single location so edits do not accidentally affect the wrong storefront.")}
+      </section>
+    `;
+  }
+
   const menuIsPlatformManaged = isPlatformManagedMenu(state.appConfig);
   const canWrite = canCreateMenuItems(state.session?.operator ?? null, state.appConfig);
   const canToggleVisibility = canToggleMenuItemVisibility(state.session?.operator ?? null, state.appConfig);

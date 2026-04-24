@@ -19,7 +19,7 @@ export async function handleStoreSubmit(form: HTMLFormElement) {
     state.savingStore = true;
     setError(null);
     render();
-    await updateOperatorStoreConfig(state.session, {
+    await updateOperatorStoreConfig(state.session, state.selectedLocationId === "all" ? null : state.selectedLocationId, {
       storeName: formData.get("storeName"),
       locationName: formData.get("locationName"),
       hours: formData.get("hours"),

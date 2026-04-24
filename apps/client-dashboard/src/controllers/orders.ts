@@ -42,7 +42,12 @@ export async function handleOrderAdvance(
     clearPendingCancel();
     setError(null);
     render();
-    await updateOperatorOrderStatus(state.session, orderId, { status, note });
+    await updateOperatorOrderStatus(
+      state.session,
+      state.selectedLocationId === "all" ? null : state.selectedLocationId,
+      orderId,
+      { status, note }
+    );
     await loadDashboard();
   } catch (error) {
     await handleOperatorActionError(error, "Unable to update order.");

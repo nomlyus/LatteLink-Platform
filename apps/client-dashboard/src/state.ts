@@ -3,7 +3,7 @@ import type {
   AppConfig,
   MenuItemCustomizationGroup
 } from "@lattelink/contracts-catalog";
-import type { OperatorAuthProviders, OperatorSession, OperatorUser } from "./api.js";
+import type { DashboardLocation, OperatorAuthProviders, OperatorSession, OperatorUser } from "./api.js";
 import type {
   DashboardSection,
   OperatorMenuCategory,
@@ -16,6 +16,8 @@ import { loadStoredApiBaseUrl, loadStoredSection, loadStoredSession } from "./st
 export type AppState = {
   section: DashboardSection;
   session: OperatorSession | null;
+  availableLocations: DashboardLocation[];
+  selectedLocationId: string | "all" | null;
   authApiBaseUrl: string;
   authEmail: string;
   authPassword: string;
@@ -66,10 +68,16 @@ export const ordersRefreshIntervalMs = 30_000;
 export const cancelConfirmTimeoutMs = 10_000;
 
 const initialStoredSession = loadStoredSession();
+const initialSelectedLocationId =
+  initialStoredSession && (initialStoredSession.operator.locationIds?.length ?? 1) > 1
+    ? "all"
+    : (initialStoredSession?.operator.locationId ?? null);
 
 export const state: AppState = {
   section: loadStoredSection(),
   session: initialStoredSession,
+  availableLocations: [],
+  selectedLocationId: initialSelectedLocationId,
   authApiBaseUrl: initialStoredSession?.apiBaseUrl ?? loadStoredApiBaseUrl(),
   authEmail: initialStoredSession?.operator.email ?? "",
   authPassword: "",
@@ -134,7 +142,29 @@ export function dismissToast(id: string) {
   state.toasts = state.toasts.filter((t) => t.id !== id);
 }
 
+export function hasMultipleLocations() {
+  return state.availableLocations.length > 1 || (state.session?.operator.locationIds?.length ?? 1) > 1;
+}
+
+export function isAllLocationsSelected() {
+  return state.selectedLocationId === "all";
+}
+
+export function getSelectedLocation() {
+  if (!state.selectedLocationId || state.selectedLocationId === "all") {
+    return null;
+  }
+
+  return state.availableLocations.find((location) => location.locationId === state.selectedLocationId) ?? null;
+}
+
 export function resetDashboardData() {
+  state.availableLocations = [];
+  state.selectedLocationId = state.session
+    ? (state.session.operator.locationIds?.length ?? 1) > 1
+      ? "all"
+      : state.session.operator.locationId
+    : null;
   state.appConfig = null;
   state.orders = [];
   state.menuCategories = [];

@@ -72,7 +72,11 @@ describe("owner provisioning", () => {
     expect(reprovisioned.action).toBe("updated");
     expect(reprovisioned.operator.displayName).toBe("Jordan Owner");
     expect(reprovisioned.operator.locationId).toBe("flagship-01");
+    expect(reprovisioned.operator.locationIds).toEqual(expect.arrayContaining(["old-location", "flagship-01"]));
     expect(reprovisioned.operator.role).toBe("owner");
+    await expect(repository.listOperatorUsers("old-location")).resolves.toEqual(
+      expect.arrayContaining([expect.objectContaining({ email: "jordan@store.com" })])
+    );
     await expect(repository.verifyOperatorPassword("jordan@store.com", "InitialPassword123!")).resolves.toBeUndefined();
     await expect(repository.verifyOperatorPassword("jordan@store.com", "ResetPassword456!")).resolves.toMatchObject({
       email: "jordan@store.com",

@@ -68,6 +68,10 @@ const gatewayHeadersSchema = z.object({
   "x-gateway-token": z.string().optional()
 });
 
+const operatorLocationQuerySchema = z.object({
+  locationId: z.string().trim().min(1).optional()
+});
+
 const clientDataSchema = z.object({
   challenge: z.string()
 });
@@ -489,6 +493,19 @@ function buildApiError(requestId: string, code: string, message: string) {
     message,
     requestId
   });
+}
+
+function resolveRequestedOperatorLocationId(
+  request: FastifyRequest,
+  operator: z.output<typeof operatorMeResponseSchema>
+): string {
+  const { locationId } = operatorLocationQuerySchema.parse(request.query);
+  const requestedLocationId = locationId ?? operator.locationId;
+  if (!operator.locationIds.includes(requestedLocationId)) {
+    throw new Error("OPERATOR_LOCATION_FORBIDDEN");
+  }
+
+  return requestedLocationId;
 }
 
 function authorizeGatewayRequest(
@@ -1699,8 +1716,15 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
         return reply.status(403).send(buildApiError(request.id, "FORBIDDEN", "Operator is missing required capability"));
       }
 
+      let locationId: string;
+      try {
+        locationId = resolveRequestedOperatorLocationId(request, operator);
+      } catch {
+        return reply.status(403).send(buildApiError(request.id, "FORBIDDEN", "Operator cannot access that location"));
+      }
+
       return operatorUserListResponseSchema.parse({
-        users: await repository.listOperatorUsers(operator.locationId)
+        users: await repository.listOperatorUsers(locationId)
       });
     }
   );
@@ -1725,6 +1749,13 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
         return reply.status(403).send(buildApiError(request.id, "FORBIDDEN", "Operator is missing required capability"));
       }
 
+      let locationId: string;
+      try {
+        locationId = resolveRequestedOperatorLocationId(request, operator);
+      } catch {
+        return reply.status(403).send(buildApiError(request.id, "FORBIDDEN", "Operator cannot access that location"));
+      }
+
       const input = operatorUserCreateSchema.parse(request.body);
       const existing = await repository.getOperatorUserByEmail(input.email);
       if (existing) {
@@ -1735,7 +1766,7 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
 
       const created = await repository.createOperatorUser({
         ...input,
-        locationId: operator.locationId
+        locationId
       });
       logIdentityMutation(request, "operator user created", {
         actorOperatorUserId: operator.operatorUserId,
@@ -1767,10 +1798,22 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
         return reply.status(403).send(buildApiError(request.id, "FORBIDDEN", "Operator is missing required capability"));
       }
 
+      let locationId: string;
+      try {
+        locationId = resolveRequestedOperatorLocationId(request, operator);
+      } catch {
+        return reply.status(403).send(buildApiError(request.id, "FORBIDDEN", "Operator cannot access that location"));
+      }
+
       const { operatorUserId } = operatorUserParamsSchema.parse(request.params);
       const input = operatorUserUpdateSchema.parse(request.body);
       if (operator.operatorUserId === operatorUserId && input.active === false) {
         return reply.status(400).send(buildApiError(request.id, "INVALID_OPERATOR_UPDATE", "You cannot deactivate your own account"));
+      }
+
+      const existingTarget = await repository.getOperatorUserById(operatorUserId);
+      if (!existingTarget || !existingTarget.locationIds.includes(locationId)) {
+        return reply.status(404).send(buildApiError(request.id, "OPERATOR_NOT_FOUND", "Operator user was not found"));
       }
 
       let updated;

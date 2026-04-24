@@ -44,7 +44,11 @@ export async function handleNewsCardCreateSubmit(form: HTMLFormElement) {
     state.creatingNewsCard = true;
     setError(null);
     render();
-    const response = await replaceOperatorNewsCards(state.session, [...state.newsCards, nextCard]);
+    const response = await replaceOperatorNewsCards(
+      state.session,
+      state.selectedLocationId === "all" ? null : state.selectedLocationId,
+      [...state.newsCards, nextCard]
+    );
     state.newsCards = response.cards;
     addToast("Created home card.", "success");
     form.reset();
@@ -95,7 +99,11 @@ export async function handleNewsCardSubmit(form: HTMLFormElement) {
     const nextCards = state.newsCards
       .map((card) => (card.cardId === cardId ? updatedCard : card))
       .sort((left, right) => left.sortOrder - right.sortOrder || left.cardId.localeCompare(right.cardId));
-    const response = await replaceOperatorNewsCards(state.session, nextCards);
+    const response = await replaceOperatorNewsCards(
+      state.session,
+      state.selectedLocationId === "all" ? null : state.selectedLocationId,
+      nextCards
+    );
     state.newsCards = response.cards;
     addToast(`Saved ${cardId}.`, "success");
   } catch (error) {
@@ -123,7 +131,11 @@ export async function handleNewsCardVisibilityToggle(cardId: string, visible: bo
     const nextCards = state.newsCards
       .map((card) => (card.cardId === cardId ? { ...card, visible } : card))
       .sort((left, right) => left.sortOrder - right.sortOrder || left.cardId.localeCompare(right.cardId));
-    const response = await replaceOperatorNewsCards(state.session, nextCards);
+    const response = await replaceOperatorNewsCards(
+      state.session,
+      state.selectedLocationId === "all" ? null : state.selectedLocationId,
+      nextCards
+    );
     state.newsCards = response.cards;
     addToast(visible ? "Home card is visible in the app." : "Home card was hidden from the app.", "success");
   } catch (error) {
@@ -152,7 +164,11 @@ export async function handleNewsCardDelete(cardId: string) {
     setError(null);
     render();
     const nextCards = state.newsCards.filter((card) => card.cardId !== cardId);
-    const response = await replaceOperatorNewsCards(state.session, nextCards);
+    const response = await replaceOperatorNewsCards(
+      state.session,
+      state.selectedLocationId === "all" ? null : state.selectedLocationId,
+      nextCards
+    );
     state.newsCards = response.cards;
     addToast("Home card removed.", "success");
   } catch (error) {

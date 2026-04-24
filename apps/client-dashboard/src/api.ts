@@ -45,12 +45,18 @@ const storedOperatorSessionSchema = operatorSessionSchema.extend({
 export type OperatorUser = z.output<typeof operatorUserSchema>;
 export type OperatorSession = z.output<typeof storedOperatorSessionSchema>;
 export type OperatorAuthProviders = z.output<typeof operatorAuthProvidersSchema>;
-export type OperatorDashboardSnapshot = {
+export type DashboardLocation = {
+  locationId: string;
+  locationName: string;
+  marketLabel: string;
   appConfig: z.output<typeof appConfigSchema>;
+};
+export type OperatorDashboardSnapshot = {
+  appConfig: z.output<typeof appConfigSchema> | null;
   orders: OperatorOrder[];
   menu: OperatorMenuResponse;
   cards: OperatorNewsCard[];
-  storeConfig: z.output<typeof adminStoreConfigSchema>;
+  storeConfig: z.output<typeof adminStoreConfigSchema> | null;
   staff: OperatorUser[];
 };
 
@@ -83,6 +89,26 @@ function parseJsonSafely(rawValue: string): unknown {
   } catch {
     return rawValue;
   }
+}
+
+function buildPathWithQuery(path: string, query?: Record<string, string | undefined>) {
+  if (!query) {
+    return path;
+  }
+
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value) {
+      search.set(key, value);
+    }
+  }
+
+  const queryString = search.toString();
+  return queryString ? `${path}?${queryString}` : path;
+}
+
+function normalizeOperatorLocationIds(primaryLocationId: string, locationIds?: readonly string[]) {
+  return Array.from(new Set([primaryLocationId, ...(locationIds ?? [])]));
 }
 
 function normalizeNewsCardsPayload(input: {
@@ -163,14 +189,16 @@ async function requestJson<TSchema extends z.ZodTypeAny>(params: {
   apiBaseUrl: string;
   accessToken?: string;
   path: string;
+  query?: Record<string, string | undefined>;
   method?: RequestMethod;
   body?: unknown;
   schema: TSchema;
 }): Promise<z.output<TSchema>> {
-  const { apiBaseUrl, accessToken, path, method = "GET", body, schema } = params;
+  const { apiBaseUrl, accessToken, path, query, method = "GET", body, schema } = params;
+  const resolvedPath = buildPathWithQuery(path, query);
   const response = await (async () => {
     try {
-      return await fetch(`${requireApiBaseUrl(apiBaseUrl)}${path}`, {
+      return await fetch(`${requireApiBaseUrl(apiBaseUrl)}${resolvedPath}`, {
         method,
         headers: accessToken
           ? buildOperatorHeaders(accessToken, body !== undefined)
@@ -315,61 +343,119 @@ export async function logoutOperatorSession(session: OperatorSession) {
   });
 }
 
-export async function fetchOperatorSnapshot(session: OperatorSession): Promise<OperatorDashboardSnapshot> {
+export async function fetchDashboardLocations(session: OperatorSession): Promise<DashboardLocation[]> {
+  const locationIds = normalizeOperatorLocationIds(session.operator.locationId, session.operator.locationIds ?? []);
+  const appConfigs = await Promise.all(
+    locationIds.map((locationId) =>
+      requestJson({
+        apiBaseUrl: session.apiBaseUrl,
+        path: "/app-config",
+        query: { locationId },
+        schema: appConfigSchema
+      })
+    )
+  );
+
+  return appConfigs.map((appConfig) => ({
+    locationId: appConfig.brand.locationId,
+    locationName: appConfig.brand.locationName,
+    marketLabel: appConfig.brand.marketLabel,
+    appConfig
+  }));
+}
+
+export async function fetchOperatorOrders(session: OperatorSession, locationId: string) {
+  const orders = await requestJson({
+    apiBaseUrl: session.apiBaseUrl,
+    accessToken: session.accessToken,
+    path: "/admin/orders",
+    query: { locationId },
+    schema: ordersSchema
+  });
+
+  return filterVisibleOrders(orders as OperatorOrder[]);
+}
+
+export async function fetchOperatorSnapshot(
+  session: OperatorSession,
+  locationId: string | null
+): Promise<OperatorDashboardSnapshot> {
   const capabilitySet = new Set(session.operator.capabilities);
+  const query = locationId ? { locationId } : undefined;
+  const fallbackLocationId = locationId ?? session.operator.locationId;
   const [appConfig, orders, menu, cards, storeConfig, staffResponse] = await Promise.all([
-    requestJson({
-      apiBaseUrl: session.apiBaseUrl,
-      path: "/app-config",
-      schema: appConfigSchema
-    }),
-    capabilitySet.has("orders:read")
+    locationId
       ? requestJson({
           apiBaseUrl: session.apiBaseUrl,
-          accessToken: session.accessToken,
-          path: "/admin/orders",
-          schema: ordersSchema
+          path: "/app-config",
+          query,
+          schema: appConfigSchema
         })
+      : Promise.resolve(null),
+    capabilitySet.has("orders:read")
+      ? locationId
+        ? requestJson({
+            apiBaseUrl: session.apiBaseUrl,
+            accessToken: session.accessToken,
+            path: "/admin/orders",
+            query,
+            schema: ordersSchema
+          })
+        : Promise.resolve([] as z.output<typeof ordersSchema>)
       : Promise.resolve([] as z.output<typeof ordersSchema>),
     capabilitySet.has("menu:read")
-      ? requestJson({
-          apiBaseUrl: session.apiBaseUrl,
-          accessToken: session.accessToken,
-          path: "/admin/menu",
-          schema: operatorMenuResponseSchema
-        })
-      : Promise.resolve(operatorMenuResponseSchema.parse({ locationId: session.operator.locationId, categories: [] })),
-    capabilitySet.has("menu:read")
-      ? requestJson({
-          apiBaseUrl: session.apiBaseUrl,
-          accessToken: session.accessToken,
-          path: "/admin/cards",
-          schema: homeNewsCardsResponseSchema
-        })
-      : Promise.resolve(homeNewsCardsResponseSchema.parse({ locationId: session.operator.locationId, cards: [] })),
-    capabilitySet.has("store:read")
-      ? requestJson({
-          apiBaseUrl: session.apiBaseUrl,
-          accessToken: session.accessToken,
-          path: "/admin/store/config",
-          schema: adminStoreConfigSchema
-        })
-      : Promise.resolve(
-          adminStoreConfigSchema.parse({
-            locationId: session.operator.locationId,
-            storeName: "Store access unavailable",
-            locationName: "Location access unavailable",
-            hours: "Permissions required",
-            pickupInstructions: "Permissions required"
+      ? locationId
+        ? requestJson({
+            apiBaseUrl: session.apiBaseUrl,
+            accessToken: session.accessToken,
+            path: "/admin/menu",
+            query,
+            schema: operatorMenuResponseSchema
           })
+        : Promise.resolve(operatorMenuResponseSchema.parse({ locationId: fallbackLocationId, categories: [] }))
+      : Promise.resolve(operatorMenuResponseSchema.parse({ locationId: fallbackLocationId, categories: [] })),
+    capabilitySet.has("menu:read")
+      ? locationId
+        ? requestJson({
+            apiBaseUrl: session.apiBaseUrl,
+            accessToken: session.accessToken,
+            path: "/admin/cards",
+            query,
+            schema: homeNewsCardsResponseSchema
+          })
+        : Promise.resolve(homeNewsCardsResponseSchema.parse({ locationId: fallbackLocationId, cards: [] }))
+      : Promise.resolve(homeNewsCardsResponseSchema.parse({ locationId: fallbackLocationId, cards: [] })),
+    capabilitySet.has("store:read")
+      ? locationId
+        ? requestJson({
+            apiBaseUrl: session.apiBaseUrl,
+            accessToken: session.accessToken,
+            path: "/admin/store/config",
+            query,
+            schema: adminStoreConfigSchema
+          })
+        : Promise.resolve(null)
+      : Promise.resolve(
+          locationId
+            ? adminStoreConfigSchema.parse({
+                locationId: fallbackLocationId,
+                storeName: "Store access unavailable",
+                locationName: "Location access unavailable",
+                hours: "Permissions required",
+                pickupInstructions: "Permissions required"
+              })
+            : null
         ),
     capabilitySet.has("staff:read")
-      ? requestJson({
-          apiBaseUrl: session.apiBaseUrl,
-          accessToken: session.accessToken,
-          path: "/admin/staff",
-          schema: operatorUserListResponseSchema
-        })
+      ? locationId
+        ? requestJson({
+            apiBaseUrl: session.apiBaseUrl,
+            accessToken: session.accessToken,
+            path: "/admin/staff",
+            query,
+            schema: operatorUserListResponseSchema
+          })
+        : Promise.resolve(operatorUserListResponseSchema.parse({ users: [] }))
       : Promise.resolve(operatorUserListResponseSchema.parse({ users: [] }))
   ]);
 
@@ -385,8 +471,17 @@ export async function fetchOperatorSnapshot(session: OperatorSession): Promise<O
   };
 }
 
+function requireSelectedLocationId(locationId: string | null) {
+  if (!locationId) {
+    throw new Error("Choose a specific location before managing store settings.");
+  }
+
+  return locationId;
+}
+
 export function updateOperatorOrderStatus(
   session: OperatorSession,
+  locationId: string | null,
   orderId: string,
   input: {
     status: "IN_PREP" | "READY" | "COMPLETED" | "CANCELED";
@@ -397,6 +492,7 @@ export function updateOperatorOrderStatus(
     apiBaseUrl: session.apiBaseUrl,
     accessToken: session.accessToken,
     path: `/admin/orders/${orderId}/status`,
+    query: { locationId: requireSelectedLocationId(locationId) },
     method: "POST",
     body: {
       status: input.status,
@@ -408,23 +504,31 @@ export function updateOperatorOrderStatus(
 
 export function createOperatorMenuItem(
   session: OperatorSession,
+  locationId: string | null,
   input: Parameters<typeof normalizeMenuItemCreateForm>[0]
 ) {
   return requestJson({
     apiBaseUrl: session.apiBaseUrl,
     accessToken: session.accessToken,
     path: "/admin/menu",
+    query: { locationId: requireSelectedLocationId(locationId) },
     method: "POST",
     body: adminMenuItemCreateSchema.parse(normalizeMenuItemCreateForm(input)),
     schema: operatorMenuItemSchema
   });
 }
 
-export async function uploadOperatorMenuItemImage(session: OperatorSession, itemId: string, file: File) {
+export async function uploadOperatorMenuItemImage(
+  session: OperatorSession,
+  locationId: string | null,
+  itemId: string,
+  file: File
+) {
   const upload = await requestJson({
     apiBaseUrl: session.apiBaseUrl,
     accessToken: session.accessToken,
     path: `/admin/menu/${itemId}/image-upload`,
+    query: { locationId: requireSelectedLocationId(locationId) },
     method: "POST",
     body: adminMenuItemImageUploadRequestSchema.parse({
       fileName: file.name,
@@ -446,6 +550,7 @@ export async function uploadOperatorMenuItemImage(session: OperatorSession, item
 
 export function updateOperatorMenuItem(
   session: OperatorSession,
+  locationId: string | null,
   itemId: string,
   input: Parameters<typeof normalizeMenuItemForm>[0]
 ) {
@@ -453,41 +558,51 @@ export function updateOperatorMenuItem(
     apiBaseUrl: session.apiBaseUrl,
     accessToken: session.accessToken,
     path: `/admin/menu/${itemId}`,
+    query: { locationId: requireSelectedLocationId(locationId) },
     method: "PUT",
     body: normalizeMenuItemForm(input),
     schema: operatorMenuItemSchema
   });
 }
 
-export function updateOperatorMenuItemVisibility(session: OperatorSession, itemId: string, visible: boolean) {
+export function updateOperatorMenuItemVisibility(
+  session: OperatorSession,
+  locationId: string | null,
+  itemId: string,
+  visible: boolean
+) {
   return requestJson({
     apiBaseUrl: session.apiBaseUrl,
     accessToken: session.accessToken,
     path: `/admin/menu/${itemId}/visibility`,
+    query: { locationId: requireSelectedLocationId(locationId) },
     method: "PATCH",
     body: adminMenuItemVisibilityUpdateSchema.parse({ visible }),
     schema: operatorMenuItemSchema
   });
 }
 
-export function deleteOperatorMenuItem(session: OperatorSession, itemId: string) {
+export function deleteOperatorMenuItem(session: OperatorSession, locationId: string | null, itemId: string) {
   return requestJson({
     apiBaseUrl: session.apiBaseUrl,
     accessToken: session.accessToken,
     path: `/admin/menu/${itemId}`,
+    query: { locationId: requireSelectedLocationId(locationId) },
     method: "DELETE",
     schema: adminMutationSuccessSchema
   });
 }
 
-export function replaceOperatorNewsCards(session: OperatorSession, cards: OperatorNewsCard[]) {
+export function replaceOperatorNewsCards(session: OperatorSession, locationId: string | null, cards: OperatorNewsCard[]) {
+  const selectedLocationId = requireSelectedLocationId(locationId);
   return requestJson({
     apiBaseUrl: session.apiBaseUrl,
     accessToken: session.accessToken,
     path: "/admin/cards",
+    query: { locationId: selectedLocationId },
     method: "PUT",
     body: normalizeNewsCardsPayload({
-      locationId: session.operator.locationId,
+      locationId: selectedLocationId,
       cards
     }),
     schema: homeNewsCardsResponseSchema
@@ -496,12 +611,14 @@ export function replaceOperatorNewsCards(session: OperatorSession, cards: Operat
 
 export function updateOperatorStoreConfig(
   session: OperatorSession,
+  locationId: string | null,
   input: Parameters<typeof normalizeStoreConfigForm>[0]
 ) {
   return requestJson({
     apiBaseUrl: session.apiBaseUrl,
     accessToken: session.accessToken,
     path: "/admin/store/config",
+    query: { locationId: requireSelectedLocationId(locationId) },
     method: "PUT",
     body: adminStoreConfigUpdateSchema.parse(normalizeStoreConfigForm(input)),
     schema: adminStoreConfigSchema
@@ -510,12 +627,14 @@ export function updateOperatorStoreConfig(
 
 export function createOperatorStaffUser(
   session: OperatorSession,
+  locationId: string | null,
   input: Parameters<typeof normalizeOperatorUserCreateForm>[0]
 ) {
   return requestJson({
     apiBaseUrl: session.apiBaseUrl,
     accessToken: session.accessToken,
     path: "/admin/staff",
+    query: { locationId: requireSelectedLocationId(locationId) },
     method: "POST",
     body: normalizeOperatorUserCreateForm(input),
     schema: operatorUserSchema
@@ -524,6 +643,7 @@ export function createOperatorStaffUser(
 
 export function updateOperatorStaffUser(
   session: OperatorSession,
+  locationId: string | null,
   operatorUserId: string,
   input: Parameters<typeof normalizeOperatorUserUpdateForm>[0]
 ) {
@@ -531,6 +651,7 @@ export function updateOperatorStaffUser(
     apiBaseUrl: session.apiBaseUrl,
     accessToken: session.accessToken,
     path: `/admin/staff/${operatorUserId}`,
+    query: { locationId: requireSelectedLocationId(locationId) },
     method: "PATCH",
     body: normalizeOperatorUserUpdateForm(input),
     schema: operatorUserSchema

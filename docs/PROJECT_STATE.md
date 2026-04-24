@@ -165,10 +165,6 @@ Code that exists but is incomplete, stubbed, or fallback-heavy:
   - Order streaming still carries a TODO to replace the current polling-backed authenticated SSE approach with a more native path when Expo runtime support is reliable everywhere.
 - `apps/mobile/src/menu/catalog.ts`
   - Still carries fallback app config, store config, menu, and card data in code.
-- `app/checkout-success.tsx`
-  - Includes a dev-only preview confirmation payload.
-- `app/refunds/[orderId].tsx`
-  - Includes a `dev-preview` refund preview path.
 
 Known issues or gaps visible from code:
 - Passkey auth exists in backend contracts and services, but the mobile app still does not expose a passkey registration or sign-in UI.
@@ -747,6 +743,5 @@ Items explicitly visible from code:
 - Landing-page components `About`, `Features`, `Pricing`, `Analytics`, `LeadCapture`, and `StructuredData` exist but are not mounted on the live home page.
 - `packages/persistence/src/index.ts` still contains deprecated table-bootstrap code alongside migrations.
 - Admin owner-page copy references future reset flows that are not implemented.
-- Mobile includes dev-preview scaffolding in checkout success and refund detail screens.
 - Notifications provider mode can be real Expo or simulated, but there is no receipt polling, provider analytics, or richer delivery observability.
 - Menu sync now persists into catalog and idles cleanly when unconfigured, but it is still a single-source parser rather than a generalized import system.

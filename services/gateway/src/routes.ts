@@ -105,6 +105,9 @@ const jwtAccessTokenClaimsSchema = z.object({
 const orderIdParamsSchema = z.object({ orderId: z.string().uuid() });
 const menuItemParamsSchema = z.object({ itemId: z.string().min(1) });
 const cardParamsSchema = z.object({ cardId: z.string().min(1) });
+const adminLocationQuerySchema = z.object({
+  locationId: z.string().trim().min(1).optional()
+});
 const adminMenuItemWithCustomizationsSchema = adminMenuItemSchema.extend({
   customizationGroups: z.array(menuItemCustomizationGroupSchema).default([])
 });
@@ -433,8 +436,37 @@ function trimToUndefined(value: string | undefined) {
   return next && next.length > 0 ? next : undefined;
 }
 
-function operatorLocationHeader(request: FastifyRequest): Record<string, string> {
-  const locationId = request.authenticatedOperator?.locationId;
+function resolveRequestedOperatorLocationId(
+  request: FastifyRequest,
+  options: { required?: boolean } = {}
+): { locationId?: string; error?: z.output<typeof apiErrorSchema> } {
+  const parsedQuery = adminLocationQuerySchema.safeParse(request.query);
+  if (!parsedQuery.success) {
+    return {
+      error: invalidRequest(request.id, "Location query is invalid", {
+        issues: parsedQuery.error.issues
+      })
+    };
+  }
+
+  const operator = request.authenticatedOperator;
+  const locationId = parsedQuery.data.locationId ?? operator?.locationId;
+  if (locationId && operator && !operator.locationIds.includes(locationId)) {
+    return {
+      error: forbidden(request.id)
+    };
+  }
+
+  if (options.required && !locationId) {
+    return {
+      error: invalidRequest(request.id, "A locationId is required for this request")
+    };
+  }
+
+  return { locationId };
+}
+
+function operatorLocationHeader(locationId?: string): Record<string, string> {
   return locationId ? { "x-operator-location-id": locationId } : {};
 }
 
@@ -2257,8 +2289,13 @@ export async function registerRoutes(app: FastifyInstance) {
     {
       preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("orders:read")]
     },
-    async (request, reply) =>
-      proxyUpstream({
+    async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request);
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+
+      return proxyUpstream({
         request,
         reply,
         baseUrl: ordersBaseUrl,
@@ -2267,13 +2304,12 @@ export async function registerRoutes(app: FastifyInstance) {
         path: "/v1/orders",
         additionalHeaders: {
           "x-gateway-token": gatewayInternalApiToken,
-          ...(request.authenticatedOperator?.locationId
-            ? { "x-operator-location-id": request.authenticatedOperator.locationId }
-            : {})
+          ...operatorLocationHeader(locationContext.locationId)
         },
         forwardUserIdHeader: false,
         responseSchema: z.array(orderSchema)
-      })
+      });
+    }
   );
 
   app.get(
@@ -2283,6 +2319,10 @@ export async function registerRoutes(app: FastifyInstance) {
     },
     async (request, reply) => {
       const { orderId } = orderIdParamsSchema.parse(request.params);
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
 
       return proxyUpstream({
         request,
@@ -2292,7 +2332,8 @@ export async function registerRoutes(app: FastifyInstance) {
         method: "GET",
         path: `/v1/orders/${orderId}`,
         additionalHeaders: {
-          "x-gateway-token": gatewayInternalApiToken
+          "x-gateway-token": gatewayInternalApiToken,
+          ...operatorLocationHeader(locationContext.locationId)
         },
         forwardUserIdHeader: false,
         responseSchema: orderSchema
@@ -2308,6 +2349,10 @@ export async function registerRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const { orderId } = orderIdParamsSchema.parse(request.params);
       const input = adminOrderStatusUpdateSchema.parse(request.body);
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
 
       if (input.status === "CANCELED") {
         const cancelPayload = cancelOrderRequestSchema.parse({
@@ -2324,7 +2369,8 @@ export async function registerRoutes(app: FastifyInstance) {
           body: cancelPayload,
           additionalHeaders: {
             "x-gateway-token": gatewayInternalApiToken,
-            "x-order-cancel-source": "staff"
+            "x-order-cancel-source": "staff",
+            ...operatorLocationHeader(locationContext.locationId)
           },
           forwardUserIdHeader: false,
           responseSchema: orderSchema
@@ -2340,7 +2386,8 @@ export async function registerRoutes(app: FastifyInstance) {
         path: `/v1/orders/${orderId}/status`,
         body: input,
         additionalHeaders: {
-          "x-internal-token": ordersInternalApiToken
+          "x-internal-token": ordersInternalApiToken,
+          ...operatorLocationHeader(locationContext.locationId)
         },
         forwardUserIdHeader: false,
         responseSchema: orderSchema
@@ -2353,8 +2400,13 @@ export async function registerRoutes(app: FastifyInstance) {
     {
       preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("menu:read")]
     },
-    async (request, reply) =>
-      proxyUpstream({
+    async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+
+      return proxyUpstream({
         request,
         reply,
         baseUrl: catalogBaseUrl,
@@ -2363,10 +2415,11 @@ export async function registerRoutes(app: FastifyInstance) {
         path: "/v1/catalog/admin/menu",
         additionalHeaders: {
           "x-gateway-token": gatewayInternalApiToken,
-          ...operatorLocationHeader(request)
+          ...operatorLocationHeader(locationContext.locationId)
         },
         responseSchema: adminMenuResponseWithCustomizationsSchema
-      })
+      });
+    }
   );
 
   app.get(
@@ -2374,8 +2427,13 @@ export async function registerRoutes(app: FastifyInstance) {
     {
       preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("menu:read")]
     },
-    async (request, reply) =>
-      proxyUpstream({
+    async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+
+      return proxyUpstream({
         request,
         reply,
         baseUrl: catalogBaseUrl,
@@ -2384,10 +2442,11 @@ export async function registerRoutes(app: FastifyInstance) {
         path: "/v1/catalog/admin/cards",
         additionalHeaders: {
           "x-gateway-token": gatewayInternalApiToken,
-          ...operatorLocationHeader(request)
+          ...operatorLocationHeader(locationContext.locationId)
         },
         responseSchema: homeNewsCardsResponseSchema
-      })
+      });
+    }
   );
 
   app.get(
@@ -2414,6 +2473,11 @@ export async function registerRoutes(app: FastifyInstance) {
       preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("menu:write")]
     },
     async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+
       const input = homeNewsCardsResponseSchema.parse(request.body);
 
       return proxyUpstream({
@@ -2426,7 +2490,7 @@ export async function registerRoutes(app: FastifyInstance) {
         body: input,
         additionalHeaders: {
           "x-gateway-token": gatewayInternalApiToken,
-          ...operatorLocationHeader(request)
+          ...operatorLocationHeader(locationContext.locationId)
         },
         responseSchema: homeNewsCardsResponseSchema
       });
@@ -2439,6 +2503,11 @@ export async function registerRoutes(app: FastifyInstance) {
       preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("menu:write")]
     },
     async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+
       const input = homeNewsCardCreateSchema.parse(request.body);
 
       return proxyUpstream({
@@ -2451,7 +2520,7 @@ export async function registerRoutes(app: FastifyInstance) {
         body: input,
         additionalHeaders: {
           "x-gateway-token": gatewayInternalApiToken,
-          ...operatorLocationHeader(request)
+          ...operatorLocationHeader(locationContext.locationId)
         },
         responseSchema: homeNewsCardSchema
       });
@@ -2464,6 +2533,11 @@ export async function registerRoutes(app: FastifyInstance) {
       preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("menu:write")]
     },
     async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+
       const { cardId } = cardParamsSchema.parse(request.params);
       const input = homeNewsCardUpdateSchema.parse(request.body);
 
@@ -2477,7 +2551,7 @@ export async function registerRoutes(app: FastifyInstance) {
         body: input,
         additionalHeaders: {
           "x-gateway-token": gatewayInternalApiToken,
-          ...operatorLocationHeader(request)
+          ...operatorLocationHeader(locationContext.locationId)
         },
         responseSchema: homeNewsCardSchema
       });
@@ -2490,6 +2564,11 @@ export async function registerRoutes(app: FastifyInstance) {
       preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("menu:visibility")]
     },
     async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+
       const { cardId } = cardParamsSchema.parse(request.params);
       const input = homeNewsCardVisibilityUpdateSchema.parse(request.body);
 
@@ -2503,7 +2582,7 @@ export async function registerRoutes(app: FastifyInstance) {
         body: input,
         additionalHeaders: {
           "x-gateway-token": gatewayInternalApiToken,
-          ...operatorLocationHeader(request)
+          ...operatorLocationHeader(locationContext.locationId)
         },
         responseSchema: homeNewsCardSchema
       });
@@ -2516,6 +2595,11 @@ export async function registerRoutes(app: FastifyInstance) {
       preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("menu:write")]
     },
     async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+
       const { cardId } = cardParamsSchema.parse(request.params);
 
       return proxyUpstream({
@@ -2527,7 +2611,7 @@ export async function registerRoutes(app: FastifyInstance) {
         path: `/v1/catalog/admin/cards/${cardId}`,
         additionalHeaders: {
           "x-gateway-token": gatewayInternalApiToken,
-          ...operatorLocationHeader(request)
+          ...operatorLocationHeader(locationContext.locationId)
         },
         responseSchema: adminMutationSuccessSchema
       });
@@ -2540,6 +2624,11 @@ export async function registerRoutes(app: FastifyInstance) {
       preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("menu:write")]
     },
     async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+
       const { itemId } = menuItemParamsSchema.parse(request.params);
       const parsedBody = adminMenuItemUpdateWithCustomizationsSchema.safeParse(request.body);
       if (!parsedBody.success) {
@@ -2560,7 +2649,7 @@ export async function registerRoutes(app: FastifyInstance) {
         body: parsedBody.data,
         additionalHeaders: {
           "x-gateway-token": gatewayInternalApiToken,
-          ...operatorLocationHeader(request)
+          ...operatorLocationHeader(locationContext.locationId)
         },
         responseSchema: adminMenuItemWithCustomizationsSchema
       });
@@ -2573,6 +2662,11 @@ export async function registerRoutes(app: FastifyInstance) {
       preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("menu:write")]
     },
     async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+
       const { itemId } = menuItemParamsSchema.parse(request.params);
       const input = adminMenuItemImageUploadRequestSchema.parse(request.body);
 
@@ -2586,7 +2680,7 @@ export async function registerRoutes(app: FastifyInstance) {
         body: input,
         additionalHeaders: {
           "x-gateway-token": gatewayInternalApiToken,
-          ...operatorLocationHeader(request)
+          ...operatorLocationHeader(locationContext.locationId)
         },
         responseSchema: adminMenuItemImageUploadResponseSchema
       });
@@ -2599,6 +2693,11 @@ export async function registerRoutes(app: FastifyInstance) {
       preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("menu:write")]
     },
     async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+
       const input = adminMenuItemCreateSchema.parse(request.body);
 
       return proxyUpstream({
@@ -2611,7 +2710,7 @@ export async function registerRoutes(app: FastifyInstance) {
         body: input,
         additionalHeaders: {
           "x-gateway-token": gatewayInternalApiToken,
-          ...operatorLocationHeader(request)
+          ...operatorLocationHeader(locationContext.locationId)
         },
         responseSchema: adminMenuItemWithCustomizationsSchema
       });
@@ -2624,6 +2723,11 @@ export async function registerRoutes(app: FastifyInstance) {
       preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("menu:visibility")]
     },
     async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+
       const { itemId } = menuItemParamsSchema.parse(request.params);
       const input = adminMenuItemVisibilityUpdateSchema.parse(request.body);
 
@@ -2637,7 +2741,7 @@ export async function registerRoutes(app: FastifyInstance) {
         body: input,
         additionalHeaders: {
           "x-gateway-token": gatewayInternalApiToken,
-          ...operatorLocationHeader(request)
+          ...operatorLocationHeader(locationContext.locationId)
         },
         responseSchema: adminMenuItemWithCustomizationsSchema
       });
@@ -2650,6 +2754,11 @@ export async function registerRoutes(app: FastifyInstance) {
       preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("menu:write")]
     },
     async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+
       const { itemId } = menuItemParamsSchema.parse(request.params);
 
       return proxyUpstream({
@@ -2661,7 +2770,7 @@ export async function registerRoutes(app: FastifyInstance) {
         path: `/v1/catalog/admin/menu/${itemId}`,
         additionalHeaders: {
           "x-gateway-token": gatewayInternalApiToken,
-          ...operatorLocationHeader(request)
+          ...operatorLocationHeader(locationContext.locationId)
         },
         responseSchema: adminMutationSuccessSchema
       });
@@ -2673,8 +2782,13 @@ export async function registerRoutes(app: FastifyInstance) {
     {
       preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("store:read")]
     },
-    async (request, reply) =>
-      proxyUpstream({
+    async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+
+      return proxyUpstream({
         request,
         reply,
         baseUrl: catalogBaseUrl,
@@ -2683,10 +2797,11 @@ export async function registerRoutes(app: FastifyInstance) {
         path: "/v1/catalog/admin/store/config",
         additionalHeaders: {
           "x-gateway-token": gatewayInternalApiToken,
-          ...operatorLocationHeader(request)
+          ...operatorLocationHeader(locationContext.locationId)
         },
         responseSchema: adminStoreConfigSchema
-      })
+      });
+    }
   );
 
   app.put(
@@ -2695,6 +2810,11 @@ export async function registerRoutes(app: FastifyInstance) {
       preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("store:write")]
     },
     async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+
       const input = adminStoreConfigUpdateSchema.parse(request.body);
 
       return proxyUpstream({
@@ -2707,7 +2827,7 @@ export async function registerRoutes(app: FastifyInstance) {
         body: input,
         additionalHeaders: {
           "x-gateway-token": gatewayInternalApiToken,
-          ...operatorLocationHeader(request)
+          ...operatorLocationHeader(locationContext.locationId)
         },
         responseSchema: adminStoreConfigSchema
       });
@@ -2719,16 +2839,23 @@ export async function registerRoutes(app: FastifyInstance) {
     {
       preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("staff:read")]
     },
-    async (request, reply) =>
-      proxyUpstream({
+    async (request, reply) => {
+      const locationError = resolveRequestedOperatorLocationId(request, { required: true }).error;
+      if (locationError) {
+        return reply.status(locationError.code === "FORBIDDEN" ? 403 : 400).send(locationError);
+      }
+
+      return proxyUpstream({
         request,
         reply,
         baseUrl: identityBaseUrl,
         serviceLabel: "Identity",
         method: "GET",
         path: "/v1/operator/users",
+        forwardQuery: true,
         responseSchema: operatorUserListResponseSchema
-      })
+      });
+    }
   );
 
   app.post(
@@ -2737,6 +2864,11 @@ export async function registerRoutes(app: FastifyInstance) {
       preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("staff:write")]
     },
     async (request, reply) => {
+      const locationError = resolveRequestedOperatorLocationId(request, { required: true }).error;
+      if (locationError) {
+        return reply.status(locationError.code === "FORBIDDEN" ? 403 : 400).send(locationError);
+      }
+
       const input = operatorUserCreateSchema.parse(request.body);
 
       return proxyUpstream({
@@ -2747,6 +2879,7 @@ export async function registerRoutes(app: FastifyInstance) {
         method: "POST",
         path: "/v1/operator/users",
         body: input,
+        forwardQuery: true,
         responseSchema: operatorMeResponseSchema
       });
     }
@@ -2758,6 +2891,11 @@ export async function registerRoutes(app: FastifyInstance) {
       preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("staff:write")]
     },
     async (request, reply) => {
+      const locationError = resolveRequestedOperatorLocationId(request, { required: true }).error;
+      if (locationError) {
+        return reply.status(locationError.code === "FORBIDDEN" ? 403 : 400).send(locationError);
+      }
+
       const { operatorUserId } = operatorUserParamsSchema.parse(request.params);
       const input = operatorUserUpdateSchema.parse(request.body);
 
@@ -2769,6 +2907,7 @@ export async function registerRoutes(app: FastifyInstance) {
         method: "PATCH",
         path: `/v1/operator/users/${operatorUserId}`,
         body: input,
+        forwardQuery: true,
         responseSchema: operatorMeResponseSchema
       });
     }

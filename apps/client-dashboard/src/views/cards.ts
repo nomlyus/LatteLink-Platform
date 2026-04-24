@@ -1,7 +1,7 @@
-import { state } from "../state.js";
+import { isAllLocationsSelected, state } from "../state.js";
 import { escapeHtml } from "../ui/format.js";
 import { canAccessCapability, type OperatorNewsCard } from "../model.js";
-import { renderSectionHeading } from "./common.js";
+import { renderLocationSelectionNotice, renderSectionHeading } from "./common.js";
 
 function renderNewsCard(
   card: OperatorNewsCard,
@@ -76,6 +76,19 @@ function renderNewsCard(
 }
 
 export function renderCardsSection() {
+  if (isAllLocationsSelected()) {
+    return `
+      <section class="dash-section">
+        ${renderSectionHeading({
+          eyebrow: "Home",
+          title: "Location-specific news cards",
+          description: "Choose one location to edit the rotating cards shown in the mobile app."
+        })}
+        ${renderLocationSelectionNotice("News cards are managed per location because promotions and announcements vary by store.")}
+      </section>
+    `;
+  }
+
   const canWrite = canAccessCapability(state.session?.operator ?? null, "menu:write");
   const canToggleVisibility = canAccessCapability(state.session?.operator ?? null, "menu:visibility");
   const accessNotice = !canWrite

@@ -33,7 +33,7 @@ export async function handleMenuCreateSubmit(form: HTMLFormElement) {
     state.creatingMenuItem = true;
     setError(null);
     render();
-    await createOperatorMenuItem(state.session, {
+    await createOperatorMenuItem(state.session, state.selectedLocationId === "all" ? null : state.selectedLocationId, {
       categoryId: state.menuCreateDraft.categoryId,
       name: state.menuCreateDraft.name,
       description: state.menuCreateDraft.description,
@@ -80,11 +80,16 @@ export async function handleMenuItemSubmit(form: HTMLFormElement) {
     render();
     const imageUrl =
       imageFile instanceof File && imageFile.size > 0
-        ? await uploadOperatorMenuItemImage(state.session, itemId, imageFile)
+        ? await uploadOperatorMenuItemImage(
+            state.session,
+            state.selectedLocationId === "all" ? null : state.selectedLocationId,
+            itemId,
+            imageFile
+          )
         : removeImage && currentItem?.imageUrl
           ? null
           : undefined;
-    await updateOperatorMenuItem(state.session, itemId, {
+    await updateOperatorMenuItem(state.session, state.selectedLocationId === "all" ? null : state.selectedLocationId, itemId, {
       name: formData.get("name"),
       priceCents: formData.get("priceCents"),
       visible,
@@ -115,7 +120,12 @@ export async function handleMenuVisibilityToggle(itemId: string, visible: boolea
     state.busyMenuVisibilityItemId = itemId;
     setError(null);
     render();
-    await updateOperatorMenuItemVisibility(state.session, itemId, visible);
+    await updateOperatorMenuItemVisibility(
+      state.session,
+      state.selectedLocationId === "all" ? null : state.selectedLocationId,
+      itemId,
+      visible
+    );
     addToast(visible ? "Item is visible in the app." : "Item was hidden from the app.", "success");
     await loadDashboard();
   } catch (error) {
@@ -143,7 +153,7 @@ export async function handleMenuItemDelete(itemId: string) {
     state.busyDeleteMenuItemId = itemId;
     setError(null);
     render();
-    await deleteOperatorMenuItem(state.session, itemId);
+    await deleteOperatorMenuItem(state.session, state.selectedLocationId === "all" ? null : state.selectedLocationId, itemId);
     addToast("Menu item removed.", "success");
     await loadDashboard();
   } catch (error) {

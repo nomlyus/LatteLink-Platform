@@ -563,8 +563,13 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     const { orderId } = orderIdParamsSchema.parse(request.params);
+    const parsedOperatorHeaders = operatorLocationHeadersSchema.safeParse(request.headers);
+    const operatorLocationId = parsedOperatorHeaders.success
+      ? parsedOperatorHeaders.data["x-operator-location-id"]
+      : undefined;
     const result = await getOrderForRead({
       orderId,
+      locationId: operatorLocationId,
       requestId: request.id,
       deps: getServiceDeps(request)
     });
@@ -589,14 +594,19 @@ export async function registerRoutes(app: FastifyInstance) {
       const { orderId } = orderIdParamsSchema.parse(request.params);
       const input = cancelOrderRequestSchema.parse(request.body);
       const parsedCancelHeaders = cancelSourceHeadersSchema.safeParse(request.headers);
+      const parsedOperatorHeaders = operatorLocationHeadersSchema.safeParse(request.headers);
       const cancelSource: CancelOrderSource = parsedCancelHeaders.success
         ? (parsedCancelHeaders.data["x-order-cancel-source"] ?? "customer")
         : "customer";
+      const operatorLocationId = parsedOperatorHeaders.success
+        ? parsedOperatorHeaders.data["x-operator-location-id"]
+        : undefined;
       const requestUserContext = parseRequestUserContext(request);
       const result = await cancelOrder({
         orderId,
         input,
         cancelSource,
+        locationId: operatorLocationId,
         requestId: request.id,
         requestUserContext,
         deps: getServiceDeps(request)
@@ -629,9 +639,14 @@ export async function registerRoutes(app: FastifyInstance) {
 
       const { orderId } = orderIdParamsSchema.parse(request.params);
       const input = orderStatusUpdateRequestSchema.parse(request.body);
+      const parsedOperatorHeaders = operatorLocationHeadersSchema.safeParse(request.headers);
+      const operatorLocationId = parsedOperatorHeaders.success
+        ? parsedOperatorHeaders.data["x-operator-location-id"]
+        : undefined;
       const result = await advanceOrderStatus({
         orderId,
         input,
+        locationId: operatorLocationId,
         requestId: request.id,
         deps: getServiceDeps(request)
       });

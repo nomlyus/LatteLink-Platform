@@ -1,9 +1,22 @@
-import { state } from "../state.js";
+import { isAllLocationsSelected, state } from "../state.js";
 import { escapeHtml } from "../ui/format.js";
 import { canUpdateStoreSettings } from "../model.js";
-import { renderSectionHeading } from "./common.js";
+import { renderLocationSelectionNotice, renderSectionHeading } from "./common.js";
 
 export function renderStoreSection() {
+  if (isAllLocationsSelected()) {
+    return `
+      <section class="dash-section">
+        ${renderSectionHeading({
+          eyebrow: "Settings",
+          title: "Choose a location",
+          description: "Store configuration is managed one location at a time."
+        })}
+        ${renderLocationSelectionNotice("Pick a specific location from the workspace selector to update store hours, pickup instructions, and storefront labels.")}
+      </section>
+    `;
+  }
+
   if (!state.storeConfig) {
     return `
       <section class="dash-section">

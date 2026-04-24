@@ -8,6 +8,7 @@ import {
   cancelOrder,
   createOrder,
   createQuote,
+  getOrderForRead,
   processPayment,
   reconcilePaymentWebhook,
   type PosAdapter,
@@ -681,6 +682,32 @@ describe("orders service layer", () => {
     );
   });
 
+  it("getOrderForRead hides orders outside the requested operator location", async () => {
+    const { deps } = await createTestDeps(repositories);
+    const { order } = await createQuotedOrder(deps);
+
+    const result = await getOrderForRead({
+      orderId: order.id,
+      locationId: "northside-01",
+      requestId: "service-read-wrong-location",
+      deps
+    });
+
+    expect("error" in result).toBe(true);
+    if (!("error" in result)) {
+      throw new Error("Expected order lookup failure");
+    }
+
+    expect(result.error).toMatchObject({
+      statusCode: 404,
+      code: "ORDER_NOT_FOUND",
+      details: {
+        orderId: order.id,
+        locationId: "northside-01"
+      }
+    });
+  });
+
   it("cancelOrder persists rejected refund responses for support follow-up", async () => {
     const userId = "123e4567-e89b-12d3-a456-426614174513";
     const { deps } = await createTestDeps(repositories);
@@ -744,6 +771,36 @@ describe("orders service layer", () => {
     expect(result.error).toMatchObject({
       statusCode: 409,
       code: "ORDER_TRANSITION_INVALID"
+    });
+  });
+
+  it("advanceOrderStatus hides orders outside the requested operator location", async () => {
+    const { deps } = await createTestDeps(repositories, { fulfillmentMode: "staff" });
+    const { order } = await createQuotedOrder(deps);
+
+    const result = await advanceOrderStatus({
+      orderId: order.id,
+      input: {
+        status: "IN_PREP",
+        note: "start prep"
+      },
+      locationId: "northside-01",
+      requestId: "service-status-wrong-location",
+      deps
+    });
+
+    expect("error" in result).toBe(true);
+    if (!("error" in result)) {
+      throw new Error("Expected order lookup failure");
+    }
+
+    expect(result.error).toMatchObject({
+      statusCode: 404,
+      code: "ORDER_NOT_FOUND",
+      details: {
+        orderId: order.id,
+        locationId: "northside-01"
+      }
     });
   });
 

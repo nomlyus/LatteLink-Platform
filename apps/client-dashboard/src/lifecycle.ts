@@ -1,4 +1,6 @@
 import {
+  fetchDashboardLocations,
+  fetchOperatorOrders,
   fetchOperatorSnapshot,
   isApiRequestError,
   logoutOperatorSession,
@@ -74,6 +76,23 @@ async function ensureFreshSession() {
   return refreshedSession;
 }
 
+function resolveSelectedLocationId() {
+  const availableLocationIds = new Set(state.availableLocations.map((location) => location.locationId));
+  if (availableLocationIds.size === 0) {
+    return null;
+  }
+
+  if (state.selectedLocationId === "all" && availableLocationIds.size > 1) {
+    return "all" as const;
+  }
+
+  if (state.selectedLocationId && state.selectedLocationId !== "all" && availableLocationIds.has(state.selectedLocationId)) {
+    return state.selectedLocationId;
+  }
+
+  return availableLocationIds.size > 1 ? ("all" as const) : state.availableLocations[0]?.locationId ?? null;
+}
+
 export async function loadDashboard(): Promise<void> {
   if (!state.session) {
     state.loading = false;
@@ -94,15 +113,35 @@ export async function loadDashboard(): Promise<void> {
     if (!session) {
       return;
     }
-    const snapshot = await fetchOperatorSnapshot(session);
-    state.appConfig = snapshot.appConfig;
-    state.orders = snapshot.orders;
-    state.menuCategories = snapshot.menu.categories;
-    reconcileMenuCreateDraft();
-    state.menuCustomizationDrafts = snapshotCustomizationDrafts(snapshot.menu.categories);
-    state.newsCards = snapshot.cards;
-    state.storeConfig = snapshot.storeConfig;
-    state.teamUsers = snapshot.staff;
+
+    state.availableLocations = await fetchDashboardLocations(session);
+    state.selectedLocationId = resolveSelectedLocationId();
+
+    if (state.selectedLocationId === "all") {
+      const orders = new Set(session.operator.capabilities).has("orders:read")
+        ? (
+            await Promise.all(state.availableLocations.map((location) => fetchOperatorOrders(session, location.locationId)))
+          ).flat()
+        : [];
+      state.appConfig = null;
+      state.orders = orders;
+      state.menuCategories = [];
+      state.menuCustomizationDrafts = {};
+      state.newsCards = [];
+      state.storeConfig = null;
+      state.teamUsers = [];
+    } else {
+      const snapshot = await fetchOperatorSnapshot(session, state.selectedLocationId);
+      state.appConfig = snapshot.appConfig;
+      state.orders = snapshot.orders;
+      state.menuCategories = snapshot.menu.categories;
+      reconcileMenuCreateDraft();
+      state.menuCustomizationDrafts = snapshotCustomizationDrafts(snapshot.menu.categories);
+      state.newsCards = snapshot.cards;
+      state.storeConfig = snapshot.storeConfig;
+      state.teamUsers = snapshot.staff;
+    }
+
     state.lastRefreshedAt = Date.now();
     ensureSectionIsAvailable();
     reconcileSelectedOrder();
@@ -125,6 +164,7 @@ export async function loadDashboard(): Promise<void> {
 
 export async function applyVerifiedSession(nextSession: OperatorSession, notice: string) {
   state.session = nextSession;
+  state.selectedLocationId = (nextSession.operator.locationIds?.length ?? 1) > 1 ? "all" : nextSession.operator.locationId;
   state.authApiBaseUrl = nextSession.apiBaseUrl;
   state.authEmail = nextSession.operator.email;
   state.authPassword = "";

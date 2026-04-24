@@ -193,6 +193,12 @@ export interface OperatorUserTable {
   updated_at: Generated<string>;
 }
 
+export interface OperatorLocationAccessTable {
+  operator_user_id: string;
+  location_id: string;
+  created_at: Generated<string>;
+}
+
 export interface OperatorSessionTable {
   access_token: string;
   refresh_token: string;
@@ -349,6 +355,7 @@ export interface PersistenceDatabase {
   identity_passkey_challenges: IdentityPasskeyChallengeTable;
   identity_passkey_credentials: IdentityPasskeyCredentialTable;
   operator_users: OperatorUserTable;
+  operator_location_access: OperatorLocationAccessTable;
   operator_sessions: OperatorSessionTable;
   internal_admin_users: InternalAdminUserTable;
   internal_admin_sessions: InternalAdminSessionTable;

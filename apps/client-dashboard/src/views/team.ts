@@ -1,9 +1,22 @@
-import { state } from "../state.js";
+import { isAllLocationsSelected, state } from "../state.js";
 import { escapeHtml, getOperatorInitials } from "../ui/format.js";
 import { canManageTeamMembers, getOperatorRoleLabel } from "../model.js";
-import { renderSectionHeading } from "./common.js";
+import { renderLocationSelectionNotice, renderSectionHeading } from "./common.js";
 
 export function renderTeamSection() {
+  if (isAllLocationsSelected()) {
+    return `
+      <section class="dash-section">
+        ${renderSectionHeading({
+          eyebrow: "Team",
+          title: "Choose a location",
+          description: "Staff access is managed one location at a time."
+        })}
+        ${renderLocationSelectionNotice("Select a specific location to review or update the team members assigned to that storefront.")}
+      </section>
+    `;
+  }
+
   const canWrite = canManageTeamMembers(state.session?.operator ?? null);
   return `
     <section class="dash-section">

@@ -177,17 +177,23 @@ export function resolveInternalAdminCapabilities(role: z.infer<typeof internalAd
   return [...internalAdminCapabilitiesByRole[role]];
 }
 
-export const operatorUserSchema = z.object({
+const operatorUserSchemaBase = z.object({
   operatorUserId: z.string().uuid(),
   displayName: z.string().min(1),
   email: z.string().trim().email(),
   role: operatorRoleSchema,
   locationId: z.string().min(1),
+  locationIds: z.array(z.string().min(1)).optional(),
   active: z.boolean(),
   capabilities: z.array(operatorCapabilitySchema),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
 });
+
+export const operatorUserSchema = operatorUserSchemaBase.transform((value) => ({
+  ...value,
+  locationIds: Array.from(new Set([value.locationId, ...(value.locationIds ?? [])]))
+}));
 
 export const operatorSessionSchema = z.object({
   accessToken: z.string().min(1),

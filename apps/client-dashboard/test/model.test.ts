@@ -121,6 +121,7 @@ const sampleOperator: OperatorUser = {
   email: "avery@store.com",
   role: "manager",
   locationId: "flagship-01",
+  locationIds: ["flagship-01", "northside-01"],
   active: true,
   capabilities: ["orders:read", "orders:write", "menu:read", "menu:visibility", "store:read", "staff:read"],
   createdAt: "2026-03-20T00:00:00.000Z",

@@ -99,6 +99,11 @@ type PersistedOperatorUserRow = {
   updated_at: string | Date;
 };
 
+type PersistedOperatorLocationAccessRow = {
+  operator_user_id: string;
+  location_id: string;
+};
+
 type PersistedOperatorSessionRow = {
   access_token: string;
   refresh_token: string;
@@ -399,6 +404,10 @@ function toSortedCustomerAuthMethods(methods: Iterable<CustomerAuthMethod>): Cus
   return ordered;
 }
 
+function normalizeOperatorLocationIds(primaryLocationId: string, locationIds?: readonly string[]) {
+  return Array.from(new Set([primaryLocationId, ...(locationIds ?? [])]));
+}
+
 function getDefaultInternalAdminSeeds(): Array<{
   displayName: string;
   email: string;
@@ -439,13 +448,14 @@ function getDefaultInternalAdminSeeds(): Array<{
   return seeds;
 }
 
-function toOperatorUserRecord(row: PersistedOperatorUserRow): OperatorUserRecord {
+function toOperatorUserRecord(row: PersistedOperatorUserRow, locationIds?: readonly string[]): OperatorUserRecord {
   return {
     operatorUserId: row.operator_user_id,
     displayName: row.display_name,
     email: normalizeEmail(row.email),
     role: row.role,
     locationId: row.location_id,
+    locationIds: normalizeOperatorLocationIds(row.location_id, locationIds),
     active: row.active,
     capabilities: resolveOperatorCapabilities(row.role),
     createdAt: parseIsoDate(row.created_at),
@@ -502,12 +512,31 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
   const userIdByAppleSub = new Map<string, string>();
   const userIdByEmail = new Map<string, string>();
   const operatorUsersById = new Map<string, OperatorUserRecord>();
+  const operatorLocationIdsByUserId = new Map<string, Set<string>>();
   const operatorUserIdByEmail = new Map<string, string>();
   const operatorUserIdByGoogleSub = new Map<string, string>();
   const operatorPasswordHashByUserId = new Map<string, string>();
   const internalAdminUsersById = new Map<string, InternalAdminUserRecord>();
   const internalAdminUserIdByEmail = new Map<string, string>();
   const internalAdminPasswordHashByUserId = new Map<string, string>();
+
+  function setOperatorLocationAccess(operatorUserId: string, primaryLocationId: string, extraLocationIds?: Iterable<string>) {
+    operatorLocationIdsByUserId.set(
+      operatorUserId,
+      new Set(normalizeOperatorLocationIds(primaryLocationId, extraLocationIds ? Array.from(extraLocationIds) : undefined))
+    );
+  }
+
+  function getOperatorLocationIds(operatorUserId: string, primaryLocationId: string) {
+    return normalizeOperatorLocationIds(primaryLocationId, Array.from(operatorLocationIdsByUserId.get(operatorUserId) ?? []));
+  }
+
+  function cloneOperatorRecord(record: OperatorUserRecord) {
+    return {
+      ...record,
+      locationIds: getOperatorLocationIds(record.operatorUserId, record.locationId)
+    };
+  }
 
   for (const seed of getDefaultInternalAdminSeeds()) {
     const now = new Date().toISOString();
@@ -796,12 +825,13 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
     },
     async listOperatorUsers(locationId) {
       return Array.from(operatorUsersById.values())
-        .filter((user) => (locationId ? user.locationId === locationId : true))
+        .filter((user) => (locationId ? getOperatorLocationIds(user.operatorUserId, user.locationId).includes(locationId) : true))
+        .map((user) => cloneOperatorRecord(user))
         .sort((left, right) => left.displayName.localeCompare(right.displayName));
     },
     async getOperatorUserById(operatorUserId) {
       const record = operatorUsersById.get(operatorUserId);
-      return record ? { ...record } : undefined;
+      return record ? cloneOperatorRecord(record) : undefined;
     },
     async getOperatorUserByEmail(email) {
       const operatorUserId = operatorUserIdByEmail.get(normalizeEmail(email));
@@ -810,7 +840,7 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
       }
 
       const record = operatorUsersById.get(operatorUserId);
-      return record ? { ...record } : undefined;
+      return record ? cloneOperatorRecord(record) : undefined;
     },
     async getOperatorUserByGoogleSub(googleSub) {
       const operatorUserId = operatorUserIdByGoogleSub.get(googleSub);
@@ -819,13 +849,13 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
       }
 
       const record = operatorUsersById.get(operatorUserId);
-      return record ? { ...record } : undefined;
+      return record ? cloneOperatorRecord(record) : undefined;
     },
     async resolveOperatorUserForGoogleSignIn(input) {
       const existingByGoogleSub = operatorUserIdByGoogleSub.get(input.googleSub);
       if (existingByGoogleSub) {
         const existing = operatorUsersById.get(existingByGoogleSub);
-        return existing && existing.active ? { ...existing } : undefined;
+        return existing && existing.active ? cloneOperatorRecord(existing) : undefined;
       }
 
       if (!input.emailVerified || !input.email) {
@@ -844,7 +874,7 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
       }
 
       operatorUserIdByGoogleSub.set(input.googleSub, operatorUserId);
-      return { ...existing };
+      return cloneOperatorRecord(existing);
     },
     async verifyOperatorPassword(email, password) {
       const operatorUserId = operatorUserIdByEmail.get(normalizeEmail(email));
@@ -858,7 +888,7 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
         return undefined;
       }
 
-      return { ...record };
+      return cloneOperatorRecord(record);
     },
     async createOperatorUser(input) {
       const normalizedEmail = normalizeEmail(input.email);
@@ -877,11 +907,15 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
           };
 
           operatorUsersById.set(existingId, updated);
+          setOperatorLocationAccess(existingId, updated.locationId, [
+            ...getOperatorLocationIds(existingId, existing.locationId),
+            input.locationId
+          ]);
           if (!operatorPasswordHashByUserId.has(existingId)) {
             operatorPasswordHashByUserId.set(existingId, hashOperatorPassword(input.password));
           }
 
-          return { ...updated };
+          return cloneOperatorRecord(updated);
         }
       }
 
@@ -892,6 +926,7 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
         email: normalizedEmail,
         role: input.role,
         locationId: input.locationId,
+        locationIds: [input.locationId],
         active: true,
         capabilities: resolveOperatorCapabilities(input.role),
         createdAt: now,
@@ -899,9 +934,10 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
       };
 
       operatorUsersById.set(record.operatorUserId, record);
+      setOperatorLocationAccess(record.operatorUserId, record.locationId);
       operatorUserIdByEmail.set(record.email, record.operatorUserId);
       operatorPasswordHashByUserId.set(record.operatorUserId, hashOperatorPassword(input.password));
-      return { ...record };
+      return cloneOperatorRecord(record);
     },
     async updateOperatorUser(operatorUserId, input) {
       const existing = operatorUsersById.get(operatorUserId);
@@ -935,7 +971,8 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
       if (input.password) {
         operatorPasswordHashByUserId.set(operatorUserId, hashOperatorPassword(input.password));
       }
-      return { ...updated };
+      setOperatorLocationAccess(operatorUserId, updated.locationId, getOperatorLocationIds(operatorUserId, existing.locationId));
+      return cloneOperatorRecord(updated);
     },
     async saveOperatorSession(session) {
       operatorSessionsByAccessToken.set(session.accessToken, { session });
@@ -1149,6 +1186,54 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
   const db = createPostgresDb(connectionString);
   await runMigrations(db);
   await ensureDefaultInternalAdminUsers(db);
+
+  const loadOperatorLocationIdsByUserId = async (operatorUserIds: readonly string[]) => {
+    const uniqueOperatorUserIds = Array.from(new Set(operatorUserIds));
+    const locationIdsByUserId = new Map<string, string[]>();
+    if (uniqueOperatorUserIds.length === 0) {
+      return locationIdsByUserId;
+    }
+
+    const rows = await db
+      .selectFrom("operator_location_access")
+      .select(["operator_user_id", "location_id"])
+      .where("operator_user_id", "in", uniqueOperatorUserIds)
+      .orderBy("location_id", "asc")
+      .execute();
+
+    for (const row of rows as PersistedOperatorLocationAccessRow[]) {
+      const existing = locationIdsByUserId.get(row.operator_user_id) ?? [];
+      existing.push(row.location_id);
+      locationIdsByUserId.set(row.operator_user_id, existing);
+    }
+
+    return locationIdsByUserId;
+  };
+
+  const hydrateOperatorUser = async (row: PersistedOperatorUserRow | undefined) => {
+    if (!row) {
+      return undefined;
+    }
+
+    const locationIdsByUserId = await loadOperatorLocationIdsByUserId([row.operator_user_id]);
+    return toOperatorUserRecord(row, locationIdsByUserId.get(row.operator_user_id));
+  };
+
+  const hydrateOperatorUsers = async (rows: PersistedOperatorUserRow[]) => {
+    const locationIdsByUserId = await loadOperatorLocationIdsByUserId(rows.map((row) => row.operator_user_id));
+    return rows.map((row) => toOperatorUserRecord(row, locationIdsByUserId.get(row.operator_user_id)));
+  };
+
+  const grantOperatorLocationAccess = async (executor: typeof db, operatorUserId: string, locationId: string) => {
+    await executor
+      .insertInto("operator_location_access")
+      .values({
+        operator_user_id: operatorUserId,
+        location_id: locationId
+      })
+      .onConflict((oc) => oc.columns(["operator_user_id", "location_id"]).doNothing())
+      .execute();
+  };
 
   return {
     backend: "postgres",
@@ -1764,9 +1849,20 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         .execute();
     },
     async listOperatorUsers(locationId) {
-      const query = db.selectFrom("operator_users").selectAll().orderBy("display_name", "asc");
-      const rows = locationId ? await query.where("location_id", "=", locationId).execute() : await query.execute();
-      return rows.map((row) => toOperatorUserRecord(row as PersistedOperatorUserRow));
+      const rows = locationId
+        ? await db
+            .selectFrom("operator_users")
+            .innerJoin(
+              "operator_location_access",
+              "operator_location_access.operator_user_id",
+              "operator_users.operator_user_id"
+            )
+            .selectAll("operator_users")
+            .where("operator_location_access.location_id", "=", locationId)
+            .orderBy("operator_users.display_name", "asc")
+            .execute()
+        : await db.selectFrom("operator_users").selectAll().orderBy("display_name", "asc").execute();
+      return hydrateOperatorUsers(rows as PersistedOperatorUserRow[]);
     },
     async getOperatorUserById(operatorUserId) {
       const row = await db
@@ -1779,7 +1875,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         return undefined;
       }
 
-      return toOperatorUserRecord(row as PersistedOperatorUserRow);
+      return hydrateOperatorUser(row as PersistedOperatorUserRow);
     },
     async getOperatorUserByEmail(email) {
       const row = await db
@@ -1792,7 +1888,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         return undefined;
       }
 
-      return toOperatorUserRecord(row as PersistedOperatorUserRow);
+      return hydrateOperatorUser(row as PersistedOperatorUserRow);
     },
     async getOperatorUserByGoogleSub(googleSub) {
       const row = await db
@@ -1805,13 +1901,13 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         return undefined;
       }
 
-      return toOperatorUserRecord(row as PersistedOperatorUserRow);
+      return hydrateOperatorUser(row as PersistedOperatorUserRow);
     },
     async resolveOperatorUserForGoogleSignIn(input) {
       const normalizedEmail = input.email ? normalizeEmail(input.email) : undefined;
       const now = new Date().toISOString();
 
-      return db.transaction().execute(async (trx) => {
+      const operatorUserId = await db.transaction().execute(async (trx) => {
         const existingGoogle = await trx
           .selectFrom("operator_users")
           .selectAll()
@@ -1844,11 +1940,11 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
 
           const refreshed = await trx
             .selectFrom("operator_users")
-            .selectAll()
+            .select("operator_user_id")
             .where("operator_user_id", "=", existingGoogle.operator_user_id)
             .executeTakeFirstOrThrow();
 
-          return toOperatorUserRecord(refreshed as PersistedOperatorUserRow);
+          return refreshed.operator_user_id;
         }
 
         if (!input.emailVerified || !normalizedEmail) {
@@ -1885,17 +1981,27 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
             return undefined;
           }
 
-          return toOperatorUserRecord(concurrentGoogle as PersistedOperatorUserRow);
+          return concurrentGoogle.operator_user_id;
         }
 
         const updated = await trx
           .selectFrom("operator_users")
-          .selectAll()
+          .select("operator_user_id")
           .where("operator_user_id", "=", existingEmail.operator_user_id)
           .executeTakeFirstOrThrow();
 
-        return toOperatorUserRecord(updated as PersistedOperatorUserRow);
+        return updated.operator_user_id;
       });
+      if (!operatorUserId) {
+        return undefined;
+      }
+
+      const refreshed = await db
+        .selectFrom("operator_users")
+        .selectAll()
+        .where("operator_user_id", "=", operatorUserId)
+        .executeTakeFirst();
+      return hydrateOperatorUser(refreshed as PersistedOperatorUserRow | undefined);
     },
     async verifyOperatorPassword(email, password) {
       const row = await db
@@ -1913,7 +2019,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         return undefined;
       }
 
-      return toOperatorUserRecord(persisted);
+      return hydrateOperatorUser(persisted);
     },
     async createOperatorUser(input) {
       const normalizedEmail = normalizeEmail(input.email);
@@ -1933,6 +2039,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
             active: true
           })
           .execute();
+        await grantOperatorLocationAccess(db, operatorUserId, input.locationId);
       } catch {
         const existing = await db
           .selectFrom("operator_users")
@@ -1955,6 +2062,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
           })
           .where("operator_user_id", "=", existing.operator_user_id)
           .execute();
+        await grantOperatorLocationAccess(db, existing.operator_user_id, input.locationId);
 
         const updated = await db
           .selectFrom("operator_users")
@@ -1962,7 +2070,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
           .where("operator_user_id", "=", existing.operator_user_id)
           .executeTakeFirstOrThrow();
 
-        return toOperatorUserRecord(updated as PersistedOperatorUserRow);
+        return (await hydrateOperatorUser(updated as PersistedOperatorUserRow)) as OperatorUserRecord;
       }
 
       const created = await db
@@ -1970,7 +2078,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         .selectAll()
         .where("operator_user_id", "=", operatorUserId)
         .executeTakeFirstOrThrow();
-      return toOperatorUserRecord(created as PersistedOperatorUserRow);
+      return (await hydrateOperatorUser(created as PersistedOperatorUserRow)) as OperatorUserRecord;
     },
     async updateOperatorUser(operatorUserId, input) {
       const existing = await db
@@ -2014,7 +2122,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         .where("operator_user_id", "=", operatorUserId)
         .executeTakeFirstOrThrow();
 
-      return toOperatorUserRecord(updated as PersistedOperatorUserRow);
+      return (await hydrateOperatorUser(updated as PersistedOperatorUserRow)) as OperatorUserRecord;
     },
     async saveOperatorSession(session, authMethod) {
       try {

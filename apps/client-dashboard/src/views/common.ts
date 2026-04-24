@@ -30,6 +30,10 @@ export function renderSectionHeading(config: {
   `;
 }
 
+export function renderLocationSelectionNotice(message: string) {
+  return `<article class="dash-surface dash-empty-surface"><p class="muted-copy">${escapeHtml(message)}</p></article>`;
+}
+
 function getOrderStatusTone(status: OperatorOrder["status"]) {
   switch (status) {
     case "READY":

@@ -109,6 +109,23 @@ export function registerEvents() {
   root.addEventListener("change", (event) => {
     syncMenuCreateDraft(event.target);
     updateCustomizationDraftFromInput(event.target);
+
+    const target = event.target;
+    if (!(target instanceof HTMLSelectElement)) {
+      return;
+    }
+
+    if (target.dataset.control === "location-scope") {
+      const nextLocationId = target.value === "all" ? "all" : target.value || null;
+      if (nextLocationId === state.selectedLocationId) {
+        return;
+      }
+
+      state.selectedLocationId = nextLocationId;
+      stopAutoRefresh();
+      clearPendingCancel();
+      void loadDashboard();
+    }
   });
 
   root.addEventListener("click", (event) => {

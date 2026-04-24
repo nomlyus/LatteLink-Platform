@@ -6,6 +6,7 @@ describe("gateway", () => {
   const authHeader = { authorization: "Bearer access-token" } as const;
   const ownerOperatorHeaders = { authorization: "Bearer operator-owner-access-token" } as const;
   const staffOperatorHeaders = { authorization: "Bearer operator-staff-access-token" } as const;
+  const multiLocationOperatorHeaders = { authorization: "Bearer operator-multi-location-access-token" } as const;
   const ownerInternalAdminHeaders = { authorization: "Bearer internal-admin-owner-access-token" } as const;
   const readonlyInternalAdminHeaders = { authorization: "Bearer internal-admin-readonly-access-token" } as const;
   let previousIdentityBaseUrl: string | undefined;
@@ -336,6 +337,7 @@ describe("gateway", () => {
             email: "owner@gazellecoffee.com",
             role: "owner",
             locationId: "flagship-01",
+            locationIds: ["flagship-01"],
             active: true,
             capabilities: [
               "orders:read",
@@ -357,6 +359,7 @@ describe("gateway", () => {
             email: "manager@gazellecoffee.com",
             role: "manager",
             locationId: "flagship-01",
+            locationIds: ["flagship-01"],
             active: true,
             capabilities: ["orders:read", "orders:write", "menu:read", "menu:write", "menu:visibility", "store:read", "staff:read"],
             createdAt: "2026-03-20T00:00:00.000Z",
@@ -368,8 +371,31 @@ describe("gateway", () => {
             email: "staff@gazellecoffee.com",
             role: "staff",
             locationId: "flagship-01",
+            locationIds: ["flagship-01"],
             active: true,
             capabilities: ["orders:read", "orders:write", "menu:read", "menu:visibility", "store:read"],
+            createdAt: "2026-03-20T00:00:00.000Z",
+            updatedAt: "2026-03-20T00:00:00.000Z"
+          },
+          "Bearer operator-multi-location-access-token": {
+            operatorUserId: "123e4567-e89b-12d3-a456-426614174996",
+            displayName: "Multi Location Owner",
+            email: "multi.owner@gazellecoffee.com",
+            role: "owner",
+            locationId: "flagship-01",
+            locationIds: ["flagship-01", "northside-01"],
+            active: true,
+            capabilities: [
+              "orders:read",
+              "orders:write",
+              "menu:read",
+              "menu:write",
+              "menu:visibility",
+              "store:read",
+              "store:write",
+              "staff:read",
+              "staff:write"
+            ],
             createdAt: "2026-03-20T00:00:00.000Z",
             updatedAt: "2026-03-20T00:00:00.000Z"
           }
@@ -2506,7 +2532,52 @@ describe("gateway", () => {
       const upstreamHeaders = new Headers((updateCall[1]?.headers ?? {}) as HeadersInit);
       expect(upstreamHeaders.get("x-internal-token")).toBe("orders-internal-token");
       expect(upstreamHeaders.get("x-gateway-token")).toBeNull();
+      expect(upstreamHeaders.get("x-operator-location-id")).toBe("flagship-01");
     }
+
+    await app.close();
+  });
+
+  it("allows multi-location operators to scope order reads to an accessible location", async () => {
+    const app = await buildApp();
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/admin/orders?locationId=northside-01",
+      headers: multiLocationOperatorHeaders
+    });
+
+    expect(response.statusCode).toBe(200);
+    const ordersCall = fetchMock.mock.calls.find(([input]) => {
+      const url = typeof input === "string" ? input : input.url;
+      return url === "http://orders.internal/v1/orders";
+    });
+    expect(ordersCall).toBeDefined();
+    if (ordersCall) {
+      const upstreamHeaders = new Headers((ordersCall[1]?.headers ?? {}) as HeadersInit);
+      expect(upstreamHeaders.get("x-operator-location-id")).toBe("northside-01");
+    }
+
+    await app.close();
+  });
+
+  it("rejects operator requests for locations outside their access set", async () => {
+    const app = await buildApp();
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/admin/staff?locationId=westside-01",
+      headers: multiLocationOperatorHeaders
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({
+      code: "FORBIDDEN"
+    });
+    expect(
+      fetchMock.mock.calls.some(([input]) => {
+        const url = typeof input === "string" ? input : input.url;
+        return url.includes("/v1/operator/users");
+      })
+    ).toBe(false);
 
     await app.close();
   });
@@ -2535,6 +2606,7 @@ describe("gateway", () => {
       const upstreamHeaders = new Headers((cancelCall[1]?.headers ?? {}) as HeadersInit);
       expect(upstreamHeaders.get("x-gateway-token")).toBe("gateway-test-token");
       expect(upstreamHeaders.get("x-order-cancel-source")).toBe("staff");
+      expect(upstreamHeaders.get("x-operator-location-id")).toBe("flagship-01");
       expect(JSON.parse(String(cancelCall[1]?.body ?? "{}"))).toEqual({
         reason: "Espresso machine issue"
       });

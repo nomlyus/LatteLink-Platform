@@ -20,7 +20,7 @@ export async function handleTeamCreateSubmit(form: HTMLFormElement) {
     state.creatingTeamUser = true;
     setError(null);
     render();
-    await createOperatorStaffUser(state.session, {
+    await createOperatorStaffUser(state.session, state.selectedLocationId === "all" ? null : state.selectedLocationId, {
       displayName: formData.get("displayName"),
       email: formData.get("email"),
       role: formData.get("role"),
@@ -71,13 +71,18 @@ export async function handleTeamUserSubmit(form: HTMLFormElement) {
     state.busyTeamUserId = operatorUserId;
     setError(null);
     render();
-    await updateOperatorStaffUser(state.session, operatorUserId, {
+    await updateOperatorStaffUser(
+      state.session,
+      state.selectedLocationId === "all" ? null : state.selectedLocationId,
+      operatorUserId,
+      {
       displayName: formData.get("displayName"),
       email: formData.get("email"),
       role: formData.get("role"),
       password: formData.get("password"),
       active
-    });
+      }
+    );
     addToast("Updated team member access.", "success");
     await loadDashboard();
   } catch (error) {

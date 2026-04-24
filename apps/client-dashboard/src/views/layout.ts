@@ -1,4 +1,4 @@
-import { state } from "../state.js";
+import { getSelectedLocation, hasMultipleLocations, isAllLocationsSelected, state } from "../state.js";
 import { escapeHtml, formatDashboardDate, getOperatorInitials } from "../ui/format.js";
 import { filterOrdersByView } from "../model.js";
 import {
@@ -68,11 +68,34 @@ function renderDashboardContent() {
 export function renderDashboard() {
   ensureSectionIsAvailable();
   reconcileMenuCreateDraft();
-  const locationLabel =
-    state.appConfig?.brand.locationName ?? state.storeConfig?.storeName ?? "Operator dashboard";
-  const marketLabel = state.appConfig?.brand.marketLabel ?? "Store operations";
+  const selectedLocation = getSelectedLocation();
+  const locationLabel = isAllLocationsSelected()
+    ? "All locations"
+    : selectedLocation?.locationName ?? state.appConfig?.brand.locationName ?? state.storeConfig?.storeName ?? "Operator dashboard";
+  const marketLabel = isAllLocationsSelected()
+    ? `${state.availableLocations.length} locations`
+    : selectedLocation?.marketLabel ?? state.appConfig?.brand.marketLabel ?? "Store operations";
   const liveEnabled = isStaffDashboardEnabled(state.appConfig) && isOrderTrackingEnabled(state.appConfig);
   const settingsAvailable = getAvailableDashboardSections().includes("store");
+  const locationSelector = hasMultipleLocations()
+    ? `
+        <label class="field dash-field-inline dash-location-picker">
+          <span>Workspace</span>
+          <select data-control="location-scope" ${state.loading ? "disabled" : ""}>
+            <option value="all" ${isAllLocationsSelected() ? "selected" : ""}>All locations</option>
+            ${state.availableLocations
+              .map(
+                (location) => `
+                  <option value="${escapeHtml(location.locationId)}" ${state.selectedLocationId === location.locationId ? "selected" : ""}>
+                    ${escapeHtml(location.locationName)} · ${escapeHtml(location.marketLabel)}
+                  </option>
+                `
+              )
+              .join("")}
+          </select>
+        </label>
+      `
+    : "";
 
   return `
     <div class="dash-shell">
@@ -119,8 +142,9 @@ export function renderDashboard() {
         <div class="dash-topbar">
           <div class="dash-page-stack">
             <div class="dash-page-title">${escapeHtml(getDashboardSectionLabel(state.section))}</div>
-            <div class="dash-shop-sub">${escapeHtml(locationLabel)} · ${escapeHtml(marketLabel)} · 1 location</div>
+            <div class="dash-shop-sub">${escapeHtml(locationLabel)} · ${escapeHtml(marketLabel)}</div>
           </div>
+          ${locationSelector}
           <div class="dash-date">${escapeHtml(formatDashboardDate())}</div>
           <div class="dash-live-pill ${liveEnabled ? "" : "dash-live-pill--muted"}">
             <div class="dash-live-dot"></div>

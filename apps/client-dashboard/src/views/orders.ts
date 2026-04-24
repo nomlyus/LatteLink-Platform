@@ -1,4 +1,4 @@
-import { state } from "../state.js";
+import { getSelectedLocation, isAllLocationsSelected, state } from "../state.js";
 import { escapeHtml, formatDateTime, formatMoney, formatRelativeRefresh } from "../ui/format.js";
 import {
   canAdvanceOrderStatus,
@@ -17,7 +17,7 @@ import {
   type AppConfig
 } from "@lattelink/contracts-catalog";
 import { getSelectedOrder, getVisibleOrders } from "../orders-runtime.js";
-import { renderOrderStatusBadge, renderSectionHeading } from "./common.js";
+import { renderLocationSelectionNotice, renderOrderStatusBadge, renderSectionHeading } from "./common.js";
 
 function renderOrderFilterRow(activeOrderCount: number, completedOrderCount: number) {
   return (
@@ -165,6 +165,69 @@ function renderOrderDetail(order: OperatorOrder, appConfig: AppConfig | null) {
 }
 
 export function renderOrdersSection() {
+  if (isAllLocationsSelected()) {
+    const activeOrders = filterOrdersByView(state.orders, "active");
+    const completedOrders = filterOrdersByView(state.orders, "completed");
+    const visibleOrders = getVisibleOrders();
+    const selectedOrder = getSelectedOrder();
+    const orderRows =
+      visibleOrders.length > 0
+        ? visibleOrders
+            .map(
+              (order) => `
+                <button class="dash-order-row ${selectedOrder?.id === order.id ? "dash-order-row--selected" : ""}" type="button" data-action="select-order" data-order-id="${order.id}">
+                  <span class="dash-order-row__main">
+                    <strong>${escapeHtml(order.pickupCode)}</strong>
+                    <span class="dash-order-row__meta">${escapeHtml(getOrderCustomerLabel(order))}</span>
+                  </span>
+                  ${renderOrderStatusBadge(order.status)}
+                  <span class="dash-order-row__amount">${formatMoney(order.total.amountCents)}</span>
+                </button>
+              `
+            )
+            .join("")
+        : `<p class="muted-copy">No orders are loaded for the selected view.</p>`;
+
+    return `
+      <section class="dash-section">
+        ${renderSectionHeading({
+          eyebrow: "Orders",
+          title: "Multi-location queue",
+          description: "Review orders across all accessible locations. Switch to a specific location to update fulfillment states.",
+          actions: `
+            <div class="dash-segmented-control">
+              ${renderOrderFilterRow(activeOrders.length, completedOrders.length)}
+            </div>
+            <button class="button button--ghost" type="button" data-action="refresh" ${state.loading ? "disabled" : ""}>
+              ${state.loading ? '<span class="spinner"></span>' : "Refresh"}
+            </button>
+          `
+        })}
+        ${renderLocationSelectionNotice("This all-locations board is read-only. Choose one location from the workspace picker to move orders through prep or completion.")}
+        <div class="dash-split-layout dash-split-layout--orders">
+          <article class="dash-surface">
+            <div class="dash-surface-head">
+              <div>
+                <div class="dash-panel-title">Queue</div>
+                <h3 class="dash-surface-title">${visibleOrders.length} in view</h3>
+              </div>
+              <span class="dash-inline-note">${escapeHtml(formatRelativeRefresh(state.lastRefreshedAt, state.loading))}</span>
+            </div>
+            <div class="dash-order-list">${orderRows}</div>
+          </article>
+
+          <article class="dash-surface">
+            ${
+              selectedOrder
+                ? renderOrderDetail(selectedOrder, null)
+                : `<div class="dash-empty-surface"><p class="muted-copy">Select an order to inspect its items and fulfillment timeline.</p></div>`
+            }
+          </article>
+        </div>
+      </section>
+    `;
+  }
+
   if (!isStaffDashboardEnabled(state.appConfig) || !isOrderTrackingEnabled(state.appConfig)) {
     return `
       <section class="dash-section">
@@ -184,6 +247,7 @@ export function renderOrdersSection() {
   const completedOrders = filterOrdersByView(state.orders, "completed");
   const visibleOrders = getVisibleOrders();
   const selectedOrder = getSelectedOrder();
+  const selectedLocation = getSelectedLocation();
   const orderRows =
     visibleOrders.length > 0
       ? visibleOrders
@@ -206,7 +270,7 @@ export function renderOrdersSection() {
     <section class="dash-section">
       ${renderSectionHeading({
         eyebrow: "Orders",
-        title: "Live order operations",
+        title: selectedLocation?.locationName ? `${selectedLocation.locationName} orders` : "Live order operations",
         description: "Track incoming orders and move drinks through prep without leaving the dashboard.",
         actions: `
           <div class="dash-segmented-control">

@@ -1,6 +1,6 @@
 import { escapeHtml } from "../ui/format.js";
 import { getOverviewSnapshot } from "../overview-data.js";
-import { state } from "../state.js";
+import { getSelectedLocation, isAllLocationsSelected, state } from "../state.js";
 import {
   countHiddenMenuItems,
   countVisibleMenuItems,
@@ -11,6 +11,42 @@ import { getAvailableDashboardSections, getDashboardSectionLabel } from "../sect
 function renderOverviewActionCards() {
   const availableSections = getAvailableDashboardSections();
   const activeOrders = filterOrdersByView(state.orders, "active").length;
+  const selectedLocation = getSelectedLocation();
+
+  if (isAllLocationsSelected()) {
+    return `
+      <section class="dash-action-panel" aria-label="Dashboard shortcuts">
+        <div class="dash-panel-header">
+          <div>
+            <div class="dash-panel-title">Portfolio</div>
+            <h3 class="dash-surface-title">Multi-location summary</h3>
+          </div>
+        </div>
+        <div class="dash-action-grid">
+          <article class="dash-action-card">
+            <div>
+              <span class="dash-action-label">Locations</span>
+              <strong>${state.availableLocations.length}</strong>
+              <p>Switch the workspace filter to inspect one store in detail.</p>
+            </div>
+          </article>
+          <article class="dash-action-card">
+            <div>
+              <span class="dash-action-label">Active queue</span>
+              <strong>${activeOrders}</strong>
+              <p>All open orders across the locations you can access.</p>
+            </div>
+            ${
+              availableSections.includes("orders")
+                ? `<button class="button button--secondary button--sm" type="button" data-action="set-section" data-section="orders">Orders</button>`
+                : ""
+            }
+          </article>
+        </div>
+      </section>
+    `;
+  }
+
   const visibleMenuItems = countVisibleMenuItems(state.menuCategories);
   const hiddenMenuItems = countHiddenMenuItems(state.menuCategories);
   const visibleCards = state.newsCards.filter((card) => card.visible).length;
@@ -45,7 +81,7 @@ function renderOverviewActionCards() {
       section: "store",
       label: "Store profile",
       value: state.storeConfig?.hours ?? "Review",
-      detail: state.storeConfig?.locationName ?? "Store settings"
+      detail: selectedLocation?.locationName ?? state.storeConfig?.locationName ?? "Store settings"
     }
   ] as const;
 
