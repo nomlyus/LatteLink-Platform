@@ -6,8 +6,8 @@ import { internalOwnerProvisionResponseSchema, internalOwnerSummarySchema } from
 
 const ownerEmail = "owner@gazellecoffee.com";
 const ownerPassword = "LatteLinkOwner123!";
-const staffEmail = "staff@gazellecoffee.com";
-const staffPassword = "LatteLinkStaff123!";
+const storeEmail = "store@gazellecoffee.com";
+const storePassword = "LatteLinkStore123!";
 const locationId = "rawaqcoffee01";
 
 async function signInOperator(app: Awaited<ReturnType<typeof buildApp>>, email: string, password: string) {
@@ -34,13 +34,13 @@ async function provisionOwner(repository: ReturnType<typeof createInMemoryIdenti
   });
 }
 
-async function provisionStaff(repository: ReturnType<typeof createInMemoryIdentityRepository>) {
+async function provisionStore(repository: ReturnType<typeof createInMemoryIdentityRepository>) {
   await repository.createOperatorUser({
-    displayName: "Lead Barista",
-    email: staffEmail,
-    role: "staff",
+    displayName: "Store Screen",
+    email: storeEmail,
+    role: "store",
     locationId,
-    password: staffPassword
+    password: storePassword
   });
 }
 
@@ -181,14 +181,14 @@ describe("operator auth", () => {
     await app.close();
   });
 
-  it("enforces owner-only staff management boundaries", async () => {
+  it("enforces owner-only team management boundaries", async () => {
     const repository = createInMemoryIdentityRepository();
     await provisionOwner(repository);
-    await provisionStaff(repository);
+    await provisionStore(repository);
     const app = await buildApp({ repository });
 
     const ownerSession = await signInOperator(app, ownerEmail, ownerPassword);
-    const staffSession = await signInOperator(app, staffEmail, staffPassword);
+    const storeSession = await signInOperator(app, storeEmail, storePassword);
 
     const ownerList = await app.inject({
       method: "GET",
@@ -201,19 +201,19 @@ describe("operator auth", () => {
     expect(ownerList.json().users).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ email: ownerEmail, role: "owner" }),
-        expect.objectContaining({ email: staffEmail, role: "staff" })
+        expect.objectContaining({ email: storeEmail, role: "store" })
       ])
     );
 
-    const staffList = await app.inject({
+    const storeList = await app.inject({
       method: "GET",
       url: "/v1/operator/users",
       headers: {
-        authorization: `Bearer ${staffSession.accessToken}`
+        authorization: `Bearer ${storeSession.accessToken}`
       }
     });
-    expect(staffList.statusCode).toBe(403);
-    expect(staffList.json()).toMatchObject({
+    expect(storeList.statusCode).toBe(403);
+    expect(storeList.json()).toMatchObject({
       code: "FORBIDDEN"
     });
 
@@ -255,21 +255,21 @@ describe("operator auth", () => {
       code: "OPERATOR_EMAIL_ALREADY_EXISTS"
     });
 
-    const staffCreate = await app.inject({
+    const storeCreate = await app.inject({
       method: "POST",
       url: "/v1/operator/users",
       headers: {
-        authorization: `Bearer ${staffSession.accessToken}`
+        authorization: `Bearer ${storeSession.accessToken}`
       },
       payload: {
         displayName: "Blocked User",
         email: "blocked@gazellecoffee.com",
-        role: "staff",
+        role: "store",
         password: "BlockedUser123!"
       }
     });
-    expect(staffCreate.statusCode).toBe(403);
-    expect(staffCreate.json()).toMatchObject({
+    expect(storeCreate.statusCode).toBe(403);
+    expect(storeCreate.json()).toMatchObject({
       code: "FORBIDDEN"
     });
 
@@ -352,7 +352,7 @@ describe("operator auth", () => {
       payload: {
         displayName: "Pilot Staff",
         email: "pilotstaff@gazellecoffee.com",
-        role: "staff",
+        role: "store",
         password: "PilotStaff123!"
       }
     });

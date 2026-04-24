@@ -2356,7 +2356,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
       if (input.status === "CANCELED") {
         const cancelPayload = cancelOrderRequestSchema.parse({
-          reason: input.note ?? "Canceled by staff"
+          reason: input.note ?? "Canceled in store"
         });
 
         return proxyUpstream({
@@ -2837,7 +2837,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/admin/staff",
     {
-      preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("staff:read")]
+      preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("team:read")]
     },
     async (request, reply) => {
       const locationError = resolveRequestedOperatorLocationId(request, { required: true }).error;
@@ -2861,7 +2861,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/admin/staff",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("staff:write")]
+      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("team:write")]
     },
     async (request, reply) => {
       const locationError = resolveRequestedOperatorLocationId(request, { required: true }).error;
@@ -2888,7 +2888,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.patch(
     "/v1/admin/staff/:operatorUserId",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("staff:write")]
+      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("team:write")]
     },
     async (request, reply) => {
       const locationError = resolveRequestedOperatorLocationId(request, { required: true }).error;

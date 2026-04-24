@@ -8,6 +8,7 @@ import {
   getOrderActions,
   getOrderCustomerLabel,
   getOrderDetailActionUnavailableMessage,
+  isStoreOperator,
   type OperatorOrder
 } from "../model.js";
 import {
@@ -40,6 +41,42 @@ function renderOrderFilterRow(activeOrderCount: number, completedOrderCount: num
       `
     )
     .join("");
+}
+
+function getOrderElapsedLabel(order: OperatorOrder) {
+  const firstEventAt = order.timeline[0]?.occurredAt;
+  if (!firstEventAt) {
+    return "Just now";
+  }
+
+  const deltaMinutes = Math.max(0, Math.floor((Date.now() - Date.parse(firstEventAt)) / 60_000));
+  if (deltaMinutes < 1) {
+    return "Just now";
+  }
+  if (deltaMinutes < 60) {
+    return `${deltaMinutes}m ago`;
+  }
+  return `${Math.floor(deltaMinutes / 60)}h ago`;
+}
+
+function renderOrderItems(order: OperatorOrder, variant: "detail" | "ticket") {
+  const itemMarkup = order.items
+    .map((item) => {
+      const selectedOptions = item.customization?.selectedOptions?.map((option) => option.optionLabel).join(" · ");
+      return `
+        <div class="${variant === "ticket" ? "dash-ticket-item" : "line-item"}">
+          <div>
+            <strong>${item.quantity}x ${escapeHtml(item.itemName ?? item.itemId)}</strong>
+            ${selectedOptions ? `<p>${escapeHtml(selectedOptions)}</p>` : ""}
+            ${item.customization?.notes ? `<p>Note: ${escapeHtml(item.customization.notes)}</p>` : ""}
+          </div>
+          ${variant === "detail" ? `<span>${formatMoney(item.lineTotalCents ?? item.unitPriceCents * item.quantity)}</span>` : ""}
+        </div>
+      `;
+    })
+    .join("");
+
+  return itemMarkup || `<p class="muted-copy">No line items recorded for this order.</p>`;
 }
 
 function renderCancelButton(order: OperatorOrder) {
@@ -81,21 +118,6 @@ function renderOrderDetail(order: OperatorOrder, appConfig: AppConfig | null) {
         </div>
       `
     )
-    .join("");
-  const items = order.items
-    .map((item) => {
-      const selectedOptions = item.customization?.selectedOptions?.map((option) => option.optionLabel).join(" · ");
-      return `
-        <div class="line-item">
-          <div>
-            <strong>${item.quantity}x ${escapeHtml(item.itemName ?? item.itemId)}</strong>
-            ${selectedOptions ? `<p>${escapeHtml(selectedOptions)}</p>` : ""}
-            ${item.customization?.notes ? `<p>Note: ${escapeHtml(item.customization.notes)}</p>` : ""}
-          </div>
-          <span>${formatMoney(item.lineTotalCents ?? item.unitPriceCents * item.quantity)}</span>
-        </div>
-      `;
-    })
     .join("");
 
   const actionButtons = actions
@@ -148,7 +170,7 @@ function renderOrderDetail(order: OperatorOrder, appConfig: AppConfig | null) {
     </div>
     <div class="dash-detail-block">
       <div class="dash-detail-block__label">Items</div>
-      <div class="detail-stack">${items || `<p class="muted-copy">No line items recorded for this order.</p>`}</div>
+      <div class="detail-stack">${renderOrderItems(order, "detail")}</div>
     </div>
     ${
       controlButtons
@@ -164,114 +186,224 @@ function renderOrderDetail(order: OperatorOrder, appConfig: AppConfig | null) {
   `;
 }
 
-export function renderOrdersSection() {
-  if (isAllLocationsSelected()) {
-    const activeOrders = filterOrdersByView(state.orders, "active");
-    const completedOrders = filterOrdersByView(state.orders, "completed");
-    const visibleOrders = getVisibleOrders();
-    const selectedOrder = getSelectedOrder();
-    const orderRows =
-      visibleOrders.length > 0
-        ? visibleOrders
-            .map(
-              (order) => `
-                <button class="dash-order-row ${selectedOrder?.id === order.id ? "dash-order-row--selected" : ""}" type="button" data-action="select-order" data-order-id="${order.id}">
-                  <span class="dash-order-row__main">
-                    <strong>${escapeHtml(order.pickupCode)}</strong>
-                    <span class="dash-order-row__meta">${escapeHtml(getOrderCustomerLabel(order))}</span>
-                  </span>
-                  ${renderOrderStatusBadge(order.status)}
-                  <span class="dash-order-row__amount">${formatMoney(order.total.amountCents)}</span>
-                </button>
-              `
-            )
-            .join("")
-        : `<p class="muted-copy">No orders are loaded for the selected view.</p>`;
-
-    return `
-      <section class="dash-section">
-        ${renderSectionHeading({
-          eyebrow: "Orders",
-          title: "Multi-location queue",
-          description: "Review orders across all accessible locations. Switch to a specific location to update fulfillment states.",
-          actions: `
-            <div class="dash-segmented-control">
-              ${renderOrderFilterRow(activeOrders.length, completedOrders.length)}
-            </div>
-            <button class="button button--ghost" type="button" data-action="refresh" ${state.loading ? "disabled" : ""}>
-              ${state.loading ? '<span class="spinner"></span>' : "Refresh"}
+function renderQueueRows(orders: readonly OperatorOrder[], selectedOrderId: string | null) {
+  return orders.length > 0
+    ? orders
+        .map(
+          (order) => `
+            <button class="dash-order-row ${selectedOrderId === order.id ? "dash-order-row--selected" : ""}" type="button" data-action="select-order" data-order-id="${order.id}">
+              <span class="dash-order-row__main">
+                <strong>${escapeHtml(order.pickupCode)}</strong>
+                <span class="dash-order-row__meta">${escapeHtml(getOrderCustomerLabel(order))}</span>
+              </span>
+              ${renderOrderStatusBadge(order.status)}
+              <span class="dash-order-row__amount">${formatMoney(order.total.amountCents)}</span>
             </button>
           `
-        })}
-        ${renderLocationSelectionNotice("This all-locations board is read-only. Choose one location from the workspace picker to move orders through prep or completion.")}
-        <div class="dash-split-layout dash-split-layout--orders">
-          <article class="dash-surface">
-            <div class="dash-surface-head">
-              <div>
-                <div class="dash-panel-title">Queue</div>
-                <h3 class="dash-surface-title">${visibleOrders.length} in view</h3>
-              </div>
-              <span class="dash-inline-note">${escapeHtml(formatRelativeRefresh(state.lastRefreshedAt, state.loading))}</span>
-            </div>
-            <div class="dash-order-list">${orderRows}</div>
-          </article>
+        )
+        .join("")
+    : `<p class="muted-copy">No orders are loaded for the selected view.</p>`;
+}
 
-          <article class="dash-surface">
-            ${
-              selectedOrder
-                ? renderOrderDetail(selectedOrder, null)
-                : `<div class="dash-empty-surface"><p class="muted-copy">Select an order to inspect its items and fulfillment timeline.</p></div>`
-            }
-          </article>
+function renderStoreTicket(order: OperatorOrder, appConfig: AppConfig | null) {
+  const manualStatusControlsEnabled = canAdvanceOrderStatus(state.session?.operator ?? null, appConfig);
+  const cancelControlsEnabled = canCancelOrder(state.session?.operator ?? null, appConfig, order);
+  const nextAction = getOrderActions(order, resolveAppConfigFulfillmentMode(appConfig))[0];
+  const controls = [
+    manualStatusControlsEnabled && nextAction
+      ? `
+          <button
+            class="button button--primary"
+            type="button"
+            data-action="advance-order"
+            data-order-id="${order.id}"
+            data-order-status="${nextAction.status}"
+            data-order-note="${escapeHtml(nextAction.note ?? "")}"
+            ${state.busyOrderId === order.id ? "disabled" : ""}
+          >
+            ${escapeHtml(nextAction.label)}
+          </button>
+        `
+      : "",
+    cancelControlsEnabled ? renderCancelButton(order) : ""
+  ]
+    .filter((markup) => markup.length > 0)
+    .join("");
+
+  return `
+    <article class="dash-ticket-card">
+      <div class="dash-ticket-card__top">
+        <div>
+          <div class="dash-ticket-code">${escapeHtml(order.pickupCode)}</div>
+          <div class="dash-ticket-customer">${escapeHtml(getOrderCustomerLabel(order))}</div>
         </div>
-      </section>
-    `;
-  }
+        <div class="dash-ticket-meta">
+          ${renderOrderStatusBadge(order.status)}
+          <span class="dash-ticket-age">${escapeHtml(getOrderElapsedLabel(order))}</span>
+        </div>
+      </div>
 
-  if (!isStaffDashboardEnabled(state.appConfig) || !isOrderTrackingEnabled(state.appConfig)) {
-    return `
-      <section class="dash-section">
-        ${renderSectionHeading({
-          eyebrow: "Orders",
-          title: "Live order tracking is paused.",
-          description: "Enable order tracking in store capabilities before using the operations board."
-        })}
-        <article class="dash-surface dash-empty-surface">
-          <p class="muted-copy">This workspace will show incoming orders, prep states, and fulfillment activity once the live order board is enabled for the store.</p>
-        </article>
-      </section>
-    `;
-  }
+      <div class="dash-ticket-items">
+        ${renderOrderItems(order, "ticket")}
+      </div>
 
+      <div class="dash-ticket-footer">
+        <div class="dash-ticket-total">${formatMoney(order.total.amountCents)}</div>
+        ${controls ? `<div class="button-row">${controls}</div>` : ""}
+      </div>
+    </article>
+  `;
+}
+
+function renderStoreModeBoard(appConfig: AppConfig | null) {
+  const visibleOrders = getVisibleOrders();
+  const lanes = [
+    {
+      key: "new",
+      title: "New",
+      description: "Paid orders waiting to be started.",
+      orders: visibleOrders.filter((order) => order.status === "PAID")
+    },
+    {
+      key: "in-prep",
+      title: "In prep",
+      description: "Drinks currently being made.",
+      orders: visibleOrders.filter((order) => order.status === "IN_PREP")
+    },
+    {
+      key: "ready",
+      title: "Ready",
+      description: "Completed drinks waiting for pickup.",
+      orders: visibleOrders.filter((order) => order.status === "READY")
+    }
+  ] as const;
+
+  const completedOrders = visibleOrders.filter((order) => order.status === "COMPLETED" || order.status === "CANCELED");
+  const selectedLocation = getSelectedLocation();
+  const activeOrders = filterOrdersByView(state.orders, "active");
+
+  return `
+    <section class="dash-section dash-section--store-mode">
+      ${renderSectionHeading({
+        eyebrow: "Store mode",
+        title: selectedLocation?.locationName ? `${selectedLocation.locationName} live board` : "Live ticket board",
+        description: "Every ticket shows the items and modifiers the team needs to make right now.",
+        actions: `
+          <div class="dash-segmented-control">
+            ${renderOrderFilterRow(activeOrders.length, completedOrders.length)}
+          </div>
+          <button class="button button--ghost" type="button" data-action="refresh" ${state.loading ? "disabled" : ""}>
+            ${state.loading ? '<span class="spinner"></span>' : "Refresh"}
+          </button>
+        `
+      })}
+      <div class="dash-store-board">
+        ${lanes
+          .map(
+            (lane) => `
+              <section class="dash-store-lane">
+                <div class="dash-store-lane__head">
+                  <div>
+                    <div class="dash-panel-title">${escapeHtml(lane.title)}</div>
+                    <h3 class="dash-surface-title">${lane.orders.length} tickets</h3>
+                  </div>
+                  <p class="muted-copy">${escapeHtml(lane.description)}</p>
+                </div>
+                <div class="dash-store-lane__tickets">
+                  ${
+                    lane.orders.length > 0
+                      ? lane.orders.map((order) => renderStoreTicket(order, appConfig)).join("")
+                      : `<div class="dash-empty-surface"><p class="muted-copy">No tickets in ${escapeHtml(
+                          lane.title.toLowerCase()
+                        )} right now.</p></div>`
+                  }
+                </div>
+              </section>
+            `
+          )
+          .join("")}
+      </div>
+      ${
+        completedOrders.length > 0 && state.orderFilter !== "active"
+          ? `
+              <article class="dash-surface">
+                <div class="dash-surface-head">
+                  <div>
+                    <div class="dash-panel-title">Recently closed</div>
+                    <h3 class="dash-surface-title">${completedOrders.length} recent tickets</h3>
+                  </div>
+                  <span class="dash-inline-note">${escapeHtml(formatRelativeRefresh(state.lastRefreshedAt, state.loading))}</span>
+                </div>
+                <div class="dash-ticket-grid">
+                  ${completedOrders.map((order) => renderStoreTicket(order, appConfig)).join("")}
+                </div>
+              </article>
+            `
+          : ""
+      }
+    </section>
+  `;
+}
+
+function renderAllLocationsOrders() {
   const activeOrders = filterOrdersByView(state.orders, "active");
   const completedOrders = filterOrdersByView(state.orders, "completed");
   const visibleOrders = getVisibleOrders();
   const selectedOrder = getSelectedOrder();
-  const selectedLocation = getSelectedLocation();
-  const orderRows =
-    visibleOrders.length > 0
-      ? visibleOrders
-          .map(
-            (order) => `
-              <button class="dash-order-row ${selectedOrder?.id === order.id ? "dash-order-row--selected" : ""}" type="button" data-action="select-order" data-order-id="${order.id}">
-                <span class="dash-order-row__main">
-                  <strong>${escapeHtml(order.pickupCode)}</strong>
-                  <span class="dash-order-row__meta">${escapeHtml(getOrderCustomerLabel(order))}</span>
-                </span>
-                ${renderOrderStatusBadge(order.status)}
-                <span class="dash-order-row__amount">${formatMoney(order.total.amountCents)}</span>
-              </button>
-            `
-          )
-          .join("")
-      : `<p class="muted-copy">No orders are loaded for the selected view.</p>`;
 
   return `
     <section class="dash-section">
       ${renderSectionHeading({
         eyebrow: "Orders",
-        title: selectedLocation?.locationName ? `${selectedLocation.locationName} orders` : "Live order operations",
-        description: "Track incoming orders and move drinks through prep without leaving the dashboard.",
+        title: "Multi-location queue",
+        description: "Review orders across all accessible locations. Switch to a specific location to update fulfillment states.",
+        actions: `
+          <div class="dash-segmented-control">
+            ${renderOrderFilterRow(activeOrders.length, completedOrders.length)}
+          </div>
+          <button class="button button--ghost" type="button" data-action="refresh" ${state.loading ? "disabled" : ""}>
+            ${state.loading ? '<span class="spinner"></span>' : "Refresh"}
+          </button>
+        `
+      })}
+      ${renderLocationSelectionNotice("This all-locations board is read-only. Choose one location from the workspace picker to move orders through prep or completion.")}
+      <div class="dash-split-layout dash-split-layout--orders">
+        <article class="dash-surface">
+          <div class="dash-surface-head">
+            <div>
+              <div class="dash-panel-title">Queue</div>
+              <h3 class="dash-surface-title">${visibleOrders.length} in view</h3>
+            </div>
+            <span class="dash-inline-note">${escapeHtml(formatRelativeRefresh(state.lastRefreshedAt, state.loading))}</span>
+          </div>
+          <div class="dash-order-list">${renderQueueRows(visibleOrders, selectedOrder?.id ?? null)}</div>
+        </article>
+
+        <article class="dash-surface">
+          ${
+            selectedOrder
+              ? renderOrderDetail(selectedOrder, null)
+              : `<div class="dash-empty-surface"><p class="muted-copy">Select an order to inspect its items and fulfillment timeline.</p></div>`
+          }
+        </article>
+      </div>
+    </section>
+  `;
+}
+
+function renderDashboardOrders(appConfig: AppConfig | null) {
+  const activeOrders = filterOrdersByView(state.orders, "active");
+  const completedOrders = filterOrdersByView(state.orders, "completed");
+  const visibleOrders = getVisibleOrders();
+  const selectedOrder = getSelectedOrder();
+  const selectedLocation = getSelectedLocation();
+
+  return `
+    <section class="dash-section">
+      ${renderSectionHeading({
+        eyebrow: "Orders",
+        title: selectedLocation?.locationName ? `${selectedLocation.locationName} orders` : "Orders overview",
+        description: "Track incoming orders and open any ticket when you need a deeper fulfillment timeline.",
         actions: `
           <div class="dash-segmented-control">
             ${renderOrderFilterRow(activeOrders.length, completedOrders.length)}
@@ -290,17 +422,44 @@ export function renderOrdersSection() {
             </div>
             <span class="dash-inline-note">${escapeHtml(formatRelativeRefresh(state.lastRefreshedAt, state.loading))}</span>
           </div>
-          <div class="dash-order-list">${orderRows}</div>
+          <div class="dash-order-list">${renderQueueRows(visibleOrders, selectedOrder?.id ?? null)}</div>
         </article>
 
         <article class="dash-surface">
           ${
             selectedOrder
-              ? renderOrderDetail(selectedOrder, state.appConfig)
+              ? renderOrderDetail(selectedOrder, appConfig)
               : `<div class="dash-empty-surface"><p class="muted-copy">Select an order to inspect its items and fulfillment timeline.</p></div>`
           }
         </article>
       </div>
     </section>
   `;
+}
+
+export function renderOrdersSection() {
+  if (isAllLocationsSelected()) {
+    return renderAllLocationsOrders();
+  }
+
+  if (!isStaffDashboardEnabled(state.appConfig) || !isOrderTrackingEnabled(state.appConfig)) {
+    return `
+      <section class="dash-section">
+        ${renderSectionHeading({
+          eyebrow: isStoreOperator(state.session?.operator ?? null) ? "Store mode" : "Orders",
+          title: "Live order tracking is paused.",
+          description: "Enable order tracking in store capabilities before using the operations board."
+        })}
+        <article class="dash-surface dash-empty-surface">
+          <p class="muted-copy">This workspace will show incoming orders, prep states, and fulfillment activity once the live order board is enabled for the store.</p>
+        </article>
+      </section>
+    `;
+  }
+
+  if (isStoreOperator(state.session?.operator ?? null)) {
+    return renderStoreModeBoard(state.appConfig);
+  }
+
+  return renderDashboardOrders(state.appConfig);
 }

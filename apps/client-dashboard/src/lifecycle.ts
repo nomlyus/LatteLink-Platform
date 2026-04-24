@@ -7,8 +7,8 @@ import {
   refreshOperatorSession,
   type OperatorSession
 } from "./api.js";
-import { sessionNeedsRefresh } from "./model.js";
-import { clearStoredSession, persistApiBaseUrl, persistSession } from "./storage.js";
+import { isStoreOperator, sessionNeedsRefresh } from "./model.js";
+import { clearStoredSession, persistApiBaseUrl, persistSection, persistSession } from "./storage.js";
 import { resetDashboardData, setError, setNotice, state } from "./state.js";
 import { snapshotCustomizationDrafts } from "./customizations.js";
 import { reconcileMenuCreateDraft, resetMenuCreateWizard } from "./menu-wizard.js";
@@ -82,6 +82,10 @@ function resolveSelectedLocationId() {
     return null;
   }
 
+  if (isStoreOperator(state.session?.operator ?? null)) {
+    return state.session?.operator.locationId ?? state.availableLocations[0]?.locationId ?? null;
+  }
+
   if (state.selectedLocationId === "all" && availableLocationIds.size > 1) {
     return "all" as const;
   }
@@ -139,7 +143,7 @@ export async function loadDashboard(): Promise<void> {
       state.menuCustomizationDrafts = snapshotCustomizationDrafts(snapshot.menu.categories);
       state.newsCards = snapshot.cards;
       state.storeConfig = snapshot.storeConfig;
-      state.teamUsers = snapshot.staff;
+      state.teamUsers = snapshot.team;
     }
 
     state.lastRefreshedAt = Date.now();
@@ -164,11 +168,17 @@ export async function loadDashboard(): Promise<void> {
 
 export async function applyVerifiedSession(nextSession: OperatorSession, notice: string) {
   state.session = nextSession;
-  state.selectedLocationId = (nextSession.operator.locationIds?.length ?? 1) > 1 ? "all" : nextSession.operator.locationId;
+  state.section = isStoreOperator(nextSession.operator) ? "orders" : "overview";
+  state.selectedLocationId = isStoreOperator(nextSession.operator)
+    ? nextSession.operator.locationId
+    : (nextSession.operator.locationIds?.length ?? 1) > 1
+      ? "all"
+      : nextSession.operator.locationId;
   state.authApiBaseUrl = nextSession.apiBaseUrl;
   state.authEmail = nextSession.operator.email;
   state.authPassword = "";
   persistApiBaseUrl(nextSession.apiBaseUrl);
+  persistSection(state.section);
   persistSession(nextSession);
   setError(null);
   setNotice(notice);

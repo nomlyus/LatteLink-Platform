@@ -5,7 +5,7 @@ describe("gateway", () => {
   const fetchMock = vi.fn<typeof fetch>();
   const authHeader = { authorization: "Bearer access-token" } as const;
   const ownerOperatorHeaders = { authorization: "Bearer operator-owner-access-token" } as const;
-  const staffOperatorHeaders = { authorization: "Bearer operator-staff-access-token" } as const;
+  const storeOperatorHeaders = { authorization: "Bearer operator-store-access-token" } as const;
   const multiLocationOperatorHeaders = { authorization: "Bearer operator-multi-location-access-token" } as const;
   const ownerInternalAdminHeaders = { authorization: "Bearer internal-admin-owner-access-token" } as const;
   const readonlyInternalAdminHeaders = { authorization: "Bearer internal-admin-readonly-access-token" } as const;
@@ -152,8 +152,8 @@ describe("gateway", () => {
                 "menu:visibility",
                 "store:read",
                 "store:write",
-                "staff:read",
-                "staff:write"
+                "team:read",
+                "team:write"
               ],
               createdAt: "2026-03-20T00:00:00.000Z",
               updatedAt: "2026-03-20T00:00:00.000Z"
@@ -185,8 +185,8 @@ describe("gateway", () => {
                 "menu:visibility",
                 "store:read",
                 "store:write",
-                "staff:read",
-                "staff:write"
+                "team:read",
+                "team:write"
               ],
               createdAt: "2026-03-20T00:00:00.000Z",
               updatedAt: "2026-03-20T00:00:00.000Z"
@@ -238,8 +238,8 @@ describe("gateway", () => {
                 "menu:visibility",
                 "store:read",
                 "store:write",
-                "staff:read",
-                "staff:write"
+                "team:read",
+                "team:write"
               ],
               createdAt: "2026-03-20T00:00:00.000Z",
               updatedAt: "2026-03-20T00:00:00.000Z"
@@ -347,8 +347,8 @@ describe("gateway", () => {
               "menu:visibility",
               "store:read",
               "store:write",
-              "staff:read",
-              "staff:write"
+              "team:read",
+              "team:write"
             ],
             createdAt: "2026-03-20T00:00:00.000Z",
             updatedAt: "2026-03-20T00:00:00.000Z"
@@ -361,19 +361,19 @@ describe("gateway", () => {
             locationId: "flagship-01",
             locationIds: ["flagship-01"],
             active: true,
-            capabilities: ["orders:read", "orders:write", "menu:read", "menu:write", "menu:visibility", "store:read", "staff:read"],
+            capabilities: ["orders:read", "orders:write", "menu:read", "menu:write", "menu:visibility", "store:read", "team:read"],
             createdAt: "2026-03-20T00:00:00.000Z",
             updatedAt: "2026-03-20T00:00:00.000Z"
           },
-          "Bearer operator-staff-access-token": {
+          "Bearer operator-store-access-token": {
             operatorUserId: "123e4567-e89b-12d3-a456-426614174997",
-            displayName: "Lead Barista",
-            email: "staff@gazellecoffee.com",
-            role: "staff",
+            displayName: "Store Screen",
+            email: "store@gazellecoffee.com",
+            role: "store",
             locationId: "flagship-01",
             locationIds: ["flagship-01"],
             active: true,
-            capabilities: ["orders:read", "orders:write", "menu:read", "menu:visibility", "store:read"],
+            capabilities: ["orders:read", "orders:write"],
             createdAt: "2026-03-20T00:00:00.000Z",
             updatedAt: "2026-03-20T00:00:00.000Z"
           },
@@ -393,8 +393,8 @@ describe("gateway", () => {
               "menu:visibility",
               "store:read",
               "store:write",
-              "staff:read",
-              "staff:write"
+              "team:read",
+              "team:write"
             ],
             createdAt: "2026-03-20T00:00:00.000Z",
             updatedAt: "2026-03-20T00:00:00.000Z"
@@ -544,20 +544,20 @@ describe("gateway", () => {
                   "menu:visibility",
                   "store:read",
                   "store:write",
-                  "staff:read",
-                  "staff:write"
+                  "team:read",
+                  "team:write"
                 ],
                 createdAt: "2026-03-20T00:00:00.000Z",
                 updatedAt: "2026-03-20T00:00:00.000Z"
               },
               {
                 operatorUserId: "123e4567-e89b-12d3-a456-426614174997",
-                displayName: "Lead Barista",
-                email: "staff@gazellecoffee.com",
-                role: "staff",
+                displayName: "Store Screen",
+                email: "store@gazellecoffee.com",
+                role: "store",
                 locationId: "flagship-01",
                 active: true,
-                capabilities: ["orders:read", "orders:write", "menu:read", "menu:visibility", "store:read"],
+                capabilities: ["orders:read", "orders:write"],
                 createdAt: "2026-03-20T00:00:00.000Z",
                 updatedAt: "2026-03-20T00:00:00.000Z"
               }
@@ -571,20 +571,20 @@ describe("gateway", () => {
         const body = JSON.parse(String(init?.body ?? "{}")) as {
           displayName?: string;
           email?: string;
-          role?: "owner" | "manager" | "staff";
+          role?: "owner" | "manager" | "store";
         };
         if (body.email === "owner@gazellecoffee.com") {
           return new Response(
             JSON.stringify({
               requestId: "identity-request-duplicate-create",
               code: "OPERATOR_EMAIL_ALREADY_EXISTS",
-              message: "A team member with that email already exists"
+              message: "An operator with that email already exists"
             }),
             { status: 409, headers: { "content-type": "application/json" } }
           );
         }
 
-        const role = body.role ?? "staff";
+        const role = body.role ?? "store";
         const capabilitiesByRole = {
           owner: [
             "orders:read",
@@ -594,8 +594,8 @@ describe("gateway", () => {
             "menu:visibility",
             "store:read",
             "store:write",
-            "staff:read",
-            "staff:write"
+            "team:read",
+            "team:write"
           ],
           manager: [
             "orders:read",
@@ -604,9 +604,9 @@ describe("gateway", () => {
             "menu:write",
             "menu:visibility",
             "store:read",
-            "staff:read"
+            "team:read"
           ],
-          staff: ["orders:read", "orders:write", "menu:read", "menu:visibility", "store:read"]
+          store: ["orders:read", "orders:write"]
         } as const;
         return new Response(
           JSON.stringify({
@@ -630,7 +630,7 @@ describe("gateway", () => {
         const body = JSON.parse(String(init?.body ?? "{}")) as {
           displayName?: string;
           email?: string;
-          role?: "owner" | "manager" | "staff";
+          role?: "owner" | "manager" | "store";
           active?: boolean;
         };
         if (body.email === "owner@gazellecoffee.com") {
@@ -638,13 +638,13 @@ describe("gateway", () => {
             JSON.stringify({
               requestId: "identity-request-duplicate-update",
               code: "OPERATOR_EMAIL_ALREADY_EXISTS",
-              message: "A team member with that email already exists"
+              message: "An operator with that email already exists"
             }),
             { status: 409, headers: { "content-type": "application/json" } }
           );
         }
 
-        const role = body.role ?? "staff";
+        const role = body.role ?? "store";
         const capabilitiesByRole = {
           owner: [
             "orders:read",
@@ -654,8 +654,8 @@ describe("gateway", () => {
             "menu:visibility",
             "store:read",
             "store:write",
-            "staff:read",
-            "staff:write"
+            "team:read",
+            "team:write"
           ],
           manager: [
             "orders:read",
@@ -664,15 +664,15 @@ describe("gateway", () => {
             "menu:write",
             "menu:visibility",
             "store:read",
-            "staff:read"
+            "team:read"
           ],
-          staff: ["orders:read", "orders:write", "menu:read", "menu:visibility", "store:read"]
+          store: ["orders:read", "orders:write"]
         } as const;
         return new Response(
           JSON.stringify({
             operatorUserId,
-            displayName: body.displayName ?? "Lead Barista",
-            email: body.email ?? "staff@gazellecoffee.com",
+            displayName: body.displayName ?? "Store Screen",
+            email: body.email ?? "store@gazellecoffee.com",
             role,
             locationId: "flagship-01",
             active: body.active ?? true,
@@ -1261,8 +1261,8 @@ describe("gateway", () => {
                 "menu:visibility",
                 "store:read",
                 "store:write",
-                "staff:read",
-                "staff:write"
+                "team:read",
+                "team:write"
               ],
               createdAt: "2026-03-20T00:00:00.000Z",
               updatedAt: "2026-03-20T00:00:00.000Z"
@@ -1294,8 +1294,8 @@ describe("gateway", () => {
                 "menu:visibility",
                 "store:read",
                 "store:write",
-                "staff:read",
-                "staff:write"
+                "team:read",
+                "team:write"
               ],
               createdAt: "2026-03-20T00:00:00.000Z",
               updatedAt: "2026-03-20T00:00:00.000Z"
@@ -2350,17 +2350,17 @@ describe("gateway", () => {
     await app.close();
   });
 
-  it("blocks staff from owner-only admin routes", async () => {
+  it("blocks store accounts from owner-only admin routes", async () => {
     const app = await buildApp();
 
     const createResponse = await app.inject({
       method: "POST",
       url: "/v1/admin/staff",
-      headers: staffOperatorHeaders,
+      headers: storeOperatorHeaders,
       payload: {
         displayName: "Blocked User",
         email: "blocked@gazellecoffee.com",
-        role: "staff",
+        role: "store",
         password: "BlockedUser123!"
       }
     });
@@ -2370,7 +2370,7 @@ describe("gateway", () => {
     const storeUpdateResponse = await app.inject({
       method: "PUT",
       url: "/v1/admin/store/config",
-      headers: staffOperatorHeaders,
+      headers: storeOperatorHeaders,
       payload: {
         storeName: "Blocked Rename",
         locationName: "Blocked Location",
@@ -2390,7 +2390,7 @@ describe("gateway", () => {
     await app.close();
   });
 
-  it("forwards owner staff and store management routes", async () => {
+  it("forwards owner team and store management routes", async () => {
     const app = await buildApp();
     const operatorUserId = "123e4567-e89b-12d3-a456-426614174997";
 
@@ -2514,7 +2514,7 @@ describe("gateway", () => {
     const response = await app.inject({
       method: "POST",
       url: `/v1/admin/orders/${orderId}/status`,
-      headers: staffOperatorHeaders,
+      headers: storeOperatorHeaders,
       payload: {
         status: "READY",
         note: "Order is bagged and ready."
@@ -2588,7 +2588,7 @@ describe("gateway", () => {
     const response = await app.inject({
       method: "POST",
       url: `/v1/admin/orders/${orderId}/status`,
-      headers: staffOperatorHeaders,
+      headers: storeOperatorHeaders,
       payload: {
         status: "CANCELED",
         note: "Espresso machine issue"

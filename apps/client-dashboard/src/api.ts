@@ -57,7 +57,7 @@ export type OperatorDashboardSnapshot = {
   menu: OperatorMenuResponse;
   cards: OperatorNewsCard[];
   storeConfig: z.output<typeof adminStoreConfigSchema> | null;
-  staff: OperatorUser[];
+  team: OperatorUser[];
 };
 
 type RequestMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -383,7 +383,7 @@ export async function fetchOperatorSnapshot(
   const capabilitySet = new Set(session.operator.capabilities);
   const query = locationId ? { locationId } : undefined;
   const fallbackLocationId = locationId ?? session.operator.locationId;
-  const [appConfig, orders, menu, cards, storeConfig, staffResponse] = await Promise.all([
+  const [appConfig, orders, menu, cards, storeConfig, teamResponse] = await Promise.all([
     locationId
       ? requestJson({
           apiBaseUrl: session.apiBaseUrl,
@@ -446,7 +446,7 @@ export async function fetchOperatorSnapshot(
               })
             : null
         ),
-    capabilitySet.has("staff:read")
+    capabilitySet.has("team:read")
       ? locationId
         ? requestJson({
             apiBaseUrl: session.apiBaseUrl,
@@ -467,7 +467,7 @@ export async function fetchOperatorSnapshot(
       ...card
     })),
     storeConfig,
-    staff: staffResponse.users
+    team: teamResponse.users
   };
 }
 

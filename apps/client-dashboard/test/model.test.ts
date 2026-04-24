@@ -123,7 +123,7 @@ const sampleOperator: OperatorUser = {
   locationId: "flagship-01",
   locationIds: ["flagship-01", "northside-01"],
   active: true,
-  capabilities: ["orders:read", "orders:write", "menu:read", "menu:visibility", "store:read", "staff:read"],
+  capabilities: ["orders:read", "orders:write", "menu:read", "menu:visibility", "store:read", "team:read"],
   createdAt: "2026-03-20T00:00:00.000Z",
   updatedAt: "2026-03-20T00:00:00.000Z"
 };
@@ -253,10 +253,10 @@ describe("client dashboard model", () => {
       "Refunds",
       "Clover",
       "Loyalty",
-      "Staff fulfillment",
+      "In-store ticket flow",
       "Platform-managed menu",
       "Order tracking",
-      "Staff dashboard",
+      "Store mode",
       "Menu editing",
       "Loyalty features",
       "home tab",
@@ -305,10 +305,10 @@ describe("client dashboard model", () => {
   it("resolves role labels and capability access", () => {
     expect(getOperatorRoleLabel("owner")).toBe("Store owner");
     expect(getOperatorRoleLabel("manager")).toBe("Manager");
-    expect(getOperatorRoleLabel("staff")).toBe("Staff");
+    expect(getOperatorRoleLabel("store")).toBe("Store screen");
 
     expect(canAccessCapability(sampleOperator, "orders:write")).toBe(true);
-    expect(canAccessCapability(sampleOperator, "staff:write")).toBe(false);
+    expect(canAccessCapability(sampleOperator, "team:write")).toBe(false);
     expect(canAccessCapability(null, "orders:read")).toBe(false);
   });
 

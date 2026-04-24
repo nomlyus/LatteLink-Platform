@@ -408,6 +408,10 @@ function normalizeOperatorLocationIds(primaryLocationId: string, locationIds?: r
   return Array.from(new Set([primaryLocationId, ...(locationIds ?? [])]));
 }
 
+function isStoreRole(role: OperatorRole) {
+  return role === "store";
+}
+
 function getDefaultInternalAdminSeeds(): Array<{
   displayName: string;
   email: string;
@@ -536,6 +540,18 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
       ...record,
       locationIds: getOperatorLocationIds(record.operatorUserId, record.locationId)
     };
+  }
+
+  function ensureStoreAccountAvailable(locationId: string, excludeOperatorUserId?: string) {
+    for (const record of operatorUsersById.values()) {
+      if (record.operatorUserId === excludeOperatorUserId || record.role !== "store") {
+        continue;
+      }
+
+      if (getOperatorLocationIds(record.operatorUserId, record.locationId).includes(locationId)) {
+        throw new Error("STORE_ACCOUNT_ALREADY_EXISTS");
+      }
+    }
   }
 
   for (const seed of getDefaultInternalAdminSeeds()) {
@@ -892,6 +908,9 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
     },
     async createOperatorUser(input) {
       const normalizedEmail = normalizeEmail(input.email);
+      if (isStoreRole(input.role)) {
+        ensureStoreAccountAvailable(input.locationId);
+      }
       const existingId = operatorUserIdByEmail.get(normalizedEmail);
       if (existingId) {
         const existing = operatorUsersById.get(existingId);
@@ -957,6 +976,9 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
       }
 
       const nextRole = input.role ?? existing.role;
+      if (isStoreRole(nextRole)) {
+        ensureStoreAccountAvailable(existing.locationId, operatorUserId);
+      }
       const updated: OperatorUserRecord = {
         ...existing,
         displayName: input.displayName?.trim() || existing.displayName,
@@ -1233,6 +1255,27 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
       })
       .onConflict((oc) => oc.columns(["operator_user_id", "location_id"]).doNothing())
       .execute();
+  };
+
+  const ensureStoreAccountAvailable = async (locationId: string, excludeOperatorUserId?: string) => {
+    const query = db
+      .selectFrom("operator_users")
+      .innerJoin(
+        "operator_location_access",
+        "operator_location_access.operator_user_id",
+        "operator_users.operator_user_id"
+      )
+      .select("operator_users.operator_user_id")
+      .where("operator_users.role", "=", "store")
+      .where("operator_location_access.location_id", "=", locationId);
+
+    const existing = excludeOperatorUserId
+      ? await query.where("operator_users.operator_user_id", "!=", excludeOperatorUserId).executeTakeFirst()
+      : await query.executeTakeFirst();
+
+    if (existing) {
+      throw new Error("STORE_ACCOUNT_ALREADY_EXISTS");
+    }
   };
 
   return {
@@ -2026,6 +2069,10 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
       const now = new Date().toISOString();
       const operatorUserId = randomUUID();
 
+      if (isStoreRole(input.role)) {
+        await ensureStoreAccountAvailable(input.locationId);
+      }
+
       try {
         await db
           .insertInto("operator_users")
@@ -2103,13 +2150,18 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         }
       }
 
+      const nextRole = input.role ?? existing.role;
+      if (isStoreRole(nextRole)) {
+        await ensureStoreAccountAvailable(existing.location_id, operatorUserId);
+      }
+
       await db
         .updateTable("operator_users")
         .set({
           email: nextEmail,
           display_name: input.displayName?.trim() ?? existing.display_name,
           ...(input.password ? { password_hash: hashOperatorPassword(input.password) } : {}),
-          role: input.role ?? existing.role,
+          role: nextRole,
           active: input.active ?? existing.active,
           updated_at: new Date().toISOString()
         })

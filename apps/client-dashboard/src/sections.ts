@@ -1,5 +1,5 @@
 import { isOrderTrackingEnabled, isPlatformManagedMenu, isStaffDashboardEnabled } from "@lattelink/contracts-catalog";
-import { canAccessCapability, type DashboardSection } from "./model.js";
+import { canAccessCapability, isStoreOperator, type DashboardSection } from "./model.js";
 import { state } from "./state.js";
 import { persistSection } from "./storage.js";
 
@@ -17,6 +17,20 @@ export function getDashboardSectionLabel(section: DashboardSection) {
 }
 
 export function getAvailableDashboardSections() {
+  if (isStoreOperator(state.session?.operator ?? null)) {
+    const locationConfigs =
+      state.availableLocations.length > 0
+        ? state.availableLocations.map((location) => location.appConfig)
+        : state.appConfig
+          ? [state.appConfig]
+          : [];
+
+    return canAccessCapability(state.session?.operator ?? null, "orders:read") &&
+      locationConfigs.some((config) => isStaffDashboardEnabled(config) && isOrderTrackingEnabled(config))
+      ? (["orders"] as DashboardSection[])
+      : ([] as DashboardSection[]);
+  }
+
   const sections: DashboardSection[] = ["overview"];
   const locationConfigs =
     state.availableLocations.length > 0
@@ -47,7 +61,7 @@ export function getAvailableDashboardSections() {
     sections.push("store");
   }
 
-  if (canAccessCapability(state.session?.operator ?? null, "staff:read")) {
+  if (canAccessCapability(state.session?.operator ?? null, "team:read")) {
     sections.push("team");
   }
 
@@ -57,7 +71,7 @@ export function getAvailableDashboardSections() {
 export function ensureSectionIsAvailable() {
   const availableSections = getAvailableDashboardSections();
   if (!availableSections.includes(state.section)) {
-    state.section = availableSections[0] ?? "overview";
+    state.section = availableSections[0] ?? (isStoreOperator(state.session?.operator ?? null) ? "orders" : "overview");
     persistSection(state.section);
   }
 }

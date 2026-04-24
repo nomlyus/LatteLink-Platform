@@ -691,6 +691,12 @@ label.field > span {
   min-height: 100vh;
 }
 
+.dash-shell--store {
+  background:
+    radial-gradient(circle at top left, rgba(216, 170, 74, 0.14), transparent 28%),
+    linear-gradient(180deg, #f7f2e8 0%, #f4efe6 100%);
+}
+
 /* -------- Header -------- */
 
 .dash-header {
@@ -701,6 +707,10 @@ label.field > span {
   backdrop-filter: saturate(140%) blur(12px);
   -webkit-backdrop-filter: saturate(140%) blur(12px);
   border-bottom: 1px solid var(--color-border);
+}
+
+.dash-header--store {
+  background: rgba(247, 242, 232, 0.92);
 }
 
 .dash-header__shell {
@@ -715,11 +725,28 @@ label.field > span {
   gap: 24px;
 }
 
+.dash-header__shell--store {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
 .dash-lockup {
   display: inline-flex;
   align-items: baseline;
   gap: 6px;
   min-width: max-content;
+}
+
+.dash-store-lockup,
+.dash-store-meta {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.dash-store-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
 .dash-wordmark {
@@ -968,6 +995,10 @@ label.field > span {
   min-width: 0;
 }
 
+.dash-main--store {
+  padding: 28px 0 40px;
+}
+
 .dash-topbar {
   height: var(--topbar-h);
   display: flex;
@@ -1054,6 +1085,11 @@ label.field > span {
   display: flex;
   flex-direction: column;
   gap: 24px;
+}
+
+.dash-content--store {
+  max-width: 1680px;
+  gap: 20px;
 }
 
 /* ============================================================
@@ -1380,6 +1416,10 @@ label.field > span {
   .dash-split-layout--orders {
     grid-template-columns: 1fr;
   }
+
+  .dash-store-board {
+    grid-template-columns: 1fr;
+  }
 }
 
 .dash-order-list {
@@ -1494,6 +1534,115 @@ label.field > span {
   margin-top: 16px;
   border-top: 1px solid var(--color-border);
   padding-top: 16px;
+}
+
+.dash-section--store-mode {
+  gap: 18px;
+}
+
+.dash-store-board {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.dash-store-lane {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-radius: var(--r-lg);
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(91, 73, 41, 0.1);
+  box-shadow: 0 18px 38px rgba(91, 73, 41, 0.08);
+}
+
+.dash-store-lane__head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dash-store-lane__tickets,
+.dash-ticket-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.dash-ticket-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border-radius: var(--r-lg);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(249, 245, 238, 0.98));
+  border: 1px solid rgba(91, 73, 41, 0.12);
+  box-shadow: 0 12px 28px rgba(91, 73, 41, 0.08);
+}
+
+.dash-ticket-card__top,
+.dash-ticket-footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dash-ticket-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.dash-ticket-code {
+  font-family: var(--font-display);
+  font-size: 30px;
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+  color: var(--color-text);
+}
+
+.dash-ticket-customer,
+.dash-ticket-age {
+  font-size: 12px;
+  color: var(--color-text-3);
+}
+
+.dash-ticket-items {
+  display: grid;
+  gap: 10px;
+}
+
+.dash-ticket-item {
+  display: grid;
+  gap: 4px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--color-border);
+}
+
+.dash-ticket-item:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.dash-ticket-item strong {
+  font-size: 15px;
+  color: var(--color-text);
+}
+
+.dash-ticket-item p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--color-text-2);
+}
+
+.dash-ticket-total {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text);
 }
 
 .dash-detail-block__label {
@@ -1993,6 +2142,22 @@ label.field > span {
     align-items: baseline;
   }
 
+  .dash-header__shell--store,
+  .dash-store-lockup,
+  .dash-store-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dash-header__shell--store {
+    gap: 14px;
+  }
+
+  .dash-store-meta {
+    gap: 10px;
+  }
+
   .dash-nav {
     grid-column: 1 / -1;
     grid-row: 2;
@@ -2037,6 +2202,10 @@ label.field > span {
   .dash-content {
     padding: 18px 20px 28px;
     gap: 18px;
+  }
+
+  .dash-content--store {
+    padding-top: 8px;
   }
 
   .dash-section-heading {
@@ -2143,6 +2312,16 @@ label.field > span {
 
   .dash-live-pill {
     margin-left: 0;
+  }
+
+  .dash-ticket-card__top,
+  .dash-ticket-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dash-ticket-meta {
+    align-items: flex-start;
   }
 
   .dash-surface-head,

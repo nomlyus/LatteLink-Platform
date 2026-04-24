@@ -305,6 +305,10 @@ function isOperatorEmailConflictError(error: unknown) {
   return error instanceof Error && error.message === "OPERATOR_EMAIL_ALREADY_EXISTS";
 }
 
+function isStoreAccountConflictError(error: unknown) {
+  return error instanceof Error && error.message === "STORE_ACCOUNT_ALREADY_EXISTS";
+}
+
 function parseJsonSafely(rawValue: string) {
   if (!rawValue) {
     return undefined;
@@ -1712,7 +1716,7 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
         return reply.status(401).send(buildApiError(request.id, "UNAUTHORIZED", "Missing or invalid auth token"));
       }
 
-      if (!operator.capabilities.includes("staff:read")) {
+      if (!operator.capabilities.includes("team:read")) {
         return reply.status(403).send(buildApiError(request.id, "FORBIDDEN", "Operator is missing required capability"));
       }
 
@@ -1745,7 +1749,7 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
         return reply.status(401).send(buildApiError(request.id, "UNAUTHORIZED", "Missing or invalid auth token"));
       }
 
-      if (!operator.capabilities.includes("staff:write")) {
+      if (!operator.capabilities.includes("team:write")) {
         return reply.status(403).send(buildApiError(request.id, "FORBIDDEN", "Operator is missing required capability"));
       }
 
@@ -1761,13 +1765,24 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
       if (existing) {
         return reply
           .status(409)
-          .send(buildApiError(request.id, "OPERATOR_EMAIL_ALREADY_EXISTS", "A team member with that email already exists"));
+          .send(buildApiError(request.id, "OPERATOR_EMAIL_ALREADY_EXISTS", "An operator with that email already exists"));
       }
 
-      const created = await repository.createOperatorUser({
-        ...input,
-        locationId
-      });
+      let created;
+      try {
+        created = await repository.createOperatorUser({
+          ...input,
+          locationId
+        });
+      } catch (error) {
+        if (isStoreAccountConflictError(error)) {
+          return reply
+            .status(409)
+            .send(buildApiError(request.id, "STORE_ACCOUNT_ALREADY_EXISTS", "A store screen account already exists for this location"));
+        }
+
+        throw error;
+      }
       logIdentityMutation(request, "operator user created", {
         actorOperatorUserId: operator.operatorUserId,
         targetOperatorUserId: created.operatorUserId,
@@ -1794,7 +1809,7 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
         return reply.status(401).send(buildApiError(request.id, "UNAUTHORIZED", "Missing or invalid auth token"));
       }
 
-      if (!operator.capabilities.includes("staff:write")) {
+      if (!operator.capabilities.includes("team:write")) {
         return reply.status(403).send(buildApiError(request.id, "FORBIDDEN", "Operator is missing required capability"));
       }
 
@@ -1823,7 +1838,13 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
         if (isOperatorEmailConflictError(error)) {
           return reply
             .status(409)
-            .send(buildApiError(request.id, "OPERATOR_EMAIL_ALREADY_EXISTS", "A team member with that email already exists"));
+            .send(buildApiError(request.id, "OPERATOR_EMAIL_ALREADY_EXISTS", "An operator with that email already exists"));
+        }
+
+        if (isStoreAccountConflictError(error)) {
+          return reply
+            .status(409)
+            .send(buildApiError(request.id, "STORE_ACCOUNT_ALREADY_EXISTS", "A store screen account already exists for this location"));
         }
 
         throw error;

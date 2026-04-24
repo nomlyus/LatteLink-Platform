@@ -106,7 +106,7 @@ export const meResponseSchema = z.object({
   methods: z.array(z.enum(["apple", "passkey"]))
 });
 
-export const operatorRoleSchema = z.enum(["owner", "manager", "staff"]);
+export const operatorRoleSchema = z.enum(["owner", "manager", "store"]);
 export const operatorCapabilitySchema = z.enum([
   "orders:read",
   "orders:write",
@@ -115,8 +115,8 @@ export const operatorCapabilitySchema = z.enum([
   "menu:visibility",
   "store:read",
   "store:write",
-  "staff:read",
-  "staff:write"
+  "team:read",
+  "team:write"
 ]);
 
 export const operatorCapabilitiesByRole = {
@@ -128,8 +128,8 @@ export const operatorCapabilitiesByRole = {
     "menu:visibility",
     "store:read",
     "store:write",
-    "staff:read",
-    "staff:write"
+    "team:read",
+    "team:write"
   ],
   manager: [
     "orders:read",
@@ -138,9 +138,9 @@ export const operatorCapabilitiesByRole = {
     "menu:write",
     "menu:visibility",
     "store:read",
-    "staff:read"
+    "team:read"
   ],
-  staff: ["orders:read", "orders:write", "menu:read", "menu:visibility", "store:read"]
+  store: ["orders:read", "orders:write"]
 } as const satisfies Record<z.infer<typeof operatorRoleSchema>, readonly z.infer<typeof operatorCapabilitySchema>[]>;
 
 export function resolveOperatorCapabilities(role: z.infer<typeof operatorRoleSchema>) {

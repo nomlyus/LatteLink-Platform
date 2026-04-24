@@ -11,6 +11,7 @@ import type {
   OperatorOrder,
   OperatorOrderFilter
 } from "./model.js";
+import { isStoreOperator } from "./model.js";
 import { loadStoredApiBaseUrl, loadStoredSection, loadStoredSession } from "./storage.js";
 
 export type AppState = {
@@ -68,13 +69,19 @@ export const ordersRefreshIntervalMs = 30_000;
 export const cancelConfirmTimeoutMs = 10_000;
 
 const initialStoredSession = loadStoredSession();
+const initialSection =
+  initialStoredSession && isStoreOperator(initialStoredSession.operator)
+    ? "orders"
+    : loadStoredSection();
 const initialSelectedLocationId =
-  initialStoredSession && (initialStoredSession.operator.locationIds?.length ?? 1) > 1
+  initialStoredSession && isStoreOperator(initialStoredSession.operator)
+    ? initialStoredSession.operator.locationId
+    : initialStoredSession && (initialStoredSession.operator.locationIds?.length ?? 1) > 1
     ? "all"
     : (initialStoredSession?.operator.locationId ?? null);
 
 export const state: AppState = {
-  section: loadStoredSection(),
+  section: initialSection,
   session: initialStoredSession,
   availableLocations: [],
   selectedLocationId: initialSelectedLocationId,
@@ -161,7 +168,9 @@ export function getSelectedLocation() {
 export function resetDashboardData() {
   state.availableLocations = [];
   state.selectedLocationId = state.session
-    ? (state.session.operator.locationIds?.length ?? 1) > 1
+    ? isStoreOperator(state.session.operator)
+      ? state.session.operator.locationId
+      : (state.session.operator.locationIds?.length ?? 1) > 1
       ? "all"
       : state.session.operator.locationId
     : null;

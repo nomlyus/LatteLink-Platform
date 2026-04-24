@@ -186,7 +186,7 @@ export interface OperatorUserTable {
   google_sub: string | null;
   display_name: string;
   password_hash: string | null;
-  role: "owner" | "manager" | "staff";
+  role: "owner" | "manager" | "store";
   location_id: string;
   active: boolean;
   created_at: Generated<string>;

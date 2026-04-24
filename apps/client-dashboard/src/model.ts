@@ -177,6 +177,12 @@ function isTerminalOrderStatus(status: OperatorOrderStatus) {
   return status === "COMPLETED" || status === "CANCELED";
 }
 
+export function isStoreOperator(
+  operator: Pick<OperatorUser, "role"> | null | undefined
+) {
+  return operator?.role === "store";
+}
+
 export function formatOrderStatus(status: OperatorOrderStatus) {
   return status.replaceAll("_", " ");
 }
@@ -187,9 +193,10 @@ export function getOperatorRoleLabel(role: z.output<typeof operatorRoleSchema>) 
       return "Store owner";
     case "manager":
       return "Manager";
-    case "staff":
+    case "store":
+      return "Store screen";
     default:
-      return "Staff";
+      return "Operator";
   }
 }
 
@@ -201,9 +208,17 @@ export function canAccessCapability(
 }
 
 export function getAvailableSections(
-  operator: Pick<OperatorUser, "capabilities"> | null | undefined,
+  operator: Pick<OperatorUser, "capabilities" | "role"> | null | undefined,
   appConfig: Pick<AppConfig, "featureFlags" | "storeCapabilities" | "loyaltyEnabled" | "fulfillment"> | null | undefined
 ) {
+  if (isStoreOperator(operator)) {
+    return canAccessCapability(operator, "orders:read") &&
+      isStaffDashboardEnabled(appConfig) &&
+      isOrderTrackingEnabled(appConfig)
+      ? (["orders"] as DashboardSection[])
+      : ([] as DashboardSection[]);
+  }
+
   const sections: DashboardSection[] = ["overview"];
 
   if (
@@ -222,7 +237,7 @@ export function getAvailableSections(
   if (canAccessCapability(operator, "store:read")) {
     sections.push("store");
   }
-  if (canAccessCapability(operator, "staff:read")) {
+  if (canAccessCapability(operator, "team:read")) {
     sections.push("team");
   }
 
@@ -336,7 +351,11 @@ export function canUpdateStoreSettings(operator: Pick<OperatorUser, "capabilitie
 }
 
 export function canManageTeamMembers(operator: Pick<OperatorUser, "capabilities"> | null | undefined) {
-  return canAccessCapability(operator, "staff:write");
+  return canAccessCapability(operator, "team:write");
+}
+
+export function canReadTeamMembers(operator: Pick<OperatorUser, "capabilities"> | null | undefined) {
+  return canAccessCapability(operator, "team:read");
 }
 
 export function getOrderActions(
@@ -453,7 +472,7 @@ export function getAppConfigCapabilityLabels(config: AppConfig) {
     labels.push("Loyalty");
   }
 
-  labels.push(resolveAppConfigFulfillmentMode(config) === "staff" ? "Staff fulfillment" : "Time-based fulfillment");
+  labels.push(resolveAppConfigFulfillmentMode(config) === "staff" ? "In-store ticket flow" : "Time-based fulfillment");
   labels.push(isPlatformManagedMenu(config) ? "Platform-managed menu" : "External menu sync");
 
   if (isOrderTrackingEnabled(config)) {
@@ -463,7 +482,7 @@ export function getAppConfigCapabilityLabels(config: AppConfig) {
     labels.push("Push notifications");
   }
   if (isStaffDashboardEnabled(config)) {
-    labels.push("Staff dashboard");
+    labels.push("Store mode");
   }
   if (isPlatformManagedMenu(config)) {
     labels.push("Menu editing");

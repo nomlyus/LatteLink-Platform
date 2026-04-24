@@ -10,9 +10,9 @@ export function renderTeamSection() {
         ${renderSectionHeading({
           eyebrow: "Team",
           title: "Choose a location",
-          description: "Staff access is managed one location at a time."
+          description: "Operator access is managed one location at a time."
         })}
-        ${renderLocationSelectionNotice("Select a specific location to review or update the team members assigned to that storefront.")}
+        ${renderLocationSelectionNotice("Select a specific location to review or update the operator accounts assigned to that storefront.")}
       </section>
     `;
   }
@@ -22,8 +22,8 @@ export function renderTeamSection() {
     <section class="dash-section">
       ${renderSectionHeading({
         eyebrow: "Team",
-        title: "Staff access",
-        description: "Control who can operate the store workspace and what level of access they have."
+        title: "Operator access",
+        description: "Control owner, manager, and store-screen access for this location."
       })}
       ${
         canWrite
@@ -47,7 +47,7 @@ export function renderTeamSection() {
                   <label class="field dash-field-inline">
                     <span>Role</span>
                     <select name="role">
-                      <option value="staff">Staff</option>
+                      <option value="store">Store screen</option>
                       <option value="manager">Manager</option>
                       <option value="owner">Owner</option>
                     </select>
@@ -75,7 +75,7 @@ export function renderTeamSection() {
         ${
           canWrite
             ? ""
-            : `<p class="muted-copy">Team access is read-only for your current role. Only store owners can create, deactivate, or update staff accounts.</p>`
+            : `<p class="muted-copy">Team access is read-only for your current role. Only store owners can create, deactivate, or update operator accounts.</p>`
         }
         <div class="dash-data-group__rows">
         ${
@@ -108,7 +108,7 @@ export function renderTeamSection() {
                         <label class="field dash-field-inline">
                           <span>Role</span>
                           <select name="role" ${canWrite ? "" : "disabled"}>
-                            ${(["owner", "manager", "staff"] as const)
+                            ${(["owner", "manager", "store"] as const)
                               .map((role) => `<option value="${role}" ${role === user.role ? "selected" : ""}>${escapeHtml(getOperatorRoleLabel(role))}</option>`)
                               .join("")}
                           </select>
@@ -144,7 +144,7 @@ export function renderTeamSection() {
                   `
                 )
                 .join("")
-            : `<div class="dash-empty-surface"><p class="muted-copy">No team members available for this store yet.</p></div>`
+            : `<div class="dash-empty-surface"><p class="muted-copy">No operator accounts are available for this store yet.</p></div>`
         }
         </div>
       </article>

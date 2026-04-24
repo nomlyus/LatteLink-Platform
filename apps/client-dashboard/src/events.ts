@@ -249,7 +249,7 @@ export function registerEvents() {
     if (action === "confirm-cancel-order") {
       const orderId = actionElement.dataset.orderId;
       if (orderId) {
-        void handleOrderAdvance(orderId, "CANCELED", "Canceled by staff");
+        void handleOrderAdvance(orderId, "CANCELED", "Canceled in store");
       }
       return;
     }

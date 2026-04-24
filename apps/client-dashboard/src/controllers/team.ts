@@ -9,7 +9,7 @@ export async function handleTeamCreateSubmit(form: HTMLFormElement) {
     return;
   }
   if (!canManageTeamMembers(state.session.operator)) {
-    setError("Team management is only available to accounts with staff access controls.");
+    setError("Team management is only available to accounts with team access controls.");
     render();
     return;
   }
@@ -26,11 +26,11 @@ export async function handleTeamCreateSubmit(form: HTMLFormElement) {
       role: formData.get("role"),
       password: formData.get("password")
     });
-    addToast("Created team member account.", "success");
+    addToast("Created operator account.", "success");
     form.reset();
     await loadDashboard();
   } catch (error) {
-    await handleOperatorActionError(error, "Unable to create team member account.");
+    await handleOperatorActionError(error, "Unable to create operator account.");
   } finally {
     state.creatingTeamUser = false;
     render();
@@ -42,7 +42,7 @@ export async function handleTeamUserSubmit(form: HTMLFormElement) {
     return;
   }
   if (!canManageTeamMembers(state.session.operator)) {
-    setError("Team management is only available to accounts with staff access controls.");
+    setError("Team management is only available to accounts with team access controls.");
     render();
     return;
   }
@@ -58,7 +58,7 @@ export async function handleTeamUserSubmit(form: HTMLFormElement) {
   const wasActive = form.dataset.wasActive === "true";
 
   if (wasActive && !active && typeof window !== "undefined") {
-    const confirmed = window.confirm("Deactivate this team member? They will lose dashboard access until you reactivate them.");
+    const confirmed = window.confirm("Deactivate this operator account? It will lose dashboard access until you reactivate it.");
     if (!confirmed) {
       if (activeField instanceof HTMLInputElement) {
         activeField.checked = true;
@@ -83,10 +83,10 @@ export async function handleTeamUserSubmit(form: HTMLFormElement) {
       active
       }
     );
-    addToast("Updated team member access.", "success");
+    addToast("Updated operator access.", "success");
     await loadDashboard();
   } catch (error) {
-    await handleOperatorActionError(error, "Unable to update team member access.");
+    await handleOperatorActionError(error, "Unable to update operator access.");
   } finally {
     state.busyTeamUserId = null;
     render();

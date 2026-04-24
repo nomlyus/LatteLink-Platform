@@ -1,6 +1,6 @@
 import { getSelectedLocation, hasMultipleLocations, isAllLocationsSelected, state } from "../state.js";
 import { escapeHtml, formatDashboardDate, getOperatorInitials } from "../ui/format.js";
-import { filterOrdersByView } from "../model.js";
+import { filterOrdersByView, getOperatorRoleLabel, isStoreOperator } from "../model.js";
 import {
   isOrderTrackingEnabled,
   isStaffDashboardEnabled
@@ -65,9 +65,52 @@ function renderDashboardContent() {
   }
 }
 
+function renderStoreModeHeader(locationLabel: string, marketLabel: string) {
+  return `
+    <header class="dash-header dash-header--store">
+      <div class="dash-header__shell dash-header__shell--store">
+        <div class="dash-store-lockup">
+          <div class="dash-lockup">
+            <span class="dash-wordmark">LatteLink</span>
+            <span class="dash-byline">Store mode</span>
+          </div>
+          <div class="dash-store-title-group">
+            <div class="dash-page-title">${escapeHtml(locationLabel)}</div>
+            <div class="dash-shop-sub">${escapeHtml(marketLabel)}</div>
+          </div>
+        </div>
+
+        <div class="dash-store-meta">
+          <div class="dash-live-pill">
+            <div class="dash-live-dot"></div>
+            Live orders
+          </div>
+          <div class="dash-date">${escapeHtml(formatDashboardDate())}</div>
+          <details class="dash-account-menu">
+            <summary class="dash-account-trigger" aria-label="Open account menu">
+              <div class="dash-avatar">${escapeHtml(getOperatorInitials(state.session?.operator.displayName))}</div>
+              <div class="dash-user-meta">
+                <div class="dash-user-name">${escapeHtml(state.session?.operator.displayName ?? "Store screen")}</div>
+                <div class="dash-user-role">${escapeHtml(getOperatorRoleLabel(state.session?.operator.role ?? "store"))}</div>
+              </div>
+              <span class="dash-account-chevron" aria-hidden="true">▾</span>
+            </summary>
+            <div class="dash-account-dropdown" role="menu">
+              <button class="dash-account-action dash-account-action--danger" type="button" role="menuitem" data-action="sign-out">
+                Sign out
+              </button>
+            </div>
+          </details>
+        </div>
+      </div>
+    </header>
+  `;
+}
+
 export function renderDashboard() {
   ensureSectionIsAvailable();
   reconcileMenuCreateDraft();
+  const storeMode = isStoreOperator(state.session?.operator ?? null);
   const selectedLocation = getSelectedLocation();
   const locationLabel = isAllLocationsSelected()
     ? "All locations"
@@ -97,6 +140,21 @@ export function renderDashboard() {
       `
     : "";
 
+  if (storeMode) {
+    return `
+      <div class="dash-shell dash-shell--store">
+        ${renderStoreModeHeader(locationLabel, marketLabel)}
+        <main class="dash-main dash-main--store">
+          <div class="dash-content dash-content--store">
+            ${renderBanner()}
+            ${renderDashboardContent()}
+          </div>
+        </main>
+        ${renderMenuCreateWizard()}
+      </div>
+    `;
+  }
+
   return `
     <div class="dash-shell">
       <header class="dash-header">
@@ -115,6 +173,7 @@ export function renderDashboard() {
               <div class="dash-avatar">${escapeHtml(getOperatorInitials(state.session?.operator.displayName))}</div>
               <div class="dash-user-meta">
                 <div class="dash-user-name">${escapeHtml(state.session?.operator.displayName ?? "Operator")}</div>
+                <div class="dash-user-role">${escapeHtml(getOperatorRoleLabel(state.session?.operator.role ?? "manager"))}</div>
               </div>
               <span class="dash-account-chevron" aria-hidden="true">▾</span>
             </summary>
