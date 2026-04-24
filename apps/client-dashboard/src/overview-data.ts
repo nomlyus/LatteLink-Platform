@@ -64,24 +64,16 @@ export function getOverviewSnapshot() {
     const placedAt = getOrderPlacedAt(order);
     return placedAt >= yesterdayStartMs && placedAt < todayStartMs;
   });
-  const todayRevenueCents = todayOrders
-    .filter((order) => order.status !== "PENDING_PAYMENT" && order.status !== "CANCELED")
-    .reduce((total, order) => total + order.total.amountCents, 0);
-  const yesterdayRevenueCents = yesterdayOrders
-    .filter((order) => order.status !== "PENDING_PAYMENT" && order.status !== "CANCELED")
-    .reduce((total, order) => total + order.total.amountCents, 0);
-
-  const activeMembers =
-    state.teamUsers.length > 0
-      ? state.teamUsers.filter((user) => user.active).length
-      : state.session
-        ? 1
-        : 0;
-  const totalMembers = state.teamUsers.length > 0 ? state.teamUsers.length : activeMembers;
-  const activeMemberTrend =
-    totalMembers > 0
-      ? { text: `${formatCompactCount(totalMembers)} total on the roster`, tone: "positive" as const }
-      : { text: "Add staff access to populate this workspace", tone: "neutral" as const };
+  const todayPaidOrders = todayOrders.filter((order) => order.status !== "PENDING_PAYMENT" && order.status !== "CANCELED");
+  const yesterdayPaidOrders = yesterdayOrders.filter(
+    (order) => order.status !== "PENDING_PAYMENT" && order.status !== "CANCELED"
+  );
+  const todayRevenueCents = todayPaidOrders.reduce((total, order) => total + order.total.amountCents, 0);
+  const yesterdayRevenueCents = yesterdayPaidOrders.reduce((total, order) => total + order.total.amountCents, 0);
+  const todayAverageTicketCents =
+    todayPaidOrders.length > 0 ? Math.round(todayRevenueCents / todayPaidOrders.length) : 0;
+  const yesterdayAverageTicketCents =
+    yesterdayPaidOrders.length > 0 ? Math.round(yesterdayRevenueCents / yesterdayPaidOrders.length) : 0;
 
   const chartStart = addDays(todayStart, -6);
   const rawChartBars = Array.from({ length: 7 }, (_, index) => {
@@ -125,9 +117,14 @@ export function getOverviewSnapshot() {
         })
       },
       {
-        label: "Active members",
-        value: formatCompactCount(activeMembers),
-        trend: activeMemberTrend
+        label: "Avg ticket",
+        value: formatCompactMoney(todayAverageTicketCents),
+        trend: buildMetricTrend({
+          current: todayAverageTicketCents,
+          previous: yesterdayAverageTicketCents,
+          suffix: "vs yesterday",
+          formatter: formatCompactMoney
+        })
       }
     ]
   };
