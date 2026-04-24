@@ -1727,21 +1727,21 @@ label.field > span {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 12px 0;
+  padding: 12px;
   margin: -14px -14px 0;
   border-radius: var(--r-md) var(--r-md) 0 0;
 }
 
 .dash-ticket-card--needs-action .dash-ticket-card__band {
-  background: rgba(217, 119, 6, 0.12);
+  background: #dc2626;
 }
 
 .dash-ticket-card--in-progress .dash-ticket-card__band {
-  background: rgba(37, 99, 235, 0.12);
+  background: #1d4ed8;
 }
 
 .dash-ticket-card--ready .dash-ticket-card__band {
-  background: rgba(22, 163, 74, 0.12);
+  background: #16a34a;
 }
 
 .dash-ticket-label {
@@ -1789,6 +1789,17 @@ label.field > span {
 .dash-ticket-updated {
   font-size: 12px;
   color: var(--color-text-3);
+}
+
+.dash-ticket-card__band .dash-ticket-label {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.dash-ticket-card__band .dash-ticket-code,
+.dash-ticket-card__band .dash-ticket-customer,
+.dash-ticket-card__band .dash-ticket-age,
+.dash-ticket-card__band .dash-ticket-updated {
+  color: #fff;
 }
 
 .dash-ticket-facts {
