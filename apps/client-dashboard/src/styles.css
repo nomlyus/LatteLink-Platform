@@ -1761,11 +1761,10 @@ label.field > span {
 
 .dash-ticket-meta {
   display: flex;
+  flex: 1;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  margin-left: auto;
-  min-width: 96px;
   text-align: center;
 }
 
