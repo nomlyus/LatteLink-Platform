@@ -44,7 +44,28 @@ import { handleStoreSubmit } from "./controllers/store.js";
 import { handleTeamCreateSubmit, handleTeamUserSubmit } from "./controllers/team.js";
 import { handleOrderAdvance } from "./controllers/orders.js";
 
+function closeOpenAccountMenus(target?: Node) {
+  root.querySelectorAll<HTMLDetailsElement>(".dash-account-menu[open]").forEach((menu) => {
+    if (target && menu.contains(target)) {
+      return;
+    }
+    menu.open = false;
+  });
+}
+
 export function registerEvents() {
+  document.addEventListener("click", (event) => {
+    if (event.target instanceof Node) {
+      closeOpenAccountMenus(event.target);
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeOpenAccountMenus();
+    }
+  });
+
   root.addEventListener("submit", (event) => {
     const target = event.target;
     if (!(target instanceof HTMLFormElement)) {
