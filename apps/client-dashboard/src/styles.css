@@ -1691,6 +1691,12 @@ label.field > span {
   padding-bottom: 6px;
 }
 
+.dash-store-ticket-strip--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .dash-store-lane {
   display: flex;
   flex-direction: column;

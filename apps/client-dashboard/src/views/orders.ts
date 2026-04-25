@@ -414,11 +414,11 @@ function renderStoreModeBoard(appConfig: AppConfig | null) {
         <div class="dash-store-board__meta">
           <span class="dash-inline-note">${escapeHtml(formatRelativeRefresh(state.lastRefreshedAt, state.loading))}</span>
         </div>
-        <div class="dash-store-ticket-strip" role="list" aria-label="Store tickets">
+        <div class="dash-store-ticket-strip${orderedTickets.length === 0 ? " dash-store-ticket-strip--empty" : ""}" role="list" aria-label="Store tickets">
           ${
             orderedTickets.length > 0
               ? orderedTickets.map((order) => renderStoreTicket(order, appConfig)).join("")
-              : `<div class="dash-empty-surface dash-empty-surface--store-strip"><p class="muted-copy">No tickets are in this view right now.</p></div>`
+              : `<div class="dash-empty-surface"><p class="muted-copy">No tickets are in this view right now.</p></div>`
           }
         </div>
       </div>
