@@ -2441,12 +2441,23 @@ export async function registerRoutes(app: FastifyInstance) {
         return reply.status(502).send({ code: "UPSTREAM_INVALID_RESPONSE", message: "Orders response invalid", requestId: request.id });
       }
 
+      // Read CORS headers set by @fastify/cors before hijack — they live on the Fastify
+      // reply object and would be lost once we take over the raw response.
+      const corsOriginHeader = reply.getHeader("access-control-allow-origin") as string | undefined;
+      const corsCredentialsHeader = reply.getHeader("access-control-allow-credentials") as string | undefined;
+
       reply.hijack();
       reply.raw.statusCode = 200;
       reply.raw.setHeader("Content-Type", "text/event-stream");
       reply.raw.setHeader("Cache-Control", "no-cache");
       reply.raw.setHeader("Connection", "keep-alive");
       reply.raw.setHeader("X-Accel-Buffering", "no");
+      if (corsOriginHeader) {
+        reply.raw.setHeader("access-control-allow-origin", corsOriginHeader);
+      }
+      if (corsCredentialsHeader) {
+        reply.raw.setHeader("access-control-allow-credentials", corsCredentialsHeader);
+      }
       if (typeof reply.raw.flushHeaders === "function") {
         reply.raw.flushHeaders();
       }
