@@ -731,7 +731,20 @@ async function createPostgresRepository(connectionString: string): Promise<Payme
           occurred_at: response.occurredAt,
           message: response.message ?? null
         })
-        .onConflict((oc) => oc.columns(["order_id", "idempotency_key"]).doNothing())
+        .onConflict((oc) =>
+          oc.columns(["order_id", "idempotency_key"])
+            .doUpdateSet({
+              refund_id: (eb) => eb.ref("excluded.refund_id"),
+              payment_id: (eb) => eb.ref("excluded.payment_id"),
+              provider: (eb) => eb.ref("excluded.provider"),
+              status: (eb) => eb.ref("excluded.status"),
+              amount_cents: (eb) => eb.ref("excluded.amount_cents"),
+              currency: (eb) => eb.ref("excluded.currency"),
+              occurred_at: (eb) => eb.ref("excluded.occurred_at"),
+              message: (eb) => eb.ref("excluded.message")
+            })
+            .where("payments_refunds.status", "=", "REJECTED")
+        )
         .execute();
 
       const persisted = await db
