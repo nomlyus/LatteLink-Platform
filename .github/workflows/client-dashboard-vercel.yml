@@ -78,10 +78,13 @@ jobs:
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             echo "Skipping Vercel preview deploy because one or more required secrets are missing."
           fi
+      - uses: pnpm/action-setup@v4
+        if: steps.preview-check.outputs.enabled == 'true'
       - uses: actions/setup-node@v4
         if: steps.preview-check.outputs.enabled == 'true'
         with:
           node-version: 22
+          cache: pnpm
       - name: Install Vercel CLI
         if: steps.preview-check.outputs.enabled == 'true'
         run: npm install --global vercel@latest
@@ -136,10 +139,13 @@ jobs:
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             echo "Skipping Vercel production deploy because one or more required secrets are missing."
           fi
+      - uses: pnpm/action-setup@v4
+        if: steps.production-check.outputs.enabled == 'true'
       - uses: actions/setup-node@v4
         if: steps.production-check.outputs.enabled == 'true'
         with:
           node-version: 22
+          cache: pnpm
       - name: Install Vercel CLI
         if: steps.production-check.outputs.enabled == 'true'
         run: npm install --global vercel@latest
