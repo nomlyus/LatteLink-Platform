@@ -113,12 +113,14 @@ const config: ExpoConfig = {
       NSUserNotificationUsageDescription: "$(PRODUCT_NAME) uses notifications to alert you when your order is ready for pickup."
     },
     associatedDomains: resolveAssociatedDomains(),
-    entitlements:
-      applePayMerchantIdentifiers.length > 0
+    entitlements: {
+      "aps-environment": "production",
+      ...(applePayMerchantIdentifiers.length > 0
         ? {
             "com.apple.developer.in-app-payments": applePayMerchantIdentifiers
           }
-        : undefined,
+        : {})
+    },
     runtimeVersion: "1.0.0"
   },
   android: {
