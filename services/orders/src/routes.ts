@@ -334,7 +334,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
   const getServiceDeps = (request: FastifyRequest): OrderServiceDeps => ({
     ...sharedDeps,
-    fulfillmentConfig: fulfillmentConfigCache.get(),
+    getFulfillmentConfig: fulfillmentConfigCache.get,
     posAdapter: createPosAdapter({
       paymentsBaseUrl,
       paymentsInternalToken: internalApiToken,

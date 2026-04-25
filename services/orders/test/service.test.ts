@@ -68,6 +68,7 @@ async function createTestDeps(
   repositories: OrdersRepository[],
   options: {
     fulfillmentMode?: "time_based" | "staff";
+    fulfillmentModeByLocation?: Record<string, "time_based" | "staff">;
   } = {}
 ) {
   const logger = createLoggerMock();
@@ -87,10 +88,13 @@ async function createTestDeps(
     posAdapter: {
       submitOrder
     },
-    fulfillmentConfig: {
+    getFulfillmentConfig: async (locationId) => ({
       ...DEFAULT_APP_CONFIG_FULFILLMENT,
-      mode: options.fulfillmentMode ?? DEFAULT_APP_CONFIG_FULFILLMENT.mode
-    },
+      mode:
+        (locationId ? options.fulfillmentModeByLocation?.[locationId] : undefined) ??
+        options.fulfillmentMode ??
+        DEFAULT_APP_CONFIG_FULFILLMENT.mode
+    }),
     logger
   };
 
@@ -775,10 +779,10 @@ describe("orders service layer", () => {
       paymentsBaseUrl: "http://payments.test",
       loyaltyBaseUrl: "http://loyalty.test",
       notificationsBaseUrl: "http://notifications.test",
-      fulfillmentConfig: {
+      getFulfillmentConfig: async () => ({
         ...DEFAULT_APP_CONFIG_FULFILLMENT,
         mode: "staff"
-      },
+      }),
       logger: createLoggerMock()
     };
 
@@ -854,10 +858,10 @@ describe("orders service layer", () => {
       paymentsBaseUrl: "http://payments.test",
       loyaltyBaseUrl: "http://loyalty.test",
       notificationsBaseUrl: "http://notifications.test",
-      fulfillmentConfig: {
+      getFulfillmentConfig: async () => ({
         ...DEFAULT_APP_CONFIG_FULFILLMENT,
         mode: "staff"
-      },
+      }),
       logger: createLoggerMock()
     };
 
@@ -879,6 +883,123 @@ describe("orders service layer", () => {
         email: "avery@example.com"
       }
     });
+  });
+
+  it("reconciles fulfillment by order location so staff-based stores do not auto-progress", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-03-10T00:30:00.000Z"));
+
+    const staffOrder = {
+      id: "123e4567-e89b-12d3-a456-426614174301",
+      locationId: "staff-01",
+      status: "PAID" as const,
+      items: [],
+      total: { currency: "USD" as const, amountCents: 525 },
+      pickupCode: "STAFF1",
+      timeline: [
+        {
+          status: "PENDING_PAYMENT" as const,
+          occurredAt: "2026-03-10T00:00:00.000Z",
+          source: "customer" as const,
+          note: "Order created"
+        },
+        {
+          status: "PAID" as const,
+          occurredAt: "2026-03-10T00:00:30.000Z",
+          source: "customer" as const,
+          note: "Payment accepted"
+        }
+      ]
+    };
+    const timeBasedOrder = {
+      id: "123e4567-e89b-12d3-a456-426614174302",
+      locationId: "time-01",
+      status: "PAID" as const,
+      items: [],
+      total: { currency: "USD" as const, amountCents: 725 },
+      pickupCode: "TIME01",
+      timeline: [
+        {
+          status: "PENDING_PAYMENT" as const,
+          occurredAt: "2026-03-10T00:00:00.000Z",
+          source: "customer" as const,
+          note: "Order created"
+        },
+        {
+          status: "PAID" as const,
+          occurredAt: "2026-03-10T00:00:30.000Z",
+          source: "customer" as const,
+          note: "Payment accepted"
+        }
+      ]
+    };
+
+    const repository = {
+      listOrders: vi.fn().mockResolvedValue([staffOrder, timeBasedOrder]),
+      listOrdersByLocation: vi.fn(),
+      listOrdersByUser: vi.fn(),
+      getOrder: vi.fn(),
+      saveQuote: vi.fn(),
+      getQuote: vi.fn(),
+      saveOrder: vi.fn(),
+      saveOrderUserId: vi.fn(),
+      getOrderUserId: vi.fn().mockResolvedValue(defaultTestUserId),
+      savePaymentIdempotency: vi.fn(),
+      getOrderByPaymentIdempotency: vi.fn(),
+      saveRefundIdempotency: vi.fn(),
+      getOrderByRefundIdempotency: vi.fn(),
+      saveChargeAttempt: vi.fn(),
+      getChargeAttempt: vi.fn(),
+      saveRefundAttempt: vi.fn(),
+      getRefundAttempt: vi.fn(),
+      setPaymentId: vi.fn(),
+      getPaymentId: vi.fn(),
+      setSuccessfulCharge: vi.fn(),
+      getSuccessfulCharge: vi.fn(),
+      setSuccessfulRefund: vi.fn(),
+      getSuccessfulRefund: vi.fn(),
+      updateOrder: vi.fn().mockImplementation(async (_orderId, nextOrder) => nextOrder),
+      getCatalogItemsForQuote: vi.fn().mockResolvedValue(new Map()),
+      getTaxRateBasisPoints: vi.fn().mockResolvedValue(600),
+      getOrderCustomer: vi.fn().mockResolvedValue(undefined),
+      listOrderCustomers: vi.fn().mockResolvedValue(new Map()),
+      pingDb: vi.fn(),
+      close: vi.fn()
+    } as unknown as OrdersRepository;
+
+    const deps: OrderServiceDeps = {
+      repository,
+      catalogBaseUrl: "http://catalog.test",
+      paymentsBaseUrl: "http://payments.test",
+      loyaltyBaseUrl: "http://loyalty.test",
+      notificationsBaseUrl: "http://notifications.test",
+      getFulfillmentConfig: async (locationId) => ({
+        ...DEFAULT_APP_CONFIG_FULFILLMENT,
+        mode: locationId === "staff-01" ? "staff" : "time_based"
+      }),
+      logger: createLoggerMock()
+    };
+
+    const result = await listOrdersForRead({
+      requestId: "list-orders-location-fulfillment",
+      deps
+    });
+
+    const listedStaffOrder = result.orders.find((order) => order.id === staffOrder.id);
+    const listedTimeBasedOrder = result.orders.find((order) => order.id === timeBasedOrder.id);
+
+    expect(listedStaffOrder?.status).toBe("PAID");
+    expect(listedStaffOrder?.timeline.map((entry) => entry.status)).toEqual(["PENDING_PAYMENT", "PAID"]);
+    expect(listedTimeBasedOrder?.status).toBe("COMPLETED");
+    expect(listedTimeBasedOrder?.timeline.map((entry) => entry.status)).toEqual([
+      "PENDING_PAYMENT",
+      "PAID",
+      "IN_PREP",
+      "READY",
+      "COMPLETED"
+    ]);
+    expect(repository.updateOrder).toHaveBeenCalledTimes(1);
+    expect(repository.updateOrder).toHaveBeenCalledWith(timeBasedOrder.id, expect.objectContaining({ status: "COMPLETED" }));
   });
 
   it("cancelOrder persists rejected refund responses for support follow-up", async () => {

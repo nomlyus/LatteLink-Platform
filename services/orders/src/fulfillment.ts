@@ -1,7 +1,7 @@
 import {
   DEFAULT_APP_CONFIG_FULFILLMENT,
+  appConfigSchema,
   appConfigFulfillmentModeSchema,
-  appConfigFulfillmentSchema,
   type AppConfigFulfillment
 } from "@lattelink/contracts-catalog";
 import { orderSchema, orderStatusSchema } from "@lattelink/contracts-orders";
@@ -49,44 +49,72 @@ export function resolveConfiguredOrderFulfillment(
 export function createFulfillmentConfigCache(params: {
   catalogBaseUrl: string;
   ttlMs?: number;
-}): { get: () => AppConfigFulfillment } {
+}): { get: (locationId?: string) => Promise<AppConfigFulfillment> } {
   const ttlMs = params.ttlMs ?? 30_000;
-  let value: AppConfigFulfillment = resolveConfiguredOrderFulfillment();
-  let fetchedAt = 0;
-  let refreshing = false;
+  type CacheEntry = {
+    value: AppConfigFulfillment;
+    fetchedAt: number;
+    refreshing?: Promise<void>;
+  };
+  const defaultValue = resolveConfiguredOrderFulfillment();
+  const cache = new Map<string, CacheEntry>();
 
-  async function refresh(): Promise<void> {
-    refreshing = true;
+  function getCacheEntry(locationId?: string) {
+    const key = trimToUndefined(locationId) ?? "__default__";
+    let entry = cache.get(key);
+    if (!entry) {
+      entry = {
+        value: defaultValue,
+        fetchedAt: 0,
+        refreshing: undefined
+      };
+      cache.set(key, entry);
+    }
+
+    return { key, entry };
+  }
+
+  async function refresh(locationId?: string): Promise<void> {
+    const { entry } = getCacheEntry(locationId);
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5_000);
       let response: Response;
       try {
-        response = await fetch(`${params.catalogBaseUrl}/v1/app-config`, { signal: controller.signal });
+        const url = new URL("/v1/app-config", params.catalogBaseUrl);
+        const normalizedLocationId = trimToUndefined(locationId);
+        if (normalizedLocationId) {
+          url.searchParams.set("locationId", normalizedLocationId);
+        }
+        response = await fetch(url, { signal: controller.signal });
       } finally {
         clearTimeout(timeout);
       }
       if (response.ok) {
         const body = await response.json();
-        const parsed = appConfigFulfillmentSchema.safeParse((body as Record<string, unknown>)?.fulfillment);
+        const parsed = appConfigSchema.safeParse(body);
         if (parsed.success) {
-          value = parsed.data;
-          fetchedAt = Date.now();
+          entry.value = parsed.data.fulfillment;
+          entry.fetchedAt = Date.now();
         }
       }
     } catch {
       // keep last known value
     } finally {
-      refreshing = false;
+      entry.refreshing = undefined;
     }
   }
 
   return {
-    get() {
-      if (Date.now() - fetchedAt > ttlMs && !refreshing) {
-        refresh().catch(() => {});
+    async get(locationId) {
+      const { entry } = getCacheEntry(locationId);
+      if (Date.now() - entry.fetchedAt > ttlMs) {
+        if (!entry.refreshing) {
+          entry.refreshing = refresh(locationId);
+        }
+        await entry.refreshing;
       }
-      return value;
+      return entry.value;
     }
   };
 }

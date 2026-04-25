@@ -201,7 +201,7 @@ export type OrderServiceDeps = {
   notificationsBaseUrl: string;
   notificationsInternalToken?: string;
   posAdapter?: PosAdapter;
-  fulfillmentConfig: AppConfigFulfillment;
+  getFulfillmentConfig(locationId?: string): Promise<AppConfigFulfillment>;
   logger: FastifyBaseLogger;
 };
 
@@ -798,10 +798,11 @@ async function reconcilePersistedOrderFulfillmentState(params: {
   deps: OrderServiceDeps;
 }) {
   const { order, requestId, deps } = params;
+  const fulfillmentConfig = await deps.getFulfillmentConfig(order.locationId);
 
   const reconciliation = reconcileOrderFulfillmentState(order, {
     now: new Date(),
-    fulfillment: deps.fulfillmentConfig
+    fulfillment: fulfillmentConfig
   });
   if (!reconciliation.changed) {
     return order;
@@ -833,7 +834,7 @@ async function reconcilePersistedOrderFulfillmentState(params: {
       orderId: order.id,
       fromStatus: order.status,
       toStatus: reconciledOrder.status,
-      fulfillmentMode: deps.fulfillmentConfig.mode,
+      fulfillmentMode: fulfillmentConfig.mode,
       appendedStatuses: reconciliation.appendedStatuses,
       requestId
     },
@@ -1471,14 +1472,15 @@ export async function cancelOrder(params: {
     return { order: existingOrder };
   }
 
-  if (cancelSource === "staff" && existingOrder.status !== "PENDING_PAYMENT" && deps.fulfillmentConfig.mode !== "staff") {
+  const fulfillmentConfig = await deps.getFulfillmentConfig(existingOrder.locationId);
+  if (cancelSource === "staff" && existingOrder.status !== "PENDING_PAYMENT" && fulfillmentConfig.mode !== "staff") {
     return {
       error: buildServiceError({
         statusCode: 409,
         code: "STAFF_FULFILLMENT_DISABLED",
         message: "Staff-driven order status changes are only allowed when fulfillment mode is staff",
         details: {
-          fulfillmentMode: deps.fulfillmentConfig.mode
+          fulfillmentMode: fulfillmentConfig.mode
         }
       })
     };
@@ -1946,14 +1948,15 @@ export async function advanceOrderStatus(params: {
     };
   }
 
-  if (deps.fulfillmentConfig.mode !== "staff") {
+  const fulfillmentConfig = await deps.getFulfillmentConfig(existingOrder.locationId);
+  if (fulfillmentConfig.mode !== "staff") {
     return {
       error: buildServiceError({
         statusCode: 409,
         code: "STAFF_FULFILLMENT_DISABLED",
         message: "Staff-driven order status changes are only allowed when fulfillment mode is staff",
         details: {
-          fulfillmentMode: deps.fulfillmentConfig.mode
+          fulfillmentMode: fulfillmentConfig.mode
         }
       })
     };
