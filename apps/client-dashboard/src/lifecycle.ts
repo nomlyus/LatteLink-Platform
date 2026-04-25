@@ -21,6 +21,8 @@ import {
 import { ensureSectionIsAvailable } from "./sections.js";
 import { render } from "./render.js";
 
+let dashboardLoadInFlight = false;
+
 export function isSessionAuthFailure(error: unknown) {
   if (isApiRequestError(error)) {
     return error.statusCode === 401;
@@ -97,20 +99,25 @@ function resolveSelectedLocationId() {
   return availableLocationIds.size > 1 ? ("all" as const) : state.availableLocations[0]?.locationId ?? null;
 }
 
-export async function loadDashboard(): Promise<void> {
+export async function loadDashboard(options: { silent?: boolean } = {}): Promise<void> {
   if (!state.session) {
     state.loading = false;
     stopAutoRefresh();
     render();
     return;
   }
-  if (state.loading) {
+  if (dashboardLoadInFlight) {
     return;
   }
 
-  state.loading = true;
-  setError(null);
-  render();
+  const silent = options.silent === true;
+  dashboardLoadInFlight = true;
+
+  if (!silent) {
+    state.loading = true;
+    setError(null);
+    render();
+  }
 
   try {
     const session = await ensureFreshSession();
@@ -158,9 +165,14 @@ export async function loadDashboard(): Promise<void> {
       await signOut("Your client dashboard session expired. Sign in again to continue.");
       return;
     }
-    setError(error instanceof Error ? error.message : "Unable to load client dashboard data.");
+    if (!silent) {
+      setError(error instanceof Error ? error.message : "Unable to load client dashboard data.");
+    }
   } finally {
-    state.loading = false;
+    dashboardLoadInFlight = false;
+    if (!silent) {
+      state.loading = false;
+    }
     startAutoRefresh(loadDashboard);
     render();
   }

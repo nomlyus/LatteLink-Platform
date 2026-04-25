@@ -20,7 +20,7 @@ import {
 import { getSelectedOrder, getVisibleOrders } from "../orders-runtime.js";
 import { renderLocationSelectionNotice, renderOrderStatusBadge, renderSectionHeading } from "./common.js";
 
-type StoreLaneTone = "needs-action" | "in-progress" | "ready";
+type StoreLaneTone = "needs-action" | "in-progress" | "ready" | "closed";
 type StoreTicketFilter = "all" | "needs_action" | "in_progress" | "ready" | "closed";
 
 function renderOrderFilterRow(activeOrderCount: number, completedOrderCount: number) {
@@ -70,6 +70,10 @@ function getStoreTicketCustomerName(order: OperatorOrder) {
   return order.customer?.name ?? "Customer details unavailable";
 }
 
+function getStoreTicketStatusLabel(order: OperatorOrder) {
+  return order.status === "PAID" ? "Confirmed" : formatOrderStatus(order.status);
+}
+
 function getOrderNotes(order: OperatorOrder) {
   return order.items
     .flatMap((item) => (item.customization?.notes?.trim() ? [item.customization.notes.trim()] : []))
@@ -82,6 +86,9 @@ function getStoreLaneTone(status: OperatorOrder["status"]): StoreLaneTone {
       return "in-progress";
     case "READY":
       return "ready";
+    case "COMPLETED":
+    case "CANCELED":
+      return "closed";
     case "PAID":
     default:
       return "needs-action";
@@ -89,20 +96,25 @@ function getStoreLaneTone(status: OperatorOrder["status"]): StoreLaneTone {
 }
 
 function renderStoreModeSummary(orders: readonly OperatorOrder[], completedOrders: readonly OperatorOrder[]) {
+  const activeOrders = orders.filter(
+    (order) => order.status === "PAID" || order.status === "IN_PREP" || order.status === "READY"
+  );
   const inProgressCount = orders.filter((order) => order.status === "IN_PREP").length;
   const readyCount = orders.filter((order) => order.status === "READY").length;
   const needsActionCount = orders.filter((order) => order.status === "PAID").length;
   const filters: Array<{ key: StoreTicketFilter; label: string; count: number }> = [
-    { key: "all", label: "All", count: orders.length },
-    { key: "needs_action", label: "Needs action", count: needsActionCount },
-    { key: "in_progress", label: "In progress", count: inProgressCount },
+    { key: "all", label: "All", count: activeOrders.length },
+    { key: "needs_action", label: "Confirmed", count: needsActionCount },
+    { key: "in_progress", label: "In prep", count: inProgressCount },
     { key: "ready", label: "Ready", count: readyCount },
     { key: "closed", label: "Closed", count: completedOrders.length }
   ];
+  const activeIndex = filters.findIndex((filter) => filter.key === state.storeTicketFilter);
 
   return `
     <div class="dash-store-summary" aria-label="Store board filters">
-      <div class="dash-store-summary__rail">
+      <div class="dash-store-summary__rail" style="--store-summary-active-index: ${Math.max(activeIndex, 0)};">
+        <div class="dash-store-summary__highlight" aria-hidden="true"></div>
         ${filters
           .map(
             (filter) => `
@@ -135,7 +147,7 @@ function filterStoreTickets(orders: readonly OperatorOrder[], filter: StoreTicke
       return orders.filter((order) => order.status === "COMPLETED" || order.status === "CANCELED");
     case "all":
     default:
-      return [...orders];
+      return orders.filter((order) => order.status === "PAID" || order.status === "IN_PREP" || order.status === "READY");
   }
 }
 
@@ -350,7 +362,7 @@ function renderStoreTicket(order: OperatorOrder, appConfig: AppConfig | null) {
     <article class="dash-ticket-card dash-ticket-card--${tone}">
       <div class="dash-ticket-card__band">
         <div class="dash-ticket-heading">
-          <div class="dash-ticket-label">${escapeHtml(formatOrderStatus(order.status))}</div>
+          <div class="dash-ticket-label">${escapeHtml(getStoreTicketStatusLabel(order))}</div>
           <div class="dash-ticket-customer">${escapeHtml(getStoreTicketCustomerName(order))}</div>
         </div>
         <div class="dash-ticket-meta">

@@ -9,7 +9,7 @@ export function stopAutoRefresh() {
   }
 }
 
-export function startAutoRefresh(loadDashboard: () => Promise<void>) {
+export function startAutoRefresh(loadDashboard: (options?: { silent?: boolean }) => Promise<void>) {
   if (typeof window === "undefined" || state.autoRefreshHandle !== null) {
     return;
   }
@@ -23,7 +23,7 @@ export function startAutoRefresh(loadDashboard: () => Promise<void>) {
   }
   state.autoRefreshHandle = setInterval(() => {
     if (state.section === "orders" && state.session && !state.loading) {
-      void loadDashboard();
+      void loadDashboard({ silent: true });
     }
   }, ordersRefreshIntervalMs);
 }
