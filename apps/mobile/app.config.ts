@@ -82,15 +82,10 @@ const bundleIdentifier = resolveBundleIdentifier(variant);
 const applePayMerchantIdentifier = resolveApplePayMerchantIdentifier(variant, bundleIdentifier);
 const applePayMerchantIdentifiers = applePayMerchantIdentifier ? [applePayMerchantIdentifier] : [];
 const releaseApiBaseUrl = resolveReleaseApiBaseUrl();
-const stripePlugin =
-  applePayMerchantIdentifiers.length > 0
-    ? ([
-        "@stripe/stripe-react-native",
-        {
-          merchantIdentifier: applePayMerchantIdentifiers
-        }
-      ] as [string, { merchantIdentifier: string[] }])
-    : "@stripe/stripe-react-native";
+const stripePlugin = [
+  "@stripe/stripe-react-native",
+  { merchantIdentifier: applePayMerchantIdentifiers }
+] as [string, { merchantIdentifier: string[] }];
 
 const config: ExpoConfig = {
   name: resolveDisplayName(variant),
