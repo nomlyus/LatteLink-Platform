@@ -1,18 +1,21 @@
 import * as Crypto from "expo-crypto";
 import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import { useEffect, useRef } from "react";
 import { usePushTokenRegistrationMutation } from "../account/data";
 
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false
-  })
+  handleNotification: async () => {
+    const active = AppState.currentState === "active";
+    return {
+      shouldShowAlert: !active,
+      shouldShowBanner: !active,
+      shouldShowList: true,
+      shouldPlaySound: !active,
+      shouldSetBadge: false
+    };
+  }
 });
 
 const DEVICE_ID_KEY = "lattelink.device_id";

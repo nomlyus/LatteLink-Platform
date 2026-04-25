@@ -27,13 +27,9 @@ function resolveDisplayName(variant: AppVariant) {
   }
 }
 
-function resolveReleaseApiBaseUrl(variant: AppVariant) {
+function resolveReleaseApiBaseUrl() {
   const value = process.env.EXPO_PUBLIC_API_BASE_URL?.trim() ?? "";
   if (value.length === 0) {
-    if (variant === "beta" || variant === "production") {
-      throw new Error(`EXPO_PUBLIC_API_BASE_URL must be configured for ${variant} mobile releases.`);
-    }
-
     return null;
   }
 
@@ -42,21 +38,6 @@ function resolveReleaseApiBaseUrl(variant: AppVariant) {
     parsed = new URL(value);
   } catch {
     throw new Error(`EXPO_PUBLIC_API_BASE_URL must be a valid URL. Received: ${value}`);
-  }
-
-  const hostname = parsed.hostname.toLowerCase();
-  const isLocalHost =
-    hostname === "localhost" ||
-    hostname === "127.0.0.1" ||
-    hostname === "0.0.0.0" ||
-    hostname.endsWith(".local");
-
-  if ((variant === "beta" || variant === "production") && parsed.protocol !== "https:") {
-    throw new Error(`${variant} mobile releases must use an https API base URL. Received: ${value}`);
-  }
-
-  if ((variant === "beta" || variant === "production") && isLocalHost) {
-    throw new Error(`${variant} mobile releases cannot point at localhost. Received: ${value}`);
   }
 
   return parsed.toString().replace(/\/+$/, "");
@@ -101,7 +82,7 @@ const variant = resolveAppVariant();
 const bundleIdentifier = resolveBundleIdentifier(variant);
 const applePayMerchantIdentifier = resolveApplePayMerchantIdentifier(variant, bundleIdentifier);
 const applePayMerchantIdentifiers = applePayMerchantIdentifier ? [applePayMerchantIdentifier] : [];
-const releaseApiBaseUrl = resolveReleaseApiBaseUrl(variant);
+const releaseApiBaseUrl = resolveReleaseApiBaseUrl();
 const stripePlugin =
   applePayMerchantIdentifiers.length > 0
     ? ([
