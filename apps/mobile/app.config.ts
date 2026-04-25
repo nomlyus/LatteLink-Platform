@@ -2,8 +2,7 @@ import type { ExpoConfig } from "expo/config";
 
 type AppVariant = "internal" | "beta" | "production";
 const DEFAULT_APP_VARIANT: AppVariant = "beta";
-const DEFAULT_BETA_BUNDLE_IDENTIFIER = "com.lattelink.rawaq.beta";
-const DEFAULT_BETA_APPLE_PAY_MERCHANT_IDENTIFIER = "merchant.com.lattelink.rawaq.beta";
+const DEFAULT_BETA_APPLE_PAY_MERCHANT_IDENTIFIER = "merchant.com.lattelink.mobile.beta";
 const DEFAULT_PRIVACY_POLICY_URL = "https://nomly.us/privacy-policy";
 
 function resolveAppVariant(): AppVariant {
@@ -51,7 +50,7 @@ function resolveBundleIdentifier(variant: AppVariant) {
     case "production":
       return "com.lattelink.mobile";
     case "beta":
-      return DEFAULT_BETA_BUNDLE_IDENTIFIER;
+      return "com.lattelink.mobile.beta";
     case "internal":
     default:
       return "com.lattelink.mobile.internal";
@@ -71,7 +70,7 @@ function resolveApplePayMerchantIdentifier(variant: AppVariant, bundleIdentifier
     return merchantIdentifier;
   }
 
-  if (variant === "beta" && bundleIdentifier === DEFAULT_BETA_BUNDLE_IDENTIFIER) {
+  if (variant === "beta" && bundleIdentifier === "com.lattelink.mobile.beta") {
     return DEFAULT_BETA_APPLE_PAY_MERCHANT_IDENTIFIER;
   }
 

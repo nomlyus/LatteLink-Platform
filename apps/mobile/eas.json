@@ -27,14 +27,7 @@
       "distribution": "store",
       "channel": "beta",
       "env": {
-        "APP_VARIANT": "beta",
-        "IOS_BUNDLE_IDENTIFIER": "com.lattelink.rawaq.beta",
-        "APP_DISPLAY_NAME_BASE": "Rawaq",
-        "EXPO_PUBLIC_BRAND_NAME": "Rawaq",
-        "EXPO_PUBLIC_API_BASE_URL": "https://api.nomly.us/v1",
-        "EXPO_PUBLIC_CATALOG_SERVICE_BASE_URL": "https://api.nomly.us/v1",
-        "EXPO_PUBLIC_CATALOG_API_BASE_URL": "https://api.nomly.us/v1",
-        "EXPO_PUBLIC_PRIVACY_POLICY_URL": "https://nomly.us/privacy-policy"
+        "APP_VARIANT": "beta"
       }
     },
     "production": {
@@ -55,9 +48,7 @@
   },
   "submit": {
     "beta": {
-      "ios": {
-        "ascAppId": "6761780971"
-      }
+      "ios": {}
     },
     "production": {
       "ios": {}
