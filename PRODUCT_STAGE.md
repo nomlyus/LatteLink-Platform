@@ -23,8 +23,9 @@ The platform has all the technical pieces required for one merchant to accept re
 3. **Loyalty is cross-merchant.** The `loyalty_balances` table has no `location_id`. A second merchant would share the same loyalty pool as the first. This is a data integrity bug.
 4. **Stripe reconciliation has no stale-order recovery.** If a webhook is missed or delayed, an order can remain stuck in `PENDING_PAYMENT` indefinitely.
 5. **Single-host deployment.** One Docker Compose host with no failover.
-6. **No observability.** No error aggregation, no alerting, no metrics beyond `/health`.
-7. **Mobile app is one app per merchant.** Separate EAS build profile per merchant required.
+6. **No environment separation.** Development/testing is not properly isolated from the live deployed runtime yet.
+7. **No observability.** No error aggregation, no alerting, no metrics beyond `/health`.
+8. **Mobile app is one app per merchant.** Separate EAS build profile per merchant required.
 
 ## One-sentence honest summary
 
@@ -36,8 +37,9 @@ The platform is a solid, well-typed commercial MVP that could support one mercha
 - 2+ merchants processing real orders simultaneously
 - Loyalty correctly scoped per merchant
 - No hardcoded tenant defaults
+- Development, staging, and production environments separated cleanly
 - Structured logging and basic alerting
 - Multi-host or managed container deployment
 - SaaS billing per merchant
 
-Estimated timeline: Phase 0 + Phase 1 from ROADMAP.md (~10–14 weeks of focused engineering).
+Estimated progression: Gate 1 + Gate 2 from ROADMAP.md, followed by selective Gate 3 work only after real merchant usage justifies it.

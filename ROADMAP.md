@@ -15,160 +15,140 @@ LatteLink begins as a branded mobile ordering platform for independent coffee sh
 - Merchant dashboard functional for orders, menu, store config, team
 - Internal admin console for merchant onboarding
 - Single-host Docker Compose deployment
+- Development, testing, and deployed runtime are not properly separated yet
 - Three blocking issues before any live pilot: fulfillment mode, loyalty scoping, stale payment reconciliation
 
 ---
 
-## Phase 0 — Stabilize MVP
-**Target**: 2–3 weeks  
-**Goal**: Make the existing system reliable enough for a real merchant pilot.
+## How This Roadmap Works
+
+This roadmap is organized as **execution gates**, not dates.
+
+- **Gate 1** must be completed before live pilot operations are considered safe.
+- **Gate 2** starts once the platform is safe enough to sell and onboard while the rest of the startup focuses on client acquisition.
+- **Gate 3** starts only after launch dates, merchant count, and real usage justify building Growth OS capabilities.
+
+The rule is simple: do not start Gate 3 work just because there is time. Start it only when Gate 1 is closed, Gate 2 is in a healthy state, and real client demand and data justify it.
+
+---
+
+## Gate 1 — Pilot Safety, Environment Separation, and Merchant Readiness
+**Goal**: Make the system safe to operate for live pilot merchants.
 
 ### Scope
-- Set `staff` fulfillment mode as the documented default for all real deployments (not `time_based`)
+- Set `staff` fulfillment mode as the default for all real merchant deployments
+- Add stale `PENDING_PAYMENT` order reconciliation against Stripe
+- Fix loyalty `location_id` scoping before any second merchant
+- Audit and enforce tenant isolation on admin/operator routes
+- Honor requested operator location context at sign-in and clean up multi-location session handling
+- Add structured JSON logging with request IDs
+- Add Sentry and basic error visibility
+- Enforce absolute session TTL
 - Validate and harden the existing R2 media upload pipeline in a deployed environment
 - Remove unconditional order-stream polling when event-bus SSE subscription succeeds
-- Add structured JSON logging with request IDs to gateway and orders service
-- Fix customer session absolute TTL (currently idle-timeout only)
-- Remove fallback hardcoded menu/config data from mobile `catalog.ts`
+- Add launch-readiness checklist in the admin console
+- Run backup/restore drill and document recovery steps
+- Add basic support tooling needed for early merchants
+- Write a clear merchant onboarding runbook
+- Create proper environment separation so development and testing no longer happen against the live deployed stack
 
-### Success metrics
-- End-to-end checkout demo passes QA with no time-based auto-progression
-- Operator can upload a menu image from the dashboard in staging with real R2 credentials
-- Order status updates arrive in <2s via event bus without parallel steady-state polling
-- All critical paths produce structured logs
+### Environment Separation Requirements
+- Separate **development**, **staging**, and **production** environments
+- Separate runtime config and secrets per environment
+- Safe deployment path to staging before production
+- No direct day-to-day development against the production deployment
 
-### Not in scope
-- New features, new services, new merchants, infrastructure changes
+### Exit Criteria
+- No known cross-merchant loyalty contamination remains
+- No paid order can silently remain unresolved after webhook failure
+- Operators cannot cross tenant boundaries through known admin-route gaps
+- Logs and alerts are good enough to investigate real incidents quickly
+- Backup/restore has been exercised, not just documented
+- A merchant can be onboarded through a repeatable checklist and runbook
+- Development and testing are isolated from production
 
----
-
-## Phase 1 — Merchant Onboarding and Direct Ordering
-**Target**: 4–6 weeks after Phase 0  
-**Goal**: Onboard 1–5 real paying merchants and process real orders.
-
-### Scope
-- Fix loyalty `location_id` scoping (migration required before second merchant)
-- Create `merchant_customer_profiles` table (foundation for future analytics)
-- Per-merchant EAS build profiles documented and validated
-- Stripe Connect payment webhook hardening (full lifecycle handlers)
-- Launch readiness checklist in admin console
-- Backup and restore procedure with tested DR drill
-- Operator email uniqueness audit (globally unique email is a multi-tenant bug)
-
-### New schema
-- `loyalty_balances`: add `location_id`, change PK to `(user_id, location_id)`
-- `loyalty_ledger_entries`: add `location_id`
-- `merchant_customer_profiles (user_id, location_id, first_order_at, last_order_at, order_count, lifetime_cents)`
-
-### Success metrics
-- 2+ merchants processing real orders
-- Zero loyalty cross-contamination
-- Stripe payments reconciling correctly
-- Merchants onboarded via admin console in <1 hour
+### Representative Work
+- fulfillment defaults
+- stale-payment reconciliation
+- loyalty scoping migration
+- tenant-isolation audit
+- operator session/location cleanup
+- structured logging and Sentry
+- launch-readiness checklist
+- support tooling
+- onboarding runbook
+- dev/staging/prod environment split
 
 ---
 
-## Phase 2 — Customer Data Foundation
-**Target**: 6–8 weeks after Phase 1  
-**Goal**: Capture behavioral data needed for future growth tools.
+## Gate 2 — Surface Polish and Small Operational Features
+**Goal**: Improve the mobile app and operator surfaces while sales and onboarding are happening.
 
 ### Scope
-- Behavioral events table: `order_placed`, `order_paid`, `order_canceled`, `loyalty_earned`, `loyalty_redeemed`
-- Populate `merchant_customer_profiles` automatically on every order completion
-- Basic KPI endpoint: orders today, revenue today, top 5 items
-- Client dashboard analytics summary card
-- Passkey mobile auth UI (server already ready)
-- Basic observability: log aggregation (e.g., Loki or Datadog) and error tracking (Sentry)
+- Mobile UX cleanup and copy fixes
+- Client dashboard UX cleanup and faster daily workflows
+- Search/filter improvements for operator order management
+- Remove misleading hardcoded fallback data from customer-facing mobile surfaces
+- Support-driven small features that reduce onboarding or operating friction
+- Merchant-facing polish that materially helps demos, onboarding, or daily service
 
-### New schema
-- `behavioral_events (event_id, user_id, location_id, event_type, event_data JSONB, occurred_at)`
+### Exit Criteria
+- Operator workflows feel reliable in day-to-day store use
+- The mobile app no longer has obvious demo-breaking or merchant-embarrassing UX issues
+- Support and sales feedback is producing incremental polish rather than exposing fundamental gaps
 
-### Success metrics
-- `merchant_customer_profiles` populating on every order
-- `behavioral_events` capturing lifecycle events
-- KPI dashboard showing real numbers
-- Error rate visible in Sentry within 1 hour of any failure
+### Representative Work
+- pickup ETA copy polish
+- dashboard order search/filter
+- mobile fallback-data removal
+- small dashboard/mobile workflow improvements
 
 ---
 
-## Phase 3 — Loyalty and Basic Campaigns
-**Target**: 8–10 weeks after Phase 2  
-**Goal**: Let merchants drive repeat purchases manually.
+## Gate 3 — Growth OS Buildout
+**Goal**: Build analytics, campaigns, and Growth OS architecture only after there are enough committed/live merchants and enough real usage data to justify it.
+
+### Entry Conditions
+- Gate 1 is fully complete
+- Gate 2 is healthy enough that onboarding/sales are not blocked by obvious product friction
+- Real merchants are committed or live
+- Operational support load is under control
+- Enough real order/customer data exists to justify analytics and campaign tooling
 
 ### Scope
-- Merchant-configurable loyalty programs (points-per-dollar, cents-per-point, max redemption)
-- Promo codes (percent or fixed discount, per-location)
-- Manual push campaigns: write message, target segment (e.g., "all customers who ordered last 30 days"), send
-- Push notification receipt polling (required before campaigns — confirm delivery)
 
-### New schema
-- `loyalty_programs (location_id, points_per_dollar, cents_per_point, max_redeemable_percent)`
-- `promo_codes (code, location_id, type, value, min_order_cents, max_uses, uses, expires_at, active)`
-- `campaigns (campaign_id, location_id, name, message, channel, target_segment_json, status, sent_at)`
-- `campaign_sends (send_id, campaign_id, user_id, sent_at, delivered_at)`
+#### Data Foundation
+- `merchant_customer_profiles`
+- `behavioral_events`
+- KPI summary endpoints
+- analytics-ready support tables
 
-### Success metrics
-- Merchants can create and send a campaign
-- Redemption rate measurable via `campaign_sends`
-- Loyalty program configured independently per merchant
+#### Merchant Growth Tools
+- loyalty program configurability
+- promo codes
+- manual campaigns
+- push receipt polling
+- analytics dashboard
+- attribution
+- segments and exports
 
----
+#### Growth OS / Automation
+- event-triggered campaigns
+- AI copy suggestions
+- Growth Score / merchant digests
 
-## Phase 4 — Analytics and Attribution
-**Target**: 8–10 weeks after Phase 3  
-**Goal**: Show merchants what is working and where revenue opportunities are.
+#### Later Scale Hardening
+- managed containers
+- PgBouncer / connection pooling
+- SaaS billing
+- RBAC
+- richer support tooling
+- read replicas when justified
 
-### Scope
-- Analytics dashboard: revenue trends, customer retention, item performance
-- Customer segments: new / loyal / lapsed / high-LTV
-- Campaign attribution: did a campaign recipient order within N days?
-- Materialized KPI summaries (hourly refresh) to avoid OLAP on transactional DB
-- CSV export of customer segment
-
-### New schema
-- `campaign_outcomes (campaign_id, user_id, order_id, attributed_at)` — attribution table
-- Materialized summary tables for merchant analytics
-
-### Success metrics
-- Merchants open analytics tab weekly
-- At least one merchant adjusts strategy based on data
-- Campaign attribution shows measurable lift
-
----
-
-## Phase 5 — Automation and AI-assisted Growth OS
-**Target**: 12+ weeks after Phase 4  
-**Goal**: Recommend and eventually automate growth actions.
-
-### Scope
-- Event-triggered campaign engine: define conditions → auto-send
-- AI-generated campaign copy suggestions (Claude API)
-- Merchant "Growth Score" weekly digest
-- POS integration research
-
-### Prerequisites
-- 3+ months of behavioral event data from real merchants
-- Campaign delivery reliability proven in Phase 3
-- Merchant opt-in consent mechanisms in place
-
----
-
-## Phase 6 — Scale and Platform Hardening
-**Target**: Ongoing after Phase 2  
-**Goal**: Support many merchants reliably.
-
-### Scope
-- Move from single-host Docker Compose to managed containers (Fly.io / Railway / AWS ECS)
-- Postgres connection pooling (PgBouncer)
-- SaaS billing: per-merchant subscription via Stripe Billing
-- RBAC: owner / manager / store-staff with per-role capability scoping
-- Formal support tooling: audit log, order lookup by phone/email
-- Multi-region read replicas for analytics
-
-### Not in scope until >20 merchants
-- Service mesh
-- Custom Kubernetes setup
-- Multi-region writes
+### Exit Criteria
+- Merchants are actively using analytics/campaign tooling, not just asking for it abstractly
+- Attribution and segmentation are backed by real usage data
+- Additional Growth OS architecture is justified by operating reality rather than roadmap ambition
 
 ---
 
