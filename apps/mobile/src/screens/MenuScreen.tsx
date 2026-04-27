@@ -467,7 +467,7 @@ export function MenuScreen() {
         <View style={styles.header}>
           <View style={styles.headerCopy}>
             <Animated.View style={[styles.pickupMetaWrap, pickupMetaStyle]}>
-              <Text style={[styles.pickupMeta, { color: headerForegroundColor, opacity: 0.65 }]}>
+              <Text style={[styles.pickupMeta, { color: headerForegroundColor }]}>
                 {storeConfig ? `Estimated pick-up is ${storeConfig.prepEtaMinutes} min` : "Estimated pick-up unavailable"}
               </Text>
             </Animated.View>

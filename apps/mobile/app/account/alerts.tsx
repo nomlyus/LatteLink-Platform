@@ -9,6 +9,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthSession } from "../../src/auth/session";
 import { AccountFloatingHeader, ACCOUNT_HEADER_HEIGHT } from "../../src/account/AccountFloatingHeader";
+import { resolveAppConfigData, useAppConfigQuery } from "../../src/menu/catalog";
 import { customerProfileQueryKey, useCustomerProfileQuery } from "../../src/auth/profile";
 import { apiClient } from "../../src/api/client";
 import { GlassActionPill } from "../../src/cart/GlassActionPill";
@@ -160,6 +161,8 @@ export default function ProfilePage() {
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const { isAuthenticated } = useAuthSession();
+  const appConfigQuery = useAppConfigQuery();
+  const appConfig = resolveAppConfigData(appConfigQuery.data);
   const profileQuery = useCustomerProfileQuery(isAuthenticated);
   const profile = profileQuery.data;
   const headerOffset = insets.top + ACCOUNT_HEADER_HEIGHT;
@@ -224,7 +227,7 @@ export default function ProfilePage() {
             />
           </GlassCard>
         </ScreenScroll>
-        <AccountFloatingHeader title="Profile" insetTop={insets.top} onBack={goBack} />
+        <AccountFloatingHeader title="Profile" insetTop={insets.top} onBack={goBack} backgroundColor={appConfig.header.background} foregroundColor={appConfig.header.foreground} />
       </View>
     );
   }

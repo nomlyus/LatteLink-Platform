@@ -168,7 +168,7 @@ export default function SettingsPage() {
           </View>
         </ScreenScroll>
 
-        <AccountFloatingHeader title="Settings" insetTop={insets.top} onBack={goBack} />
+        <AccountFloatingHeader title="Settings" insetTop={insets.top} onBack={goBack} backgroundColor={appConfig.header.background} foregroundColor={appConfig.header.foreground} />
       </View>
     );
   }
@@ -235,7 +235,7 @@ export default function SettingsPage() {
         </View>
       </ScreenScroll>
 
-      <AccountFloatingHeader title="Settings" insetTop={insets.top} onBack={goBack} />
+      <AccountFloatingHeader title="Settings" insetTop={insets.top} onBack={goBack} backgroundColor={appConfig.header.background} foregroundColor={appConfig.header.foreground} />
       <DeleteAccountSheet
         open={deleteAccountSheetOpen}
         bottomInset={insets.bottom}

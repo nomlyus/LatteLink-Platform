@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthSession } from "../../src/auth/session";
 import { useLoyaltyBalanceQuery, useLoyaltyLedgerQuery, type LoyaltyLedgerEntry } from "../../src/account/data";
 import { AccountFloatingHeader, ACCOUNT_HEADER_HEIGHT } from "../../src/account/AccountFloatingHeader";
-import { isMobileLoyaltyVisible, useAppConfigQuery } from "../../src/menu/catalog";
+import { isMobileLoyaltyVisible, resolveAppConfigData, useAppConfigQuery } from "../../src/menu/catalog";
 import { Button, Card, Chip, GlassCard, ScreenScroll, SectionLabel, uiPalette, uiTypography } from "../../src/ui/system";
 
 function formatDateTime(value: string) {
@@ -64,6 +64,7 @@ export default function RewardsPage() {
   const insets = useSafeAreaInsets();
   const { isAuthenticated } = useAuthSession();
   const appConfigQuery = useAppConfigQuery();
+  const appConfig = resolveAppConfigData(appConfigQuery.data);
   const loyaltyEnabled = isMobileLoyaltyVisible(appConfigQuery.data);
   const loyaltyBalanceQuery = useLoyaltyBalanceQuery(isAuthenticated && loyaltyEnabled);
   const loyaltyLedgerQuery = useLoyaltyLedgerQuery(isAuthenticated && loyaltyEnabled);
@@ -97,7 +98,7 @@ export default function RewardsPage() {
           </GlassCard>
         </ScreenScroll>
 
-        <AccountFloatingHeader title="Rewards" insetTop={insets.top} onBack={goBack} />
+        <AccountFloatingHeader title="Rewards" insetTop={insets.top} onBack={goBack} backgroundColor={appConfig.header.background} foregroundColor={appConfig.header.foreground} />
       </View>
     );
   }
@@ -133,7 +134,7 @@ export default function RewardsPage() {
         </Card>
       </ScreenScroll>
 
-      <AccountFloatingHeader title="Rewards" insetTop={insets.top} onBack={goBack} />
+      <AccountFloatingHeader title="Rewards" insetTop={insets.top} onBack={goBack} backgroundColor={appConfig.header.background} foregroundColor={appConfig.header.foreground} />
     </View>
   );
 }

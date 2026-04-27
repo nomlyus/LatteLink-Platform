@@ -310,7 +310,7 @@ export function HomeScreen() {
           <Animated.View style={[styles.storeRail, storeRailStyle]}>
             <View style={styles.storeCopy}>
               <Animated.View style={[styles.pickupMetaWrap, pickupMetaStyle]}>
-                <Text style={[styles.storeMeta, !storeConfig.isOpen ? styles.storeMetaClosed : null, { color: headerForegroundColor, opacity: 0.65 }]}>
+                <Text style={[styles.storeMeta, !storeConfig.isOpen ? styles.storeMetaClosed : null, { color: headerForegroundColor }]}>
                   {storeConfig.isOpen
                     ? `Estimated pick-up is ${storeConfig.prepEtaMinutes} mins`
                     : nextOpenLabel
