@@ -18,7 +18,6 @@ import Animated, { Extrapolation, interpolate, useAnimatedScrollHandler, useAnim
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   resolveAppConfigData,
-  resolveStoreConfigData,
   useAppConfigQuery,
   useHomeNewsCardsQuery,
   useStoreConfigQuery
@@ -93,7 +92,6 @@ export function HomeScreen() {
   const headerBackgroundColor = appConfig.header.background || uiPalette.background;
   const headerForegroundColor = appConfig.header.foreground ?? uiPalette.text;
   const homeNewsCards = homeNewsCardsQuery.data?.cards ?? [];
-  const storeConfig = resolveStoreConfigData(storeConfigQuery.data);
   const hasBlockingHomeError =
     (!!appConfigQuery.error && !appConfigQuery.data) ||
     (!!homeNewsCardsQuery.error && !homeNewsCardsQuery.data) ||

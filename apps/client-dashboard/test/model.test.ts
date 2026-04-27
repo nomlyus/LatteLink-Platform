@@ -251,7 +251,6 @@ describe("client dashboard model", () => {
       "Apple Pay",
       "Card",
       "Refunds",
-      "Clover",
       "Loyalty",
       "In-store ticket flow",
       "Platform-managed menu",
