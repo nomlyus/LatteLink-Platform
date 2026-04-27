@@ -767,3 +767,5 @@ export async function registerRoutes(app: FastifyInstance) {
     };
   });
 }
+  /* Bounty contribution */
+}
