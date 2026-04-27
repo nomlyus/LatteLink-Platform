@@ -19,13 +19,31 @@ permissions:
   contents: read
 
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.decide.outputs.should_deploy }}
+    steps:
+      - name: Decide whether this event should deploy to dev
+        id: decide
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          WORKFLOW_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          should_deploy=false
+
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            should_deploy=true
+          elif [ "${WORKFLOW_CONCLUSION:-}" = "success" ] && [ "${WORKFLOW_HEAD_BRANCH:-}" = "develop" ]; then
+            should_deploy=true
+          fi
+
+          echo "should_deploy=${should_deploy}" >> "$GITHUB_OUTPUT"
+
   deploy:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.head_branch == 'develop'
-      )
+    needs: preflight
+    if: needs.preflight.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     environment: dev
     steps:
