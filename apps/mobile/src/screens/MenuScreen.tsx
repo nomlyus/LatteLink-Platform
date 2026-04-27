@@ -471,7 +471,7 @@ export function MenuScreen() {
                 {storeConfig ? `Estimated pick-up is ${storeConfig.prepEtaMinutes} min` : "Estimated pick-up unavailable"}
               </Text>
             </Animated.View>
-            <Animated.Text style={[styles.locationText, locationStyle, { color: "#D4AA70" }]}>
+            <Animated.Text style={[styles.locationText, locationStyle, { color: headerForegroundColor }]}>
               {appConfig?.brand.locationName ?? "Store info unavailable"}
             </Animated.Text>
           </View>

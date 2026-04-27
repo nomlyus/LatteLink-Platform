@@ -276,7 +276,7 @@ export function HomeScreen() {
 
           <Animated.View style={[styles.storeRail, storeRailStyle]}>
             <View style={styles.storeCopy}>
-              <Animated.Text style={[styles.storeTitle, storeTitleStyle, { color: "#D4AA70" }]}>{appConfig.brand.locationName}</Animated.Text>
+              <Animated.Text style={[styles.storeTitle, storeTitleStyle, { color: headerForegroundColor }]}>{appConfig.brand.locationName}</Animated.Text>
             </View>
 
             <Animated.View style={menuLinkStyle}>
