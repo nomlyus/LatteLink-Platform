@@ -41,7 +41,7 @@ Resolution: Add Sentry, structure logs as JSON, set up basic alerting. See ROADM
 **TD-06** — Single-host deployment with no failover  
 Location: `infra/free/docker-compose.yml`  
 Description: All services run on one host. A host reboot means downtime during a merchant's service window. Acceptable for a controlled pilot but must be disclosed upfront.  
-Resolution: Separate development/staging/production immediately for pilot safety, then move toward managed infrastructure when operating reality justifies it. See ROADMAP Gate 1 and Gate 3.
+Resolution: Separate development and production immediately for pilot safety, then move toward managed infrastructure when operating reality justifies it. See ROADMAP Gate 1 and Gate 3.
 
 **TD-07** — Operator email globally unique across all tenants  
 Location: `operator_users` table (migration 0011), unique index on `email`  
@@ -58,10 +58,10 @@ Location: `services/identity/src/routes.ts`
 Description: Session refresh uses idle-timeout rotation (access token refreshed if within window), but there is no enforcement of an absolute session lifetime. A session from Day 1 can be refreshed indefinitely.  
 Resolution: Track `created_at` on sessions. Reject refresh if `created_at + ABSOLUTE_TTL` has passed. Make TTL configurable.
 
-**TD-10** — No proper separation between development, staging, and production  
+**TD-10** — No proper separation between development and production  
 Location: deployment topology / runtime environments  
 Description: Development, testing, and the deployed pilot runtime are not cleanly separated. That makes it too easy to test directly against the live system, mix secrets/config, and ship changes without a safe pre-production path.  
-Resolution: Create separate dev, staging, and production environments with isolated secrets, data, and deployment flow. This is a Gate 1 requirement.
+Resolution: Create separate dev and production environments with isolated secrets, data, and deployment flow. Use the shared `dev` environment as the release-candidate lane before production. This is a Gate 1 requirement.
 
 ---
 

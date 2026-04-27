@@ -1,9 +1,10 @@
-name: publish-free-images
+name: publish-images
 
 on:
   workflow_dispatch:
   push:
     branches:
+      - develop
       - main
 
 permissions:
@@ -102,13 +103,15 @@ jobs:
         env:
           IMAGE_PREFIX: ${{ needs.prepare.outputs.image_prefix }}
           SHA_TAG: ${{ needs.prepare.outputs.sha_tag }}
+          BRANCH_NAME: ${{ github.ref_name }}
         run: |
           {
-            echo "## Published Free-First Images"
+            echo "## Published Images"
             echo
+            echo "- Branch: \`${BRANCH_NAME}\`"
             echo "- Prefix: \`${IMAGE_PREFIX}\`"
             echo "- SHA tag: \`${SHA_TAG}\`"
             echo
-            echo "A successful \`main\` publish automatically triggers \`deploy-free\` with the full git SHA tag."
-            echo "Use manual \`deploy-free\` \`image_tag\` input overrides only when you want to redeploy or roll back to a specific immutable build."
+            echo "- Pushes to \`develop\` automatically flow into \`deploy-dev\`."
+            echo "- Production deploys should promote an explicit SHA through \`deploy-prod\`."
           } >> "$GITHUB_STEP_SUMMARY"

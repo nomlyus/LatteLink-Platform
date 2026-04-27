@@ -1,6 +1,6 @@
 # V1 Launch Packet
 
-Last reviewed: `2026-04-04`
+Last reviewed: `2026-04-27`
 
 ## Purpose
 
@@ -19,7 +19,7 @@ Use it to answer three questions without jumping between roadmap docs:
 The repo is ready when:
 
 - the required V1 tickets are merged on `main`
-- the direct-push `main` delivery path in [development-flow.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/development-flow.md) is ready to execute
+- the `develop` -> `dev` -> promoted SHA -> `production` delivery path in [development-flow.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/development-flow.md) is ready to execute
 - the deploy, dashboard, marketing-site, and mobile runbooks already exist in the repo
 - the launch packet below is the working source of truth
 
@@ -66,14 +66,14 @@ These are already in the repo and do not require new credentials to prepare:
 - owner provisioning command and Google SSO rollout guidance
 - mobile env preflight, EAS build matrix, and TestFlight/QA runbooks
 - LatteLink web deployment preflight and production-check runbook
-- the canonical direct-to-`main` delivery process in [development-flow.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/development-flow.md)
+- the canonical `develop`-first delivery process in [development-flow.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/development-flow.md)
 
 ### External Setup Work
 
 These still require accounts, credentials, domains, or hosted configuration:
 
 - DigitalOcean Droplet and DNS
-- GitHub vars and secrets for `deploy-free`
+- GitHub Environment vars and secrets for `deploy-dev` and `deploy-prod`
 - GHCR publish execution for the selected image tag
 - Vercel project/domain setup for the client dashboard
 - Google OAuth web app and credentials
@@ -98,31 +98,34 @@ These happen only after deployable environments exist:
 
 Execute these steps in order to move from repo-ready to live-ready. This is the exact release sequence for the current V1 lane.
 
-1. Confirm the release candidate on `main`.
-   Validate the release candidate locally, push it directly to `main` using the flow in [development-flow.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/development-flow.md), then create the release tag on `main` after live verification.
+1. Confirm the release candidate on `develop`.
+   Validate the release candidate locally, push it to `develop` using the flow in [development-flow.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/development-flow.md), then verify the shared `dev` deployment.
 
 2. Prepare backend hosting inputs.
    Complete the `DigitalOcean`, DNS, GitHub var, and GitHub secret setup in [free-first-deployment.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/free-first-deployment.md).
 
 3. Publish backend images to `GHCR`.
-   Let the `main` push trigger `publish-free-images`, then use that full git SHA as the deployed image reference.
+   Let the `develop` push trigger `publish-images`, then use that full git SHA as the deployed image reference.
 
-4. Deploy the backend to the free-first host.
-   Run the `deploy-free` path and confirm the generated runtime env is valid before calling the backend live.
+4. Deploy the backend to the `dev` environment.
+   Let `deploy-dev` apply the tested SHA and confirm the generated runtime env is valid.
 
 5. Run deployed backend validation.
    Execute the smoke flow in [free-first-smoke-check.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/free-first-smoke-check.md), then run the restore rehearsal in [free-first-postgres-restore-drill.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/free-first-postgres-restore-drill.md).
 
-6. Stand up the client dashboard on `Vercel`.
+6. Promote the backend SHA to `production`.
+   Run `deploy-prod` with the exact SHA that passed in `dev`.
+
+7. Stand up the client dashboard on `Vercel`.
    Create the project, configure the domain and `CLIENT_DASHBOARD_VERCEL_ENV`, and deploy using [client-dashboard-vercel-deployment.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/client-dashboard-vercel-deployment.md).
 
-7. Create the first owner account and run browser QA.
+8. Create the first owner account and run browser QA.
    Provision the owner with [client-dashboard-owner-provisioning.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/client-dashboard-owner-provisioning.md), then run the deployed dashboard checks in [client-dashboard-pilot-qa.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/client-dashboard-pilot-qa.md).
 
-8. Enable Google SSO if it is part of the launch.
+9. Enable Google SSO if it is part of the launch.
    Configure Google OAuth and the backend runtime mapping from [client-dashboard-google-sso.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/client-dashboard-google-sso.md), redeploy the backend if needed, then validate both success and deny paths.
 
-9. Stand up LatteLink web on `Vercel`.
+10. Stand up LatteLink web on `Vercel`.
    Configure the project, domain, lead-delivery env, and optional GA4 measurement ID from [lattelink-vercel-deployment.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/lattelink-vercel-deployment.md), then verify the live lead path.
 
 10. Complete provider setup for live payments.

@@ -37,7 +37,7 @@ The platform is a solid, well-typed commercial MVP that could support one mercha
 - 2+ merchants processing real orders simultaneously
 - Loyalty correctly scoped per merchant
 - No hardcoded tenant defaults
-- Development, staging, and production environments separated cleanly
+- Development and production environments separated cleanly
 - Structured logging and basic alerting
 - Multi-host or managed container deployment
 - SaaS billing per merchant

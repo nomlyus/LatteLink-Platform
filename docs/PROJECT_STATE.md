@@ -598,8 +598,9 @@ Major env families visible in code:
 
 GitHub Actions in `.github/workflows`:
 - `ci.yml`
-- `publish-free-images.yml`
-- `deploy-free.yml`
+- `publish-images.yml`
+- `deploy-dev.yml`
+- `deploy-prod.yml`
 - `client-dashboard-vercel.yml`
 - `admin-console-vercel.yml`
 - `lattelink-vercel.yml`

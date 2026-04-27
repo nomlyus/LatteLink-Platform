@@ -44,6 +44,7 @@ function resolveAllowedCorsOrigins() {
     ...defaultCorsAllowedOrigins,
     ...parseOriginCandidate(process.env.CORS_ALLOWED_ORIGINS),
     ...parseOriginCandidate(process.env.FREE_CLIENT_DASHBOARD_DOMAIN),
+    ...parseOriginCandidate(process.env.CLIENT_DASHBOARD_DOMAIN),
     ...parseOriginCandidate(process.env.CLIENT_DASHBOARD_ORIGIN),
     ...parseOriginCandidate(process.env.ADMIN_CONSOLE_CLIENT_DASHBOARD_URL),
     ...parseOriginCandidate(process.env.PUBLIC_API_BASE_URL)

@@ -1,0 +1,333 @@
+name: deploy-prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Full published Git SHA to promote to production
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.image_tag }}
+          fetch-depth: 0
+
+      - name: Check deploy prerequisites
+        id: deploy-check
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DATABASE_URL_SECRET: ${{ secrets.DATABASE_URL }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          GATEWAY_INTERNAL_API_TOKEN: ${{ secrets.GATEWAY_INTERNAL_API_TOKEN }}
+          ORDERS_INTERNAL_API_TOKEN: ${{ secrets.ORDERS_INTERNAL_API_TOKEN }}
+          LOYALTY_INTERNAL_API_TOKEN: ${{ secrets.LOYALTY_INTERNAL_API_TOKEN }}
+          NOTIFICATIONS_INTERNAL_API_TOKEN: ${{ secrets.NOTIFICATIONS_INTERNAL_API_TOKEN }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
+          APPLE_PRIVATE_KEY: ${{ secrets.APPLE_PRIVATE_KEY }}
+          APPLE_CLIENT_ID: ${{ secrets.APPLE_CLIENT_ID || vars.APPLE_CLIENT_ID }}
+          APPLE_ALLOWED_CLIENT_IDS: ${{ secrets.APPLE_ALLOWED_CLIENT_IDS || vars.APPLE_ALLOWED_CLIENT_IDS }}
+          LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL }}
+          API_DOMAIN: ${{ vars.API_DOMAIN }}
+          IMAGE_REGISTRY_PREFIX: ${{ vars.IMAGE_REGISTRY_PREFIX }}
+          ALLOW_DEV_CUSTOMER_LOGIN: ${{ vars.ALLOW_DEV_CUSTOMER_LOGIN }}
+          PAYMENTS_PROVIDER_MODE: ${{ vars.PAYMENTS_PROVIDER_MODE }}
+          CLOVER_OAUTH_ENVIRONMENT: ${{ vars.CLOVER_OAUTH_ENVIRONMENT }}
+          CLOVER_APP_ID: ${{ secrets.CLOVER_APP_ID }}
+          CLOVER_APP_SECRET: ${{ secrets.CLOVER_APP_SECRET }}
+          CLOVER_OAUTH_REDIRECT_URI: ${{ secrets.CLOVER_OAUTH_REDIRECT_URI }}
+          CLOVER_OAUTH_STATE_SECRET: ${{ secrets.CLOVER_OAUTH_STATE_SECRET }}
+          CLOVER_WEBHOOK_SHARED_SECRET: ${{ secrets.CLOVER_WEBHOOK_SHARED_SECRET }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+          STRIPE_CONNECT_WEBHOOK_SECRET: ${{ secrets.STRIPE_CONNECT_WEBHOOK_SECRET }}
+          CATALOG_MEDIA_R2_ACCOUNT_ID: ${{ vars.CATALOG_MEDIA_R2_ACCOUNT_ID }}
+          CATALOG_MEDIA_R2_ACCESS_KEY_ID: ${{ secrets.CATALOG_MEDIA_R2_ACCESS_KEY_ID }}
+          CATALOG_MEDIA_R2_SECRET_ACCESS_KEY: ${{ secrets.CATALOG_MEDIA_R2_SECRET_ACCESS_KEY }}
+          CATALOG_MEDIA_R2_BUCKET: ${{ vars.CATALOG_MEDIA_R2_BUCKET }}
+          CATALOG_MEDIA_PUBLIC_BASE_URL: ${{ vars.CATALOG_MEDIA_PUBLIC_BASE_URL }}
+          CATALOG_MEDIA_UPLOAD_MAX_BYTES: ${{ vars.CATALOG_MEDIA_UPLOAD_MAX_BYTES }}
+          CATALOG_MEDIA_UPLOAD_EXPIRY_SECONDS: ${{ vars.CATALOG_MEDIA_UPLOAD_EXPIRY_SECONDS }}
+        run: |
+          missing=0
+          for required in DEPLOY_HOST DEPLOY_USER DEPLOY_KEY GATEWAY_INTERNAL_API_TOKEN ORDERS_INTERNAL_API_TOKEN LOYALTY_INTERNAL_API_TOKEN NOTIFICATIONS_INTERNAL_API_TOKEN JWT_SECRET LETSENCRYPT_EMAIL API_DOMAIN IMAGE_REGISTRY_PREFIX; do
+            if [ -z "${!required}" ]; then
+              echo "missing: ${required}"
+              missing=1
+            fi
+          done
+
+          if [ -z "${DATABASE_URL_SECRET:-}" ] && [ -z "${POSTGRES_PASSWORD:-}" ]; then
+            echo "missing: provide DATABASE_URL or POSTGRES_PASSWORD"
+            missing=1
+          fi
+
+          apple_auth_fields_set=0
+          for candidate in APPLE_TEAM_ID APPLE_KEY_ID APPLE_PRIVATE_KEY APPLE_CLIENT_ID APPLE_ALLOWED_CLIENT_IDS; do
+            if [ -n "${!candidate:-}" ]; then
+              apple_auth_fields_set=1
+              break
+            fi
+          done
+
+          if [ "${apple_auth_fields_set}" -eq 1 ]; then
+            for required in APPLE_TEAM_ID APPLE_KEY_ID APPLE_PRIVATE_KEY; do
+              if [ -z "${!required:-}" ]; then
+                echo "missing for Apple Sign In: ${required}"
+                missing=1
+              fi
+            done
+
+            if [ -z "${APPLE_CLIENT_ID:-}" ] && [ -z "${APPLE_ALLOWED_CLIENT_IDS:-}" ]; then
+              echo "missing for Apple Sign In: provide APPLE_CLIENT_ID or APPLE_ALLOWED_CLIENT_IDS"
+              missing=1
+            fi
+          fi
+
+          if [ "${PAYMENTS_PROVIDER_MODE:-simulated}" = "live" ]; then
+            if [ -z "${CLOVER_WEBHOOK_SHARED_SECRET:-}" ]; then
+              echo "missing for live Clover deploy: CLOVER_WEBHOOK_SHARED_SECRET"
+              missing=1
+            fi
+
+            has_oauth_bootstrap=1
+            for required in CLOVER_APP_ID CLOVER_APP_SECRET CLOVER_OAUTH_REDIRECT_URI CLOVER_OAUTH_STATE_SECRET; do
+              if [ -z "${!required:-}" ]; then
+                has_oauth_bootstrap=0
+              fi
+            done
+
+            if [ "${has_oauth_bootstrap}" -eq 0 ]; then
+              echo "missing for live Clover deploy: Clover OAuth bootstrap must be fully configured"
+              missing=1
+            fi
+          fi
+
+          if [ "${missing}" -eq 0 ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping production deploy because one or more required secrets/variables are missing."
+          fi
+
+      - name: Setup SSH key
+        if: steps.deploy-check.outputs.enabled == 'true'
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${DEPLOY_KEY}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: Copy deployment bundle to server
+        if: steps.deploy-check.outputs.enabled == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+        run: |
+          remote_path="${DEPLOY_PATH:-/opt/lattelink-prod}"
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p '${remote_path}'"
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 -r infra/free/* "${DEPLOY_USER}@${DEPLOY_HOST}:${remote_path}/"
+
+      - name: Deploy compose stack
+        if: steps.deploy-check.outputs.enabled == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          API_DOMAIN: ${{ vars.API_DOMAIN }}
+          CLIENT_DASHBOARD_DOMAIN: ${{ vars.CLIENT_DASHBOARD_DOMAIN }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          IMAGE_REGISTRY_PREFIX: ${{ vars.IMAGE_REGISTRY_PREFIX }}
+          PASSKEY_RP_ID: ${{ vars.PASSKEY_RP_ID }}
+          ALLOW_DEV_CUSTOMER_LOGIN: ${{ vars.ALLOW_DEV_CUSTOMER_LOGIN }}
+          CORS_ALLOWED_ORIGINS: ${{ vars.CORS_ALLOWED_ORIGINS }}
+          LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          GATEWAY_INTERNAL_API_TOKEN: ${{ secrets.GATEWAY_INTERNAL_API_TOKEN }}
+          ORDERS_INTERNAL_API_TOKEN: ${{ secrets.ORDERS_INTERNAL_API_TOKEN }}
+          LOYALTY_INTERNAL_API_TOKEN: ${{ secrets.LOYALTY_INTERNAL_API_TOKEN }}
+          NOTIFICATIONS_INTERNAL_API_TOKEN: ${{ secrets.NOTIFICATIONS_INTERNAL_API_TOKEN }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
+          APPLE_PRIVATE_KEY: ${{ secrets.APPLE_PRIVATE_KEY }}
+          APPLE_CLIENT_ID: ${{ secrets.APPLE_CLIENT_ID || vars.APPLE_CLIENT_ID }}
+          APPLE_ALLOWED_CLIENT_IDS: ${{ secrets.APPLE_ALLOWED_CLIENT_IDS || vars.APPLE_ALLOWED_CLIENT_IDS }}
+          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          GOOGLE_OAUTH_STATE_SECRET: ${{ secrets.GOOGLE_OAUTH_STATE_SECRET }}
+          GOOGLE_OAUTH_ALLOWED_REDIRECT_URIS: ${{ vars.GOOGLE_OAUTH_ALLOWED_REDIRECT_URIS }}
+          WEBAPP_MENU_SOURCE_URL: ${{ vars.WEBAPP_MENU_SOURCE_URL }}
+          MENU_SYNC_LOCATION_ID: ${{ vars.MENU_SYNC_LOCATION_ID }}
+          MENU_SYNC_INTERVAL_MS: ${{ vars.MENU_SYNC_INTERVAL_MS }}
+          MENU_SYNC_MAX_RETRIES: ${{ vars.MENU_SYNC_MAX_RETRIES }}
+          MENU_SYNC_RETRY_DELAY_MS: ${{ vars.MENU_SYNC_RETRY_DELAY_MS }}
+          PAYMENTS_PROVIDER_MODE: ${{ vars.PAYMENTS_PROVIDER_MODE }}
+          CLOVER_OAUTH_ENVIRONMENT: ${{ vars.CLOVER_OAUTH_ENVIRONMENT }}
+          CLOVER_APP_ID: ${{ secrets.CLOVER_APP_ID }}
+          CLOVER_APP_SECRET: ${{ secrets.CLOVER_APP_SECRET }}
+          CLOVER_OAUTH_REDIRECT_URI: ${{ secrets.CLOVER_OAUTH_REDIRECT_URI }}
+          CLOVER_OAUTH_STATE_SECRET: ${{ secrets.CLOVER_OAUTH_STATE_SECRET }}
+          CLOVER_WEBHOOK_SHARED_SECRET: ${{ secrets.CLOVER_WEBHOOK_SHARED_SECRET }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+          STRIPE_CONNECT_WEBHOOK_SECRET: ${{ secrets.STRIPE_CONNECT_WEBHOOK_SECRET }}
+          CATALOG_MEDIA_R2_ACCOUNT_ID: ${{ vars.CATALOG_MEDIA_R2_ACCOUNT_ID }}
+          CATALOG_MEDIA_R2_ACCESS_KEY_ID: ${{ secrets.CATALOG_MEDIA_R2_ACCESS_KEY_ID }}
+          CATALOG_MEDIA_R2_SECRET_ACCESS_KEY: ${{ secrets.CATALOG_MEDIA_R2_SECRET_ACCESS_KEY }}
+          CATALOG_MEDIA_R2_BUCKET: ${{ vars.CATALOG_MEDIA_R2_BUCKET }}
+          CATALOG_MEDIA_PUBLIC_BASE_URL: ${{ vars.CATALOG_MEDIA_PUBLIC_BASE_URL }}
+          CATALOG_MEDIA_UPLOAD_MAX_BYTES: ${{ vars.CATALOG_MEDIA_UPLOAD_MAX_BYTES }}
+          CATALOG_MEDIA_UPLOAD_EXPIRY_SECONDS: ${{ vars.CATALOG_MEDIA_UPLOAD_EXPIRY_SECONDS }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          COMPOSE_PROJECT_NAME: ${{ vars.COMPOSE_PROJECT_NAME }}
+        run: |
+          remote_path="${DEPLOY_PATH:-/opt/lattelink-prod}"
+
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "export DEPLOY_PATH='${remote_path}' API_DOMAIN='${API_DOMAIN}' CLIENT_DASHBOARD_DOMAIN='${CLIENT_DASHBOARD_DOMAIN}' IMAGE_TAG='${IMAGE_TAG}' IMAGE_REGISTRY_PREFIX='${IMAGE_REGISTRY_PREFIX}' PASSKEY_RP_ID='${PASSKEY_RP_ID}' ALLOW_DEV_CUSTOMER_LOGIN='${ALLOW_DEV_CUSTOMER_LOGIN}' CORS_ALLOWED_ORIGINS='${CORS_ALLOWED_ORIGINS}' LETSENCRYPT_EMAIL='${LETSENCRYPT_EMAIL}' DATABASE_URL='${DATABASE_URL}' POSTGRES_PASSWORD='${POSTGRES_PASSWORD}' GATEWAY_INTERNAL_API_TOKEN='${GATEWAY_INTERNAL_API_TOKEN}' ORDERS_INTERNAL_API_TOKEN='${ORDERS_INTERNAL_API_TOKEN}' LOYALTY_INTERNAL_API_TOKEN='${LOYALTY_INTERNAL_API_TOKEN}' NOTIFICATIONS_INTERNAL_API_TOKEN='${NOTIFICATIONS_INTERNAL_API_TOKEN}' JWT_SECRET='${JWT_SECRET}' APPLE_TEAM_ID='${APPLE_TEAM_ID}' APPLE_KEY_ID='${APPLE_KEY_ID}' APPLE_PRIVATE_KEY='${APPLE_PRIVATE_KEY}' APPLE_CLIENT_ID='${APPLE_CLIENT_ID}' APPLE_ALLOWED_CLIENT_IDS='${APPLE_ALLOWED_CLIENT_IDS}' GOOGLE_OAUTH_CLIENT_ID='${GOOGLE_OAUTH_CLIENT_ID}' GOOGLE_OAUTH_CLIENT_SECRET='${GOOGLE_OAUTH_CLIENT_SECRET}' GOOGLE_OAUTH_STATE_SECRET='${GOOGLE_OAUTH_STATE_SECRET}' GOOGLE_OAUTH_ALLOWED_REDIRECT_URIS='${GOOGLE_OAUTH_ALLOWED_REDIRECT_URIS}' WEBAPP_MENU_SOURCE_URL='${WEBAPP_MENU_SOURCE_URL}' MENU_SYNC_LOCATION_ID='${MENU_SYNC_LOCATION_ID}' MENU_SYNC_INTERVAL_MS='${MENU_SYNC_INTERVAL_MS}' MENU_SYNC_MAX_RETRIES='${MENU_SYNC_MAX_RETRIES}' MENU_SYNC_RETRY_DELAY_MS='${MENU_SYNC_RETRY_DELAY_MS}' PAYMENTS_PROVIDER_MODE='${PAYMENTS_PROVIDER_MODE}' CLOVER_OAUTH_ENVIRONMENT='${CLOVER_OAUTH_ENVIRONMENT}' CLOVER_APP_ID='${CLOVER_APP_ID}' CLOVER_APP_SECRET='${CLOVER_APP_SECRET}' CLOVER_OAUTH_REDIRECT_URI='${CLOVER_OAUTH_REDIRECT_URI}' CLOVER_OAUTH_STATE_SECRET='${CLOVER_OAUTH_STATE_SECRET}' CLOVER_WEBHOOK_SHARED_SECRET='${CLOVER_WEBHOOK_SHARED_SECRET}' STRIPE_SECRET_KEY='${STRIPE_SECRET_KEY}' STRIPE_PUBLISHABLE_KEY='${STRIPE_PUBLISHABLE_KEY}' STRIPE_CONNECT_WEBHOOK_SECRET='${STRIPE_CONNECT_WEBHOOK_SECRET}' CATALOG_MEDIA_R2_ACCOUNT_ID='${CATALOG_MEDIA_R2_ACCOUNT_ID}' CATALOG_MEDIA_R2_ACCESS_KEY_ID='${CATALOG_MEDIA_R2_ACCESS_KEY_ID}' CATALOG_MEDIA_R2_SECRET_ACCESS_KEY='${CATALOG_MEDIA_R2_SECRET_ACCESS_KEY}' CATALOG_MEDIA_R2_BUCKET='${CATALOG_MEDIA_R2_BUCKET}' CATALOG_MEDIA_PUBLIC_BASE_URL='${CATALOG_MEDIA_PUBLIC_BASE_URL}' CATALOG_MEDIA_UPLOAD_MAX_BYTES='${CATALOG_MEDIA_UPLOAD_MAX_BYTES}' CATALOG_MEDIA_UPLOAD_EXPIRY_SECONDS='${CATALOG_MEDIA_UPLOAD_EXPIRY_SECONDS}' GHCR_USERNAME='${GHCR_USERNAME}' GHCR_TOKEN='${GHCR_TOKEN}' COMPOSE_PROJECT_NAME='${COMPOSE_PROJECT_NAME}'; bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          cd "${DEPLOY_PATH}"
+          if [ -n "${CORS_ALLOWED_ORIGINS:-}" ]; then
+            CORS_ALLOWED_ORIGINS_VALUE="${CORS_ALLOWED_ORIGINS}"
+          elif [ -n "${CLIENT_DASHBOARD_DOMAIN:-}" ]; then
+            CORS_ALLOWED_ORIGINS_VALUE="https://${CLIENT_DASHBOARD_DOMAIN}"
+          else
+            CORS_ALLOWED_ORIGINS_VALUE="https://${API_DOMAIN}"
+          fi
+
+          url_encode() {
+            local LC_ALL=C
+            local value="${1:-}"
+            local length="${#value}"
+            local i char
+
+            for ((i = 0; i < length; i++)); do
+              char="${value:i:1}"
+              case "${char}" in
+                [a-zA-Z0-9.~_-]) printf '%s' "${char}" ;;
+                *) printf '%%%02X' "'${char}" ;;
+              esac
+            done
+          }
+
+          if [ -n "${DATABASE_URL:-}" ]; then
+            DATABASE_URL_VALUE="${DATABASE_URL}"
+            POSTGRES_PASSWORD_VALUE="${POSTGRES_PASSWORD:-unused-local-postgres}"
+          else
+            POSTGRES_PASSWORD_URLENCODED="$(url_encode "${POSTGRES_PASSWORD}")"
+            DATABASE_URL_VALUE="postgresql://gazelle:${POSTGRES_PASSWORD_URLENCODED}@postgres:5432/gazelle"
+            POSTGRES_PASSWORD_VALUE="${POSTGRES_PASSWORD}"
+          fi
+
+          COMPOSE_PROJECT_NAME_VALUE="${COMPOSE_PROJECT_NAME:-lattelink-prod}"
+          PUBLIC_API_BASE_URL_VALUE="https://${API_DOMAIN}/v1"
+          APPLE_PRIVATE_KEY_VALUE="${APPLE_PRIVATE_KEY//$'\r'/}"
+          APPLE_PRIVATE_KEY_VALUE="${APPLE_PRIVATE_KEY_VALUE//$'\n'/\\n}"
+
+          cat > .env <<ENVVARS
+          API_DOMAIN=${API_DOMAIN}
+          CLIENT_DASHBOARD_DOMAIN=${CLIENT_DASHBOARD_DOMAIN}
+          LETSENCRYPT_EMAIL=${LETSENCRYPT_EMAIL}
+          IMAGE_REGISTRY_PREFIX=${IMAGE_REGISTRY_PREFIX}
+          IMAGE_TAG=${IMAGE_TAG}
+          COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME_VALUE}
+          POSTGRES_PASSWORD=${POSTGRES_PASSWORD_VALUE}
+          DATABASE_URL=${DATABASE_URL_VALUE}
+          GATEWAY_INTERNAL_API_TOKEN=${GATEWAY_INTERNAL_API_TOKEN}
+          ORDERS_INTERNAL_API_TOKEN=${ORDERS_INTERNAL_API_TOKEN}
+          LOYALTY_INTERNAL_API_TOKEN=${LOYALTY_INTERNAL_API_TOKEN}
+          NOTIFICATIONS_INTERNAL_API_TOKEN=${NOTIFICATIONS_INTERNAL_API_TOKEN}
+          JWT_SECRET=${JWT_SECRET}
+          ALLOW_DEV_CUSTOMER_LOGIN=${ALLOW_DEV_CUSTOMER_LOGIN:-false}
+          APPLE_TEAM_ID=${APPLE_TEAM_ID}
+          APPLE_KEY_ID=${APPLE_KEY_ID}
+          APPLE_PRIVATE_KEY=${APPLE_PRIVATE_KEY_VALUE}
+          APPLE_CLIENT_ID=${APPLE_CLIENT_ID}
+          APPLE_ALLOWED_CLIENT_IDS=${APPLE_ALLOWED_CLIENT_IDS}
+          PAYMENTS_PROVIDER_MODE=${PAYMENTS_PROVIDER_MODE:-simulated}
+          CLOVER_OAUTH_ENVIRONMENT=${CLOVER_OAUTH_ENVIRONMENT:-sandbox}
+          CLOVER_APP_ID=${CLOVER_APP_ID}
+          CLOVER_APP_SECRET=${CLOVER_APP_SECRET}
+          CLOVER_OAUTH_REDIRECT_URI=${CLOVER_OAUTH_REDIRECT_URI}
+          CLOVER_OAUTH_STATE_SECRET=${CLOVER_OAUTH_STATE_SECRET}
+          CLOVER_WEBHOOK_SHARED_SECRET=${CLOVER_WEBHOOK_SHARED_SECRET}
+          STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+          STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY}
+          STRIPE_CONNECT_WEBHOOK_SECRET=${STRIPE_CONNECT_WEBHOOK_SECRET}
+          CATALOG_MEDIA_R2_ACCOUNT_ID=${CATALOG_MEDIA_R2_ACCOUNT_ID}
+          CATALOG_MEDIA_R2_ACCESS_KEY_ID=${CATALOG_MEDIA_R2_ACCESS_KEY_ID}
+          CATALOG_MEDIA_R2_SECRET_ACCESS_KEY=${CATALOG_MEDIA_R2_SECRET_ACCESS_KEY}
+          CATALOG_MEDIA_R2_BUCKET=${CATALOG_MEDIA_R2_BUCKET}
+          CATALOG_MEDIA_PUBLIC_BASE_URL=${CATALOG_MEDIA_PUBLIC_BASE_URL}
+          CATALOG_MEDIA_UPLOAD_MAX_BYTES=${CATALOG_MEDIA_UPLOAD_MAX_BYTES}
+          CATALOG_MEDIA_UPLOAD_EXPIRY_SECONDS=${CATALOG_MEDIA_UPLOAD_EXPIRY_SECONDS}
+          CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS_VALUE}
+          PUBLIC_API_BASE_URL=${PUBLIC_API_BASE_URL_VALUE}
+          PASSKEY_RP_ID=${PASSKEY_RP_ID:-${API_DOMAIN}}
+          GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
+          GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET}
+          GOOGLE_OAUTH_STATE_SECRET=${GOOGLE_OAUTH_STATE_SECRET}
+          GOOGLE_OAUTH_ALLOWED_REDIRECT_URIS=${GOOGLE_OAUTH_ALLOWED_REDIRECT_URIS}
+          WEBAPP_MENU_SOURCE_URL=${WEBAPP_MENU_SOURCE_URL}
+          MENU_SYNC_LOCATION_ID=${MENU_SYNC_LOCATION_ID}
+          MENU_SYNC_INTERVAL_MS=${MENU_SYNC_INTERVAL_MS}
+          MENU_SYNC_MAX_RETRIES=${MENU_SYNC_MAX_RETRIES}
+          MENU_SYNC_RETRY_DELAY_MS=${MENU_SYNC_RETRY_DELAY_MS}
+          ENVVARS
+
+          if [ -n "${GHCR_USERNAME}" ] && [ -n "${GHCR_TOKEN}" ]; then
+            echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USERNAME}" --password-stdin
+          fi
+
+          ./bin/check-live-payments-env.sh .env
+          docker compose --project-name "${COMPOSE_PROJECT_NAME_VALUE}" --env-file .env pull
+          docker compose --project-name "${COMPOSE_PROJECT_NAME_VALUE}" --env-file .env up -d --remove-orphans
+          docker compose --project-name "${COMPOSE_PROJECT_NAME_VALUE}" --env-file .env ps
+          REMOTE
+
+      - name: Smoke check deployed gateway
+        if: steps.deploy-check.outputs.enabled == 'true'
+        env:
+          API_DOMAIN: ${{ vars.API_DOMAIN }}
+        run: |
+          retry_curl() {
+            local url="$1"
+            local attempt
+
+            for attempt in $(seq 1 12); do
+              if curl --fail --silent --show-error "$url"; then
+                return 0
+              fi
+
+              echo "retry ${attempt}/12 for ${url}" >&2
+              sleep 5
+            done
+
+            echo "timed out waiting for ${url}" >&2
+            return 1
+          }
+
+          retry_curl "https://${API_DOMAIN}/health"
+          retry_curl "https://${API_DOMAIN}/ready"
+
+      - name: Skip production deploy (prerequisites missing)
+        if: steps.deploy-check.outputs.enabled != 'true'
+        run: echo "deploy-prod skipped due to missing required secrets/variables."

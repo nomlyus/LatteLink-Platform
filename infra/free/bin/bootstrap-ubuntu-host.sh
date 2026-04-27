@@ -2,7 +2,7 @@
 set -euo pipefail
 
 DEPLOY_USER="${1:-deploy}"
-DEPLOY_PATH="${2:-/opt/gazelle-free}"
+DEPLOY_PATH="${2:-/opt/lattelink}"
 
 if [[ "${EUID}" -ne 0 ]]; then
   echo "Run as root on a fresh Ubuntu host."
@@ -41,7 +41,7 @@ Next:
 1. Add your GitHub Actions deploy public key to ~${DEPLOY_USER}/.ssh/authorized_keys
 2. Verify docker access with: su - ${DEPLOY_USER} -c 'docker version'
 3. Point your API DNS record to this host
-4. Configure GitHub vars/secrets, then run publish-free-images followed by deploy-free
+4. Configure the matching GitHub Environment vars/secrets, then run publish-images followed by deploy-dev or deploy-prod
 
 Deploy path: ${DEPLOY_PATH}
 Deploy user: ${DEPLOY_USER}

@@ -1,6 +1,10 @@
 # Free-First Deployment (GitHub Student + DigitalOcean)
 
-Last reviewed: `2026-04-04`
+Last reviewed: `2026-04-27`
+
+> Warning
+> This document still describes the single-host Compose topology, but the workflow names and release flow in this file are no longer authoritative.
+> Use [two-environment-deploy.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/two-environment-deploy.md) for the current `dev` / `production` deployment model and workflow names.
 
 ## Goal
 
@@ -31,8 +35,8 @@ Run the full service stack on one low-cost host for the current live deployment 
 - Generic service image Dockerfile: `infra/docker/node-service.Dockerfile`
 - Smoke-check script: `infra/free/bin/smoke-check.sh`
 - Host bootstrap script: `infra/free/bin/bootstrap-ubuntu-host.sh`
-- Image publish workflow: `.github/workflows/publish-free-images.yml`
-- Workflow: `.github/workflows/deploy-free.yml`
+- Image publish workflow: `.github/workflows/publish-images.yml`
+- Deploy workflows: `.github/workflows/deploy-dev.yml`, `.github/workflows/deploy-prod.yml`
 
 ## Bootstrap Host
 

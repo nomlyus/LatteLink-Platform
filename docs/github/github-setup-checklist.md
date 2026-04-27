@@ -1,8 +1,8 @@
 # GitHub Setup Checklist
 
-Last reviewed: `2026-04-04`
+Last reviewed: `2026-04-27`
 
-The authoritative workflow policy for this repo lives in [development-flow.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/development-flow.md). Use this checklist only to configure GitHub so it matches that policy.
+The authoritative workflow policy for this repo lives in [development-flow.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/development-flow.md). The deployment model lives in [two-environment-deploy.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/two-environment-deploy.md). Use this checklist only to configure GitHub so it matches those docs.
 
 ## Repository
 
@@ -12,32 +12,33 @@ The authoritative workflow policy for this repo lives in [development-flow.md](/
 - [x] disable rebase merges
 - [x] delete head branches on merge
 
-Merge methods may stay enabled, but they are no longer part of the required shipping path because direct pushes to `main` are allowed.
+Merge methods may stay enabled, but they are not required for normal delivery.
 
 ## Branch Protection
+
+### `develop`
+
+- [x] do not require pull requests
+- [x] do not block direct pushes
+- [ ] require conversation resolution only if you want optional review discipline
+
+`develop` should allow direct pushes. It is the auto-deploy branch for the shared `dev` environment.
 
 ### `main`
 
 - [x] do not require pull requests
 - [x] do not block direct pushes
-- [ ] require conversation resolution if you still want stricter review on optional PRs
-- [ ] require status checks before merge only if you keep optional PR review paths
+- [ ] require conversation resolution only if you want optional review discipline
 
-`main` should allow direct pushes.
-
-### `dev`
-
-- [ ] no required protection
-
-`dev` is no longer part of the required release flow and does not need special GitHub enforcement.
+`main` should stay reserved for production-ready history. It does not auto-deploy by itself.
 
 ## Actions Workflows
 
-- [x] `publish-free-images` runs on every `main` push and tags images with the full git SHA
-- [x] `deploy-free` runs after successful image publish on `main`
-- [x] `deploy-free` supports manual `workflow_dispatch` redeploys using a full git SHA
-- [x] there is no workflow that deploys `dev`
-- [x] there is no workflow that requires PR metadata, branch naming, or issue labels before shipping to `main`
+- [x] `publish-images` runs on every `develop` and `main` push and tags images with the full git SHA
+- [x] `deploy-dev` runs after successful image publish on `develop`
+- [x] `deploy-prod` supports manual `workflow_dispatch` promotion using a full git SHA
+- [x] `production` does not auto-deploy on every push
+- [x] there is no workflow that requires PR metadata, branch naming, or issue labels before shipping
 
 ## Issues And PRs
 
@@ -45,56 +46,71 @@ Merge methods may stay enabled, but they are no longer part of the required ship
 - [x] issue labels are optional
 - [x] there is no workflow that syncs labels from issue bodies
 - [x] PR templates are not required for normal delivery
-- [x] direct pushes to `main` are the default workflow
+- [x] direct pushes to `develop` are the default workflow
 
-## Variables
+## GitHub Environments
 
-- [ ] `FREE_API_DOMAIN`
-- [ ] `FREE_DEPLOY_PATH`
-- [ ] `FREE_IMAGE_REGISTRY_PREFIX`
-- [ ] `FREE_PASSKEY_RP_ID`
-- [ ] `FREE_ALLOW_DEV_CUSTOMER_LOGIN`
-- [ ] `FREE_CORS_ALLOWED_ORIGINS`
-- [ ] `FREE_CLIENT_DASHBOARD_DOMAIN`
-- [ ] `FREE_GOOGLE_OAUTH_ALLOWED_REDIRECT_URIS`
-- [ ] `FREE_PAYMENTS_PROVIDER_MODE`
-- [ ] `FREE_CLOVER_OAUTH_ENVIRONMENT`
-- [ ] `FREE_CLOVER_CHARGE_ENDPOINT`
-- [ ] `FREE_CLOVER_REFUND_ENDPOINT`
-- [ ] `FREE_CLOVER_APPLE_PAY_TOKENIZE_ENDPOINT`
+- [ ] `dev`
+- [ ] `production`
 
-## Secrets
+Each environment should define its own vars and secrets. See [two-environment-deploy.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/two-environment-deploy.md) for the exact matrix.
 
-- [ ] `FREE_DEPLOY_HOST`
-- [ ] `FREE_DEPLOY_USER`
-- [ ] `FREE_DEPLOY_SSH_KEY`
-- [ ] `FREE_DATABASE_URL` or `FREE_POSTGRES_PASSWORD`
-- [ ] `FREE_GATEWAY_INTERNAL_API_TOKEN`
-- [ ] `FREE_ORDERS_INTERNAL_API_TOKEN`
-- [ ] `FREE_LOYALTY_INTERNAL_API_TOKEN`
-- [ ] `FREE_NOTIFICATIONS_INTERNAL_API_TOKEN`
-- [ ] `FREE_JWT_SECRET`
-- [ ] `FREE_APPLE_TEAM_ID` or `APPLE_TEAM_ID`
-- [ ] `FREE_APPLE_KEY_ID` or `APPLE_KEY_ID`
-- [ ] `FREE_APPLE_PRIVATE_KEY` or `APPLE_PRIVATE_KEY`
-- [ ] `FREE_APPLE_CLIENT_ID` or `APPLE_CLIENT_ID`
-- [ ] `FREE_APPLE_ALLOWED_CLIENT_IDS` or `APPLE_ALLOWED_CLIENT_IDS`
+## Core Variables
+
+- [ ] `API_DOMAIN`
+- [ ] `CLIENT_DASHBOARD_DOMAIN`
+- [ ] `DEPLOY_PATH`
+- [ ] `IMAGE_REGISTRY_PREFIX`
+- [ ] `PASSKEY_RP_ID`
+- [ ] `COMPOSE_PROJECT_NAME`
+- [ ] `CORS_ALLOWED_ORIGINS`
+- [ ] `ALLOW_DEV_CUSTOMER_LOGIN`
+- [ ] `PAYMENTS_PROVIDER_MODE`
+- [ ] `CLOVER_OAUTH_ENVIRONMENT`
+- [ ] `GOOGLE_OAUTH_ALLOWED_REDIRECT_URIS`
+
+## Core Secrets
+
+- [ ] `DEPLOY_HOST`
+- [ ] `DEPLOY_USER`
+- [ ] `DEPLOY_SSH_KEY`
+- [ ] `DATABASE_URL` or `POSTGRES_PASSWORD`
+- [ ] `GATEWAY_INTERNAL_API_TOKEN`
+- [ ] `ORDERS_INTERNAL_API_TOKEN`
+- [ ] `LOYALTY_INTERNAL_API_TOKEN`
+- [ ] `NOTIFICATIONS_INTERNAL_API_TOKEN`
+- [ ] `JWT_SECRET`
 - [ ] `LETSENCRYPT_EMAIL`
-- [ ] `FREE_GOOGLE_OAUTH_CLIENT_ID`
-- [ ] `FREE_GOOGLE_OAUTH_CLIENT_SECRET`
-- [ ] `FREE_GOOGLE_OAUTH_STATE_SECRET`
-- [ ] `FREE_CLOVER_BEARER_TOKEN`
-- [ ] `FREE_CLOVER_API_KEY`
-- [ ] `FREE_CLOVER_API_ACCESS_KEY`
-- [ ] `FREE_CLOVER_MERCHANT_ID`
-- [ ] `FREE_CLOVER_APP_ID`
-- [ ] `FREE_CLOVER_APP_SECRET`
-- [ ] `FREE_CLOVER_OAUTH_REDIRECT_URI`
-- [ ] `FREE_CLOVER_OAUTH_STATE_SECRET`
-- [ ] `FREE_CLOVER_WEBHOOK_SHARED_SECRET`
+- [ ] `GOOGLE_OAUTH_CLIENT_ID`
+- [ ] `GOOGLE_OAUTH_CLIENT_SECRET`
+- [ ] `GOOGLE_OAUTH_STATE_SECRET`
+- [ ] `GHCR_USERNAME` if GHCR images are private
+- [ ] `GHCR_TOKEN` if GHCR images are private
+
+## Optional Secrets
+
+- [ ] `APPLE_TEAM_ID`
+- [ ] `APPLE_KEY_ID`
+- [ ] `APPLE_PRIVATE_KEY`
+- [ ] `APPLE_CLIENT_ID`
+- [ ] `APPLE_ALLOWED_CLIENT_IDS`
+- [ ] `CLOVER_APP_ID`
+- [ ] `CLOVER_APP_SECRET`
+- [ ] `CLOVER_OAUTH_REDIRECT_URI`
+- [ ] `CLOVER_OAUTH_STATE_SECRET`
+- [ ] `CLOVER_WEBHOOK_SHARED_SECRET`
+- [ ] `STRIPE_SECRET_KEY`
+- [ ] `STRIPE_PUBLISHABLE_KEY`
+- [ ] `STRIPE_CONNECT_WEBHOOK_SECRET`
+- [ ] `CATALOG_MEDIA_R2_ACCESS_KEY_ID`
+- [ ] `CATALOG_MEDIA_R2_SECRET_ACCESS_KEY`
+
+## Unchanged Frontend Deploy Secrets
+
 - [ ] `CLIENT_DASHBOARD_VERCEL_TOKEN`
 - [ ] `CLIENT_DASHBOARD_VERCEL_ORG_ID`
 - [ ] `CLIENT_DASHBOARD_VERCEL_PROJECT_ID`
 - [ ] `CLIENT_DASHBOARD_VERCEL_ENV`
-- [ ] `GHCR_USERNAME` if GHCR images are private
-- [ ] `GHCR_TOKEN` if GHCR images are private
+- [ ] `LATTELINK_VERCEL_TOKEN`
+- [ ] `LATTELINK_VERCEL_ORG_ID`
+- [ ] `LATTELINK_VERCEL_PROJECT_ID`

@@ -53,9 +53,9 @@ The rule is simple: do not start Gate 3 work just because there is time. Start i
 - Create proper environment separation so development and testing no longer happen against the live deployed stack
 
 ### Environment Separation Requirements
-- Separate **development**, **staging**, and **production** environments
+- Separate **development** and **production** environments
 - Separate runtime config and secrets per environment
-- Safe deployment path to staging before production
+- Safe deployment path to `dev` before `production`
 - No direct day-to-day development against the production deployment
 
 ### Exit Criteria
@@ -77,7 +77,7 @@ The rule is simple: do not start Gate 3 work just because there is time. Start i
 - launch-readiness checklist
 - support tooling
 - onboarding runbook
-- dev/staging/prod environment split
+- dev/prod environment split
 
 ---
 

@@ -18,6 +18,9 @@
         "APP_VARIANT": "internal",
         "APP_DISPLAY_NAME_BASE": "LatteLink",
         "EXPO_PUBLIC_BRAND_NAME": "LatteLink",
+        "EXPO_PUBLIC_API_BASE_URL": "https://api-dev.nomly.us/v1",
+        "EXPO_PUBLIC_CATALOG_SERVICE_BASE_URL": "https://api-dev.nomly.us/v1",
+        "EXPO_PUBLIC_CATALOG_API_BASE_URL": "https://api-dev.nomly.us/v1",
         "EXPO_PUBLIC_PRIVACY_POLICY_URL": "https://nomly.us/privacy-policy"
       }
     },
@@ -31,9 +34,9 @@
         "IOS_BUNDLE_IDENTIFIER": "com.lattelink.rawaq.beta",
         "APP_DISPLAY_NAME_BASE": "Rawaq",
         "EXPO_PUBLIC_BRAND_NAME": "Rawaq",
-        "EXPO_PUBLIC_API_BASE_URL": "https://api.nomly.us/v1",
-        "EXPO_PUBLIC_CATALOG_SERVICE_BASE_URL": "https://api.nomly.us/v1",
-        "EXPO_PUBLIC_CATALOG_API_BASE_URL": "https://api.nomly.us/v1",
+        "EXPO_PUBLIC_API_BASE_URL": "https://api-dev.nomly.us/v1",
+        "EXPO_PUBLIC_CATALOG_SERVICE_BASE_URL": "https://api-dev.nomly.us/v1",
+        "EXPO_PUBLIC_CATALOG_API_BASE_URL": "https://api-dev.nomly.us/v1",
         "EXPO_PUBLIC_PRIVACY_POLICY_URL": "https://nomly.us/privacy-policy"
       }
     },
