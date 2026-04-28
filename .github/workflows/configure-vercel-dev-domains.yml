@@ -1,0 +1,36 @@
+name: configure-vercel-dev-domains
+
+on:
+  workflow_dispatch:
+    inputs:
+      dev_branch:
+        description: "Git branch for dev branch domains"
+        required: false
+        default: develop
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Configure Vercel dev branch domains
+        env:
+          DEV_BRANCH: ${{ inputs.dev_branch || 'develop' }}
+          CLIENT_DASHBOARD_DEV_DOMAIN: app-dev.nomly.us
+          CLIENT_DASHBOARD_VERCEL_TOKEN: ${{ secrets.CLIENT_DASHBOARD_VERCEL_TOKEN }}
+          CLIENT_DASHBOARD_VERCEL_ORG_ID: ${{ secrets.CLIENT_DASHBOARD_VERCEL_ORG_ID }}
+          CLIENT_DASHBOARD_VERCEL_PROJECT_ID: ${{ secrets.CLIENT_DASHBOARD_VERCEL_PROJECT_ID }}
+          ADMIN_CONSOLE_DEV_DOMAIN: admin-dev.nomly.us
+          ADMIN_CONSOLE_VERCEL_TOKEN: ${{ secrets.ADMIN_CONSOLE_VERCEL_TOKEN }}
+          ADMIN_CONSOLE_VERCEL_ORG_ID: ${{ secrets.ADMIN_CONSOLE_VERCEL_ORG_ID }}
+          ADMIN_CONSOLE_VERCEL_PROJECT_ID: ${{ secrets.ADMIN_CONSOLE_VERCEL_PROJECT_ID }}
+        run: node scripts/configure-vercel-dev-domains.mjs
