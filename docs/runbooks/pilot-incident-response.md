@@ -12,6 +12,7 @@ Related runbooks:
 - [launch-readiness-checklist.md](./launch-readiness-checklist.md)
 - [database-backup-restore.md](./database-backup-restore.md)
 - [payment-retry-failure-recovery.md](./payment-retry-failure-recovery.md)
+- [pilot-uptime-monitoring.md](./pilot-uptime-monitoring.md)
 - [two-environment-deploy.md](./two-environment-deploy.md)
 
 ## Operating Rules
@@ -450,4 +451,3 @@ Escalate when:
 Message:
 
 > We verified the payment state and are correcting it. If the order cannot be fulfilled, we will refund the payment and confirm once the refund has been submitted.
-

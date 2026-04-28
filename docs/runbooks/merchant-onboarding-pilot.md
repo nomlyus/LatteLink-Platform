@@ -47,7 +47,7 @@ Before onboarding a merchant:
 - `production` deploy is healthy: `https://api.nomly.us/ready`.
 - Latest database restore drill has passed for `dev`.
 - Sentry projects are receiving errors for backend services, mobile, dashboard, and admin console.
-- Uptime monitors exist for both `/health` and `/ready`.
+- Uptime monitors exist for both `/health` and `/ready`. Reference: [pilot-uptime-monitoring.md](./pilot-uptime-monitoring.md).
 
 ## Step 1: Bootstrap the Location
 
@@ -329,4 +329,3 @@ Rollback procedure:
 3. Re-run `health`, `ready`, auth, menu, checkout, dashboard, and support lookup checks.
 4. Record the incident using [pilot-incident-response.md](./pilot-incident-response.md).
 5. Create GitHub issues for follow-up fixes.
-
