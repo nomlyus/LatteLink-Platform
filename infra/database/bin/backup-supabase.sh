@@ -22,11 +22,20 @@ schema_path="${BACKUP_DIR}/schema.sql"
 data_path="${BACKUP_DIR}/data.sql"
 manifest_path="${BACKUP_DIR}/manifest.txt"
 
+remove_unsupported_restore_settings() {
+  local path="$1"
+  local tmp_path="${path}.tmp"
+
+  grep -v '^SET transaction_timeout = ' "${path}" > "${tmp_path}"
+  mv "${tmp_path}" "${path}"
+}
+
 echo "Creating Supabase logical schema dump for ${SOURCE_ENVIRONMENT}"
 supabase db dump \
   --db-url "${SOURCE_DATABASE_URL}" \
   --schema public \
   --file "${schema_path}"
+remove_unsupported_restore_settings "${schema_path}"
 
 echo "Creating Supabase logical data dump for ${SOURCE_ENVIRONMENT}"
 supabase db dump \
@@ -35,6 +44,7 @@ supabase db dump \
   --data-only \
   --use-copy \
   --file "${data_path}"
+remove_unsupported_restore_settings "${data_path}"
 
 {
   echo "source_environment=${SOURCE_ENVIRONMENT}"
