@@ -1,4 +1,8 @@
 name: deploy-dev
+run-name: >-
+  deploy-dev
+  ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref_name }}
+  @ ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.image_tag || github.sha }}
 
 on:
   workflow_dispatch:
@@ -19,11 +23,16 @@ permissions:
   contents: read
   packages: read
 
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
 jobs:
   preflight:
     runs-on: ubuntu-latest
     outputs:
       should_deploy: ${{ steps.decide.outputs.should_deploy }}
+      deploy_sha: ${{ steps.decide.outputs.deploy_sha }}
     steps:
       - name: Decide whether this event should deploy to dev
         id: decide
@@ -31,16 +40,33 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           WORKFLOW_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           WORKFLOW_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WORKFLOW_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
+          GITHUB_SHA_VALUE: ${{ github.sha }}
         run: |
           should_deploy=false
+          deploy_sha=""
 
           if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
             should_deploy=true
+            if [ -n "${INPUT_IMAGE_TAG:-}" ]; then
+              deploy_sha="${INPUT_IMAGE_TAG}"
+            else
+              deploy_sha="${GITHUB_SHA_VALUE}"
+            fi
           elif [ "${WORKFLOW_CONCLUSION:-}" = "success" ] && [ "${WORKFLOW_HEAD_BRANCH:-}" = "develop" ]; then
             should_deploy=true
+            deploy_sha="${WORKFLOW_HEAD_SHA}"
+          fi
+
+          if [ "${should_deploy}" = "true" ] && ! printf '%s' "${deploy_sha}" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "Resolved deploy SHA is invalid: ${deploy_sha}" >&2
+            should_deploy=false
           fi
 
           echo "should_deploy=${should_deploy}" >> "$GITHUB_OUTPUT"
+          echo "deploy_sha=${deploy_sha}" >> "$GITHUB_OUTPUT"
+          echo "Dev deploy decision: should_deploy=${should_deploy}, deploy_sha=${deploy_sha}"
 
   deploy:
     needs: preflight
@@ -50,31 +76,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.image_tag || 'develop' }}
+          ref: ${{ needs.preflight.outputs.deploy_sha }}
           fetch-depth: 0
 
       - name: Resolve deploy image tag
         id: image-tag
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-          INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
+          DEPLOY_SHA: ${{ needs.preflight.outputs.deploy_sha }}
         run: |
-          if [ -n "${INPUT_IMAGE_TAG:-}" ]; then
-            resolved_tag="${INPUT_IMAGE_TAG}"
-            source="workflow_dispatch input"
-          elif [ "${EVENT_NAME}" = "workflow_run" ] && [ -n "${WORKFLOW_RUN_HEAD_SHA:-}" ]; then
-            resolved_tag="${WORKFLOW_RUN_HEAD_SHA}"
-            source="publish-images head SHA"
-          else
-            git fetch origin develop --depth=1
-            resolved_tag="$(git rev-parse origin/develop)"
-            source="latest develop commit SHA"
-          fi
+          resolved_tag="${DEPLOY_SHA}"
 
           echo "tag=${resolved_tag}" >> "$GITHUB_OUTPUT"
-          echo "source=${source}" >> "$GITHUB_OUTPUT"
-          echo "Deploy image tag: ${resolved_tag} (${source})"
+          echo "Deploy image tag: ${resolved_tag}"
 
       - name: Check deploy prerequisites
         id: deploy-check
