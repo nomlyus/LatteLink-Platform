@@ -16,7 +16,9 @@
       "channel": "beta",
       "env": {
         "APP_VARIANT": "beta",
+        "EXPO_PUBLIC_APP_VARIANT": "beta",
         "IOS_BUNDLE_IDENTIFIER": "com.lattelink.rawaq.beta",
+        "EXPO_PUBLIC_IOS_BUNDLE_IDENTIFIER": "com.lattelink.rawaq.beta",
         "APP_DISPLAY_NAME_BASE": "Rawaq",
         "EXPO_PUBLIC_BRAND_NAME": "Rawaq",
         "EXPO_PUBLIC_API_BASE_URL": "https://api-dev.nomly.us/v1",
@@ -32,7 +34,9 @@
       "channel": "production",
       "env": {
         "APP_VARIANT": "production",
+        "EXPO_PUBLIC_APP_VARIANT": "production",
         "IOS_BUNDLE_IDENTIFIER": "com.lattelink.rawaq",
+        "EXPO_PUBLIC_IOS_BUNDLE_IDENTIFIER": "com.lattelink.rawaq",
         "APP_DISPLAY_NAME_BASE": "Rawaq",
         "EXPO_PUBLIC_BRAND_NAME": "Rawaq",
         "EXPO_PUBLIC_API_BASE_URL": "https://api.nomly.us/v1",

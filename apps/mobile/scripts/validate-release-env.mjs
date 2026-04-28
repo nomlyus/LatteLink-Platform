@@ -1,11 +1,13 @@
 const VALID_VARIANTS = new Set(["beta", "production"]);
 const REQUIRED_KEYS = [
   "APP_VARIANT",
+  "EXPO_PUBLIC_APP_VARIANT",
   "APP_DISPLAY_NAME_BASE",
   "APP_VERSION",
   "EXPO_SLUG",
   "EXPO_SCHEME",
   "IOS_BUNDLE_IDENTIFIER",
+  "EXPO_PUBLIC_IOS_BUNDLE_IDENTIFIER",
   "EXPO_PUBLIC_API_BASE_URL",
   "EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID",
   "EXPO_PUBLIC_BRAND_NAME"
@@ -36,6 +38,11 @@ if (variant && variant !== profile) {
   errors.push(`APP_VARIANT must match the target profile. Expected ${profile}, received ${variant}.`);
 }
 
+const publicVariant = process.env.EXPO_PUBLIC_APP_VARIANT?.trim();
+if (publicVariant && publicVariant !== profile) {
+  errors.push(`EXPO_PUBLIC_APP_VARIANT must match the target profile. Expected ${profile}, received ${publicVariant}.`);
+}
+
 const appVersion = process.env.APP_VERSION?.trim() ?? "";
 if (appVersion && !/^\d+\.\d+\.\d+([.-][0-9A-Za-z.-]+)?$/.test(appVersion)) {
   errors.push(`APP_VERSION must look like a semantic version. Received: ${appVersion}`);
@@ -52,6 +59,13 @@ if (scheme && !/^[a-z][a-z0-9+.-]*$/i.test(scheme)) {
 }
 
 const bundleIdentifier = process.env.IOS_BUNDLE_IDENTIFIER?.trim() ?? "";
+const publicBundleIdentifier = process.env.EXPO_PUBLIC_IOS_BUNDLE_IDENTIFIER?.trim() ?? "";
+if (bundleIdentifier && publicBundleIdentifier && bundleIdentifier !== publicBundleIdentifier) {
+  errors.push(
+    `EXPO_PUBLIC_IOS_BUNDLE_IDENTIFIER must match IOS_BUNDLE_IDENTIFIER. Expected ${bundleIdentifier}, received ${publicBundleIdentifier}.`
+  );
+}
+
 if (bundleIdentifier) {
   if (!/^[A-Za-z0-9.-]+$/.test(bundleIdentifier)) {
     errors.push(`IOS_BUNDLE_IDENTIFIER contains invalid characters. Received: ${bundleIdentifier}`);
@@ -105,6 +119,14 @@ if (apiBaseUrl) {
 
     if ((profile === "beta" || profile === "production") && hostname === "example.com") {
       errors.push(`${profile} builds cannot use placeholder example.com URLs. Received: ${apiBaseUrl}`);
+    }
+
+    if (profile === "beta" && hostname !== "api-dev.nomly.us") {
+      errors.push(`Beta builds must use api-dev.nomly.us. Received: ${hostname}`);
+    }
+
+    if (profile === "production" && hostname !== "api.nomly.us") {
+      errors.push(`Production builds must use api.nomly.us. Received: ${hostname}`);
     }
   }
 }

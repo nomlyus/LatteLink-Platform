@@ -12,6 +12,91 @@ function normalizeApiBaseUrl(value: string | undefined | null) {
   return value?.trim().replace(/\/+$/, "") ?? "";
 }
 
+type MobileRuntimeVariant = "beta" | "production" | null;
+
+const betaApiHostname = "api-dev.nomly.us";
+const productionApiHostname = "api.nomly.us";
+const localApiHostnames = new Set(["localhost", "127.0.0.1", "0.0.0.0"]);
+
+function readBundleIdentifier() {
+  return process.env.EXPO_PUBLIC_IOS_BUNDLE_IDENTIFIER?.trim() ?? "";
+}
+
+function resolveRuntimeVariant(): MobileRuntimeVariant {
+  const appVariant = process.env.EXPO_PUBLIC_APP_VARIANT?.trim();
+  const bundleIdentifier = readBundleIdentifier();
+
+  if (appVariant === "beta" || bundleIdentifier.endsWith(".beta")) {
+    return "beta";
+  }
+
+  if (appVariant === "production" || (bundleIdentifier.length > 0 && !bundleIdentifier.endsWith(".beta"))) {
+    return "production";
+  }
+
+  return null;
+}
+
+function isLocalDevelopmentHostname(hostname: string) {
+  return localApiHostnames.has(hostname) || hostname.endsWith(".local");
+}
+
+function resolveApiEnvironmentError(baseUrl: string, label: string) {
+  const normalizedBaseUrl = normalizeApiBaseUrl(baseUrl);
+  if (!normalizedBaseUrl) {
+    return null;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(normalizedBaseUrl);
+  } catch {
+    return `${label} must be a valid URL.`;
+  }
+
+  const runtimeVariant = resolveRuntimeVariant();
+  const hostname = parsed.hostname;
+  const allowLocalDevelopment = process.env.NODE_ENV !== "production";
+
+  if (allowLocalDevelopment && isLocalDevelopmentHostname(hostname)) {
+    return null;
+  }
+
+  if (runtimeVariant === "beta" && hostname !== betaApiHostname) {
+    return `Beta mobile builds must use ${betaApiHostname}, not ${hostname}.`;
+  }
+
+  if (runtimeVariant === "production" && hostname !== productionApiHostname) {
+    return `Production mobile builds must use ${productionApiHostname}, not ${hostname}.`;
+  }
+
+  return null;
+}
+
+function resolveGuardedApiBaseUrl(baseUrl: string | undefined, label: string) {
+  const normalizedBaseUrl = normalizeApiBaseUrl(baseUrl);
+  const error = resolveApiEnvironmentError(normalizedBaseUrl, label);
+  if (error) {
+    console.error(`[mobile-api-config] ${error}`);
+    return "";
+  }
+
+  return normalizedBaseUrl;
+}
+
+const apiBaseUrlEnvironmentError = resolveApiEnvironmentError(
+  normalizeApiBaseUrl(process.env.EXPO_PUBLIC_API_BASE_URL),
+  "EXPO_PUBLIC_API_BASE_URL"
+);
+const catalogServiceBaseUrlEnvironmentError = resolveApiEnvironmentError(
+  normalizeApiBaseUrl(process.env.EXPO_PUBLIC_CATALOG_SERVICE_BASE_URL),
+  "EXPO_PUBLIC_CATALOG_SERVICE_BASE_URL"
+);
+const catalogApiBaseUrlEnvironmentError = resolveApiEnvironmentError(
+  normalizeApiBaseUrl(process.env.EXPO_PUBLIC_CATALOG_API_BASE_URL),
+  "EXPO_PUBLIC_CATALOG_API_BASE_URL"
+);
+
 function toReachabilityError(error: unknown) {
   if (isBackendReachabilityError(error)) {
     return error;
@@ -31,12 +116,21 @@ function resolveConfiguredApiUrl(baseUrl: string, path: string) {
   return `${normalizedBaseUrl}${path}`;
 }
 
-export const API_BASE_URL = normalizeApiBaseUrl(process.env.EXPO_PUBLIC_API_BASE_URL);
+export const API_BASE_URL = resolveGuardedApiBaseUrl(process.env.EXPO_PUBLIC_API_BASE_URL, "EXPO_PUBLIC_API_BASE_URL");
 export { UNABLE_TO_REACH_BACKEND_MESSAGE, isBackendReachabilityError };
 export const CATALOG_API_BASE_URL =
-  normalizeApiBaseUrl(process.env.EXPO_PUBLIC_CATALOG_SERVICE_BASE_URL) ||
-  normalizeApiBaseUrl(process.env.EXPO_PUBLIC_CATALOG_API_BASE_URL) ||
+  resolveGuardedApiBaseUrl(process.env.EXPO_PUBLIC_CATALOG_SERVICE_BASE_URL, "EXPO_PUBLIC_CATALOG_SERVICE_BASE_URL") ||
+  resolveGuardedApiBaseUrl(process.env.EXPO_PUBLIC_CATALOG_API_BASE_URL, "EXPO_PUBLIC_CATALOG_API_BASE_URL") ||
   API_BASE_URL;
+
+export const MOBILE_API_ENVIRONMENT = {
+  variant: resolveRuntimeVariant(),
+  bundleIdentifier: readBundleIdentifier(),
+  apiBaseUrl: API_BASE_URL,
+  catalogApiBaseUrl: CATALOG_API_BASE_URL,
+  apiConfigurationError:
+    apiBaseUrlEnvironmentError ?? catalogServiceBaseUrlEnvironmentError ?? catalogApiBaseUrlEnvironmentError
+};
 
 const ordersStreamSnapshotSchema = z.object({
   type: z.literal("snapshot"),

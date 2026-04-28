@@ -9,6 +9,7 @@ import { useCustomerProfileQuery, isCustomerProfileComplete } from "../src/auth/
 import { useAppleExchangeMutation, useDevAccessMutation } from "../src/auth/useAuth";
 import { generateAuthNonce } from "../src/auth/nonce";
 import { useAuthSession } from "../src/auth/session";
+import { MOBILE_API_ENVIRONMENT } from "../src/api/client";
 import { Button, uiPalette, uiTypography } from "../src/ui/system";
 
 type ReturnToPath = "cart" | "/(tabs)/home" | "/(tabs)/orders" | "/(tabs)/account";
@@ -135,11 +136,14 @@ export default function AuthScreen() {
   const isExpoGo = Constants.appOwnership === AppOwnership.Expo;
   const devAccessEmail = process.env.EXPO_PUBLIC_DEV_SIGN_IN_EMAIL?.trim() || DEFAULT_DEV_ACCESS_EMAIL;
   const devAccessName = process.env.EXPO_PUBLIC_DEV_SIGN_IN_NAME?.trim() || DEFAULT_DEV_ACCESS_NAME;
+  const apiEnvironmentBlocked = Boolean(MOBILE_API_ENVIRONMENT.apiConfigurationError);
   const appleSignInMessage = isExpoGo
     ? "Apple Sign In can't complete in Expo Go for this app. Use your dev build or TestFlight instead."
-    : appleExchange.isError
-      ? resolveAppleSignInErrorMessage(appleExchange.error)
-      : null;
+    : MOBILE_API_ENVIRONMENT.apiConfigurationError
+      ? MOBILE_API_ENVIRONMENT.apiConfigurationError
+      : appleExchange.isError
+        ? resolveAppleSignInErrorMessage(appleExchange.error)
+        : null;
   const devAccessMessage = __DEV__ && devAccess.isError ? resolveDevAccessErrorMessage(devAccess.error) : null;
 
   useEffect(() => {
@@ -177,7 +181,7 @@ export default function AuthScreen() {
   }, []);
 
   async function handleNativeAppleSignIn() {
-    if (appleExchange.isPending || devAccess.isPending) return;
+    if (appleExchange.isPending || devAccess.isPending || apiEnvironmentBlocked) return;
 
     if (!appleAvailable || isExpoGo) {
       return;
@@ -212,7 +216,7 @@ export default function AuthScreen() {
   }
 
   function handleDevAccessSignIn() {
-    if (devAccess.isPending || appleExchange.isPending) {
+    if (devAccess.isPending || appleExchange.isPending || apiEnvironmentBlocked) {
       return;
     }
 
@@ -314,6 +318,11 @@ export default function AuthScreen() {
               style={styles.appleButton}
               onPress={handleNativeAppleSignIn}
             />
+            {MOBILE_API_ENVIRONMENT.variant ? (
+              <Text style={styles.environmentHint}>
+                {MOBILE_API_ENVIRONMENT.variant} · {MOBILE_API_ENVIRONMENT.apiBaseUrl || "API blocked"}
+              </Text>
+            ) : null}
             {__DEV__ ? (
               <Button
                 label={devAccess.isPending ? "Signing In…" : "Dev Sign In"}
@@ -332,6 +341,11 @@ export default function AuthScreen() {
               variant="secondary"
               disabled
             />
+            {MOBILE_API_ENVIRONMENT.variant ? (
+              <Text style={styles.environmentHint}>
+                {MOBILE_API_ENVIRONMENT.variant} · {MOBILE_API_ENVIRONMENT.apiBaseUrl || "API blocked"}
+              </Text>
+            ) : null}
             {__DEV__ ? (
               <Button
                 label={devAccess.isPending ? "Signing In…" : "Dev Sign In"}
@@ -414,6 +428,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     color: uiPalette.textSecondary,
+    textAlign: "center"
+  },
+  environmentHint: {
+    fontSize: 12,
+    lineHeight: 16,
+    color: uiPalette.textMuted,
     textAlign: "center"
   }
 });
