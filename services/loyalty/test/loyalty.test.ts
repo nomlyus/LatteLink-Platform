@@ -10,6 +10,9 @@ const mutationResponseSchema = z.object({
 
 const loyaltyGatewayToken = "loyalty-gateway-token";
 const loyaltyInternalToken = "loyalty-internal-token";
+const defaultLocationId = "rawaqcoffee01";
+const loyaltyBalanceUrl = `/v1/loyalty/balance?locationId=${defaultLocationId}`;
+const loyaltyLedgerUrl = `/v1/loyalty/ledger?locationId=${defaultLocationId}`;
 
 function gatewayHeaders(extraHeaders?: Record<string, string>) {
   return {
@@ -41,12 +44,13 @@ describe("loyalty service", () => {
 
     const balanceResponse = await app.inject({
       method: "GET",
-      url: "/v1/loyalty/balance",
+      url: loyaltyBalanceUrl,
       headers: gatewayHeaders({ "x-user-id": userId })
     });
     expect(balanceResponse.statusCode).toBe(200);
     expect(loyaltyBalanceSchema.parse(balanceResponse.json())).toEqual({
       userId,
+      locationId: defaultLocationId,
       availablePoints: 0,
       pendingPoints: 0,
       lifetimeEarned: 0
@@ -54,7 +58,7 @@ describe("loyalty service", () => {
 
     const ledgerResponse = await app.inject({
       method: "GET",
-      url: "/v1/loyalty/ledger",
+      url: loyaltyLedgerUrl,
       headers: gatewayHeaders({ "x-user-id": userId })
     });
     expect(ledgerResponse.statusCode).toBe(200);
@@ -74,6 +78,7 @@ describe("loyalty service", () => {
       headers: internalHeaders(),
       payload: {
         userId,
+        locationId: defaultLocationId,
         orderId,
         type: "EARN",
         amountCents: 500,
@@ -93,6 +98,7 @@ describe("loyalty service", () => {
       headers: internalHeaders(),
       payload: {
         userId,
+        locationId: defaultLocationId,
         orderId,
         type: "REDEEM",
         amountCents: 120,
@@ -112,6 +118,7 @@ describe("loyalty service", () => {
       headers: internalHeaders(),
       payload: {
         userId,
+        locationId: defaultLocationId,
         orderId,
         type: "REFUND",
         amountCents: 50,
@@ -131,6 +138,7 @@ describe("loyalty service", () => {
       headers: internalHeaders(),
       payload: {
         userId,
+        locationId: defaultLocationId,
         type: "ADJUSTMENT",
         points: -30,
         idempotencyKey: "evt-adjust-1",
@@ -145,12 +153,13 @@ describe("loyalty service", () => {
 
     const balanceResponse = await app.inject({
       method: "GET",
-      url: "/v1/loyalty/balance",
+      url: loyaltyBalanceUrl,
       headers: gatewayHeaders({ "x-user-id": userId })
     });
     expect(balanceResponse.statusCode).toBe(200);
     expect(loyaltyBalanceSchema.parse(balanceResponse.json())).toMatchObject({
       userId,
+      locationId: defaultLocationId,
       availablePoints: 400,
       pendingPoints: 0,
       lifetimeEarned: 500
@@ -158,13 +167,91 @@ describe("loyalty service", () => {
 
     const ledgerResponse = await app.inject({
       method: "GET",
-      url: "/v1/loyalty/ledger",
+      url: loyaltyLedgerUrl,
       headers: gatewayHeaders({ "x-user-id": userId })
     });
     expect(ledgerResponse.statusCode).toBe(200);
     const ledger = z.array(loyaltyLedgerEntrySchema).parse(ledgerResponse.json());
     expect(ledger.map((entry) => entry.type)).toEqual(["ADJUSTMENT", "REFUND", "REDEEM", "EARN"]);
     expect(ledger.map((entry) => entry.points)).toEqual([-30, 50, -120, 500]);
+
+    await app.close();
+  });
+
+  it("keeps balances and ledgers isolated by location for the same user", async () => {
+    const app = await buildApp();
+    const userId = "123e4567-e89b-12d3-a456-426614174410";
+    const northLocationId = "northside-01";
+
+    const flagshipEarn = await app.inject({
+      method: "POST",
+      url: "/v1/loyalty/internal/ledger/apply",
+      headers: internalHeaders(),
+      payload: {
+        userId,
+        locationId: defaultLocationId,
+        type: "EARN",
+        amountCents: 500,
+        idempotencyKey: "evt-location-flagship"
+      }
+    });
+    expect(flagshipEarn.statusCode).toBe(200);
+
+    const northEarn = await app.inject({
+      method: "POST",
+      url: "/v1/loyalty/internal/ledger/apply",
+      headers: internalHeaders(),
+      payload: {
+        userId,
+        locationId: northLocationId,
+        type: "EARN",
+        amountCents: 125,
+        idempotencyKey: "evt-location-north"
+      }
+    });
+    expect(northEarn.statusCode).toBe(200);
+
+    const flagshipBalance = await app.inject({
+      method: "GET",
+      url: loyaltyBalanceUrl,
+      headers: gatewayHeaders({ "x-user-id": userId })
+    });
+    expect(flagshipBalance.statusCode).toBe(200);
+    expect(loyaltyBalanceSchema.parse(flagshipBalance.json())).toMatchObject({
+      userId,
+      locationId: defaultLocationId,
+      availablePoints: 500,
+      lifetimeEarned: 500
+    });
+
+    const northBalance = await app.inject({
+      method: "GET",
+      url: `/v1/loyalty/balance?locationId=${northLocationId}`,
+      headers: gatewayHeaders({ "x-user-id": userId })
+    });
+    expect(northBalance.statusCode).toBe(200);
+    expect(loyaltyBalanceSchema.parse(northBalance.json())).toMatchObject({
+      userId,
+      locationId: northLocationId,
+      availablePoints: 125,
+      lifetimeEarned: 125
+    });
+
+    const flagshipLedger = await app.inject({
+      method: "GET",
+      url: loyaltyLedgerUrl,
+      headers: gatewayHeaders({ "x-user-id": userId })
+    });
+    expect(flagshipLedger.statusCode).toBe(200);
+    expect(z.array(loyaltyLedgerEntrySchema).parse(flagshipLedger.json())).toHaveLength(1);
+
+    const northLedger = await app.inject({
+      method: "GET",
+      url: `/v1/loyalty/ledger?locationId=${northLocationId}`,
+      headers: gatewayHeaders({ "x-user-id": userId })
+    });
+    expect(northLedger.statusCode).toBe(200);
+    expect(z.array(loyaltyLedgerEntrySchema).parse(northLedger.json())).toHaveLength(1);
 
     await app.close();
   });
@@ -179,6 +266,7 @@ describe("loyalty service", () => {
       headers: internalHeaders(),
       payload: {
         userId,
+        locationId: defaultLocationId,
         type: "EARN",
         amountCents: 200,
         idempotencyKey: "evt-repeat-1",
@@ -194,6 +282,7 @@ describe("loyalty service", () => {
       headers: internalHeaders(),
       payload: {
         userId,
+        locationId: defaultLocationId,
         type: "EARN",
         amountCents: 200,
         idempotencyKey: "evt-repeat-1",
@@ -211,6 +300,7 @@ describe("loyalty service", () => {
       headers: internalHeaders(),
       payload: {
         userId,
+        locationId: defaultLocationId,
         type: "EARN",
         amountCents: 300,
         idempotencyKey: "evt-repeat-1",
@@ -235,6 +325,7 @@ describe("loyalty service", () => {
       headers: internalHeaders(),
       payload: {
         userId,
+        locationId: defaultLocationId,
         type: "REDEEM",
         amountCents: 25,
         idempotencyKey: "evt-redeem-too-large"
@@ -258,6 +349,7 @@ describe("loyalty service", () => {
       headers: internalHeaders(),
       payload: {
         userId,
+        locationId: defaultLocationId,
         type: "EARN",
         amountCents: 100,
         points: 99,
@@ -285,6 +377,7 @@ describe("loyalty service", () => {
         headers: internalHeaders(),
         payload: {
           userId,
+          locationId: defaultLocationId,
           type: "EARN",
           amountCents: 100,
           idempotencyKey: "evt-rate-limit-1"
@@ -298,6 +391,7 @@ describe("loyalty service", () => {
         headers: internalHeaders(),
         payload: {
           userId,
+          locationId: defaultLocationId,
           type: "EARN",
           amountCents: 100,
           idempotencyKey: "evt-rate-limit-2"
@@ -316,7 +410,7 @@ describe("loyalty service", () => {
 
     const unauthorizedBalance = await app.inject({
       method: "GET",
-      url: "/v1/loyalty/balance",
+      url: loyaltyBalanceUrl,
       headers: { "x-user-id": userId }
     });
     expect(unauthorizedBalance.statusCode).toBe(401);
@@ -326,7 +420,7 @@ describe("loyalty service", () => {
 
     const authorizedBalance = await app.inject({
       method: "GET",
-      url: "/v1/loyalty/balance",
+      url: loyaltyBalanceUrl,
       headers: gatewayHeaders({
         "x-user-id": userId
       })
@@ -343,6 +437,7 @@ describe("loyalty service", () => {
       url: "/v1/loyalty/internal/ledger/apply",
       payload: {
         userId: "123e4567-e89b-12d3-a456-426614174407",
+        locationId: defaultLocationId,
         type: "EARN",
         amountCents: 100,
         idempotencyKey: "evt-missing-internal-token"
@@ -362,7 +457,7 @@ describe("loyalty service", () => {
     const app = await buildApp();
     const response = await app.inject({
       method: "GET",
-      url: "/v1/loyalty/balance",
+      url: loyaltyBalanceUrl,
       headers: gatewayHeaders({
         "x-user-id": "123e4567-e89b-12d3-a456-426614174408"
       })
@@ -385,6 +480,7 @@ describe("loyalty service", () => {
       headers: internalHeaders(),
       payload: {
         userId: "123e4567-e89b-12d3-a456-426614174409",
+        locationId: defaultLocationId,
         type: "EARN",
         amountCents: 100,
         idempotencyKey: "evt-missing-internal-config"

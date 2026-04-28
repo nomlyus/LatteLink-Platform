@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import { apiClient } from "../api/client";
+import { MOBILE_LOCATION_ID, apiClient } from "../api/client";
 
 const orderStatusSchema = z.enum(["PENDING_PAYMENT", "PAID", "IN_PREP", "READY", "COMPLETED", "CANCELED"]);
 const orderItemSchema = z.object({
@@ -45,6 +45,7 @@ const orderSchema = z.object({
 });
 const loyaltyBalanceSchema = z.object({
   userId: z.string().uuid(),
+  locationId: z.string().min(1),
   availablePoints: z.number().int().nonnegative(),
   pendingPoints: z.number().int().nonnegative(),
   lifetimeEarned: z.number().int().nonnegative()
@@ -54,6 +55,7 @@ const loyaltyLedgerEntrySchema = z.object({
   type: z.enum(["EARN", "REDEEM", "REFUND", "ADJUSTMENT"]),
   points: z.number().int(),
   orderId: z.string().uuid().optional(),
+  locationId: z.string().min(1),
   createdAt: z.string().datetime()
 });
 const pushTokenUpsertSchema = z.object({
@@ -154,18 +156,33 @@ export function useCancelOrderMutation() {
 
 export function useLoyaltyBalanceQuery(enabled = true) {
   return useQuery({
-    queryKey: ["account", "loyalty", "balance"],
+    queryKey: ["account", "loyalty", "balance", MOBILE_LOCATION_ID],
     enabled,
-    queryFn: async (): Promise<LoyaltyBalance> => loyaltyBalanceSchema.parse(await apiClient.get("/loyalty/balance"))
+    queryFn: async (): Promise<LoyaltyBalance> => {
+      if (!MOBILE_LOCATION_ID) {
+        throw new Error("EXPO_PUBLIC_LOCATION_ID is required for loyalty balance reads.");
+      }
+
+      return loyaltyBalanceSchema.parse(
+        await apiClient.get(`/loyalty/balance?locationId=${encodeURIComponent(MOBILE_LOCATION_ID)}`)
+      );
+    }
   });
 }
 
 export function useLoyaltyLedgerQuery(enabled = true) {
   return useQuery({
-    queryKey: ["account", "loyalty", "ledger"],
+    queryKey: ["account", "loyalty", "ledger", MOBILE_LOCATION_ID],
     enabled,
-    queryFn: async (): Promise<LoyaltyLedgerEntry[]> =>
-      loyaltyLedgerSchema.parse(await apiClient.get("/loyalty/ledger"))
+    queryFn: async (): Promise<LoyaltyLedgerEntry[]> => {
+      if (!MOBILE_LOCATION_ID) {
+        throw new Error("EXPO_PUBLIC_LOCATION_ID is required for loyalty ledger reads.");
+      }
+
+      return loyaltyLedgerSchema.parse(
+        await apiClient.get(`/loyalty/ledger?locationId=${encodeURIComponent(MOBILE_LOCATION_ID)}`)
+      );
+    }
   });
 }
 

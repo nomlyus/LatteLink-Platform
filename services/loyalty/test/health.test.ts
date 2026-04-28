@@ -28,7 +28,7 @@ describe("loyalty service", () => {
 
     const invalidHeaderResponse = await app.inject({
       method: "GET",
-      url: "/v1/loyalty/balance",
+      url: "/v1/loyalty/balance?locationId=rawaqcoffee01",
       headers: {
         "x-request-id": requestId,
         "x-gateway-token": "loyalty-gateway-token",
@@ -61,7 +61,7 @@ describe("loyalty service", () => {
 
     const response = await app.inject({
       method: "GET",
-      url: "/v1/loyalty/balance",
+      url: "/v1/loyalty/balance?locationId=rawaqcoffee01",
       headers: {
         "x-gateway-token": "loyalty-gateway-token"
       }

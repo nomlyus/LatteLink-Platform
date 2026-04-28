@@ -72,6 +72,7 @@ export interface PaymentsCloverConnectionTable {
 
 export interface LoyaltyBalanceTable {
   brand_id: string;
+  location_id: string;
   user_id: string;
   available_points: number;
   pending_points: number;
@@ -82,6 +83,7 @@ export interface LoyaltyBalanceTable {
 export interface LoyaltyLedgerEntryTable {
   id: string;
   brand_id: string;
+  location_id: string;
   user_id: string;
   type: "EARN" | "REDEEM" | "REFUND" | "ADJUSTMENT";
   points: number;
@@ -91,6 +93,7 @@ export interface LoyaltyLedgerEntryTable {
 
 export interface LoyaltyIdempotencyKeyTable {
   brand_id: string;
+  location_id: string;
   user_id: string;
   idempotency_key: string;
   request_fingerprint: string;

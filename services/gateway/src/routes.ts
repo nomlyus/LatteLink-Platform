@@ -3577,6 +3577,7 @@ export async function registerRoutes(app: FastifyInstance) {
       additionalHeaders: {
         "x-gateway-token": gatewayInternalApiToken
       },
+      forwardQuery: true,
       responseSchema: loyaltyBalanceSchema
     });
   });
@@ -3592,6 +3593,7 @@ export async function registerRoutes(app: FastifyInstance) {
       additionalHeaders: {
         "x-gateway-token": gatewayInternalApiToken
       },
+      forwardQuery: true,
       responseSchema: z.array(loyaltyLedgerEntrySchema)
     });
   });

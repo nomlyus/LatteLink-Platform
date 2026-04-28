@@ -140,9 +140,12 @@ export const MOBILE_API_ENVIRONMENT = {
   bundleIdentifier: readBundleIdentifier(),
   apiBaseUrl: API_BASE_URL,
   catalogApiBaseUrl: CATALOG_API_BASE_URL,
+  locationId: process.env.EXPO_PUBLIC_LOCATION_ID?.trim() ?? "",
   apiConfigurationError:
     apiBaseUrlEnvironmentError ?? catalogServiceBaseUrlEnvironmentError ?? catalogApiBaseUrlEnvironmentError
 };
+
+export const MOBILE_LOCATION_ID = MOBILE_API_ENVIRONMENT.locationId;
 
 const ordersStreamSnapshotSchema = z.object({
   type: z.literal("snapshot"),

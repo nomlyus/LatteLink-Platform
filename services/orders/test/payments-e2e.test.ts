@@ -30,6 +30,7 @@ const internalPaymentsToken = "orders-internal-token";
 
 type LoyaltyBalance = {
   userId: string;
+  locationId: string;
   availablePoints: number;
   pendingPoints: number;
   lifetimeEarned: number;
@@ -40,6 +41,7 @@ type LoyaltyLedgerEntry = {
   type: "EARN" | "REDEEM" | "REFUND" | "ADJUSTMENT";
   points: number;
   orderId?: string;
+  locationId: string;
   createdAt: string;
 };
 
@@ -51,66 +53,77 @@ type NotificationDispatchEvent = {
 
 function buildLoyaltyHarnessApp() {
   const app = Fastify();
-  const balancesByUserId = new Map<string, LoyaltyBalance>();
-  const ledgerByUserId = new Map<string, LoyaltyLedgerEntry[]>();
-  const idempotencyByUserId = new Map<string, Map<string, { fingerprint: string; response: unknown }>>();
+  const balancesByScope = new Map<string, LoyaltyBalance>();
+  const ledgerByScope = new Map<string, LoyaltyLedgerEntry[]>();
+  const idempotencyByScope = new Map<string, Map<string, { fingerprint: string; response: unknown }>>();
 
   function resolveUserId(headers: Record<string, unknown>) {
     const headerValue = headers["x-user-id"];
     return typeof headerValue === "string" ? headerValue : defaultOrderUserId;
   }
 
-  function ensureBalance(userId: string) {
-    const existing = balancesByUserId.get(userId);
+  function scopeKey(userId: string, locationId: string) {
+    return `${locationId}:${userId}`;
+  }
+
+  function ensureBalance(userId: string, locationId: string) {
+    const key = scopeKey(userId, locationId);
+    const existing = balancesByScope.get(key);
     if (existing) {
       return existing;
     }
 
     const created: LoyaltyBalance = {
       userId,
+      locationId,
       availablePoints: 0,
       pendingPoints: 0,
       lifetimeEarned: 0
     };
-    balancesByUserId.set(userId, created);
+    balancesByScope.set(key, created);
     return created;
   }
 
-  function ensureLedger(userId: string) {
-    const existing = ledgerByUserId.get(userId);
+  function ensureLedger(userId: string, locationId: string) {
+    const key = scopeKey(userId, locationId);
+    const existing = ledgerByScope.get(key);
     if (existing) {
       return existing;
     }
 
     const created: LoyaltyLedgerEntry[] = [];
-    ledgerByUserId.set(userId, created);
+    ledgerByScope.set(key, created);
     return created;
   }
 
-  function ensureIdempotencyStore(userId: string) {
-    const existing = idempotencyByUserId.get(userId);
+  function ensureIdempotencyStore(userId: string, locationId: string) {
+    const key = scopeKey(userId, locationId);
+    const existing = idempotencyByScope.get(key);
     if (existing) {
       return existing;
     }
 
     const created = new Map<string, { fingerprint: string; response: unknown }>();
-    idempotencyByUserId.set(userId, created);
+    idempotencyByScope.set(key, created);
     return created;
   }
 
   app.get("/v1/loyalty/balance", async (request) => {
     const userId = resolveUserId(request.headers as Record<string, unknown>);
-    return ensureBalance(userId);
+    const locationId = String((request.query as Record<string, unknown>).locationId ?? sampleQuotePayload.locationId);
+    return ensureBalance(userId, locationId);
   });
 
   app.get("/v1/loyalty/ledger", async (request) => {
     const userId = resolveUserId(request.headers as Record<string, unknown>);
-    return [...ensureLedger(userId)].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
+    const locationId = String((request.query as Record<string, unknown>).locationId ?? sampleQuotePayload.locationId);
+    return [...ensureLedger(userId, locationId)].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
   });
 
   app.post("/v1/loyalty/internal/ledger/apply", async (request, reply) => {
     const body = (request.body ?? {}) as Record<string, unknown>;
     const userId = String(body.userId ?? defaultOrderUserId);
+    const locationId = String(body.locationId ?? sampleQuotePayload.locationId);
     const orderId = String(body.orderId ?? "");
     const idempotencyKey = String(body.idempotencyKey ?? "");
     const mutationType = String(body.type ?? "");
@@ -119,10 +132,11 @@ function buildLoyaltyHarnessApp() {
       return reply.status(400).send({ code: "INVALID_LOYALTY_MUTATION" });
     }
 
-    const idempotencyStore = ensureIdempotencyStore(userId);
-    const idempotencyScope = `${userId}:${idempotencyKey}`;
+    const idempotencyStore = ensureIdempotencyStore(userId, locationId);
+    const idempotencyScope = `${userId}:${locationId}:${idempotencyKey}`;
     const fingerprint = JSON.stringify({
       type: mutationType,
+      locationId,
       orderId,
       amountCents: body.amountCents ?? null,
       points: body.points ?? null
@@ -136,7 +150,7 @@ function buildLoyaltyHarnessApp() {
       return existingMutation.response;
     }
 
-    const balance = ensureBalance(userId);
+    const balance = ensureBalance(userId, locationId);
     let deltaPoints = 0;
     let lifetimeDelta = 0;
     if (mutationType === "EARN") {
@@ -159,20 +173,22 @@ function buildLoyaltyHarnessApp() {
 
     const nextBalance: LoyaltyBalance = {
       userId,
+      locationId,
       availablePoints: balance.availablePoints + deltaPoints,
       pendingPoints: balance.pendingPoints,
       lifetimeEarned: balance.lifetimeEarned + lifetimeDelta
     };
-    balancesByUserId.set(userId, nextBalance);
+    balancesByScope.set(scopeKey(userId, locationId), nextBalance);
 
     const entry: LoyaltyLedgerEntry = {
       id: randomUUID(),
       type: mutationType as LoyaltyLedgerEntry["type"],
       points: deltaPoints,
       orderId,
+      locationId,
       createdAt: new Date().toISOString()
     };
-    const ledger = ensureLedger(userId);
+    const ledger = ensureLedger(userId, locationId);
     ledger.push(entry);
 
     const response = {
@@ -676,7 +692,7 @@ describe.sequential("orders + payments e2e", () => {
 
     const balanceResponse = await loyaltyApp.inject({
       method: "GET",
-      url: "/v1/loyalty/balance",
+      url: `/v1/loyalty/balance?locationId=${sampleQuotePayload.locationId}`,
       headers: {
         "x-user-id": userId
       }
@@ -689,7 +705,7 @@ describe.sequential("orders + payments e2e", () => {
 
     const ledgerResponse = await loyaltyApp.inject({
       method: "GET",
-      url: "/v1/loyalty/ledger",
+      url: `/v1/loyalty/ledger?locationId=${sampleQuotePayload.locationId}`,
       headers: {
         "x-user-id": userId
       }

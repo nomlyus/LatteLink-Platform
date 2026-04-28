@@ -1514,10 +1514,11 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
-      if (url.endsWith("/v1/loyalty/balance") && method === "GET") {
+      if (url.includes("/v1/loyalty/balance") && method === "GET") {
         return new Response(
           JSON.stringify({
             userId: "123e4567-e89b-12d3-a456-426614174000",
+            locationId: "flagship-01",
             availablePoints: 240,
             pendingPoints: 0,
             lifetimeEarned: 600
@@ -1526,7 +1527,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
-      if (url.endsWith("/v1/loyalty/ledger") && method === "GET") {
+      if (url.includes("/v1/loyalty/ledger") && method === "GET") {
         return new Response(
           JSON.stringify([
             {
@@ -1534,6 +1535,7 @@ let previousFreeClientDashboardDomain: string | undefined;
               type: "EARN",
               points: 240,
               orderId: "123e4567-e89b-12d3-a456-426614174211",
+              locationId: "flagship-01",
               createdAt: "2026-03-10T15:00:00.000Z"
             },
             {
@@ -1541,6 +1543,7 @@ let previousFreeClientDashboardDomain: string | undefined;
               type: "REDEEM",
               points: -120,
               orderId: "123e4567-e89b-12d3-a456-426614174213",
+              locationId: "flagship-01",
               createdAt: "2026-03-10T14:00:00.000Z"
             }
           ]),
@@ -3035,7 +3038,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const balanceResponse = await app.inject({
       method: "GET",
-      url: "/v1/loyalty/balance",
+      url: "/v1/loyalty/balance?locationId=flagship-01",
       headers: authHeader
     });
     expect(balanceResponse.statusCode).toBe(200);
@@ -3046,7 +3049,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const ledgerResponse = await app.inject({
       method: "GET",
-      url: "/v1/loyalty/ledger",
+      url: "/v1/loyalty/ledger?locationId=flagship-01",
       headers: authHeader
     });
     expect(ledgerResponse.statusCode).toBe(200);
@@ -3058,8 +3061,8 @@ let previousFreeClientDashboardDomain: string | undefined;
     );
 
     const requestedUrls = fetchMock.mock.calls.map(([input]) => (typeof input === "string" ? input : input.url));
-    expect(requestedUrls).toContain("http://loyalty.internal/v1/loyalty/balance");
-    expect(requestedUrls).toContain("http://loyalty.internal/v1/loyalty/ledger");
+    expect(requestedUrls).toContain("http://loyalty.internal/v1/loyalty/balance?locationId=flagship-01");
+    expect(requestedUrls).toContain("http://loyalty.internal/v1/loyalty/ledger?locationId=flagship-01");
 
     await app.close();
   });

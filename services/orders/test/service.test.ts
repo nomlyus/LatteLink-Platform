@@ -210,11 +210,13 @@ describe("orders service layer", () => {
         const headers = new Headers(init?.headers);
         expect(headers.get("x-internal-token")).toBe(loyaltyInternalToken);
         const userId = String(body.userId ?? defaultUserId);
+        const locationId = String(body.locationId ?? "flagship-01");
         const idempotencyKey = String(body.idempotencyKey ?? "");
         const mutationType = String(body.type ?? "");
-        const idempotencyScope = `${userId}:${idempotencyKey}`;
+        const idempotencyScope = `${userId}:${locationId}:${idempotencyKey}`;
         const fingerprint = JSON.stringify({
           type: mutationType,
+          locationId,
           orderId: body.orderId ?? null,
           amountCents: body.amountCents ?? null,
           points: body.points ?? null
@@ -234,7 +236,8 @@ describe("orders service layer", () => {
           return paymentsResponse(existingMutation.response);
         }
 
-        const balance = loyaltyBalances.get(userId) ?? {
+        const balanceKey = `${userId}:${locationId}`;
+        const balance = loyaltyBalances.get(balanceKey) ?? {
           availablePoints: 2_000,
           pendingPoints: 0,
           lifetimeEarned: 2_000
@@ -271,7 +274,7 @@ describe("orders service layer", () => {
           pendingPoints: balance.pendingPoints,
           lifetimeEarned: balance.lifetimeEarned + lifetimeDelta
         };
-        loyaltyBalances.set(userId, nextBalance);
+        loyaltyBalances.set(balanceKey, nextBalance);
 
         const response = {
           entry: {
@@ -279,10 +282,12 @@ describe("orders service layer", () => {
             type: mutationType,
             points: deltaPoints,
             orderId: body.orderId,
+            locationId,
             createdAt: "2026-03-10T00:03:00.000Z"
           },
           balance: {
             userId,
+            locationId,
             ...nextBalance
           }
         };

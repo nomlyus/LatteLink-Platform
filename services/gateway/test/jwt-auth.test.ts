@@ -75,7 +75,7 @@ describe("gateway JWT customer auth", () => {
         throw new Error("identity roundtrip should not happen in JWT mode");
       }
 
-      if (url.endsWith("/v1/loyalty/balance")) {
+      if (url.includes("/v1/loyalty/balance")) {
         const headers = new Headers((init?.headers ?? {}) as HeadersInit);
         expect(headers.get("x-user-id")).toBe(userId);
         expect(headers.get("x-user-id")).not.toBe("client-spoofed-user");
@@ -83,6 +83,7 @@ describe("gateway JWT customer auth", () => {
         return new Response(
           JSON.stringify({
             userId,
+            locationId: "flagship-01",
             availablePoints: 240,
             pendingPoints: 0,
             lifetimeEarned: 600
@@ -102,7 +103,7 @@ describe("gateway JWT customer auth", () => {
     const app = await buildApp();
     const response = await app.inject({
       method: "GET",
-      url: "/v1/loyalty/balance",
+      url: "/v1/loyalty/balance?locationId=flagship-01",
       headers: {
         authorization: `Bearer ${token}`,
         "x-user-id": "client-spoofed-user"
@@ -115,7 +116,7 @@ describe("gateway JWT customer auth", () => {
     });
 
     const requestedUrls = fetchMock.mock.calls.map(([input]) => (typeof input === "string" ? input : input.url));
-    expect(requestedUrls).toEqual(["http://loyalty.internal/v1/loyalty/balance"]);
+    expect(requestedUrls).toEqual(["http://loyalty.internal/v1/loyalty/balance?locationId=flagship-01"]);
 
     await app.close();
   });
@@ -185,7 +186,7 @@ describe("gateway JWT customer auth", () => {
         );
       }
 
-      if (url.endsWith("/v1/loyalty/balance")) {
+      if (url.includes("/v1/loyalty/balance")) {
         const headers = new Headers((init?.headers ?? {}) as HeadersInit);
         expect(headers.get("x-user-id")).toBe(userId);
         expect(headers.get("x-user-id")).not.toBe("client-spoofed-user");
@@ -193,6 +194,7 @@ describe("gateway JWT customer auth", () => {
         return new Response(
           JSON.stringify({
             userId,
+            locationId: "flagship-01",
             availablePoints: 240,
             pendingPoints: 0,
             lifetimeEarned: 600
@@ -207,7 +209,7 @@ describe("gateway JWT customer auth", () => {
     const app = await buildApp();
     const response = await app.inject({
       method: "GET",
-      url: "/v1/loyalty/balance",
+      url: "/v1/loyalty/balance?locationId=flagship-01",
       headers: {
         authorization: "Bearer access-legacy-token",
         "x-user-id": "client-spoofed-user"
@@ -219,7 +221,7 @@ describe("gateway JWT customer auth", () => {
     const requestedUrls = fetchMock.mock.calls.map(([input]) => (typeof input === "string" ? input : input.url));
     expect(requestedUrls).toEqual([
       "http://identity.internal/v1/auth/me",
-      "http://loyalty.internal/v1/loyalty/balance"
+      "http://loyalty.internal/v1/loyalty/balance?locationId=flagship-01"
     ]);
 
     await app.close();
