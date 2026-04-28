@@ -55,7 +55,23 @@ jobs:
           sudo apt-get install -y postgresql-client
 
       - name: Install Supabase CLI
-        run: npm install --global supabase@2.95.4
+        env:
+          SUPABASE_CLI_VERSION: 2.95.4
+        run: |
+          set -euo pipefail
+
+          release_base="https://github.com/supabase/cli/releases/download/v${SUPABASE_CLI_VERSION}"
+          curl --fail --silent --show-error --location \
+            "${release_base}/supabase_linux_amd64.tar.gz" \
+            --output /tmp/supabase_linux_amd64.tar.gz
+          curl --fail --silent --show-error --location \
+            "${release_base}/supabase_${SUPABASE_CLI_VERSION}_checksums.txt" \
+            --output /tmp/supabase_checksums.txt
+
+          grep 'supabase_linux_amd64.tar.gz$' /tmp/supabase_checksums.txt > /tmp/supabase_linux_amd64.sha256
+          (cd /tmp && sha256sum --check /tmp/supabase_linux_amd64.sha256)
+          sudo tar -xzf /tmp/supabase_linux_amd64.tar.gz -C /usr/local/bin supabase
+          supabase --version
 
       - name: Verify required secrets
         run: |
