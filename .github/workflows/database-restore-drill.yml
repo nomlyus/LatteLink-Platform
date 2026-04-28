@@ -1,0 +1,82 @@
+name: database-restore-drill
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_environment:
+        description: "GitHub Environment whose DATABASE_URL should be dumped"
+        required: true
+        default: dev
+        type: choice
+        options:
+          - dev
+          - production
+
+permissions:
+  contents: read
+
+concurrency:
+  group: database-restore-drill-${{ inputs.source_environment }}
+  cancel-in-progress: false
+
+jobs:
+  restore-drill:
+    name: Supabase logical backup restore drill
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.source_environment }}
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: restore_drill
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      SOURCE_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL || secrets.DATABASE_URL }}
+      SOURCE_ENVIRONMENT: ${{ inputs.source_environment }}
+      TARGET_DATABASE_URL: postgresql://postgres:restore_drill@localhost:5432/postgres
+      BACKUP_DIR: ./restore-drill-backup
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install database tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          npm install -g supabase@2.95.4
+
+      - name: Verify required secrets
+        run: |
+          if [ -z "${SOURCE_DATABASE_URL:-}" ]; then
+            echo "DATABASE_URL secret is required on the selected GitHub Environment"
+            exit 1
+          fi
+
+      - name: Run logical backup restore drill
+        run: ./infra/database/bin/rehearse-supabase-restore.sh
+
+      - name: Remove raw backup data before artifacts
+        if: always()
+        run: |
+          rm -f "${BACKUP_DIR}/schema.sql" "${BACKUP_DIR}/data.sql"
+
+      - name: Upload non-sensitive drill evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-restore-drill-${{ inputs.source_environment }}-${{ github.run_id }}
+          path: |
+            restore-drill-backup/manifest.txt
+            restore-drill-backup/restore-verification.tsv
+          if-no-files-found: warn
+          retention-days: 30

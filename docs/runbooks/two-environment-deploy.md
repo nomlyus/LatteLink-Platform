@@ -98,6 +98,10 @@ Recommended values:
 - `APPLE_KEY_ID`
 - `APPLE_PRIVATE_KEY`
 
+Optional database operations secret:
+
+- `BACKUP_DATABASE_URL` — direct Supabase connection string used by restore drills; falls back to `DATABASE_URL` if unset
+
 Optional secrets depending on enabled features:
 
 - `GOOGLE_OAUTH_CLIENT_ID`
@@ -145,3 +149,5 @@ Never share the same database, Redis instance, or payment credentials between `d
 - `dev` must point at a separate dev Supabase database via `DATABASE_URL`
 - deployed environments must not synthesize a bundled Droplet Postgres URL
 - the bundled `postgres` service in [`infra/free/docker-compose.yml`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/infra/free/docker-compose.yml) is now local-only and only starts when you explicitly use the `local-db` profile
+
+Backup and restore operations are covered in [`database-backup-restore.md`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/database-backup-restore.md).
