@@ -30,7 +30,7 @@ Merge methods may stay enabled, but they are not required for normal delivery.
 - [x] do not block direct pushes
 - [ ] require conversation resolution only if you want optional review discipline
 
-`main` should stay reserved for production-ready history. It does not auto-deploy by itself.
+`main` should stay reserved for production-ready history. It does not auto-deploy the backend by itself.
 
 ## Actions Workflows
 
@@ -102,12 +102,18 @@ Each environment should define its own vars and secrets. See [two-environment-de
 - [ ] `CATALOG_MEDIA_R2_ACCESS_KEY_ID`
 - [ ] `CATALOG_MEDIA_R2_SECRET_ACCESS_KEY`
 
-## Unchanged Frontend Deploy Secrets
+## Frontend Deploy State
 
-- [ ] `CLIENT_DASHBOARD_VERCEL_TOKEN`
-- [ ] `CLIENT_DASHBOARD_VERCEL_ORG_ID`
-- [ ] `CLIENT_DASHBOARD_VERCEL_PROJECT_ID`
-- [ ] `CLIENT_DASHBOARD_VERCEL_ENV`
+- [ ] `ADMIN_CONSOLE_VERCEL_TOKEN`
+- [ ] `ADMIN_CONSOLE_VERCEL_ORG_ID`
+- [ ] `ADMIN_CONSOLE_VERCEL_PROJECT_ID`
+- [ ] `ADMIN_CONSOLE_VERCEL_ENV`
 - [ ] `LATTELINK_VERCEL_TOKEN`
 - [ ] `LATTELINK_VERCEL_ORG_ID`
 - [ ] `LATTELINK_VERCEL_PROJECT_ID`
+
+The client dashboard does not currently have a dedicated GitHub Actions Vercel workflow in this repo.
+Its branch-to-environment behavior must be configured in Vercel:
+
+- previews for pull requests and `develop`
+- production branch set to `main`

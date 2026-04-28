@@ -1,267 +1,41 @@
-# Free-First Deployment (GitHub Student + DigitalOcean)
+# Free-First Deployment
 
 Last reviewed: `2026-04-27`
 
-> Warning
-> This document still describes the single-host Compose topology, but the workflow names and release flow in this file are no longer authoritative.
-> Use [two-environment-deploy.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/two-environment-deploy.md) for the current `dev` / `production` deployment model and workflow names.
+## Status
 
-## Goal
+This file is now a legacy pointer.
 
-Run the full service stack on one low-cost host for the current live deployment lane.
+It used to describe the older single-lane `deploy-free` / `publish-free-images` model and `FREE_*` GitHub variable naming. That is no longer the active deployment system.
 
-## Target Topology
+## Current Source Of Truth
 
-- One DigitalOcean Droplet (recommended start: 2 vCPU / 4 GB)
-- Docker Compose stack
-- Services: gateway, identity, catalog, orders, payments, loyalty, notifications
-- Dependencies: PostgreSQL (bundled container by default, or an external `DATABASE_URL` such as Supabase), Valkey
-- Edge: Caddy with TLS for `api.<your-domain>`
-- Client dashboard deployed separately on Vercel
+Use these docs instead:
 
-## Prerequisites
+- [two-environment-deploy.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/two-environment-deploy.md)
+- [development-flow.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/development-flow.md)
+- [github-setup-checklist.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/github/github-setup-checklist.md)
 
-- GitHub Student Pack credits are active.
-- Domain is configured and DNS points to Droplet IP.
-- Droplet has Docker + Docker Compose plugin installed.
-- SSH deploy key configured for GitHub Actions.
-- GHCR images exist for each service tag you plan to deploy.
+## Current Deployment Model
 
-## Repo Assets
+- `develop` publishes images and auto-deploys to `dev`
+- `main` is reserved for production-ready history
+- `deploy-prod` promotes an exact tested SHA to `production`
+- deployed environments use environment-scoped GitHub vars and secrets
+- deployed environments use external `DATABASE_URL` values, not bundled droplet Postgres
 
-- Compose bundle: `infra/free/docker-compose.yml`
-- Caddy config: `infra/free/Caddyfile`
-- Runtime env template: `infra/free/.env.example`
-- Generic service image Dockerfile: `infra/docker/node-service.Dockerfile`
-- Smoke-check script: `infra/free/bin/smoke-check.sh`
-- Host bootstrap script: `infra/free/bin/bootstrap-ubuntu-host.sh`
-- Image publish workflow: `.github/workflows/publish-images.yml`
-- Deploy workflows: `.github/workflows/deploy-dev.yml`, `.github/workflows/deploy-prod.yml`
+## Current Workflow Names
 
-## Bootstrap Host
+- `.github/workflows/publish-images.yml`
+- `.github/workflows/deploy-dev.yml`
+- `.github/workflows/deploy-prod.yml`
 
-Copy the bootstrap script to a fresh Ubuntu 24.04 Droplet and run it as `root`:
+## Legacy Terms To Ignore
 
-```bash
-scp infra/free/bin/bootstrap-ubuntu-host.sh root@<droplet-ip>:/tmp/bootstrap-ubuntu-host.sh
-ssh root@<droplet-ip> 'bash /tmp/bootstrap-ubuntu-host.sh deploy /opt/gazelle-free'
-```
+These names are historical and should not be used for new setup:
 
-After that:
+- `deploy-free`
+- `publish-free-images`
+- `FREE_*` GitHub vars and secrets
 
-1. Add the GitHub Actions deploy public key to `~deploy/.ssh/authorized_keys`
-2. Verify Docker works for the deploy user:
-
-```bash
-su - deploy -c 'docker version'
-```
-
-3. Point `api.<your-domain>` to the Droplet IP
-
-## Publish Images
-
-The normal production path is:
-
-1. Push the intended backend change directly to `main`
-2. Let `publish-free-images` run automatically on that `main` push
-3. Let `deploy-free` run automatically after the publish succeeds
-4. Use manual `deploy-free` `image_tag` input overrides only when you want to redeploy or roll back to a specific immutable build
-
-Use `publish-free-images` `workflow_dispatch` only when you intentionally need to rebuild and publish a known `main` SHA outside the normal merge flow.
-
-The publish workflow creates:
-
-- `ghcr.io/<owner>/<repo>/gateway:<tag>`
-- `ghcr.io/<owner>/<repo>/identity:<tag>`
-- `ghcr.io/<owner>/<repo>/orders:<tag>`
-- `ghcr.io/<owner>/<repo>/catalog:<tag>`
-- `ghcr.io/<owner>/<repo>/payments:<tag>`
-- `ghcr.io/<owner>/<repo>/loyalty:<tag>`
-- `ghcr.io/<owner>/<repo>/notifications:<tag>`
-
-## Required GitHub Variables
-
-- `FREE_API_DOMAIN` (example: `api.yourdomain.com`)
-- `FREE_IMAGE_REGISTRY_PREFIX` (example: `ghcr.io/anxiousdaoud/lattelink-platform`)
-
-Recommended:
-
-- `FREE_DEPLOY_PATH` (default: `/opt/gazelle-free`)
-- `FREE_PASSKEY_RP_ID` (defaults to `FREE_API_DOMAIN`)
-
-Optional:
-
-- `FREE_ALLOW_DEV_CUSTOMER_LOGIN` if you want the hosted identity service to allow the Expo Go dev sign-in route
-- `FREE_CORS_ALLOWED_ORIGINS`
-- `FREE_CLIENT_DASHBOARD_DOMAIN` if you want the workflow to derive the dashboard CORS origin automatically
-- `FREE_GOOGLE_OAUTH_ALLOWED_REDIRECT_URIS`
-- `FREE_PAYMENTS_PROVIDER_MODE` (`simulated` by default, `live` for real Clover)
-- `FREE_CLOVER_OAUTH_ENVIRONMENT` (`sandbox` or `production`)
-- `FREE_CLOVER_CHARGE_ENDPOINT`
-- `FREE_CLOVER_REFUND_ENDPOINT`
-- `FREE_CLOVER_APPLE_PAY_TOKENIZE_ENDPOINT`
-
-## Required GitHub Secrets
-
-- `FREE_DEPLOY_HOST`
-- `FREE_DEPLOY_USER`
-- `FREE_DEPLOY_SSH_KEY`
-- `LETSENCRYPT_EMAIL`
-- `DATABASE_URL`
-- `FREE_GATEWAY_INTERNAL_API_TOKEN`
-- `FREE_ORDERS_INTERNAL_API_TOKEN`
-- `FREE_LOYALTY_INTERNAL_API_TOKEN`
-- `FREE_NOTIFICATIONS_INTERNAL_API_TOKEN`
-- `FREE_JWT_SECRET`
-
-Optional:
-
-- `GHCR_USERNAME`
-- `GHCR_TOKEN`
-- `DATABASE_URL` for the external Supabase database used by the deployed stack
-- `APPLE_TEAM_ID`
-- `APPLE_KEY_ID`
-- `APPLE_PRIVATE_KEY`
-- `APPLE_ALLOWED_CLIENT_IDS`
-- `FREE_GOOGLE_OAUTH_CLIENT_ID`
-- `FREE_GOOGLE_OAUTH_CLIENT_SECRET`
-- `FREE_GOOGLE_OAUTH_STATE_SECRET`
-- `FREE_CLOVER_BEARER_TOKEN`
-- `FREE_CLOVER_API_KEY`
-- `FREE_CLOVER_API_ACCESS_KEY`
-- `FREE_CLOVER_MERCHANT_ID`
-- `FREE_CLOVER_APP_ID`
-- `FREE_CLOVER_APP_SECRET`
-- `FREE_CLOVER_OAUTH_REDIRECT_URI`
-- `FREE_CLOVER_OAUTH_STATE_SECRET`
-- `FREE_CLOVER_WEBHOOK_SHARED_SECRET`
-
-## Runtime Env Written By `deploy-free`
-
-The workflow writes the server-side `.env` file from GitHub vars and secrets. The important runtime values are:
-
-- edge and routing
-  - `API_DOMAIN`
-  - `LETSENCRYPT_EMAIL`
-- image/source selection
-  - `IMAGE_REGISTRY_PREFIX`
-  - `IMAGE_TAG`
-- data and auth
-  - `DATABASE_URL`
-  - `JWT_SECRET`
-- internal service auth
-  - `GATEWAY_INTERNAL_API_TOKEN`
-  - `ORDERS_INTERNAL_API_TOKEN`
-  - `LOYALTY_INTERNAL_API_TOKEN`
-  - `NOTIFICATIONS_INTERNAL_API_TOKEN`
-- gateway runtime
-  - `CORS_ALLOWED_ORIGINS`
-  - `PUBLIC_API_BASE_URL`
-  - `PASSKEY_RP_ID`
-  - `ALLOW_DEV_CUSTOMER_LOGIN`
-- optional Apple Sign In runtime
-  - `APPLE_TEAM_ID`
-  - `APPLE_KEY_ID`
-  - `APPLE_PRIVATE_KEY`
-  - `APPLE_ALLOWED_CLIENT_IDS`
-- optional Google SSO
-  - `GOOGLE_OAUTH_CLIENT_ID`
-  - `GOOGLE_OAUTH_CLIENT_SECRET`
-  - `GOOGLE_OAUTH_STATE_SECRET`
-  - `GOOGLE_OAUTH_ALLOWED_REDIRECT_URIS`
-- optional live Clover runtime
-  - `PAYMENTS_PROVIDER_MODE`
-  - `CLOVER_PROVIDER_MODE`
-  - `CLOVER_BEARER_TOKEN`
-  - `CLOVER_API_KEY`
-  - `CLOVER_API_ACCESS_KEY`
-  - `CLOVER_MERCHANT_ID`
-  - `CLOVER_OAUTH_ENVIRONMENT`
-  - `CLOVER_APP_ID`
-  - `CLOVER_APP_SECRET`
-  - `CLOVER_OAUTH_REDIRECT_URI`
-  - `CLOVER_OAUTH_STATE_SECRET`
-  - `CLOVER_CHARGE_ENDPOINT`
-  - `CLOVER_REFUND_ENDPOINT`
-  - `CLOVER_APPLE_PAY_TOKENIZE_ENDPOINT`
-  - `CLOVER_WEBHOOK_SHARED_SECRET`
-
-If `FREE_CORS_ALLOWED_ORIGINS` is not set, the workflow defaults CORS to `FREE_CLIENT_DASHBOARD_DOMAIN` when available.
-If `FREE_PAYMENTS_PROVIDER_MODE=live`, the workflow validates the generated server `.env` with `./bin/check-live-payments-env.sh` before running `docker compose up`.
-The deploy workflows write the exact `DATABASE_URL` value from GitHub into the server-side runtime `.env`. They no longer synthesize a bundled Droplet Postgres URL.
-If Apple auth is enabled, `deploy-free` requires a complete Apple Sign In set: `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`, and `APPLE_ALLOWED_CLIENT_IDS`.
-`deploy-free` normalizes multiline Apple private key secrets into the escaped `\n` form expected by the generated Compose `.env`.
-
-## Deploy
-
-Normal release path:
-
-1. Push the intended backend change to `main`.
-2. Let `publish-free-images` finish successfully.
-3. `deploy-free` triggers automatically from that workflow and deploys the matching immutable full git SHA tag.
-
-Manual deploy path:
-
-1. Trigger `deploy-free` from GitHub Actions.
-2. Leave `image_tag` blank to deploy the latest `main` commit SHA.
-3. Set `image_tag` explicitly when you want to redeploy or roll back to a known immutable git SHA.
-
-In both paths the workflow copies `infra/free` to the host, writes runtime `.env`, and runs:
-
-```bash
-docker compose pull
-docker compose up -d --remove-orphans
-```
-
-The bundled `postgres` container is now local-only and only starts when you explicitly use the Compose `local-db` profile. Use your external provider's backup tooling for the real deployed database.
-
-## Validate
-
-Run the smoke script first:
-
-```bash
-API_BASE_URL=https://api.<your-domain>/v1 \
-CLIENT_DASHBOARD_ORIGIN=https://<your-client-dashboard-domain> \
-./infra/free/bin/smoke-check.sh
-```
-
-Optional operator auth flow:
-
-```bash
-API_BASE_URL=https://api.<your-domain>/v1 \
-SMOKE_OPERATOR_EMAIL=owner@example.com \
-SMOKE_OPERATOR_PASSWORD='replace-me' \
-./infra/free/bin/smoke-check.sh
-```
-
-Manual spot checks:
-
-- `https://api.<your-domain>/health`
-- `https://api.<your-domain>/ready`
-- `https://api.<your-domain>/metrics`
-- `https://api.<your-domain>/v1/meta/contracts`
-- Service docs route: `https://api.<your-domain>/docs`
-
-For the full checklist and request-trace workflow, use:
-
-- `docs/runbooks/free-first-smoke-check.md`
-
-## Backup and Restore Drill
-
-Use the host-side rehearsal scripts copied with `infra/free`:
-
-```bash
-./bin/rehearse-postgres-restore.sh
-```
-
-Manual backup only:
-
-```bash
-./bin/backup-postgres.sh ./backups/gazelle-$(date +%Y%m%d-%H%M%S).dump
-```
-
-For the full drill and scratch-restore flow, use:
-
-- `docs/runbooks/free-first-postgres-restore-drill.md`
-
-Record restore timestamp and validation result in release notes.
+If another old document still references them, defer to the current docs listed above.

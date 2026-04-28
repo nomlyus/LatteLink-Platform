@@ -4,12 +4,15 @@ The authoritative release and deployment workflow for this repo lives in [develo
 
 Current release flow:
 
-1. Validate the release candidate locally.
-2. Push the intended commit directly to `main`.
-3. Let the `main` push publish full-SHA images and deploy automatically.
-4. Verify the live environment.
-5. Tag the release on `main` if you want a formal version marker.
-6. Update [CHANGELOG.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/CHANGELOG.md) when needed.
+1. Validate the candidate locally.
+2. Push the candidate to `develop`.
+3. Let `develop` publish images and auto-deploy to `dev`.
+4. Verify the candidate in `dev`.
+5. Merge or fast-forward the verified commit to `main`.
+6. Promote the exact tested SHA to production with `deploy-prod`.
+7. Verify the live environment.
+8. Tag the release on `main` if you want a formal version marker.
+9. Update [CHANGELOG.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/CHANGELOG.md) when needed.
 
 Rollback uses the deployment workflow `workflow_dispatch` path with a previous full git SHA.
 

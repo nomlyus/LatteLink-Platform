@@ -539,7 +539,7 @@ What is in code:
 - `infra/docker/node-service.Dockerfile` is the shared service image build path.
 - `infra/free/bin/bootstrap-ubuntu-host.sh` prepares an Ubuntu host for the single-host deployment path.
 - The admin console is separately deployed on Vercel via `.github/workflows/admin-console-vercel.yml`.
-- The client dashboard is separately deployed on Vercel via `.github/workflows/client-dashboard-vercel.yml`.
+- The client dashboard is separately deployed on Vercel, but there is no dedicated GitHub Actions Vercel workflow for it in this repo right now.
 - The marketing site is separately deployed on Vercel via `.github/workflows/lattelink-vercel.yml`.
 
 What is not in code:
@@ -601,7 +601,6 @@ GitHub Actions in `.github/workflows`:
 - `publish-images.yml`
 - `deploy-dev.yml`
 - `deploy-prod.yml`
-- `client-dashboard-vercel.yml`
 - `admin-console-vercel.yml`
 - `lattelink-vercel.yml`
 - `codeql.yml`
