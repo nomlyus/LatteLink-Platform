@@ -1,0 +1,48 @@
+name: Uptime Monitor
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      targets_json:
+        description: "Optional JSON array of uptime targets for a manual run"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: uptime-monitor
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check external uptime targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      UPTIME_TIMEOUT_MS: "10000"
+      UPTIME_TARGETS_JSON: ${{ inputs.targets_json || vars.UPTIME_TARGETS_JSON }}
+      UPTIME_WEBHOOK_URL: ${{ secrets.UPTIME_WEBHOOK_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check uptime targets
+        id: uptime
+        run: node scripts/uptime-check.mjs
+
+      - name: Create or resolve uptime alert issues
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/uptime-github-alerts.mjs
+
+      - name: Fail workflow when any target is down
+        if: steps.uptime.outputs.failed == 'true'
+        run: |
+          echo "${{ steps.uptime.outputs.failure_count }} uptime target(s) failed"
+          exit 1
