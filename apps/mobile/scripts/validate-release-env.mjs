@@ -1,4 +1,4 @@
-const VALID_VARIANTS = new Set(["internal", "beta", "production"]);
+const VALID_VARIANTS = new Set(["beta", "production"]);
 const REQUIRED_KEYS = [
   "APP_VARIANT",
   "APP_DISPLAY_NAME_BASE",
@@ -17,7 +17,7 @@ const profile = typeof profileArg === "string" ? profileArg.trim() : "";
 
 if (!VALID_VARIANTS.has(profile)) {
   console.error(
-    `[mobile release check] Expected profile argument or env to be one of: internal, beta, production. Received: ${profile || "<empty>"}`
+    `[mobile release check] Expected profile argument or env to be one of: beta, production. Received: ${profile || "<empty>"}`
   );
   process.exit(1);
 }
@@ -55,12 +55,6 @@ const bundleIdentifier = process.env.IOS_BUNDLE_IDENTIFIER?.trim() ?? "";
 if (bundleIdentifier) {
   if (!/^[A-Za-z0-9.-]+$/.test(bundleIdentifier)) {
     errors.push(`IOS_BUNDLE_IDENTIFIER contains invalid characters. Received: ${bundleIdentifier}`);
-  }
-
-  if (profile === "internal" && !bundleIdentifier.endsWith(".internal")) {
-    errors.push(
-      `Internal builds should use an .internal bundle identifier. Received: ${bundleIdentifier}`
-    );
   }
 
   if (profile === "beta" && !bundleIdentifier.endsWith(".beta")) {
@@ -123,7 +117,7 @@ if (merchantIdentifier) {
     );
   }
 
-  if (merchantIdentifier === "merchant.com.lattelink.mobile" && profile !== "production") {
+  if (merchantIdentifier === "merchant.com.lattelink.rawaq" && profile !== "production") {
     warnings.push(
       `Non-production ${profile} build is using the production-looking Apple Pay merchant identifier: ${merchantIdentifier}`
     );

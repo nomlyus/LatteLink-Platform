@@ -80,9 +80,9 @@ These values must line up across Expo, Apple, and the pilot environment before t
 Recommended first pilot mapping:
 
 - `APP_VARIANT=beta`
-- `IOS_BUNDLE_IDENTIFIER=com.lattelink.mobile.beta`
-- `EXPO_PUBLIC_API_BASE_URL=https://api.nomly.us/v1`
-- `EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID=merchant.com.lattelink.mobile.beta`
+- `IOS_BUNDLE_IDENTIFIER=com.lattelink.rawaq.beta`
+- `EXPO_PUBLIC_API_BASE_URL=https://api-dev.nomly.us/v1`
+- `EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID=merchant.com.lattelink.rawaq.beta`
 
 ## Release Notes Template
 

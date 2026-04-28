@@ -1,14 +1,15 @@
 import type { ExpoConfig } from "expo/config";
 
-type AppVariant = "internal" | "beta" | "production";
-const DEFAULT_APP_VARIANT: AppVariant = "internal";
+type AppVariant = "beta" | "production";
+const DEFAULT_APP_VARIANT: AppVariant = "beta";
 const DEFAULT_BETA_BUNDLE_IDENTIFIER = "com.lattelink.rawaq.beta";
 const DEFAULT_BETA_APPLE_PAY_MERCHANT_IDENTIFIER = "merchant.com.lattelink.rawaq.beta";
+const DEFAULT_PRODUCTION_BUNDLE_IDENTIFIER = "com.lattelink.rawaq";
 const DEFAULT_PRIVACY_POLICY_URL = "https://nomly.us/privacy-policy";
 
 function resolveAppVariant(): AppVariant {
   const rawVariant = process.env.APP_VARIANT;
-  if (rawVariant === "internal" || rawVariant === "beta" || rawVariant === "production") {
+  if (rawVariant === "beta" || rawVariant === "production") {
     return rawVariant;
   }
   return DEFAULT_APP_VARIANT;
@@ -20,10 +21,8 @@ function resolveDisplayName(variant: AppVariant) {
     case "production":
       return process.env.APP_DISPLAY_NAME ?? baseName;
     case "beta":
-      return process.env.APP_DISPLAY_NAME ?? `${baseName} Beta`;
-    case "internal":
     default:
-      return process.env.APP_DISPLAY_NAME ?? `${baseName} Internal`;
+      return process.env.APP_DISPLAY_NAME ?? `${baseName} Beta`;
   }
 }
 
@@ -49,12 +48,10 @@ function resolveBundleIdentifier(variant: AppVariant) {
   }
   switch (variant) {
     case "production":
-      return "com.lattelink.mobile";
+      return DEFAULT_PRODUCTION_BUNDLE_IDENTIFIER;
     case "beta":
-      return DEFAULT_BETA_BUNDLE_IDENTIFIER;
-    case "internal":
     default:
-      return "com.lattelink.mobile.internal";
+      return DEFAULT_BETA_BUNDLE_IDENTIFIER;
   }
 }
 

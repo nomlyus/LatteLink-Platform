@@ -8,23 +8,18 @@ This runbook defines the required environment inputs and EAS profiles for `apps/
 
 Use it when creating:
 
-- internal device builds
 - TestFlight beta builds
 - production App Store candidates
 
 ## Profiles
 
-The mobile app now uses `apps/mobile/eas.json` with three profiles:
+The mobile app now uses `apps/mobile/eas.json` with two profiles:
 
-- `internal`
-  - distribution: `internal`
-  - intended backend: local tunnel, dev, or pilot sandbox
-  - default variant: `APP_VARIANT=internal`
 - `beta`
   - distribution: `store`
-  - intended backend: pilot environment
+  - intended backend: `dev`
   - default variant: `APP_VARIANT=beta`
-  - repo default API target: `https://api.nomly.us/v1`
+  - repo default API target: `https://api-dev.nomly.us/v1`
 - `production`
   - distribution: `store`
   - intended backend: production environment
@@ -62,27 +57,19 @@ Optional values:
 
 ## Recommended Matrix
 
-### Internal
-
-- `APP_VARIANT=internal`
-- `APP_DISPLAY_NAME_BASE=LatteLink`
-- `IOS_BUNDLE_IDENTIFIER=com.lattelink.mobile.internal`
-- `EXPO_PUBLIC_API_BASE_URL=<local tunnel or dev backend>/v1`
-- `EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID=<dev or sandbox merchant id>`
-
 ### Beta
 
 - `APP_VARIANT=beta`
-- `APP_DISPLAY_NAME_BASE=LatteLink`
-- `IOS_BUNDLE_IDENTIFIER=com.lattelink.mobile.beta`
-- `EXPO_PUBLIC_API_BASE_URL=https://api.nomly.us/v1`
-- `EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID=<pilot merchant id>`
+- `APP_DISPLAY_NAME_BASE=Rawaq`
+- `IOS_BUNDLE_IDENTIFIER=com.lattelink.rawaq.beta`
+- `EXPO_PUBLIC_API_BASE_URL=https://api-dev.nomly.us/v1`
+- `EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID=merchant.com.lattelink.rawaq.beta`
 
 ### Production
 
 - `APP_VARIANT=production`
-- `APP_DISPLAY_NAME_BASE=LatteLink`
-- `IOS_BUNDLE_IDENTIFIER=com.lattelink.mobile`
+- `APP_DISPLAY_NAME_BASE=Rawaq`
+- `IOS_BUNDLE_IDENTIFIER=com.lattelink.rawaq`
 - `EXPO_PUBLIC_API_BASE_URL=https://api.nomly.us/v1`
 - `EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID=<production merchant id>`
 
@@ -93,7 +80,6 @@ Run from `apps/mobile` or use `pnpm --filter @lattelink/mobile exec ...`.
 Before starting a build, run the release preflight for the intended profile:
 
 ```bash
-pnpm --filter @lattelink/mobile release:check -- internal
 pnpm --filter @lattelink/mobile release:check -- beta
 pnpm --filter @lattelink/mobile release:check -- production
 ```
@@ -110,7 +96,6 @@ The preflight validates that the env is complete and catches common mistakes suc
 Then run the actual EAS build:
 
 ```bash
-eas build --platform ios --profile internal
 eas build --platform ios --profile beta
 eas build --platform ios --profile production
 ```
@@ -136,6 +121,5 @@ Before creating a `beta` or `production` build:
 
 ## Notes
 
-- Internal builds are allowed to target a local tunneled API before backend production is deployed.
 - Beta and production should never rely on placeholder or localhost API values.
 - The Expo config now derives app name, bundle identifier, scheme, and EAS metadata from environment input instead of hardcoded repo defaults.

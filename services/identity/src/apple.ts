@@ -95,18 +95,7 @@ function normalizePrivateKey(value: string) {
 }
 
 function normalizeAllowedClientIds() {
-  const allowedClientIds = new Set<string>();
-
-  for (const value of parseCommaSeparatedEnv(process.env.APPLE_ALLOWED_CLIENT_IDS)) {
-    allowedClientIds.add(value);
-  }
-
-  const singleClientId = process.env.APPLE_CLIENT_ID?.trim();
-  if (singleClientId) {
-    allowedClientIds.add(singleClientId);
-  }
-
-  return [...allowedClientIds];
+  return parseCommaSeparatedEnv(process.env.APPLE_ALLOWED_CLIENT_IDS);
 }
 
 function decodeJwtSegment<T>(segment: string, schema: z.ZodSchema<T>, code: string) {

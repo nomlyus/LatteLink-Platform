@@ -119,11 +119,10 @@ Optional:
 - `GHCR_USERNAME`
 - `GHCR_TOKEN`
 - `FREE_DATABASE_URL` if you want the free-first stack to use an external Postgres database such as Supabase instead of the bundled Droplet Postgres
-- `FREE_APPLE_TEAM_ID` or `APPLE_TEAM_ID`
-- `FREE_APPLE_KEY_ID` or `APPLE_KEY_ID`
-- `FREE_APPLE_PRIVATE_KEY` or `APPLE_PRIVATE_KEY`
-- `FREE_APPLE_CLIENT_ID` or `APPLE_CLIENT_ID`
-- `FREE_APPLE_ALLOWED_CLIENT_IDS` or `APPLE_ALLOWED_CLIENT_IDS`
+- `APPLE_TEAM_ID`
+- `APPLE_KEY_ID`
+- `APPLE_PRIVATE_KEY`
+- `APPLE_ALLOWED_CLIENT_IDS`
 - `FREE_GOOGLE_OAUTH_CLIENT_ID`
 - `FREE_GOOGLE_OAUTH_CLIENT_SECRET`
 - `FREE_GOOGLE_OAUTH_STATE_SECRET`
@@ -165,7 +164,6 @@ The workflow writes the server-side `.env` file from GitHub vars and secrets. Th
   - `APPLE_TEAM_ID`
   - `APPLE_KEY_ID`
   - `APPLE_PRIVATE_KEY`
-  - `APPLE_CLIENT_ID`
   - `APPLE_ALLOWED_CLIENT_IDS`
 - optional Google SSO
   - `GOOGLE_OAUTH_CLIENT_ID`
@@ -192,7 +190,7 @@ The workflow writes the server-side `.env` file from GitHub vars and secrets. Th
 If `FREE_CORS_ALLOWED_ORIGINS` is not set, the workflow defaults CORS to `FREE_CLIENT_DASHBOARD_DOMAIN` when available.
 If `FREE_PAYMENTS_PROVIDER_MODE=live`, the workflow validates the generated server `.env` with `./bin/check-live-payments-env.sh` before running `docker compose up`.
 If `FREE_DATABASE_URL` is set, the workflow writes that exact value into `DATABASE_URL`; otherwise it synthesizes the bundled Droplet Postgres URL from `FREE_POSTGRES_PASSWORD`.
-If any Apple auth secret is set, `deploy-free` requires a complete Apple Sign In set: `FREE_APPLE_TEAM_ID` or `APPLE_TEAM_ID`, `FREE_APPLE_KEY_ID` or `APPLE_KEY_ID`, `FREE_APPLE_PRIVATE_KEY` or `APPLE_PRIVATE_KEY`, and either `FREE_APPLE_CLIENT_ID`/`APPLE_CLIENT_ID` or `FREE_APPLE_ALLOWED_CLIENT_IDS`/`APPLE_ALLOWED_CLIENT_IDS`.
+If Apple auth is enabled, `deploy-free` requires a complete Apple Sign In set: `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`, and `APPLE_ALLOWED_CLIENT_IDS`.
 `deploy-free` normalizes multiline Apple private key secrets into the escaped `\n` form expected by the generated Compose `.env`.
 
 ## Deploy

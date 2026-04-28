@@ -108,7 +108,7 @@ export function installAppleAuthFetchMock(options?: {
 export function installAppleAuthEnv() {
   vi.stubEnv("APPLE_TEAM_ID", "APPLETEAM123");
   vi.stubEnv("APPLE_KEY_ID", "APPLEKEY123");
-  vi.stubEnv("APPLE_CLIENT_ID", APPLE_TEST_CLIENT_ID);
+  vi.stubEnv("APPLE_ALLOWED_CLIENT_IDS", APPLE_TEST_CLIENT_ID);
   vi.stubEnv(
     "APPLE_PRIVATE_KEY",
     appleClientSecretKeyPair.privateKey.export({ format: "pem", type: "pkcs8" }).toString()

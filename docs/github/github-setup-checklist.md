@@ -81,10 +81,10 @@ Each environment should define its own vars and secrets. See [two-environment-de
 - [ ] `NOTIFICATIONS_INTERNAL_API_TOKEN`
 - [ ] `JWT_SECRET`
 - [ ] `LETSENCRYPT_EMAIL`
-- [ ] `APPLE_TEAM_ID` or legacy repo secret `FREE_APPLE_TEAM_ID`
+- [ ] `APPLE_TEAM_ID`
 - [ ] `APPLE_KEY_ID`
 - [ ] `APPLE_PRIVATE_KEY`
-- [ ] `APPLE_CLIENT_ID` or `APPLE_ALLOWED_CLIENT_IDS`
+- [ ] GitHub Environment var `APPLE_ALLOWED_CLIENT_IDS`
 
 ## Optional Secrets
 
