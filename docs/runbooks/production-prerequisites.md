@@ -42,12 +42,12 @@ Hard-gate checklist before enabling real passkey auth, Apple Pay, and Clover pro
 
 ## GitHub Vars and Secrets
 
-Set in the repository vars and secrets used by the free-first deploy workflows and document them in internal vault:
+Set in the repository vars and secrets used by the deploy workflows and document them in internal vault:
 
 - [ ] `FREE_API_DOMAIN`
 - [ ] `FREE_IMAGE_REGISTRY_PREFIX`
 - [ ] `FREE_CLIENT_DASHBOARD_DOMAIN`
-- [ ] `FREE_DATABASE_URL` or `FREE_POSTGRES_PASSWORD`
+- [ ] `DATABASE_URL`
 - [ ] `FREE_GATEWAY_INTERNAL_API_TOKEN`
 - [ ] `FREE_ORDERS_INTERNAL_API_TOKEN`
 - [ ] `FREE_LOYALTY_INTERNAL_API_TOKEN`

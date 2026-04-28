@@ -88,7 +88,7 @@ Recommended values:
 - `DEPLOY_USER`
 - `DEPLOY_SSH_KEY`
 - `LETSENCRYPT_EMAIL`
-- `DATABASE_URL` or `POSTGRES_PASSWORD`
+- `DATABASE_URL`
 - `GATEWAY_INTERNAL_API_TOKEN`
 - `ORDERS_INTERNAL_API_TOKEN`
 - `LOYALTY_INTERNAL_API_TOKEN`
@@ -138,3 +138,10 @@ Acceptable temporarily:
 - one larger host running both stacks with separate deploy paths and separate compose project names
 
 Never share the same database, Redis instance, or payment credentials between `dev` and `production`.
+
+## Database policy
+
+- `production` must point at the production Supabase database via `DATABASE_URL`
+- `dev` must point at a separate dev Supabase database via `DATABASE_URL`
+- deployed environments must not synthesize a bundled Droplet Postgres URL
+- the bundled `postgres` service in [`infra/free/docker-compose.yml`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/infra/free/docker-compose.yml) is now local-only and only starts when you explicitly use the `local-db` profile

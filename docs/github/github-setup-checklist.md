@@ -74,7 +74,7 @@ Each environment should define its own vars and secrets. See [two-environment-de
 - [ ] `DEPLOY_HOST`
 - [ ] `DEPLOY_USER`
 - [ ] `DEPLOY_SSH_KEY`
-- [ ] `DATABASE_URL` or `POSTGRES_PASSWORD`
+- [ ] `DATABASE_URL`
 - [ ] `GATEWAY_INTERNAL_API_TOKEN`
 - [ ] `ORDERS_INTERNAL_API_TOKEN`
 - [ ] `LOYALTY_INTERNAL_API_TOKEN`

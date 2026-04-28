@@ -41,7 +41,7 @@ Reference values are defined in:
 - run `pnpm --filter @lattelink/mobile release:check -- beta`
 - confirm `APP_VARIANT=beta`
 - confirm `IOS_BUNDLE_IDENTIFIER` matches the pilot TestFlight app
-- confirm `EXPO_PUBLIC_API_BASE_URL` points to `https://api.nomly.us/v1`
+- confirm `EXPO_PUBLIC_API_BASE_URL` points to `https://api-dev.nomly.us/v1`
 - confirm `EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID` matches the pilot merchant setup
 - confirm `EXPO_PUBLIC_BRAND_NAME` matches the client-facing pilot branding
 

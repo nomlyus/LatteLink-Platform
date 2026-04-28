@@ -107,7 +107,7 @@ Optional:
 - `FREE_DEPLOY_USER`
 - `FREE_DEPLOY_SSH_KEY`
 - `LETSENCRYPT_EMAIL`
-- either `FREE_DATABASE_URL` or `FREE_POSTGRES_PASSWORD`
+- `DATABASE_URL`
 - `FREE_GATEWAY_INTERNAL_API_TOKEN`
 - `FREE_ORDERS_INTERNAL_API_TOKEN`
 - `FREE_LOYALTY_INTERNAL_API_TOKEN`
@@ -118,7 +118,7 @@ Optional:
 
 - `GHCR_USERNAME`
 - `GHCR_TOKEN`
-- `FREE_DATABASE_URL` if you want the free-first stack to use an external Postgres database such as Supabase instead of the bundled Droplet Postgres
+- `DATABASE_URL` for the external Supabase database used by the deployed stack
 - `APPLE_TEAM_ID`
 - `APPLE_KEY_ID`
 - `APPLE_PRIVATE_KEY`
@@ -147,7 +147,6 @@ The workflow writes the server-side `.env` file from GitHub vars and secrets. Th
   - `IMAGE_REGISTRY_PREFIX`
   - `IMAGE_TAG`
 - data and auth
-  - `POSTGRES_PASSWORD` for the bundled local Postgres fallback
   - `DATABASE_URL`
   - `JWT_SECRET`
 - internal service auth
@@ -189,7 +188,7 @@ The workflow writes the server-side `.env` file from GitHub vars and secrets. Th
 
 If `FREE_CORS_ALLOWED_ORIGINS` is not set, the workflow defaults CORS to `FREE_CLIENT_DASHBOARD_DOMAIN` when available.
 If `FREE_PAYMENTS_PROVIDER_MODE=live`, the workflow validates the generated server `.env` with `./bin/check-live-payments-env.sh` before running `docker compose up`.
-If `FREE_DATABASE_URL` is set, the workflow writes that exact value into `DATABASE_URL`; otherwise it synthesizes the bundled Droplet Postgres URL from `FREE_POSTGRES_PASSWORD`.
+The deploy workflows write the exact `DATABASE_URL` value from GitHub into the server-side runtime `.env`. They no longer synthesize a bundled Droplet Postgres URL.
 If Apple auth is enabled, `deploy-free` requires a complete Apple Sign In set: `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`, and `APPLE_ALLOWED_CLIENT_IDS`.
 `deploy-free` normalizes multiline Apple private key secrets into the escaped `\n` form expected by the generated Compose `.env`.
 
@@ -214,7 +213,7 @@ docker compose pull
 docker compose up -d --remove-orphans
 ```
 
-When `FREE_DATABASE_URL` targets an external provider such as Supabase, the bundled `postgres` container remains available on the host but is no longer the active application database. The host-side backup and restore scripts in `infra/free/bin` only cover the bundled local Postgres volume; use your external provider's backup tooling for the real production database.
+The bundled `postgres` container is now local-only and only starts when you explicitly use the Compose `local-db` profile. Use your external provider's backup tooling for the real deployed database.
 
 ## Validate
 

@@ -65,10 +65,6 @@ services:
       - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET:-}
       - GOOGLE_OAUTH_STATE_SECRET=${GOOGLE_OAUTH_STATE_SECRET:-}
       - GOOGLE_OAUTH_ALLOWED_REDIRECT_URIS=${GOOGLE_OAUTH_ALLOWED_REDIRECT_URIS:-}
-    depends_on:
-      postgres:
-        condition: service_healthy
-
   orders:
     image: ${IMAGE_REGISTRY_PREFIX:-ghcr.io/anxiousdaoud/lattelink-platform}/orders:${IMAGE_TAG:-latest}
     restart: unless-stopped
@@ -87,8 +83,6 @@ services:
       - NOTIFICATIONS_INTERNAL_API_TOKEN=${NOTIFICATIONS_INTERNAL_API_TOKEN:-}
       - VALKEY_URL=redis://valkey:6379
     depends_on:
-      postgres:
-        condition: service_healthy
       valkey:
         condition: service_started
 
@@ -108,10 +102,6 @@ services:
       - CATALOG_MEDIA_PUBLIC_BASE_URL=${CATALOG_MEDIA_PUBLIC_BASE_URL:-}
       - CATALOG_MEDIA_UPLOAD_MAX_BYTES=${CATALOG_MEDIA_UPLOAD_MAX_BYTES:-10485760}
       - CATALOG_MEDIA_UPLOAD_EXPIRY_SECONDS=${CATALOG_MEDIA_UPLOAD_EXPIRY_SECONDS:-300}
-    depends_on:
-      postgres:
-        condition: service_healthy
-
   payments:
     image: ${IMAGE_REGISTRY_PREFIX:-ghcr.io/anxiousdaoud/lattelink-platform}/payments:${IMAGE_TAG:-latest}
     restart: unless-stopped
@@ -137,8 +127,6 @@ services:
     depends_on:
       catalog:
         condition: service_started
-      postgres:
-        condition: service_healthy
 
   loyalty:
     image: ${IMAGE_REGISTRY_PREFIX:-ghcr.io/anxiousdaoud/lattelink-platform}/loyalty:${IMAGE_TAG:-latest}
@@ -150,10 +138,6 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - GATEWAY_INTERNAL_API_TOKEN=${GATEWAY_INTERNAL_API_TOKEN:-}
       - LOYALTY_INTERNAL_API_TOKEN=${LOYALTY_INTERNAL_API_TOKEN:-}
-    depends_on:
-      postgres:
-        condition: service_healthy
-
   notifications:
     image: ${IMAGE_REGISTRY_PREFIX:-ghcr.io/anxiousdaoud/lattelink-platform}/notifications:${IMAGE_TAG:-latest}
     restart: unless-stopped
@@ -169,8 +153,6 @@ services:
       - EXPO_ACCESS_TOKEN=${EXPO_ACCESS_TOKEN:-}
       - VALKEY_URL=redis://valkey:6379
     depends_on:
-      postgres:
-        condition: service_healthy
       valkey:
         condition: service_started
 
@@ -206,6 +188,8 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: lattelink-postgres
+    profiles:
+      - local-db
     restart: unless-stopped
     environment:
       - POSTGRES_USER=gazelle
