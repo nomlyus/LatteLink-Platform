@@ -37,6 +37,30 @@ DROP SCHEMA IF EXISTS public CASCADE;
 CREATE SCHEMA public;
 GRANT ALL ON SCHEMA public TO public;
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
+
+DO $$
+BEGIN
+  CREATE ROLE anon NOLOGIN;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  CREATE ROLE authenticated NOLOGIN;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  CREATE ROLE service_role NOLOGIN;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  CREATE ROLE supabase_admin NOLOGIN;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 SQL
 
 echo "Restoring schema"
