@@ -55,7 +55,7 @@ Backend:
 
 - [two-environment-deploy.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/two-environment-deploy.md)
 - [free-first-smoke-check.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/free-first-smoke-check.md)
-- [free-first-postgres-restore-drill.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/free-first-postgres-restore-drill.md)
+- [database-backup-restore.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/database-backup-restore.md)
 
 Frontend:
 
