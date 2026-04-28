@@ -1,8 +1,10 @@
 import "react-native-gesture-handler";
 import "../global.css";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
+import Constants from "expo-constants";
 import * as SplashScreen from "expo-splash-screen";
 import { Stack, usePathname, useRootNavigationState } from "expo-router";
+import * as Sentry from "@sentry/react-native";
 import { handleURLCallback } from "@stripe/stripe-react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, type ReactNode } from "react";
@@ -36,6 +38,16 @@ const queryClient = new QueryClient({
 const MIN_SPLASH_DURATION_MS = 650;
 const SPLASH_FADE_DURATION_MS = 180;
 const splashStartedAt = Date.now();
+const sentryDsn = process.env.EXPO_PUBLIC_SENTRY_DSN?.trim();
+
+if (sentryDsn) {
+  Sentry.init({
+    dsn: sentryDsn,
+    environment: MOBILE_API_ENVIRONMENT.variant ?? (__DEV__ ? "development" : "unknown"),
+    release: `${Constants.expoConfig?.slug ?? "lattelink-mobile"}@${Constants.expoConfig?.version ?? "unknown"}`,
+    tracesSampleRate: 0.1
+  });
+}
 
 SplashScreen.setOptions({
   fade: true,
@@ -117,7 +129,7 @@ function StartupCatalogGate({
   return <>{children}</>;
 }
 
-export default function RootLayout() {
+function RootLayout() {
   const pathname = usePathname();
   const navigationState = useRootNavigationState();
   const hasHiddenSplash = useRef(false);
@@ -314,3 +326,5 @@ const styles = StyleSheet.create({
     marginTop: 8
   }
 });
+
+export default Sentry.wrap(RootLayout);

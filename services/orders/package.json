@@ -17,6 +17,7 @@
     "@fastify/rate-limit": "^10.3.0",
     "@lattelink/contracts-catalog": "workspace:*",
     "@lattelink/event-bus": "workspace:*",
+    "@lattelink/observability": "workspace:*",
     "ioredis": "^5.6.1",
     "@lattelink/persistence": "workspace:*",
     "@lattelink/contracts-orders": "workspace:*",

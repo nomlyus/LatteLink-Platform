@@ -20,6 +20,10 @@ services:
     environment:
       - NODE_ENV=production
       - DEPLOY_ENV=${DEPLOY_ENV:-unknown}
+      - APP_VERSION=${APP_VERSION:-unknown}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.1}
       - HOST=0.0.0.0
       - PORT=8080
       - IDENTITY_SERVICE_BASE_URL=http://identity:3000
@@ -53,6 +57,10 @@ services:
     environment:
       - NODE_ENV=production
       - DEPLOY_ENV=${DEPLOY_ENV:-unknown}
+      - APP_VERSION=${APP_VERSION:-unknown}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.1}
       - HOST=0.0.0.0
       - PORT=3000
       - DATABASE_URL=${DATABASE_URL}
@@ -75,6 +83,10 @@ services:
     environment:
       - NODE_ENV=production
       - DEPLOY_ENV=${DEPLOY_ENV:-unknown}
+      - APP_VERSION=${APP_VERSION:-unknown}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.1}
       - HOST=0.0.0.0
       - PORT=3001
       - DATABASE_URL=${DATABASE_URL}
@@ -98,6 +110,10 @@ services:
     environment:
       - NODE_ENV=production
       - DEPLOY_ENV=${DEPLOY_ENV:-unknown}
+      - APP_VERSION=${APP_VERSION:-unknown}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.1}
       - HOST=0.0.0.0
       - PORT=3002
       - DATABASE_URL=${DATABASE_URL}
@@ -116,6 +132,10 @@ services:
     environment:
       - NODE_ENV=production
       - DEPLOY_ENV=${DEPLOY_ENV:-unknown}
+      - APP_VERSION=${APP_VERSION:-unknown}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.1}
       - HOST=0.0.0.0
       - PORT=3003
       - DATABASE_URL=${DATABASE_URL}
@@ -144,6 +164,10 @@ services:
     environment:
       - NODE_ENV=production
       - DEPLOY_ENV=${DEPLOY_ENV:-unknown}
+      - APP_VERSION=${APP_VERSION:-unknown}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.1}
       - HOST=0.0.0.0
       - PORT=3004
       - DATABASE_URL=${DATABASE_URL}
@@ -156,6 +180,10 @@ services:
     environment:
       - NODE_ENV=production
       - DEPLOY_ENV=${DEPLOY_ENV:-unknown}
+      - APP_VERSION=${APP_VERSION:-unknown}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.1}
       - HOST=0.0.0.0
       - PORT=3005
       - DATABASE_URL=${DATABASE_URL}

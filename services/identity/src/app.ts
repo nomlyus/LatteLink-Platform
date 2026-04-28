@@ -3,6 +3,12 @@ import Fastify from "fastify";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import rateLimit from "@fastify/rate-limit";
+import {
+  buildFastifyLoggerOptions,
+  buildRequestCompletionLogPayload,
+  initializeSentry,
+  registerSentryErrorHook
+} from "@lattelink/observability";
 import type { IdentityRepository } from "./repository.js";
 import { registerRoutes } from "./routes.js";
 
@@ -13,18 +19,13 @@ export type BuildAppOptions = {
 };
 
 export async function buildApp(options: BuildAppOptions = {}) {
+  const serviceName = "identity";
+  initializeSentry({ service: serviceName });
   const app = Fastify({
-    logger: {
-      level: process.env.LOG_LEVEL ?? "info",
-      transport:
-        process.env.NODE_ENV === "production"
-          ? undefined
-          : {
-              target: "pino-pretty"
-            }
-    },
+    logger: buildFastifyLoggerOptions(serviceName),
     genReqId: (req) => (req.headers["x-request-id"] as string | undefined) ?? randomUUID()
   });
+  registerSentryErrorHook(app, serviceName);
   const startedAtMs = Date.now();
   const requestMetrics = {
     total: 0,
@@ -64,13 +65,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
       requestMetrics.status2xx += 1;
     }
 
-    const logPayload = {
-      requestId: request.id,
-      method: request.method,
-      url: request.url,
-      statusCode: reply.statusCode,
-      responseTimeMs: Math.round(reply.elapsedTime)
-    };
+    const logPayload = buildRequestCompletionLogPayload({ service: serviceName, request, reply });
 
     if (reply.statusCode >= 500) {
       request.log.error(logPayload, "request completed with server error");

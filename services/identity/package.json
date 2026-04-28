@@ -18,6 +18,7 @@
     "@fastify/rate-limit": "^10.3.0",
     "@lattelink/contracts-auth": "workspace:*",
     "@lattelink/contracts-core": "workspace:*",
+    "@lattelink/observability": "workspace:*",
     "@lattelink/persistence": "workspace:*",
     "@simplewebauthn/server": "^13.2.2",
     "@fastify/swagger": "^9.7.0",

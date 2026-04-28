@@ -225,6 +225,9 @@ function logOrderMutation(
 ) {
   request.log.info(
     {
+      service: "orders",
+      event: typeof details.event === "string" ? details.event : message.replace(/\s+/g, "."),
+      timestamp: new Date().toISOString(),
       requestId: request.id,
       ...details
     },
@@ -389,9 +392,12 @@ export async function registerRoutes(app: FastifyInstance) {
       }
 
       logOrderMutation(request, "payment reconciliation processed", {
+        event: "payment.reconciled",
         orderId: input.orderId,
         paymentId: input.paymentId,
+        provider: input.provider,
         kind: input.kind,
+        paymentStatus: input.status,
         reconciliationApplied: result.result.applied,
         reconciledOrderStatus: result.result.orderStatus
       });
@@ -497,6 +503,7 @@ export async function registerRoutes(app: FastifyInstance) {
       }
 
       logOrderMutation(request, "order created", {
+        event: "order.created",
         orderId: result.order.id,
         locationId: result.order.locationId,
         status: result.order.status,
@@ -591,6 +598,7 @@ export async function registerRoutes(app: FastifyInstance) {
       }
 
       logOrderMutation(request, "order canceled", {
+        event: "order.canceled",
         orderId: result.order.id,
         locationId: result.order.locationId,
         status: result.order.status,
@@ -626,6 +634,7 @@ export async function registerRoutes(app: FastifyInstance) {
       }
 
       logOrderMutation(request, "order canceled by internal system", {
+        event: "order.canceled",
         orderId: result.order.id,
         locationId: result.order.locationId,
         status: result.order.status,
@@ -665,6 +674,7 @@ export async function registerRoutes(app: FastifyInstance) {
       }
 
       logOrderMutation(request, "order status advanced", {
+        event: "order.status.advanced",
         orderId: result.order.id,
         locationId: result.order.locationId,
         status: result.order.status,

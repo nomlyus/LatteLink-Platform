@@ -19,6 +19,7 @@
     "@fastify/swagger-ui": "^5.2.5",
     "@lattelink/contracts-catalog": "workspace:*",
     "@lattelink/contracts-orders": "workspace:*",
+    "@lattelink/observability": "workspace:*",
     "@lattelink/persistence": "workspace:*",
     "fastify": "^5.8.4",
     "pino-pretty": "^13.0.0",

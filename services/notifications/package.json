@@ -17,6 +17,7 @@
     "@fastify/rate-limit": "^10.3.0",
     "@lattelink/contracts-notifications": "workspace:*",
     "@lattelink/event-bus": "workspace:*",
+    "@lattelink/observability": "workspace:*",
     "@lattelink/persistence": "workspace:*",
     "@fastify/swagger": "^9.7.0",
     "@fastify/swagger-ui": "^5.2.5",

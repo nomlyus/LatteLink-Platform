@@ -612,6 +612,7 @@ async function proxyUpstream<TResponse>(params: {
   forwardCacheControl?: boolean;
   timeoutMs?: number;
   responseSchema: z.ZodType<TResponse>;
+  onSuccess?: (response: TResponse) => void;
 }) {
   const {
     request,
@@ -626,7 +627,8 @@ async function proxyUpstream<TResponse>(params: {
     forwardQuery = false,
     forwardCacheControl = false,
     timeoutMs = toPositiveInteger(process.env.GATEWAY_UPSTREAM_TIMEOUT_MS, defaultUpstreamTimeoutMs),
-    responseSchema
+    responseSchema,
+    onSuccess
   } = params;
 
   const queryString = forwardQuery && request.url.includes("?") ? request.url.split("?")[1] : undefined;
@@ -672,7 +674,16 @@ async function proxyUpstream<TResponse>(params: {
   } catch (error) {
     if (isAbortError(error)) {
       request.log.warn(
-        { requestId: request.id, serviceLabel, method, path, timeoutMs },
+        {
+          service: "gateway",
+          event: "upstream.timeout",
+          timestamp: new Date().toISOString(),
+          requestId: request.id,
+          upstream: serviceLabel,
+          method,
+          path,
+          timeoutMs
+        },
         "upstream request timed out"
       );
       return reply.status(504).send(
@@ -685,7 +696,16 @@ async function proxyUpstream<TResponse>(params: {
     }
 
     request.log.error(
-      { error, requestId: request.id, serviceLabel, method, path },
+      {
+        error,
+        service: "gateway",
+        event: "upstream.error",
+        timestamp: new Date().toISOString(),
+        requestId: request.id,
+        upstream: serviceLabel,
+        method,
+        path
+      },
       "upstream request failed before response"
     );
     return reply.status(502).send(
@@ -705,6 +725,19 @@ async function proxyUpstream<TResponse>(params: {
 
   if (!upstreamResponse.ok) {
     const upstreamError = apiErrorSchema.safeParse(parsedBody);
+    request.log.error(
+      {
+        service: "gateway",
+        event: "upstream.error",
+        timestamp: new Date().toISOString(),
+        requestId: request.id,
+        upstream: serviceLabel,
+        method,
+        path,
+        status: upstreamResponse.status
+      },
+      "upstream request returned error response"
+    );
 
     if (upstreamError.success) {
       return reply.status(upstreamResponse.status).send(upstreamError.data);
@@ -723,6 +756,19 @@ async function proxyUpstream<TResponse>(params: {
   const parsedResponse = responseSchema.safeParse(parsedBody);
 
   if (!parsedResponse.success) {
+    request.log.error(
+      {
+        service: "gateway",
+        event: "upstream.invalid_response",
+        timestamp: new Date().toISOString(),
+        requestId: request.id,
+        upstream: serviceLabel,
+        method,
+        path,
+        status: upstreamResponse.status
+      },
+      "upstream response did not match contract"
+    );
     return reply.status(502).send(
       apiErrorSchema.parse({
         code: "UPSTREAM_INVALID_RESPONSE",
@@ -737,6 +783,7 @@ async function proxyUpstream<TResponse>(params: {
     reply.header("cache-control", cacheControl);
   }
 
+  onSuccess?.(parsedResponse.data);
   return reply.status(upstreamResponse.status).send(parsedResponse.data);
 }
 
@@ -1463,7 +1510,21 @@ export async function registerRoutes(app: FastifyInstance) {
         additionalHeaders: {
           "x-gateway-token": gatewayInternalApiToken
         },
-        responseSchema: stripeMobilePaymentSessionResponseSchema
+        responseSchema: stripeMobilePaymentSessionResponseSchema,
+        onSuccess: (response) => {
+          request.log.info(
+            {
+              service: "gateway",
+              event: "order.payment.initiated",
+              timestamp: new Date().toISOString(),
+              requestId: request.id,
+              userId: request.authenticatedUserId,
+              orderId: response.orderId,
+              paymentIntentId: response.paymentIntentId
+            },
+            "Stripe mobile payment initiated"
+          );
+        }
       });
     }
   );
@@ -1485,7 +1546,24 @@ export async function registerRoutes(app: FastifyInstance) {
         additionalHeaders: {
           "x-gateway-token": gatewayInternalApiToken
         },
-        responseSchema: stripeMobilePaymentFinalizeResponseSchema
+        responseSchema: stripeMobilePaymentFinalizeResponseSchema,
+        onSuccess: (response) => {
+          request.log.info(
+            {
+              service: "gateway",
+              event: "payment.finalized",
+              timestamp: new Date().toISOString(),
+              requestId: request.id,
+              userId: request.authenticatedUserId,
+              orderId: response.orderId,
+              paymentIntentId: response.paymentIntentId,
+              accepted: response.accepted,
+              applied: response.applied,
+              orderStatus: response.orderStatus
+            },
+            "Stripe mobile payment finalized"
+          );
+        }
       });
     }
   );
@@ -2142,7 +2220,21 @@ export async function registerRoutes(app: FastifyInstance) {
       additionalHeaders: {
         "x-gateway-token": gatewayInternalApiToken
       },
-      responseSchema: orderQuoteSchema
+      responseSchema: orderQuoteSchema,
+      onSuccess: (response) => {
+        request.log.info(
+          {
+            service: "gateway",
+            event: "order.quote.created",
+            timestamp: new Date().toISOString(),
+            requestId: request.id,
+            userId: request.authenticatedUserId,
+            quoteId: response.quoteId,
+            locationId: response.locationId
+          },
+          "order quote created"
+        );
+      }
     });
     }
   );
@@ -2171,7 +2263,22 @@ export async function registerRoutes(app: FastifyInstance) {
         "x-gateway-token": gatewayInternalApiToken,
         "x-user-id": userId
       },
-      responseSchema: orderSchema
+      responseSchema: orderSchema,
+      onSuccess: (response) => {
+        request.log.info(
+          {
+            service: "gateway",
+            event: "order.created",
+            timestamp: new Date().toISOString(),
+            requestId: request.id,
+            userId,
+            orderId: response.id,
+            locationId: response.locationId,
+            status: response.status
+          },
+          "order created"
+        );
+      }
     });
   });
 
@@ -2381,7 +2488,22 @@ export async function registerRoutes(app: FastifyInstance) {
         "x-gateway-token": gatewayInternalApiToken,
         "x-user-id": userId
       },
-      responseSchema: orderSchema
+      responseSchema: orderSchema,
+      onSuccess: (response) => {
+        request.log.info(
+          {
+            service: "gateway",
+            event: "order.canceled",
+            timestamp: new Date().toISOString(),
+            requestId: request.id,
+            userId,
+            orderId: response.id,
+            locationId: response.locationId,
+            status: response.status
+          },
+          "order canceled"
+        );
+      }
     });
   });
 
@@ -2680,7 +2802,22 @@ export async function registerRoutes(app: FastifyInstance) {
             ...operatorLocationHeader(locationContext.locationId)
           },
           forwardUserIdHeader: false,
-          responseSchema: orderSchema
+          responseSchema: orderSchema,
+          onSuccess: (response) => {
+            request.log.info(
+              {
+                service: "gateway",
+                event: "order.canceled",
+                timestamp: new Date().toISOString(),
+                requestId: request.id,
+                orderId: response.id,
+                locationId: response.locationId,
+                status: response.status,
+                cancelSource: "staff"
+              },
+              "order canceled by staff"
+            );
+          }
         });
       }
 
@@ -2697,7 +2834,21 @@ export async function registerRoutes(app: FastifyInstance) {
           ...operatorLocationHeader(locationContext.locationId)
         },
         forwardUserIdHeader: false,
-        responseSchema: orderSchema
+        responseSchema: orderSchema,
+        onSuccess: (response) => {
+          request.log.info(
+            {
+              service: "gateway",
+              event: "order.status.advanced",
+              timestamp: new Date().toISOString(),
+              requestId: request.id,
+              orderId: response.id,
+              locationId: response.locationId,
+              status: response.status
+            },
+            "order status advanced"
+          );
+        }
       });
     }
   );
