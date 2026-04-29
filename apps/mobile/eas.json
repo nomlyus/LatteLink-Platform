@@ -46,6 +46,7 @@
         "EXPO_PUBLIC_API_BASE_URL": "https://api.nomly.us/v1",
         "EXPO_PUBLIC_CATALOG_SERVICE_BASE_URL": "https://api.nomly.us/v1",
         "EXPO_PUBLIC_CATALOG_API_BASE_URL": "https://api.nomly.us/v1",
+        "EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID": "merchant.com.lattelink.rawaq",
         "EXPO_PUBLIC_PRIVACY_POLICY_URL": "https://nomly.us/privacy-policy"
       }
     }
@@ -57,7 +58,9 @@
       }
     },
     "production": {
-      "ios": {}
+      "ios": {
+        "ascAppId": "6764649231"
+      }
     }
   }
 }

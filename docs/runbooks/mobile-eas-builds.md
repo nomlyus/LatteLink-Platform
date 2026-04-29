@@ -71,7 +71,8 @@ Optional values:
 - `APP_DISPLAY_NAME_BASE=Rawaq`
 - `IOS_BUNDLE_IDENTIFIER=com.lattelink.rawaq`
 - `EXPO_PUBLIC_API_BASE_URL=https://api.nomly.us/v1`
-- `EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID=<production merchant id>`
+- `EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID=merchant.com.lattelink.rawaq`
+- App Store Connect app ID: `6764649231`
 
 ## Build Commands
 
