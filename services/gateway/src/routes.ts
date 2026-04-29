@@ -81,6 +81,7 @@ import {
   pushTokenUpsertResponseSchema,
   pushTokenUpsertSchema
 } from "@lattelink/contracts-notifications";
+import { captureOperationalError } from "@lattelink/observability";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -129,6 +130,34 @@ const adminOrderStatusUpdateSchema = z.object({
   status: z.enum(["IN_PREP", "READY", "COMPLETED", "CANCELED"]),
   note: z.string().min(1).optional()
 });
+
+function captureGatewayUpstreamOperationalError(input: {
+  request: FastifyRequest;
+  event: "upstream.timeout" | "upstream.unavailable";
+  error: unknown;
+  upstream: string;
+  method: string;
+  path: string;
+  timeoutMs?: number;
+}) {
+  captureOperationalError({
+    service: "gateway",
+    event: input.event,
+    error: input.error,
+    level: input.event === "upstream.timeout" ? "warning" : "error",
+    requestId: input.request.id,
+    tags: {
+      upstream: input.upstream,
+      method: input.method,
+      timeoutMs: input.timeoutMs
+    },
+    context: {
+      path: input.path,
+      url: input.request.url
+    },
+    fingerprint: ["gateway", input.event, input.upstream, input.method]
+  });
+}
 const supportOrderLookupQuerySchema = z.object({
   query: z.string().min(1),
   locationId: z.string().min(1).optional(),
@@ -373,6 +402,15 @@ async function resolveOperatorAccess(params: {
     return operator.data;
   } catch (error) {
     if (isAbortError(error)) {
+      captureGatewayUpstreamOperationalError({
+        request,
+        event: "upstream.timeout",
+        error,
+        upstream: "Identity",
+        method: "GET",
+        path: "/v1/operator/auth/me",
+        timeoutMs
+      });
       reply.status(504).send(
         apiErrorSchema.parse({
           code: "UPSTREAM_TIMEOUT",
@@ -383,6 +421,15 @@ async function resolveOperatorAccess(params: {
       return undefined;
     }
 
+    captureGatewayUpstreamOperationalError({
+      request,
+      event: "upstream.unavailable",
+      error,
+      upstream: "Identity",
+      method: "GET",
+      path: "/v1/operator/auth/me",
+      timeoutMs
+    });
     request.log.error({ error, requestId: request.id }, "operator access check failed");
     reply.status(502).send(
       apiErrorSchema.parse({
@@ -477,6 +524,15 @@ async function resolveInternalAdminAccess(params: {
     return admin.data;
   } catch (error) {
     if (isAbortError(error)) {
+      captureGatewayUpstreamOperationalError({
+        request,
+        event: "upstream.timeout",
+        error,
+        upstream: "Identity",
+        method: "GET",
+        path: "/v1/internal-admin/auth/me",
+        timeoutMs
+      });
       reply.status(504).send(
         apiErrorSchema.parse({
           code: "UPSTREAM_TIMEOUT",
@@ -487,6 +543,15 @@ async function resolveInternalAdminAccess(params: {
       return undefined;
     }
 
+    captureGatewayUpstreamOperationalError({
+      request,
+      event: "upstream.unavailable",
+      error,
+      upstream: "Identity",
+      method: "GET",
+      path: "/v1/internal-admin/auth/me",
+      timeoutMs
+    });
     request.log.error({ error, requestId: request.id }, "internal admin access check failed");
     reply.status(502).send(
       apiErrorSchema.parse({
@@ -761,6 +826,15 @@ async function proxyUpstream<TResponse>(params: {
     });
   } catch (error) {
     if (isAbortError(error)) {
+      captureGatewayUpstreamOperationalError({
+        request,
+        event: "upstream.timeout",
+        error,
+        upstream: serviceLabel,
+        method,
+        path,
+        timeoutMs
+      });
       request.log.warn(
         {
           service: "gateway",
@@ -783,6 +857,15 @@ async function proxyUpstream<TResponse>(params: {
       );
     }
 
+    captureGatewayUpstreamOperationalError({
+      request,
+      event: "upstream.unavailable",
+      error,
+      upstream: serviceLabel,
+      method,
+      path,
+      timeoutMs
+    });
     request.log.error(
       {
         error,
@@ -944,6 +1027,15 @@ async function proxyOpaqueUpstream(params: {
     });
   } catch (error) {
     if (isAbortError(error)) {
+      captureGatewayUpstreamOperationalError({
+        request,
+        event: "upstream.timeout",
+        error,
+        upstream: serviceLabel,
+        method,
+        path,
+        timeoutMs
+      });
       request.log.warn(
         { requestId: request.id, serviceLabel, method, path, timeoutMs },
         "opaque upstream request timed out"
@@ -957,6 +1049,15 @@ async function proxyOpaqueUpstream(params: {
       );
     }
 
+    captureGatewayUpstreamOperationalError({
+      request,
+      event: "upstream.unavailable",
+      error,
+      upstream: serviceLabel,
+      method,
+      path,
+      timeoutMs
+    });
     request.log.error(
       { error, requestId: request.id, serviceLabel, method, path },
       "opaque upstream request failed before response"
@@ -1278,6 +1379,15 @@ async function resolveAuthenticatedUserId(params: {
     });
   } catch (error) {
     if (isAbortError(error)) {
+      captureGatewayUpstreamOperationalError({
+        request,
+        event: "upstream.timeout",
+        error,
+        upstream: "Identity",
+        method: "GET",
+        path: "/v1/auth/me",
+        timeoutMs
+      });
       request.log.warn({ requestId: request.id, timeoutMs }, "identity auth lookup timed out");
       reply.status(504).send(
         apiErrorSchema.parse({
@@ -1289,6 +1399,15 @@ async function resolveAuthenticatedUserId(params: {
       return undefined;
     }
 
+    captureGatewayUpstreamOperationalError({
+      request,
+      event: "upstream.unavailable",
+      error,
+      upstream: "Identity",
+      method: "GET",
+      path: "/v1/auth/me",
+      timeoutMs
+    });
     request.log.error({ error, requestId: request.id }, "identity auth lookup failed before response");
     reply.status(502).send(
       apiErrorSchema.parse({
