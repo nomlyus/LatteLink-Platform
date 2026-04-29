@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import { MOBILE_LOCATION_ID, apiClient } from "../api/client";
+import { API_BASE_URL, MOBILE_LOCATION_ID, apiClient } from "../api/client";
+import { withCriticalDataLoadSentry } from "../observability/criticalDataLoad";
 
 const orderStatusSchema = z.enum(["PENDING_PAYMENT", "PAID", "IN_PREP", "READY", "COMPLETED", "CANCELED"]);
 const orderItemSchema = z.object({
@@ -158,15 +159,25 @@ export function useLoyaltyBalanceQuery(enabled = true) {
   return useQuery({
     queryKey: ["account", "loyalty", "balance", MOBILE_LOCATION_ID],
     enabled,
-    queryFn: async (): Promise<LoyaltyBalance> => {
-      if (!MOBILE_LOCATION_ID) {
-        throw new Error("EXPO_PUBLIC_LOCATION_ID is required for loyalty balance reads.");
-      }
+    queryFn: async (): Promise<LoyaltyBalance> =>
+      withCriticalDataLoadSentry(
+        {
+          feature: "account",
+          operation: "load_loyalty_balance",
+          endpoint: "/loyalty/balance",
+          apiBaseUrl: API_BASE_URL,
+          locationId: MOBILE_LOCATION_ID
+        },
+        async () => {
+          if (!MOBILE_LOCATION_ID) {
+            throw new Error("EXPO_PUBLIC_LOCATION_ID is required for loyalty balance reads.");
+          }
 
-      return loyaltyBalanceSchema.parse(
-        await apiClient.get(`/loyalty/balance?locationId=${encodeURIComponent(MOBILE_LOCATION_ID)}`)
-      );
-    }
+          return loyaltyBalanceSchema.parse(
+            await apiClient.get(`/loyalty/balance?locationId=${encodeURIComponent(MOBILE_LOCATION_ID)}`)
+          );
+        }
+      )
   });
 }
 
@@ -174,15 +185,25 @@ export function useLoyaltyLedgerQuery(enabled = true) {
   return useQuery({
     queryKey: ["account", "loyalty", "ledger", MOBILE_LOCATION_ID],
     enabled,
-    queryFn: async (): Promise<LoyaltyLedgerEntry[]> => {
-      if (!MOBILE_LOCATION_ID) {
-        throw new Error("EXPO_PUBLIC_LOCATION_ID is required for loyalty ledger reads.");
-      }
+    queryFn: async (): Promise<LoyaltyLedgerEntry[]> =>
+      withCriticalDataLoadSentry(
+        {
+          feature: "rewards_activity",
+          operation: "load_loyalty_ledger",
+          endpoint: "/loyalty/ledger",
+          apiBaseUrl: API_BASE_URL,
+          locationId: MOBILE_LOCATION_ID
+        },
+        async () => {
+          if (!MOBILE_LOCATION_ID) {
+            throw new Error("EXPO_PUBLIC_LOCATION_ID is required for loyalty ledger reads.");
+          }
 
-      return loyaltyLedgerSchema.parse(
-        await apiClient.get(`/loyalty/ledger?locationId=${encodeURIComponent(MOBILE_LOCATION_ID)}`)
-      );
-    }
+          return loyaltyLedgerSchema.parse(
+            await apiClient.get(`/loyalty/ledger?locationId=${encodeURIComponent(MOBILE_LOCATION_ID)}`)
+          );
+        }
+      )
   });
 }
 

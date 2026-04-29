@@ -17,7 +17,8 @@ import {
   type MenuResponse,
   type StoreConfigResponse
 } from "@lattelink/contracts-catalog";
-import { apiClient, catalogApiClient } from "../api/client";
+import { API_BASE_URL, CATALOG_API_BASE_URL, MOBILE_LOCATION_ID, apiClient, catalogApiClient } from "../api/client";
+import { withCriticalDataLoadSentry } from "../observability/criticalDataLoad";
 
 const catalogMenuQueryKey = ["catalog", "menu"] as const;
 const catalogHomeNewsCardsQueryKey = ["catalog", "home-news-cards"] as const;
@@ -62,35 +63,77 @@ function filterVisibleCategories(menu: MenuResponse): MenuCategory[] {
 }
 
 async function fetchMenu(): Promise<MenuResponse> {
-  const response = menuResponseSchema.parse(await apiClient.menu());
-  return {
-    ...response,
-    categories: filterVisibleCategories(response)
-  };
+  return withCriticalDataLoadSentry(
+    {
+      feature: "menu",
+      operation: "load_menu",
+      endpoint: "/menu",
+      apiBaseUrl: API_BASE_URL,
+      locationId: MOBILE_LOCATION_ID
+    },
+    async () => {
+      const response = menuResponseSchema.parse(await apiClient.menu());
+      return {
+        ...response,
+        categories: filterVisibleCategories(response)
+      };
+    }
+  );
 }
 
 async function fetchHomeNewsCards(): Promise<HomeNewsCardsResponse> {
-  const response = homeNewsCardsResponseSchema.parse(await apiClient.homeNewsCards());
-  return {
-    ...response,
-    cards: response.cards.filter((card) => card.visible).sort((left, right) => left.sortOrder - right.sortOrder)
-  };
+  return withCriticalDataLoadSentry(
+    {
+      feature: "home",
+      operation: "load_home_news_cards",
+      endpoint: "/store/cards",
+      apiBaseUrl: API_BASE_URL,
+      locationId: MOBILE_LOCATION_ID
+    },
+    async () => {
+      const response = homeNewsCardsResponseSchema.parse(await apiClient.homeNewsCards());
+      return {
+        ...response,
+        cards: response.cards.filter((card) => card.visible).sort((left, right) => left.sortOrder - right.sortOrder)
+      };
+    }
+  );
 }
 
 async function fetchStoreConfig(): Promise<StoreConfigResponse> {
-  return storeConfigResponseSchema.parse(await apiClient.storeConfig());
+  return withCriticalDataLoadSentry(
+    {
+      feature: "startup",
+      operation: "load_store_config",
+      endpoint: "/store/config",
+      apiBaseUrl: API_BASE_URL,
+      locationId: MOBILE_LOCATION_ID
+    },
+    async () => storeConfigResponseSchema.parse(await apiClient.storeConfig())
+  );
 }
 
 async function fetchAppConfig(): Promise<AppConfig> {
-  try {
-    return await apiClient.appConfig();
-  } catch (primaryError) {
-    try {
-      return await catalogApiClient.appConfig();
-    } catch {
-      throw primaryError;
+  return withCriticalDataLoadSentry(
+    {
+      feature: "startup",
+      operation: "load_app_config",
+      endpoint: "/app-config",
+      apiBaseUrl: CATALOG_API_BASE_URL || API_BASE_URL,
+      locationId: MOBILE_LOCATION_ID
+    },
+    async () => {
+      try {
+        return await apiClient.appConfig();
+      } catch (primaryError) {
+        try {
+          return await catalogApiClient.appConfig();
+        } catch {
+          throw primaryError;
+        }
+      }
     }
-  }
+  );
 }
 
 export function prefetchCatalogQueries(queryClient: QueryClient) {
