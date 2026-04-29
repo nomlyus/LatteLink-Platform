@@ -173,7 +173,9 @@ describe("orders service layer", () => {
           ? (JSON.parse(init.body) as Record<string, unknown>)
           : {};
 
-      if (url.endsWith("/v1/store/config") && method === "GET") {
+      const parsedUrl = new URL(url);
+      if (parsedUrl.pathname === "/v1/store/config" && method === "GET") {
+        expect(parsedUrl.searchParams.get("locationId")).toBe("flagship-01");
         return paymentsResponse({
           locationId: "flagship-01",
           hoursText: "Daily · 7:00 AM - 6:00 PM",

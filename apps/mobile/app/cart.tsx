@@ -263,14 +263,22 @@ export default function CartModalScreen() {
   const appConfig = appConfigQuery.data ? resolveAppConfigData(appConfigQuery.data) : null;
   const storeConfig = storeConfigQuery.data ? resolveStoreConfigData(storeConfigQuery.data) : null;
   const pricingSummary = buildPricingSummary(subtotalCents, storeConfig?.taxRateBasisPoints ?? 0);
+  const storeConfigLoading = !storeConfig && (storeConfigQuery.isLoading || storeConfigQuery.isFetching);
+  const appConfigLoading = !appConfig && (appConfigQuery.isLoading || appConfigQuery.isFetching);
+  const checkoutContextLoading = storeConfigLoading || appConfigLoading;
   const storeClosedMessage =
     storeConfig && !storeConfig.isOpen ? "The store is currently closed. Come back during opening hours." : null;
-  const checkoutUnavailableMessage = !storeConfig
+  const checkoutUnavailableMessage = storeConfigLoading
+    ? "Loading store hours..."
+    : appConfigLoading
+      ? "Loading checkout configuration..."
+      : !storeConfig
     ? "Store details are temporarily unavailable. Retry loading checkout before paying."
     : !appConfig
       ? "Checkout configuration is temporarily unavailable. Retry loading checkout before paying."
       : storeClosedMessage;
   const checkoutReady = checkoutUnavailableMessage === null;
+  const showCheckoutRetry = Boolean(checkoutUnavailableMessage) && !checkoutContextLoading;
   const quoteItems = useMemo(() => toQuoteItems(items), [items]);
   const retryableOrder = retryOrder && quoteItemsEqual(quoteItems, retryOrder.quoteItems) ? retryOrder : undefined;
   const menuItemsById = useMemo(
@@ -285,7 +293,9 @@ export default function CartModalScreen() {
   const [clearSheetOpen, setClearSheetOpen] = useState(false);
   const stickyActionDisabled = !checkoutReady;
   const stickyActionLabel = !checkoutReady
-    ? storeClosedMessage
+    ? checkoutContextLoading
+      ? "Loading checkout"
+      : storeClosedMessage
       ? "Store closed"
       : "Checkout unavailable"
     : isAuthenticated
@@ -355,10 +365,12 @@ export default function CartModalScreen() {
                   ? storeConfig.isOpen
                     ? `Estimated wait is ${storeConfig.prepEtaMinutes} min`
                     : "Store closed"
-                  : "Checkout details unavailable"}
+                  : storeConfigLoading
+                    ? "Loading store hours..."
+                    : "Checkout details unavailable"}
               </Text>
             </View>
-            {checkoutUnavailableMessage ? (
+            {showCheckoutRetry ? (
               <HeaderActionChip label="Retry" icon="refresh-outline" onPress={refreshCheckoutContext} />
             ) : null}
           </View>

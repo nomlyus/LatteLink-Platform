@@ -315,10 +315,12 @@ function resolveRequestUserId(context: RequestUserContext | undefined) {
   return context?.userId ?? buildMissingRequestUserContextError();
 }
 
-async function fetchStoreConfig(deps: OrderServiceDeps): Promise<StoreConfigLookupResult> {
+async function fetchStoreConfig(deps: OrderServiceDeps, locationId: string): Promise<StoreConfigLookupResult> {
   let storeConfigResponse: Response;
   try {
-    storeConfigResponse = await fetch(`${deps.catalogBaseUrl}/v1/store/config`, {
+    const storeConfigUrl = new URL("/v1/store/config", deps.catalogBaseUrl);
+    storeConfigUrl.searchParams.set("locationId", locationId);
+    storeConfigResponse = await fetch(storeConfigUrl.toString(), {
       headers: {
         "content-type": "application/json"
       }
@@ -347,8 +349,8 @@ async function fetchStoreConfig(deps: OrderServiceDeps): Promise<StoreConfigLook
   return parsedStoreConfig.data;
 }
 
-async function ensureStoreIsOpen(deps: OrderServiceDeps): Promise<StoreAvailabilityResult> {
-  const storeConfig = await fetchStoreConfig(deps);
+async function ensureStoreIsOpen(deps: OrderServiceDeps, locationId: string): Promise<StoreAvailabilityResult> {
+  const storeConfig = await fetchStoreConfig(deps, locationId);
   if (isServiceError(storeConfig)) {
     return { error: storeConfig };
   }
@@ -922,7 +924,7 @@ export async function createQuote(params: {
   deps: OrderServiceDeps;
 }): Promise<{ quote: OrderQuote } | { error: ServiceError }> {
   try {
-    const storeAvailability = await ensureStoreIsOpen(params.deps);
+    const storeAvailability = await ensureStoreIsOpen(params.deps, params.input.locationId);
     if ("error" in storeAvailability) {
       return storeAvailability;
     }
@@ -1008,7 +1010,7 @@ export async function createOrder(params: {
     }
   }
 
-  const storeAvailability = await ensureStoreIsOpen(deps);
+  const storeAvailability = await ensureStoreIsOpen(deps, quote.locationId);
   if ("error" in storeAvailability) {
     return storeAvailability;
   }

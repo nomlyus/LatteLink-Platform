@@ -169,11 +169,18 @@ export default function CheckoutScreen() {
   const pricingSummary = buildPricingSummary(subtotalCents, storeConfig?.taxRateBasisPoints ?? 0);
   const checkoutMutation = useStripeCheckoutMutation();
   const cancelOrderMutation = useCancelOrderMutation();
+  const storeConfigLoading = !storeConfig && (storeConfigQuery.isLoading || storeConfigQuery.isFetching);
+  const appConfigLoading = !appConfig && (appConfigQuery.isLoading || appConfigQuery.isFetching);
+  const checkoutContextLoading = storeConfigLoading || appConfigLoading;
   const storeClosedMessage =
     storeConfig && !storeConfig.isOpen
       ? "The store is currently closed. Come back during opening hours."
       : null;
-  const checkoutUnavailableMessage = !storeConfig
+  const checkoutUnavailableMessage = storeConfigLoading
+    ? "Loading store hours..."
+    : appConfigLoading
+      ? "Loading checkout configuration..."
+      : !storeConfig
     ? "Store details are temporarily unavailable. Retry loading checkout before paying."
     : !appConfig
       ? "Checkout configuration is temporarily unavailable. Retry loading checkout before paying."
@@ -185,12 +192,20 @@ export default function CheckoutScreen() {
             ? "No supported mobile payment methods are enabled for this store."
       : storeClosedMessage;
   const checkoutReady = checkoutUnavailableMessage === null;
+  const checkoutUnavailableTone = checkoutContextLoading ? "info" : "warning";
+  const showCheckoutRetry = Boolean(checkoutUnavailableMessage) && !checkoutContextLoading;
   const quoteItems = useMemo(() => toQuoteItems(items), [items]);
   const retryableOrder = retryOrder && quoteItemsEqual(quoteItems, retryOrder.quoteItems) ? retryOrder : undefined;
   const itemCount = useMemo(() => items.reduce((sum, item) => sum + item.quantity, 0), [items]);
   const applePayMerchantIdentifier = resolveConfiguredApplePayMerchantIdentifier();
   const brandName = appConfig?.brand.brandName ?? "Your order";
-  const storeStatusLabel = storeConfig ? (storeConfig.isOpen ? "Open now" : "Closed right now") : "Store unavailable";
+  const storeStatusLabel = storeConfig
+    ? storeConfig.isOpen
+      ? "Open now"
+      : "Closed right now"
+    : storeConfigLoading
+      ? "Loading store hours"
+      : "Store unavailable";
   const etaLabel = storeConfig ? `${storeConfig.prepEtaMinutes} min pickup` : "ETA unavailable";
 
   const [paymentSheetPending, setPaymentSheetPending] = useState(false);
@@ -423,7 +438,7 @@ export default function CheckoutScreen() {
       </View>
 
       <View style={styles.headerArea}>
-        {checkoutUnavailableMessage ? (
+        {showCheckoutRetry ? (
           <View style={styles.headerUtilityRow}>
             <Pressable onPress={refreshCheckoutContext} style={({ pressed }) => [styles.inlineAction, pressed ? styles.inlineActionPressed : null]}>
               <Ionicons name="refresh-outline" size={15} color={uiPalette.textSecondary} />
@@ -438,7 +453,9 @@ export default function CheckoutScreen() {
             ? storeConfig.isOpen
               ? `${brandName} • ${etaLabel}`
               : "Store closed"
-            : "Checkout details unavailable"}
+            : storeConfigLoading
+              ? "Loading store hours..."
+              : "Checkout details unavailable"}
         </Text>
       </View>
 
@@ -498,7 +515,7 @@ export default function CheckoutScreen() {
         <View pointerEvents="box-none" style={[styles.bottomDock, { paddingBottom: Math.max(insets.bottom, 16) }]}>
           {checkoutUnavailableMessage || statusMessage ? (
             <View style={styles.bottomStatusStack}>
-              {checkoutUnavailableMessage ? <StatusBanner message={checkoutUnavailableMessage} tone="warning" /> : null}
+              {checkoutUnavailableMessage ? <StatusBanner message={checkoutUnavailableMessage} tone={checkoutUnavailableTone} /> : null}
 
               {statusMessage ? (
                 <StatusBanner message={statusMessage} tone={statusTone === "warning" ? "warning" : "info"} />
