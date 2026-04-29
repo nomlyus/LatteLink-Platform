@@ -21,6 +21,10 @@ type LoggerOptions = {
 
 let sentryInitialized = false;
 
+function isClientValidationError(error: Error) {
+  return error.name === "ZodError" && Array.isArray((error as { issues?: unknown }).issues);
+}
+
 function trimToUndefined(value: string | undefined) {
   const next = value?.trim();
   return next && next.length > 0 ? next : undefined;
@@ -116,6 +120,9 @@ export function initializeSentry(input: {
 export function registerSentryErrorHook(app: FastifyInstance, service: string) {
   app.addHook("onError", async (request, _reply, error) => {
     if (!sentryInitialized) {
+      return;
+    }
+    if (isClientValidationError(error)) {
       return;
     }
 

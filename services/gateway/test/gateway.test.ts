@@ -1982,6 +1982,30 @@ let previousFreeClientDashboardDomain: string | undefined;
     await app.close();
   });
 
+  it("returns 400 for malformed operator password sign-in payloads", async () => {
+    const app = await buildApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/operator/auth/sign-in",
+      payload: {
+        email: "owner@gazellecoffee.com",
+        password: "bad"
+      }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({
+      code: "INVALID_REQUEST",
+      message: "Request validation failed.",
+      details: {
+        fieldErrors: {
+          password: expect.arrayContaining([expect.stringContaining("at least 8 character")])
+        }
+      }
+    });
+    await app.close();
+  });
+
   it("starts operator Google sign-in through identity", async () => {
     const app = await buildApp();
     const response = await app.inject({

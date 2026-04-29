@@ -5,6 +5,7 @@ import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
+import { ZodError } from "zod";
 import {
   buildFastifyLoggerOptions,
   buildRequestCompletionLogPayload,
@@ -139,6 +140,27 @@ export async function buildApp() {
 
   await app.register(swaggerUi, {
     routePrefix: "/docs"
+  });
+
+  app.setErrorHandler((error, request, reply) => {
+    if (error instanceof ZodError) {
+      request.log.warn(
+        {
+          requestId: request.id,
+          details: error.flatten()
+        },
+        "request validation failed"
+      );
+      reply.status(400).send({
+        code: "INVALID_REQUEST",
+        message: "Request validation failed.",
+        requestId: request.id,
+        details: error.flatten()
+      });
+      return;
+    }
+
+    reply.send(error);
   });
 
   app.addHook("onRequest", async (request, reply) => {
