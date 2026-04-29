@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/node";
+import type { Event, EventHint } from "@sentry/node";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 type LoggerOptions = {
@@ -23,6 +24,15 @@ let sentryInitialized = false;
 
 function isClientValidationError(error: Error) {
   return error.name === "ZodError" && Array.isArray((error as { issues?: unknown }).issues);
+}
+
+function isClientValidationEvent(event: Event, hint: EventHint) {
+  const originalException = hint.originalException;
+  if (originalException instanceof Error && isClientValidationError(originalException)) {
+    return true;
+  }
+
+  return event.exception?.values?.some((exception) => exception.type === "ZodError") ?? false;
 }
 
 function trimToUndefined(value: string | undefined) {
@@ -106,6 +116,13 @@ export function initializeSentry(input: {
     release: trimToUndefined(env.APP_VERSION) ?? trimToUndefined(env.IMAGE_TAG) ?? "unknown",
     tracesSampleRate: parseSampleRate(env.SENTRY_TRACES_SAMPLE_RATE),
     serverName: input.service,
+    beforeSend(event, hint) {
+      if (isClientValidationEvent(event, hint)) {
+        return null;
+      }
+
+      return event;
+    },
     initialScope: {
       tags: {
         service: input.service
