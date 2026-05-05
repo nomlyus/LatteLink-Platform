@@ -1,21 +1,22 @@
 import { contactEmail, siteDescription, siteName, siteUrl } from "@/lib/site";
 
-const structuredData = [
-  {
-    "@context": "https://schema.org",
-    "@type": "Organization",
-    name: siteName,
-    url: siteUrl,
-    email: contactEmail,
-  },
-  {
-    "@context": "https://schema.org",
-    "@type": "WebSite",
-    name: siteName,
-    url: siteUrl,
-    description: siteDescription,
-  },
-];
+const structuredData = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      name: siteName,
+      url: siteUrl,
+      email: contactEmail,
+    },
+    {
+      "@type": "WebSite",
+      name: siteName,
+      url: siteUrl,
+      description: siteDescription,
+    },
+  ],
+};
 
 export function StructuredData() {
   return (
