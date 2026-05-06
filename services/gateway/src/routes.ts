@@ -4344,6 +4344,31 @@ export async function registerRoutes(app: FastifyInstance) {
   );
 
   app.get(
+    "/v1/internal/locations/:locationId/onboarding",
+    {
+      preHandler: [app.rateLimit(authReadRateLimit), requireInternalAdminCapability("clients:read")]
+    },
+    async (request, reply) => {
+      const { locationId } = internalLocationParamsSchema.parse(request.params);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "GET",
+        path: `/v1/catalog/internal/locations/${locationId}/onboarding`,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken,
+          ...internalAdminActorHeader(request)
+        },
+        forwardUserIdHeader: false,
+        responseSchema: onboardingSummarySchema
+      });
+    }
+  );
+
+  app.get(
     "/v1/internal/locations/:locationId/readiness",
     {
       preHandler: [app.rateLimit(authReadRateLimit), requireInternalAdminCapability("clients:read")]

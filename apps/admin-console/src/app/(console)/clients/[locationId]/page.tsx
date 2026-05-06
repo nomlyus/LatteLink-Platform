@@ -1,24 +1,173 @@
 import Link from "next/link";
+import type { MobileReleaseProfile, MobileReleaseStatus } from "@lattelink/contracts-catalog";
 import { notFound } from "next/navigation";
+import { updateMobileReleaseAction } from "@/app/actions";
 import { LaunchReadinessChecklist } from "@/components/LaunchReadinessChecklist";
-import { getInternalLocation, getInternalLocationOwner, getInternalLocationReadiness, InternalApiError } from "@/lib/internal-api";
+import {
+  getInternalLocation,
+  getInternalLocationOnboarding,
+  getInternalLocationOwner,
+  getInternalLocationReadiness,
+  InternalApiError
+} from "@/lib/internal-api";
 
 type ClientDetailPageProps = {
   params: Promise<{ locationId: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
+const mobileReleaseStatusOptions: Array<{ value: MobileReleaseStatus; label: string }> = [
+  { value: "not_started", label: "Release profile pending" },
+  { value: "metadata_pending", label: "Apple identifiers pending" },
+  { value: "metadata_ready", label: "App metadata configured" },
+  { value: "build_configuring", label: "Build queued" },
+  { value: "build_ready", label: "Build uploaded to TestFlight" },
+  { value: "submitted_for_review", label: "Submitted for App Store review" },
+  { value: "approved", label: "Approved" },
+  { value: "ready_for_launch", label: "Ready for launch" },
+  { value: "live", label: "Live" },
+  { value: "blocked", label: "Blocked" }
+];
+
+function mobileReleaseStatusLabel(status: MobileReleaseStatus | undefined, statusLabel?: string) {
+  return statusLabel ?? mobileReleaseStatusOptions.find((option) => option.value === status)?.label ?? "Release profile pending";
+}
+
+function mobileReleaseTone(status: MobileReleaseStatus | undefined) {
+  if (status === "live" || status === "ready_for_launch" || status === "approved") return "healthy";
+  if (status === "blocked") return "critical";
+  return "warning";
+}
+
+function toDateTimeLocal(value: string | undefined) {
+  return value ? value.slice(0, 16) : "";
+}
+
+function renderTimelineDate(label: string, value: string | undefined) {
+  if (!value) return null;
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>{new Date(value).toLocaleString()}</dd>
+    </div>
+  );
+}
+
+function MobileReleaseStatusPanel({ locationId, release }: { locationId: string; release?: MobileReleaseProfile }) {
+  const status = release?.status ?? "not_started";
+  const statusLabel = mobileReleaseStatusLabel(status, release?.statusLabel);
+
+  return (
+    <section className="panel">
+      <div className="section-heading">
+        <span className="eyebrow">Mobile Release</span>
+        <h4>Client-visible progress</h4>
+      </div>
+      <dl className="detail-list">
+        <div>
+          <dt>Status</dt>
+          <dd>
+            <span className={`status-badge is-${mobileReleaseTone(status)}`}>{statusLabel}</span>
+          </dd>
+        </div>
+        <div>
+          <dt>Build</dt>
+          <dd>{release?.buildNumber ?? "Not assigned"}</dd>
+        </div>
+        {renderTimelineDate("Submitted", release?.submittedAt)}
+        {renderTimelineDate("Approved", release?.approvedAt)}
+        {renderTimelineDate("Live", release?.liveAt)}
+        <div>
+          <dt>TestFlight</dt>
+          <dd>{release?.testFlightUrl ? <a href={release.testFlightUrl}>{release.testFlightUrl}</a> : "Not added"}</dd>
+        </div>
+        <div>
+          <dt>App Store</dt>
+          <dd>{release?.appStoreUrl ? <a href={release.appStoreUrl}>{release.appStoreUrl}</a> : "Not added"}</dd>
+        </div>
+        {release?.blockedReason ? (
+          <div>
+            <dt>Blocker</dt>
+            <dd>{release.blockedReason}</dd>
+          </div>
+        ) : null}
+      </dl>
+
+      <form action={updateMobileReleaseAction} className="stack-form release-form">
+        <input type="hidden" name="locationId" value={locationId} />
+        <div className="field-grid">
+          <label className="field">
+            <span>Status</span>
+            <select name="status" defaultValue={status}>
+              {mobileReleaseStatusOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Custom client label</span>
+            <input name="statusLabel" defaultValue={release?.statusLabel ?? ""} placeholder={statusLabel} />
+            <p className="field-hint">Optional override for the text clients see.</p>
+          </label>
+          <label className="field">
+            <span>Build number</span>
+            <input name="buildNumber" defaultValue={release?.buildNumber ?? ""} />
+          </label>
+          <label className="field">
+            <span>Submitted at</span>
+            <input name="submittedAt" type="datetime-local" defaultValue={toDateTimeLocal(release?.submittedAt)} />
+          </label>
+          <label className="field">
+            <span>Approved at</span>
+            <input name="approvedAt" type="datetime-local" defaultValue={toDateTimeLocal(release?.approvedAt)} />
+          </label>
+          <label className="field">
+            <span>Live at</span>
+            <input name="liveAt" type="datetime-local" defaultValue={toDateTimeLocal(release?.liveAt)} />
+          </label>
+          <label className="field field-wide">
+            <span>TestFlight URL</span>
+            <input name="testFlightUrl" type="url" defaultValue={release?.testFlightUrl ?? ""} />
+          </label>
+          <label className="field field-wide">
+            <span>App Store URL</span>
+            <input name="appStoreUrl" type="url" defaultValue={release?.appStoreUrl ?? ""} />
+          </label>
+          <label className="field field-wide">
+            <span>Blocked reason</span>
+            <input name="blockedReason" defaultValue={release?.blockedReason ?? ""} />
+          </label>
+          <label className="field field-wide">
+            <span>Internal notes</span>
+            <input name="notes" defaultValue={release?.notes ?? ""} />
+          </label>
+        </div>
+        <div className="form-actions">
+          <button type="submit" className="primary-button">
+            Update Release Status
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
 export default async function ClientDetailPage({ params, searchParams }: ClientDetailPageProps) {
   const { locationId } = await params;
   const query = await searchParams;
   const created = typeof query.created === "string" ? query.created : undefined;
   const invited = typeof query.invited === "string" ? query.invited : undefined;
+  const releaseUpdated = typeof query.releaseUpdated === "string" ? query.releaseUpdated : undefined;
+  const releaseError = typeof query.releaseError === "string" ? query.releaseError : undefined;
 
   try {
-    const [location, ownerSummary, launchReadiness] = await Promise.all([
+    const [location, ownerSummary, launchReadiness, onboarding] = await Promise.all([
       getInternalLocation(locationId),
       getInternalLocationOwner(locationId),
-      getInternalLocationReadiness(locationId)
+      getInternalLocationReadiness(locationId),
+      getInternalLocationOnboarding(locationId)
     ]);
 
     const hasOwner = Boolean(ownerSummary.owner);
@@ -52,6 +201,8 @@ export default async function ClientDetailPage({ params, searchParams }: ClientD
 
         {created ? <p className="inline-message inline-message-success">Client shell created.</p> : null}
         {invited ? <p className="inline-message inline-message-success">Owner invite sent.</p> : null}
+        {releaseUpdated ? <p className="inline-message inline-message-success">Mobile release status updated.</p> : null}
+        {releaseError ? <p className="inline-message inline-message-error">{releaseError}</p> : null}
 
         <div className="stat-grid">
           <article className="stat-card">
@@ -210,6 +361,8 @@ export default async function ClientDetailPage({ params, searchParams }: ClientD
         <section className="panel">
           <LaunchReadinessChecklist readiness={launchReadiness} />
         </section>
+
+        <MobileReleaseStatusPanel locationId={locationId} release={onboarding.mobileRelease} />
       </section>
     );
   } catch (error) {

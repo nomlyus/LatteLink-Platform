@@ -970,6 +970,25 @@
         }
       }
     },
+    "/internal/locations/{locationId}/onboarding": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "locationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/internal/locations/{locationId}/readiness": {
       "get": {
         "parameters": [

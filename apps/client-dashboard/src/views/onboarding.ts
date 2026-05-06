@@ -196,6 +196,76 @@ function renderOptionalConnectorsStep() {
   `;
 }
 
+const mobileReleaseTimeline = [
+  { status: "not_started", label: "Release profile pending" },
+  { status: "metadata_ready", label: "App metadata configured" },
+  { status: "metadata_pending", label: "Apple identifiers pending" },
+  { status: "build_configuring", label: "Build queued" },
+  { status: "build_ready", label: "Build uploaded to TestFlight" },
+  { status: "submitted_for_review", label: "Submitted for App Store review" },
+  { status: "approved", label: "Approved" },
+  { status: "ready_for_launch", label: "Ready for launch" },
+  { status: "live", label: "Live" }
+];
+
+function mobileReleaseStatusLabel(status: string | undefined, statusLabel?: string) {
+  return statusLabel ?? mobileReleaseTimeline.find((item) => item.status === status)?.label ?? "Release profile pending";
+}
+
+function renderMobileReleaseTimeline() {
+  const release = state.onboardingSummary?.mobileRelease;
+  const status = release?.status ?? "not_started";
+  const activeIndex = mobileReleaseTimeline.findIndex((item) => item.status === status);
+  const normalizedActiveIndex = activeIndex >= 0 ? activeIndex : 0;
+  const currentLabel = mobileReleaseStatusLabel(status, release?.statusLabel);
+  const updatedAt = release?.updatedAt ? new Date(release.updatedAt).toLocaleString() : null;
+
+  return `
+    <article class="onboarding-release">
+      <div class="onboarding-release__header">
+        <div>
+          <div class="dash-panel-title">Mobile release</div>
+          <h3>${escapeHtml(currentLabel)}</h3>
+          <p class="muted-copy">
+            Nomly manages App Store setup, build submission, and launch approval. This timeline is read-only.
+            ${updatedAt ? `Updated ${escapeHtml(updatedAt)}.` : ""}
+          </p>
+        </div>
+        <span class="dash-status-badge dash-status-badge--${status === "blocked" ? "danger" : ["approved", "ready_for_launch", "live"].includes(status) ? "success" : "warning"}">
+          ${escapeHtml(status === "blocked" ? "blocked" : currentLabel)}
+        </span>
+      </div>
+      <div class="timeline-stack onboarding-release__timeline">
+        ${mobileReleaseTimeline
+          .map((item, index) => {
+            const passed = status === "live" || index < normalizedActiveIndex;
+            const current = item.status === status;
+            const tone = passed ? "success" : current ? "warning" : "neutral";
+            return `
+              <div class="timeline-row">
+                <span class="dash-status-badge dash-status-badge--${tone}">${passed ? "done" : current ? "current" : "pending"}</span>
+                <strong>${escapeHtml(item.label)}</strong>
+              </div>
+            `;
+          })
+          .join("")}
+      </div>
+      ${
+        release?.buildNumber || release?.testFlightUrl || release?.appStoreUrl || release?.blockedReason
+          ? `
+            <dl class="onboarding-release__meta">
+              ${release.buildNumber ? `<div><dt>Build</dt><dd>${escapeHtml(release.buildNumber)}</dd></div>` : ""}
+              ${release.testFlightUrl ? `<div><dt>TestFlight</dt><dd><a href="${escapeHtml(release.testFlightUrl)}">${escapeHtml(release.testFlightUrl)}</a></dd></div>` : ""}
+              ${release.appStoreUrl ? `<div><dt>App Store</dt><dd><a href="${escapeHtml(release.appStoreUrl)}">${escapeHtml(release.appStoreUrl)}</a></dd></div>` : ""}
+              ${release.blockedReason ? `<div><dt>Blocker</dt><dd>${escapeHtml(release.blockedReason)}</dd></div>` : ""}
+            </dl>
+          `
+          : ""
+      }
+    </article>
+  `;
+}
+
 function renderLaunchReview() {
   const summary = state.onboardingSummary;
   if (!summary) return "";
@@ -296,6 +366,8 @@ export function renderOnboardingSection() {
         completeLabel: "Mark tested"
       })}
     </section>
+
+    ${renderMobileReleaseTimeline()}
 
     ${renderLaunchReview()}
   `;

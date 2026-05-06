@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { OperatorSession } from "../src/api";
 import { getAvailableDashboardSections } from "../src/sections";
 import { state } from "../src/state";
+import { renderOnboardingSection } from "../src/views/onboarding";
 
 const ownerSession: OperatorSession = {
   accessToken: "access-token",
@@ -64,5 +65,37 @@ describe("dashboard sections", () => {
       status: "live"
     };
     expect(getAvailableDashboardSections()).not.toContain("onboarding");
+  });
+
+  it("renders mobile release progress as read-only onboarding status", () => {
+    state.session = ownerSession;
+    state.onboardingSummary = {
+      ...onboardingSummary,
+      checklist: [
+        {
+          id: "mobile_release_ready",
+          label: "Mobile release ready",
+          status: "pending",
+          passed: false,
+          required: true,
+          manual: true
+        }
+      ],
+      mobileRelease: {
+        locationId: "northside-01",
+        status: "submitted_for_review",
+        buildNumber: "42",
+        testFlightUrl: "https://testflight.apple.com/join/example",
+        updatedAt: "2026-05-06T12:00:00.000Z"
+      }
+    };
+
+    const html = renderOnboardingSection();
+
+    expect(html).toContain("Submitted for App Store review");
+    expect(html).toContain("Build uploaded to TestFlight");
+    expect(html).toContain("This timeline is read-only");
+    expect(html).toContain("Build");
+    expect(html).not.toContain("data-action=\"mobile-release\"");
   });
 });

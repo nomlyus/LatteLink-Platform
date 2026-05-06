@@ -1,6 +1,7 @@
 "use server";
 
 import type { AppConfigStoreCapabilities } from "@lattelink/contracts-catalog";
+import { mobileReleaseProfileUpdateSchema } from "@lattelink/contracts-catalog";
 import { redirect } from "next/navigation";
 import {
   AdminAuthError,
@@ -17,7 +18,8 @@ import {
   createInternalClient,
   createStripeDashboardLink,
   createStripeOnboardingLink,
-  resendLocationOwnerInvite
+  resendLocationOwnerInvite,
+  updateInternalLocationMobileRelease
 } from "@/lib/internal-api";
 
 function readString(formData: FormData, key: string) {
@@ -26,6 +28,17 @@ function readString(formData: FormData, key: string) {
 
 function readBoolean(formData: FormData, key: string) {
   return formData.get(key) === "on";
+}
+
+function readOptionalString(formData: FormData, key: string) {
+  const value = readString(formData, key);
+  return value.length > 0 ? value : undefined;
+}
+
+function readOptionalDateTime(formData: FormData, key: string) {
+  const value = readOptionalString(formData, key);
+  if (!value) return undefined;
+  return new Date(value).toISOString();
 }
 
 function readTaxRateBasisPoints(formData: FormData, key: string): number | undefined {
@@ -212,4 +225,34 @@ export async function openStripeDashboardAction(formData: FormData) {
   }
 
   redirect(destinationUrl);
+}
+
+export async function updateMobileReleaseAction(formData: FormData) {
+  const locationId = readString(formData, "locationId");
+  if (!locationId) {
+    redirect("/clients?error=Location ID is required.");
+  }
+
+  try {
+    await requireAdminCapability("clients:write");
+    await updateInternalLocationMobileRelease(
+      locationId,
+      mobileReleaseProfileUpdateSchema.parse({
+        status: readOptionalString(formData, "status"),
+        statusLabel: readOptionalString(formData, "statusLabel"),
+        buildNumber: readOptionalString(formData, "buildNumber"),
+        testFlightUrl: readOptionalString(formData, "testFlightUrl"),
+        appStoreUrl: readOptionalString(formData, "appStoreUrl"),
+        submittedAt: readOptionalDateTime(formData, "submittedAt"),
+        approvedAt: readOptionalDateTime(formData, "approvedAt"),
+        liveAt: readOptionalDateTime(formData, "liveAt"),
+        blockedReason: readOptionalString(formData, "blockedReason"),
+        notes: readOptionalString(formData, "notes")
+      })
+    );
+  } catch (error) {
+    redirect(`/clients/${locationId}?releaseError=${encodeURIComponent(toRedirectError(error))}`);
+  }
+
+  redirect(`/clients/${locationId}?releaseUpdated=1`);
 }

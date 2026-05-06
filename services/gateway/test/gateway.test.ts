@@ -3692,6 +3692,19 @@ let previousFreeClientDashboardDomain: string | undefined;
       ]
     });
 
+    const internalOnboardingResponse = await app.inject({
+      method: "GET",
+      url: "/v1/internal/locations/northside-01/onboarding",
+      headers: readonlyInternalAdminHeaders
+    });
+    expect(internalOnboardingResponse.statusCode).toBe(200);
+    expect(internalOnboardingResponse.json()).toMatchObject({
+      locationId: "northside-01",
+      mobileRelease: {
+        status: "not_started"
+      }
+    });
+
     const mobileReleaseResponse = await app.inject({
       method: "PATCH",
       url: "/v1/internal/locations/northside-01/mobile-release",

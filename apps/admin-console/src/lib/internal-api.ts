@@ -14,6 +14,8 @@ import type {
   InternalLocationListResponse,
   InternalLocationSummary,
   LaunchReadinessResponse,
+  MobileReleaseProfileUpdate,
+  OnboardingSummary,
   StripeConnectLinkResponse
 } from "@lattelink/contracts-catalog";
 import { requireAdminSession } from "@/lib/auth";
@@ -139,6 +141,17 @@ export async function getInternalLocationPaymentProfile(locationId: string) {
 
 export async function getInternalLocationReadiness(locationId: string) {
   return requestInternalApi<LaunchReadinessResponse>(`/v1/internal/locations/${locationId}/readiness`);
+}
+
+export async function getInternalLocationOnboarding(locationId: string) {
+  return requestInternalApi<OnboardingSummary>(`/v1/internal/locations/${locationId}/onboarding`);
+}
+
+export async function updateInternalLocationMobileRelease(locationId: string, input: MobileReleaseProfileUpdate) {
+  return requestInternalApi<OnboardingSummary>(`/v1/internal/locations/${locationId}/mobile-release`, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
 }
 
 export async function lookupSupportOrders(input: { query: string; locationId?: string; limit?: number }) {
