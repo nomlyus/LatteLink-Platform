@@ -24,6 +24,10 @@ import {
   operatorAuthContract,
   operatorDevAccessRequestSchema,
   operatorGoogleExchangeRequestSchema,
+  operatorInviteAcceptRequestSchema,
+  operatorInviteAcceptResponseSchema,
+  operatorInviteLookupResponseSchema,
+  operatorInviteTokenParamsSchema,
   operatorMeResponseSchema,
   operatorPasswordSignInSchema,
   operatorUserCreateSchema,
@@ -2163,6 +2167,48 @@ export async function registerRoutes(app: FastifyInstance) {
         method: "GET",
         path: "/v1/operator/auth/providers",
         responseSchema: operatorAuthContract.routes.providers.response
+      });
+    }
+  );
+
+  app.get(
+    "/v1/operator/invites/:token",
+    {
+      preHandler: app.rateLimit(authReadRateLimit)
+    },
+    async (request, reply) => {
+      const { token } = operatorInviteTokenParamsSchema.parse(request.params);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: identityBaseUrl,
+        serviceLabel: "Identity",
+        method: "GET",
+        path: `/v1/operator/invites/${encodeURIComponent(token)}`,
+        responseSchema: operatorInviteLookupResponseSchema
+      });
+    }
+  );
+
+  app.post(
+    "/v1/operator/invites/:token/accept",
+    {
+      preHandler: app.rateLimit(authWriteRateLimit)
+    },
+    async (request, reply) => {
+      const { token } = operatorInviteTokenParamsSchema.parse(request.params);
+      const input = operatorInviteAcceptRequestSchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: identityBaseUrl,
+        serviceLabel: "Identity",
+        method: "POST",
+        path: `/v1/operator/invites/${encodeURIComponent(token)}/accept`,
+        body: input,
+        responseSchema: operatorInviteAcceptResponseSchema
       });
     }
   );

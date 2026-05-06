@@ -4,6 +4,9 @@ import {
   operatorAuthProvidersSchema,
   operatorDevAccessRequestSchema,
   operatorGoogleExchangeRequestSchema,
+  operatorInviteAcceptRequestSchema,
+  operatorInviteAcceptResponseSchema,
+  operatorInviteLookupResponseSchema,
   operatorPasswordSignInSchema,
   operatorSessionSchema,
   operatorUserListResponseSchema,
@@ -52,6 +55,8 @@ const storedOperatorSessionSchema = operatorSessionSchema.extend({
 export type OperatorUser = z.output<typeof operatorUserSchema>;
 export type OperatorSession = z.output<typeof storedOperatorSessionSchema>;
 export type OperatorAuthProviders = z.output<typeof operatorAuthProvidersSchema>;
+export type OperatorInviteLookup = z.output<typeof operatorInviteLookupResponseSchema>;
+export type OperatorInviteAcceptResponse = z.output<typeof operatorInviteAcceptResponseSchema>;
 export type DashboardLocation = {
   locationId: string;
   locationName: string;
@@ -369,6 +374,26 @@ export async function requestOperatorDevAccess(params: { apiBaseUrl: string; ema
   });
 
   return toStoredSession(params.apiBaseUrl, session);
+}
+
+export function lookupOperatorInvite(params: { apiBaseUrl: string; token: string }) {
+  return requestJson({
+    apiBaseUrl: params.apiBaseUrl,
+    path: `/operator/invites/${encodeURIComponent(params.token)}`,
+    schema: operatorInviteLookupResponseSchema
+  });
+}
+
+export function acceptOperatorInvite(params: { apiBaseUrl: string; token: string; password: string }) {
+  return requestJson({
+    apiBaseUrl: params.apiBaseUrl,
+    path: `/operator/invites/${encodeURIComponent(params.token)}/accept`,
+    method: "POST",
+    body: operatorInviteAcceptRequestSchema.parse({
+      password: params.password
+    }),
+    schema: operatorInviteAcceptResponseSchema
+  });
 }
 
 export function startOperatorGoogleSignIn(params: { apiBaseUrl: string; redirectUri: string; locationId?: string }) {

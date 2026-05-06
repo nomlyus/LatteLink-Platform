@@ -16,16 +16,20 @@ function isGoogleSignInConfigured() {
   return state.authProviders?.google.configured === true;
 }
 
-export function renderAuthScreen() {
-  const showApiField = isLocalDevAccessEnabled();
-  const googleSsoConfigured = isGoogleSignInConfigured();
-  const googleButtonHint =
-    state.authProviders === null
-      ? "Checking availability"
-      : googleSsoConfigured
-        ? "Use your store Google account"
-        : "Unavailable for this environment";
+function renderApiBaseUrlField() {
+  if (!isLocalDevAccessEnabled()) {
+    return "";
+  }
 
+  return `
+    <label class="field field--compact">
+      <span>Gateway API</span>
+      <input name="apiBaseUrl" type="url" value="${escapeHtml(state.authApiBaseUrl)}" placeholder="http://127.0.0.1:8080/v1" required />
+    </label>
+  `;
+}
+
+function renderAuthShell(content: string) {
   return `
     <div class="auth-page">
       <header class="auth-nav">
@@ -39,6 +43,82 @@ export function renderAuthScreen() {
 
       <main class="auth-stage">
         <section class="auth-card">
+          ${content}
+        </section>
+      </main>
+    </div>
+  `;
+}
+
+function renderOwnerInviteScreen() {
+  const inviteState = state.ownerInvite;
+  const lookup = inviteState?.lookup ?? null;
+  const loading = inviteState?.status === "loading";
+  const ready = inviteState?.status === "ready" && lookup;
+  const accepting = inviteState?.accepting === true;
+  const accepted = inviteState?.status === "accepted";
+
+  return renderAuthShell(`
+    <div class="auth-card__header">
+      <p class="eyebrow">Owner invite</p>
+      <h1>${accepted ? "Owner account ready." : "Set up your owner account."}</h1>
+      <p class="muted-copy">${
+        loading
+          ? "Checking this one-time invite link."
+          : ready
+            ? `Create a password for ${escapeHtml(lookup.operator.email)}.`
+            : accepted
+              ? "Your password was set. Sign in with your owner email to continue."
+              : "This invite cannot be used. Ask Nomly or your launch contact to resend the owner invite."
+      }</p>
+    </div>
+
+    ${renderBanner()}
+
+    ${
+      loading
+        ? `<div class="auth-loading"><span class="spinner"></span><span>Validating invite</span></div>`
+        : ready
+          ? `
+            <div class="invite-summary">
+              <span>Owner</span>
+              <strong>${escapeHtml(lookup.operator.displayName)}</strong>
+              <small>${escapeHtml(lookup.operator.email)}</small>
+            </div>
+            <form class="auth-stack" data-form="owner-invite-accept">
+              <label class="field">
+                <span>Password</span>
+                <input name="password" type="password" autocomplete="new-password" placeholder="Choose a password" required />
+              </label>
+              <label class="field">
+                <span>Confirm password</span>
+                <input name="confirmPassword" type="password" autocomplete="new-password" placeholder="Repeat your password" required />
+              </label>
+              ${renderApiBaseUrlField()}
+              <button class="button button--primary" type="submit" ${accepting ? "disabled" : ""}>
+                ${accepting ? '<span class="spinner"></span>' : "Activate account"}
+              </button>
+            </form>
+          `
+          : `<button class="button button--primary" type="button" data-action="show-sign-in">Go to sign in</button>`
+    }
+  `);
+}
+
+export function renderAuthScreen() {
+  if (state.ownerInvite) {
+    return renderOwnerInviteScreen();
+  }
+
+  const googleSsoConfigured = isGoogleSignInConfigured();
+  const googleButtonHint =
+    state.authProviders === null
+      ? "Checking availability"
+      : googleSsoConfigured
+        ? "Use your store Google account"
+        : "Unavailable for this environment";
+
+  return renderAuthShell(`
           <div class="auth-card__header">
             <p class="eyebrow">Store access</p>
             <h1>Sign in to your dashboard.</h1>
@@ -58,16 +138,7 @@ export function renderAuthScreen() {
               <input name="password" type="password" value="${escapeHtml(state.authPassword)}" placeholder="Enter your password" required />
             </label>
 
-            ${
-              showApiField
-                ? `
-                  <label class="field field--compact">
-                    <span>Gateway API</span>
-                    <input name="apiBaseUrl" type="url" value="${escapeHtml(state.authApiBaseUrl)}" placeholder="http://127.0.0.1:8080/v1" required />
-                  </label>
-                `
-                : ""
-            }
+            ${renderApiBaseUrlField()}
 
             <button class="button button--primary" type="submit" ${state.signingIn ? "disabled" : ""}>
               ${state.signingIn ? '<span class="spinner"></span>' : "Sign in"}
@@ -97,8 +168,5 @@ export function renderAuthScreen() {
               </span>
             </button>
           </div>
-        </section>
-      </main>
-    </div>
-  `;
+  `);
 }

@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiRequestError,
   buildOperatorHeaders,
+  acceptOperatorInvite,
   extractApiErrorMessage,
   fetchDashboardLocations,
   fetchOperatorSnapshot,
   isApiRequestError,
+  lookupOperatorInvite,
   normalizeApiBaseUrl,
   signInOperatorWithPassword,
   updateOperatorOrderStatus,
@@ -79,6 +81,110 @@ describe("client dashboard api helpers", () => {
       "https://api.nomly.us/v1/operator/auth/sign-in",
       expect.objectContaining({
         method: "POST"
+      })
+    );
+  });
+
+  it("looks up owner invite links through the gateway", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          invite: {
+            inviteId: "123e4567-e89b-12d3-a456-426614174001",
+            locationId: "northside-01",
+            operatorUserId: "123e4567-e89b-12d3-a456-426614174002",
+            email: "owner@northside.com",
+            status: "pending",
+            expiresAt: "2026-05-13T12:00:00.000Z",
+            createdAt: "2026-05-06T12:00:00.000Z",
+            updatedAt: "2026-05-06T12:00:00.000Z"
+          },
+          operator: {
+            displayName: "Pilot Owner",
+            email: "owner@northside.com",
+            role: "owner",
+            locationId: "northside-01"
+          }
+        }),
+        { status: 200 }
+      )
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const invite = await lookupOperatorInvite({
+      apiBaseUrl: "https://api.nomly.us",
+      token: "owner-invite-token-1234567890"
+    });
+
+    expect(invite.operator.email).toBe("owner@northside.com");
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://api.nomly.us/v1/operator/invites/owner-invite-token-1234567890",
+      expect.objectContaining({
+        method: "GET"
+      })
+    );
+  });
+
+  it("accepts owner invites with the chosen password", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          operator: {
+            operatorUserId: "123e4567-e89b-12d3-a456-426614174002",
+            displayName: "Pilot Owner",
+            email: "owner@northside.com",
+            role: "owner",
+            locationId: "northside-01",
+            locationIds: ["northside-01"],
+            active: true,
+            capabilities: [
+              "orders:read",
+              "orders:write",
+              "menu:read",
+              "menu:write",
+              "menu:visibility",
+              "store:read",
+              "store:write",
+              "team:read",
+              "team:write"
+            ],
+            createdAt: "2026-05-06T12:00:00.000Z",
+            updatedAt: "2026-05-06T12:05:00.000Z"
+          },
+          invite: {
+            inviteId: "123e4567-e89b-12d3-a456-426614174001",
+            locationId: "northside-01",
+            operatorUserId: "123e4567-e89b-12d3-a456-426614174002",
+            email: "owner@northside.com",
+            status: "consumed",
+            expiresAt: "2026-05-13T12:00:00.000Z",
+            consumedAt: "2026-05-06T12:05:00.000Z",
+            createdAt: "2026-05-06T12:00:00.000Z",
+            updatedAt: "2026-05-06T12:05:00.000Z"
+          }
+        }),
+        { status: 200 }
+      )
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const accepted = await acceptOperatorInvite({
+      apiBaseUrl: "https://api.nomly.us/v1",
+      token: "owner-invite-token-1234567890",
+      password: "AcceptedPassword123!"
+    });
+
+    expect(accepted.invite.status).toBe("consumed");
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://api.nomly.us/v1/operator/invites/owner-invite-token-1234567890/accept",
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          password: "AcceptedPassword123!"
+        })
       })
     );
   });

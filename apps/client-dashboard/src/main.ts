@@ -3,14 +3,20 @@ import "./sentry.js";
 import { state } from "./state.js";
 import { render } from "./render.js";
 import { registerEvents } from "./events.js";
-import { handleGoogleCallback, loadAuthProviders } from "./controllers/auth.js";
+import { handleGoogleCallback, handleOwnerInviteFromUrl, loadAuthProviders } from "./controllers/auth.js";
 import { loadDashboard } from "./lifecycle.js";
 
 async function bootstrap() {
   registerEvents();
-  render();
 
   state.initializing = false;
+
+  const handledOwnerInvite = await handleOwnerInviteFromUrl();
+  if (handledOwnerInvite) {
+    return;
+  }
+
+  render();
   void loadAuthProviders();
 
   const handledGoogleCallback = await handleGoogleCallback();

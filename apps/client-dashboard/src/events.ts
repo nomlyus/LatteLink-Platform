@@ -26,7 +26,9 @@ import { loadDashboard, signOut } from "./lifecycle.js";
 import { getAvailableDashboardSections } from "./sections.js";
 import {
   handleGoogleSignInStart,
-  handlePasswordSignIn
+  handleOwnerInviteAccept,
+  handlePasswordSignIn,
+  showSignInScreen
 } from "./controllers/auth.js";
 import {
   handleMenuCreateSubmit,
@@ -77,6 +79,9 @@ export function registerEvents() {
     switch (formType) {
       case "auth-sign-in":
         void handlePasswordSignIn(target);
+        return;
+      case "owner-invite-accept":
+        void handleOwnerInviteAccept(target);
         return;
       case "menu-create":
         void handleMenuCreateSubmit(target);
@@ -179,6 +184,9 @@ export function registerEvents() {
         return;
       case "start-google-sign-in":
         void handleGoogleSignInStart();
+        return;
+      case "show-sign-in":
+        showSignInScreen();
         return;
       case "sign-out":
         void signOut();

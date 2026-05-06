@@ -597,6 +597,35 @@ label.field > span {
   height: 40px;
 }
 
+.auth-loading,
+.invite-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  color: var(--color-text-2);
+  font-size: 13px;
+}
+
+.invite-summary {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.invite-summary span,
+.invite-summary small {
+  color: var(--color-text-3);
+}
+
+.invite-summary strong {
+  color: var(--color-text);
+  font-size: 15px;
+}
+
 .auth-divider {
   display: flex;
   align-items: center;

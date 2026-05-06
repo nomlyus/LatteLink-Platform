@@ -309,6 +309,83 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
+      if (url.endsWith("/v1/operator/invites/owner-invite-token-1234567890") && method === "GET") {
+        return new Response(
+          JSON.stringify({
+            invite: {
+              inviteId: "323e4567-e89b-12d3-a456-426614174995",
+              locationId: "northside-01",
+              operatorUserId: "123e4567-e89b-12d3-a456-426614174995",
+              email: "owner@northside.com",
+              status: "pending",
+              expiresAt: "2026-05-13T12:00:00.000Z",
+              createdAt: "2026-05-06T12:00:00.000Z",
+              updatedAt: "2026-05-06T12:00:00.000Z"
+            },
+            operator: {
+              displayName: "Pilot Owner",
+              email: "owner@northside.com",
+              role: "owner",
+              locationId: "northside-01"
+            }
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      if (url.endsWith("/v1/operator/invites/owner-invite-token-1234567890/accept") && method === "POST") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { password?: string };
+        if (body.password !== "AcceptedPassword123!") {
+          return new Response(
+            JSON.stringify({
+              code: "BAD_REQUEST",
+              message: "Password is invalid",
+              requestId: "identity-stub"
+            }),
+            { status: 400, headers: { "content-type": "application/json" } }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            operator: {
+              operatorUserId: "123e4567-e89b-12d3-a456-426614174995",
+              displayName: "Pilot Owner",
+              email: "owner@northside.com",
+              role: "owner",
+              locationId: "northside-01",
+              locationIds: ["northside-01"],
+              active: true,
+              capabilities: [
+                "orders:read",
+                "orders:write",
+                "menu:read",
+                "menu:write",
+                "menu:visibility",
+                "store:read",
+                "store:write",
+                "team:read",
+                "team:write"
+              ],
+              createdAt: "2026-05-06T12:00:00.000Z",
+              updatedAt: "2026-05-06T12:00:00.000Z"
+            },
+            invite: {
+              inviteId: "323e4567-e89b-12d3-a456-426614174995",
+              locationId: "northside-01",
+              operatorUserId: "123e4567-e89b-12d3-a456-426614174995",
+              email: "owner@northside.com",
+              status: "consumed",
+              expiresAt: "2026-05-13T12:00:00.000Z",
+              consumedAt: "2026-05-06T12:05:00.000Z",
+              createdAt: "2026-05-06T12:00:00.000Z",
+              updatedAt: "2026-05-06T12:05:00.000Z"
+            }
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
       if (url.includes("/v1/operator/auth/google/start") && method === "GET") {
         return new Response(
           JSON.stringify({
@@ -2287,6 +2364,64 @@ let previousFreeClientDashboardDomain: string | undefined;
         configured: true
       }
     });
+    await app.close();
+  });
+
+  it("forwards owner invite lookup and acceptance to identity", async () => {
+    const app = await buildApp();
+    const lookupResponse = await app.inject({
+      method: "GET",
+      url: "/v1/operator/invites/owner-invite-token-1234567890"
+    });
+
+    expect(lookupResponse.statusCode, lookupResponse.body).toBe(200);
+    expect(lookupResponse.json()).toMatchObject({
+      invite: {
+        locationId: "northside-01",
+        status: "pending"
+      },
+      operator: {
+        email: "owner@northside.com",
+        role: "owner"
+      }
+    });
+
+    const acceptResponse = await app.inject({
+      method: "POST",
+      url: "/v1/operator/invites/owner-invite-token-1234567890/accept",
+      payload: {
+        password: "AcceptedPassword123!"
+      }
+    });
+
+    expect(acceptResponse.statusCode, acceptResponse.body).toBe(200);
+    expect(acceptResponse.json()).toMatchObject({
+      operator: {
+        email: "owner@northside.com",
+        active: true
+      },
+      invite: {
+        status: "consumed"
+      }
+    });
+
+    const lookupCall = fetchMock.mock.calls.find(([input]) => {
+      const url = typeof input === "string" ? input : input.url;
+      return url === "http://identity.internal/v1/operator/invites/owner-invite-token-1234567890";
+    });
+    expect(lookupCall).toBeDefined();
+
+    const acceptCall = fetchMock.mock.calls.find(([input]) => {
+      const url = typeof input === "string" ? input : input.url;
+      return url === "http://identity.internal/v1/operator/invites/owner-invite-token-1234567890/accept";
+    });
+    expect(acceptCall).toBeDefined();
+    if (acceptCall) {
+      expect(JSON.parse(String(acceptCall[1]?.body ?? "{}"))).toEqual({
+        password: "AcceptedPassword123!"
+      });
+    }
+
     await app.close();
   });
 

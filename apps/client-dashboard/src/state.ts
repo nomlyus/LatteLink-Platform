@@ -3,7 +3,13 @@ import type {
   AppConfig,
   MenuItemCustomizationGroup
 } from "@lattelink/contracts-catalog";
-import type { DashboardLocation, OperatorAuthProviders, OperatorSession, OperatorUser } from "./api.js";
+import type {
+  DashboardLocation,
+  OperatorAuthProviders,
+  OperatorInviteLookup,
+  OperatorSession,
+  OperatorUser
+} from "./api.js";
 import type {
   DashboardSection,
   OperatorMenuCategory,
@@ -24,6 +30,12 @@ export type AppState = {
   authEmail: string;
   authPassword: string;
   authProviders: OperatorAuthProviders | null;
+  ownerInvite: {
+    token: string;
+    status: "loading" | "ready" | "accepted" | "error";
+    lookup: OperatorInviteLookup | null;
+    accepting: boolean;
+  } | null;
   initializing: boolean;
   loading: boolean;
   signingIn: boolean;
@@ -95,6 +107,7 @@ export const state: AppState = {
   authEmail: initialStoredSession?.operator.email ?? "",
   authPassword: "",
   authProviders: null,
+  ownerInvite: null,
   initializing: true,
   loading: false,
   signingIn: false,
