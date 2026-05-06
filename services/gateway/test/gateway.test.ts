@@ -97,6 +97,74 @@ let previousFreeClientDashboardDomain: string | undefined;
     };
   }
 
+  function buildOnboardingPayload(
+    overrides: Partial<{
+      tenantId: string;
+      brandId: string;
+      brandName: string;
+      locationId: string;
+      locationName: string;
+      marketLabel: string;
+      status: "draft" | "invited" | "in_progress" | "ready_for_review" | "approved" | "live" | "blocked";
+      readyForReview: boolean;
+      mobileReleaseStatus:
+        | "not_started"
+        | "metadata_pending"
+        | "metadata_ready"
+        | "build_configuring"
+        | "build_ready"
+        | "submitted_for_review"
+        | "approved"
+        | "ready_for_launch"
+        | "live"
+        | "blocked";
+      buildNumber: string;
+    }> = {}
+  ) {
+    const locationId = overrides.locationId ?? "northside-01";
+    return {
+      tenantId: overrides.tenantId ?? "tenant-northside",
+      brandId: overrides.brandId ?? "northside-coffee",
+      brandName: overrides.brandName ?? "Northside Coffee",
+      locationId,
+      locationName: overrides.locationName ?? "Northside Flagship",
+      marketLabel: overrides.marketLabel ?? "Detroit, MI",
+      status: overrides.status ?? "in_progress",
+      readyForReview: overrides.readyForReview ?? false,
+      checklist: [
+        {
+          id: "owner_invited",
+          label: "Owner invited",
+          status: "complete",
+          passed: true
+        },
+        {
+          id: "payments_connected",
+          label: "Payments connected",
+          status: "pending",
+          passed: false
+        },
+        {
+          id: "mobile_release_ready",
+          label: "Mobile release ready",
+          status: overrides.mobileReleaseStatus === "ready_for_launch" ? "complete" : "pending",
+          passed: overrides.mobileReleaseStatus === "ready_for_launch"
+        }
+      ],
+      paymentReadiness: {
+        ready: false,
+        onboardingState: "pending",
+        missingRequiredFields: ["stripe_connect"]
+      },
+      mobileRelease: {
+        locationId,
+        status: overrides.mobileReleaseStatus ?? "not_started",
+        buildNumber: overrides.buildNumber
+      },
+      updatedAt: "2026-05-06T12:00:00.000Z"
+    };
+  }
+
   beforeEach(() => {
     fetchMock.mockReset();
     previousIdentityBaseUrl = process.env.IDENTITY_SERVICE_BASE_URL;
@@ -1211,6 +1279,81 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
+      if (url.endsWith("/v1/catalog/internal/clients") && method === "POST") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as {
+          clientName?: string;
+          locationName?: string;
+          marketLabel?: string;
+        };
+        const onboarding = buildOnboardingPayload({
+          tenantId: "tenant-northside",
+          brandName: body.clientName ?? "Northside Coffee",
+          locationName: body.locationName ?? "Northside Flagship",
+          marketLabel: body.marketLabel ?? "Detroit, MI"
+        });
+
+        return new Response(
+          JSON.stringify({
+            tenantId: onboarding.tenantId,
+            locationId: onboarding.locationId,
+            onboarding
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      if (url.endsWith("/v1/catalog/internal/clients") && method === "GET") {
+        return new Response(
+          JSON.stringify({
+            clients: [
+              {
+                tenantId: "tenant-northside",
+                brandId: "northside-coffee",
+                clientName: "Northside Coffee",
+                status: "in_progress",
+                primaryLocationId: "northside-01",
+                locationCount: 1,
+                createdAt: "2026-05-06T12:00:00.000Z",
+                updatedAt: "2026-05-06T12:00:00.000Z"
+              }
+            ]
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      const internalClientDetailMatch = url.match(/\/v1\/catalog\/internal\/clients\/([^/]+)$/);
+      if (internalClientDetailMatch && method === "GET") {
+        const tenantId = internalClientDetailMatch[1];
+
+        return new Response(
+          JSON.stringify({
+            tenantId,
+            brandId: "northside-coffee",
+            clientName: "Northside Coffee",
+            status: "in_progress",
+            primaryLocationId: "northside-01",
+            locationCount: 1,
+            createdAt: "2026-05-06T12:00:00.000Z",
+            updatedAt: "2026-05-06T12:00:00.000Z",
+            locations: [
+              {
+                tenantId,
+                brandId: "northside-coffee",
+                locationId: "northside-01",
+                locationName: "Northside Flagship",
+                marketLabel: "Detroit, MI",
+                primaryLocation: true,
+                createdAt: "2026-05-06T12:00:00.000Z",
+                updatedAt: "2026-05-06T12:00:00.000Z"
+              }
+            ],
+            onboarding: buildOnboardingPayload({ tenantId })
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
       if (url.endsWith("/v1/catalog/internal/locations") && method === "GET") {
         return new Response(
           JSON.stringify({
@@ -1338,6 +1481,71 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
+      const internalLocationOnboardingMatch = url.match(/\/v1\/catalog\/internal\/locations\/([^/]+)\/onboarding$/);
+      if (internalLocationOnboardingMatch && method === "GET") {
+        const locationId = internalLocationOnboardingMatch[1];
+
+        return new Response(JSON.stringify(buildOnboardingPayload({ locationId })), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+
+      if (internalLocationOnboardingMatch && method === "PATCH") {
+        const locationId = internalLocationOnboardingMatch[1];
+        const body = JSON.parse(String(init?.body ?? "{}")) as {
+          readyForReview?: boolean;
+          testOrderCompleted?: boolean;
+        };
+
+        return new Response(
+          JSON.stringify(
+            buildOnboardingPayload({
+              locationId,
+              status: body.readyForReview ? "ready_for_review" : "in_progress",
+              readyForReview: Boolean(body.readyForReview && body.testOrderCompleted)
+            })
+          ),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      const internalLocationMobileReleaseMatch = url.match(/\/v1\/catalog\/internal\/locations\/([^/]+)\/mobile-release$/);
+      if (internalLocationMobileReleaseMatch && method === "PATCH") {
+        const locationId = internalLocationMobileReleaseMatch[1];
+        const body = JSON.parse(String(init?.body ?? "{}")) as {
+          status?: "ready_for_launch";
+          buildNumber?: string;
+        };
+
+        return new Response(
+          JSON.stringify(
+            buildOnboardingPayload({
+              locationId,
+              mobileReleaseStatus: body.status ?? "ready_for_launch",
+              buildNumber: body.buildNumber ?? "42"
+            })
+          ),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      const internalLocationLaunchApprovalMatch = url.match(/\/v1\/catalog\/internal\/locations\/([^/]+)\/launch-approval$/);
+      if (internalLocationLaunchApprovalMatch && method === "POST") {
+        const locationId = internalLocationLaunchApprovalMatch[1];
+        const body = JSON.parse(String(init?.body ?? "{}")) as { approved?: boolean };
+
+        return new Response(
+          JSON.stringify(
+            buildOnboardingPayload({
+              locationId,
+              status: body.approved ? "approved" : "blocked"
+            })
+          ),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
       const internalLocationMatch = url.match(/\/v1\/catalog\/internal\/locations\/([^/]+)$/);
       if (internalLocationMatch && method === "GET") {
         const locationId = internalLocationMatch[1];
@@ -1434,6 +1642,52 @@ let previousFreeClientDashboardDomain: string | undefined;
             },
             temporaryPassword: "Temporary123!",
             action: "created"
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      const internalOwnerInviteResendMatch = url.match(/\/v1\/identity\/internal\/locations\/([^/]+)\/owner\/invite\/resend$/);
+      if (internalOwnerInviteResendMatch && method === "POST") {
+        const locationId = internalOwnerInviteResendMatch[1];
+        const body = JSON.parse(String(init?.body ?? "{}")) as { displayName?: string; email?: string };
+
+        return new Response(
+          JSON.stringify({
+            operator: {
+              operatorUserId: "123e4567-e89b-12d3-a456-426614174995",
+              displayName: body.displayName ?? "Pilot Owner",
+              email: body.email ?? "owner@northside.com",
+              role: "owner",
+              locationId,
+              locationIds: [locationId],
+              active: false,
+              capabilities: [
+                "orders:read",
+                "orders:write",
+                "menu:read",
+                "menu:write",
+                "menu:visibility",
+                "store:read",
+                "store:write",
+                "team:read",
+                "team:write"
+              ],
+              createdAt: "2026-05-06T12:00:00.000Z",
+              updatedAt: "2026-05-06T12:00:00.000Z"
+            },
+            invite: {
+              inviteId: "323e4567-e89b-12d3-a456-426614174995",
+              locationId,
+              operatorUserId: "123e4567-e89b-12d3-a456-426614174995",
+              email: body.email ?? "owner@northside.com",
+              status: "pending",
+              expiresAt: "2026-05-13T12:00:00.000Z",
+              inviteUrl: "https://client.example.com/invites/test-token",
+              createdAt: "2026-05-06T12:00:00.000Z",
+              updatedAt: "2026-05-06T12:00:00.000Z"
+            },
+            action: "resent"
           }),
           { status: 200, headers: { "content-type": "application/json" } }
         );
@@ -3242,6 +3496,219 @@ let previousFreeClientDashboardDomain: string | undefined;
         stripeAccountId: "acct_1TOk7VE0L5J7W3jY",
         stripeOnboardingStatus: "completed"
       });
+    }
+
+    await app.close();
+  });
+
+  it("forwards internal client onboarding routes for authenticated internal admins", async () => {
+    const app = await buildApp();
+
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/v1/internal/clients",
+      headers: ownerInternalAdminHeaders,
+      payload: {
+        clientName: "Northside Coffee",
+        locationName: "Northside Flagship",
+        marketLabel: "Detroit, MI",
+        ownerEmail: "owner@northside.com",
+        ownerName: "Pilot Owner"
+      }
+    });
+    expect(createResponse.statusCode, createResponse.body).toBe(200);
+    expect(createResponse.json()).toMatchObject({
+      tenantId: "tenant-northside",
+      locationId: "northside-01",
+      onboarding: {
+        brandName: "Northside Coffee",
+        readyForReview: false
+      }
+    });
+
+    const listResponse = await app.inject({
+      method: "GET",
+      url: "/v1/internal/clients",
+      headers: readonlyInternalAdminHeaders
+    });
+    expect(listResponse.statusCode).toBe(200);
+    expect(listResponse.json()).toMatchObject({
+      clients: [
+        {
+          tenantId: "tenant-northside",
+          primaryLocationId: "northside-01"
+        }
+      ]
+    });
+
+    const detailResponse = await app.inject({
+      method: "GET",
+      url: "/v1/internal/clients/tenant-northside",
+      headers: readonlyInternalAdminHeaders
+    });
+    expect(detailResponse.statusCode).toBe(200);
+    expect(detailResponse.json()).toMatchObject({
+      tenantId: "tenant-northside",
+      locations: [
+        {
+          locationId: "northside-01",
+          primaryLocation: true
+        }
+      ]
+    });
+
+    const mobileReleaseResponse = await app.inject({
+      method: "PATCH",
+      url: "/v1/internal/locations/northside-01/mobile-release",
+      headers: ownerInternalAdminHeaders,
+      payload: {
+        status: "ready_for_launch",
+        buildNumber: "42"
+      }
+    });
+    expect(mobileReleaseResponse.statusCode, mobileReleaseResponse.body).toBe(200);
+    expect(mobileReleaseResponse.json()).toMatchObject({
+      mobileRelease: {
+        locationId: "northside-01",
+        status: "ready_for_launch",
+        buildNumber: "42"
+      }
+    });
+
+    const launchApprovalResponse = await app.inject({
+      method: "POST",
+      url: "/v1/internal/locations/northside-01/launch-approval",
+      headers: ownerInternalAdminHeaders,
+      payload: {
+        approved: true,
+        note: "Manual build and App Store setup are ready."
+      }
+    });
+    expect(launchApprovalResponse.statusCode, launchApprovalResponse.body).toBe(200);
+    expect(launchApprovalResponse.json()).toMatchObject({
+      locationId: "northside-01",
+      status: "approved"
+    });
+
+    const resendResponse = await app.inject({
+      method: "POST",
+      url: "/v1/internal/locations/northside-01/owner/invite/resend",
+      headers: ownerInternalAdminHeaders,
+      payload: {
+        displayName: "Pilot Owner",
+        email: "owner@northside.com"
+      }
+    });
+    expect(resendResponse.statusCode, resendResponse.body).toBe(200);
+    expect(resendResponse.json()).toMatchObject({
+      action: "resent",
+      invite: {
+        locationId: "northside-01",
+        status: "pending"
+      }
+    });
+
+    const createCall = fetchMock.mock.calls.find(([input]) => {
+      const url = typeof input === "string" ? input : input.url;
+      return url === "http://catalog.internal/v1/catalog/internal/clients";
+    });
+    expect(createCall).toBeDefined();
+    if (createCall) {
+      const upstreamHeaders = new Headers((createCall[1]?.headers ?? {}) as HeadersInit);
+      expect(upstreamHeaders.get("x-gateway-token")).toBe("gateway-test-token");
+      expect(upstreamHeaders.get("x-user-id")).toBe("223e4567-e89b-12d3-a456-426614174999");
+      expect(JSON.parse(String(createCall[1]?.body ?? "{}"))).toMatchObject({
+        clientName: "Northside Coffee",
+        ownerEmail: "owner@northside.com"
+      });
+    }
+
+    const resendCall = fetchMock.mock.calls.find(([input]) => {
+      const url = typeof input === "string" ? input : input.url;
+      return url === "http://identity.internal/v1/identity/internal/locations/northside-01/owner/invite/resend";
+    });
+    expect(resendCall).toBeDefined();
+    if (resendCall) {
+      const upstreamHeaders = new Headers((resendCall[1]?.headers ?? {}) as HeadersInit);
+      expect(upstreamHeaders.get("x-gateway-token")).toBe("gateway-test-token");
+      expect(upstreamHeaders.get("x-user-id")).toBe("223e4567-e89b-12d3-a456-426614174999");
+    }
+
+    await app.close();
+  });
+
+  it("forwards operator onboarding routes only for authorized locations", async () => {
+    const app = await buildApp();
+
+    const readResponse = await app.inject({
+      method: "GET",
+      url: "/v1/admin/onboarding",
+      headers: ownerOperatorHeaders
+    });
+    expect(readResponse.statusCode, readResponse.body).toBe(200);
+    expect(readResponse.json()).toMatchObject({
+      locationId: "flagship-01",
+      status: "in_progress"
+    });
+
+    const updateResponse = await app.inject({
+      method: "PATCH",
+      url: "/v1/admin/onboarding?locationId=northside-01",
+      headers: multiLocationOperatorHeaders,
+      payload: {
+        businessProfileComplete: true,
+        storeOperationsComplete: true,
+        menuReady: true,
+        teamConfiguredOrSkipped: true,
+        testOrderCompleted: true
+      }
+    });
+    expect(updateResponse.statusCode, updateResponse.body).toBe(200);
+    expect(updateResponse.json()).toMatchObject({
+      locationId: "northside-01",
+      readyForReview: false
+    });
+
+    const submitResponse = await app.inject({
+      method: "POST",
+      url: "/v1/admin/onboarding/submit-review?locationId=northside-01",
+      headers: multiLocationOperatorHeaders
+    });
+    expect(submitResponse.statusCode, submitResponse.body).toBe(200);
+    expect(submitResponse.json()).toMatchObject({
+      locationId: "northside-01",
+      status: "ready_for_review"
+    });
+
+    const catalogCallsBeforeForbidden = fetchMock.mock.calls.length;
+    const forbiddenResponse = await app.inject({
+      method: "GET",
+      url: "/v1/admin/onboarding?locationId=northside-01",
+      headers: ownerOperatorHeaders
+    });
+    expect(forbiddenResponse.statusCode).toBe(403);
+    expect(forbiddenResponse.json()).toMatchObject({
+      code: "FORBIDDEN"
+    });
+    expect(fetchMock.mock.calls).toHaveLength(catalogCallsBeforeForbidden + 1);
+    const lastCall = fetchMock.mock.calls.at(-1);
+    expect(lastCall).toBeDefined();
+    if (lastCall) {
+      expect(typeof lastCall[0] === "string" ? lastCall[0] : lastCall[0].url).toBe(
+        "http://identity.internal/v1/operator/auth/me"
+      );
+    }
+
+    const updateCall = [...fetchMock.mock.calls].reverse().find(([input, init]) => {
+      const url = typeof input === "string" ? input : input.url;
+      return url === "http://catalog.internal/v1/catalog/internal/locations/northside-01/onboarding" && init?.method === "PATCH";
+    });
+    expect(updateCall).toBeDefined();
+    if (updateCall) {
+      const upstreamHeaders = new Headers((updateCall[1]?.headers ?? {}) as HeadersInit);
+      expect(upstreamHeaders.get("x-gateway-token")).toBe("gateway-test-token");
+      expect(upstreamHeaders.get("x-user-id")).toBe("123e4567-e89b-12d3-a456-426614174996");
+      expect(upstreamHeaders.get("x-operator-location-id")).toBe("northside-01");
     }
 
     await app.close();

@@ -12,6 +12,8 @@ import {
   internalAdminMeResponseSchema,
   internalAdminPasswordSignInSchema,
   internalAdminSessionSchema,
+  internalOwnerInviteRequestSchema,
+  internalOwnerInviteResponseSchema,
   internalOwnerProvisionParamsSchema,
   internalOwnerProvisionRequestSchema,
   internalOwnerProvisionResponseSchema,
@@ -44,6 +46,8 @@ import {
   adminMutationSuccessSchema,
   adminStoreConfigSchema,
   adminStoreConfigUpdateSchema,
+  adminClientCreateRequestSchema,
+  adminClientCreateResponseSchema,
   appConfigSchema,
   homeNewsCardCreateSchema,
   homeNewsCardSchema,
@@ -52,12 +56,18 @@ import {
   homeNewsCardsResponseSchema,
   catalogContract,
   clientPaymentProfileSchema,
+  internalClientDetailSchema,
+  internalClientListResponseSchema,
   internalLocationBootstrapSchema,
   internalLocationListResponseSchema,
   internalLocationPaymentProfileUpdateSchema,
   internalLocationParamsSchema,
   internalLocationSummarySchema,
+  launchApprovalRequestSchema,
   launchReadinessResponseSchema,
+  mobileReleaseProfileUpdateSchema,
+  onboardingSummarySchema,
+  operatorOnboardingUpdateSchema,
   stripeConnectDashboardLinkRequestSchema,
   stripeConnectLinkResponseSchema,
   stripeConnectOnboardingLinkRequestSchema,
@@ -113,6 +123,7 @@ const orderIdParamsSchema = z.object({ orderId: z.string().uuid() });
 const discountCodeIdParamsSchema = z.object({ discountCodeId: z.string().uuid() });
 const menuItemParamsSchema = z.object({ itemId: z.string().min(1) });
 const cardParamsSchema = z.object({ cardId: z.string().min(1) });
+const tenantParamsSchema = z.object({ tenantId: z.string().min(1) });
 const adminLocationQuerySchema = z.object({
   locationId: z.string().trim().min(1).optional()
 });
@@ -3851,6 +3862,98 @@ export async function registerRoutes(app: FastifyInstance) {
   );
 
   app.get(
+    "/v1/admin/onboarding",
+    {
+      preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("store:read")]
+    },
+    async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "GET",
+        path: `/v1/catalog/internal/locations/${locationContext.locationId}/onboarding`,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken,
+          ...operatorLocationHeader(locationContext.locationId)
+        },
+        forwardUserIdHeader: false,
+        responseSchema: onboardingSummarySchema
+      });
+    }
+  );
+
+  app.patch(
+    "/v1/admin/onboarding",
+    {
+      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("store:write")]
+    },
+    async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+
+      const input = operatorOnboardingUpdateSchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "PATCH",
+        path: `/v1/catalog/internal/locations/${locationContext.locationId}/onboarding`,
+        body: input,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken,
+          ...operatorActorHeader(request),
+          ...operatorLocationHeader(locationContext.locationId)
+        },
+        forwardUserIdHeader: false,
+        responseSchema: onboardingSummarySchema
+      });
+    }
+  );
+
+  app.post(
+    "/v1/admin/onboarding/submit-review",
+    {
+      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("store:write")]
+    },
+    async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+
+      const input = operatorOnboardingUpdateSchema.parse({ readyForReview: true });
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "PATCH",
+        path: `/v1/catalog/internal/locations/${locationContext.locationId}/onboarding`,
+        body: input,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken,
+          ...operatorActorHeader(request),
+          ...operatorLocationHeader(locationContext.locationId)
+        },
+        forwardUserIdHeader: false,
+        responseSchema: onboardingSummarySchema
+      });
+    }
+  );
+
+  app.get(
     "/v1/admin/staff",
     {
       preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("team:read")]
@@ -3935,6 +4038,78 @@ export async function registerRoutes(app: FastifyInstance) {
         path: `/v1/operator/users/${operatorUserId}${operatorLocationQuery(locationId)}`,
         body: input,
         responseSchema: operatorMeResponseSchema
+      });
+    }
+  );
+
+  app.post(
+    "/v1/internal/clients",
+    {
+      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+    },
+    async (request, reply) => {
+      const input = adminClientCreateRequestSchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "POST",
+        path: "/v1/catalog/internal/clients",
+        body: input,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken,
+          ...internalAdminActorHeader(request)
+        },
+        forwardUserIdHeader: false,
+        responseSchema: adminClientCreateResponseSchema
+      });
+    }
+  );
+
+  app.get(
+    "/v1/internal/clients",
+    {
+      preHandler: [app.rateLimit(authReadRateLimit), requireInternalAdminCapability("clients:read")]
+    },
+    async (request, reply) => {
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "GET",
+        path: "/v1/catalog/internal/clients",
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken
+        },
+        forwardUserIdHeader: false,
+        responseSchema: internalClientListResponseSchema
+      });
+    }
+  );
+
+  app.get(
+    "/v1/internal/clients/:tenantId",
+    {
+      preHandler: [app.rateLimit(authReadRateLimit), requireInternalAdminCapability("clients:read")]
+    },
+    async (request, reply) => {
+      const { tenantId } = tenantParamsSchema.parse(request.params);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "GET",
+        path: `/v1/catalog/internal/clients/${tenantId}`,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken
+        },
+        forwardUserIdHeader: false,
+        responseSchema: internalClientDetailSchema
       });
     }
   );
@@ -4238,6 +4413,60 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   );
 
+  app.patch(
+    "/v1/internal/locations/:locationId/mobile-release",
+    {
+      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+    },
+    async (request, reply) => {
+      const { locationId } = internalLocationParamsSchema.parse(request.params);
+      const input = mobileReleaseProfileUpdateSchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "PATCH",
+        path: `/v1/catalog/internal/locations/${locationId}/mobile-release`,
+        body: input,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken,
+          ...internalAdminActorHeader(request)
+        },
+        forwardUserIdHeader: false,
+        responseSchema: onboardingSummarySchema
+      });
+    }
+  );
+
+  app.post(
+    "/v1/internal/locations/:locationId/launch-approval",
+    {
+      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+    },
+    async (request, reply) => {
+      const { locationId } = internalLocationParamsSchema.parse(request.params);
+      const input = launchApprovalRequestSchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "POST",
+        path: `/v1/catalog/internal/locations/${locationId}/launch-approval`,
+        body: input,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken,
+          ...internalAdminActorHeader(request)
+        },
+        forwardUserIdHeader: false,
+        responseSchema: onboardingSummarySchema
+      });
+    }
+  );
+
   app.get(
     "/v1/internal/locations/:locationId/owner",
     {
@@ -4258,6 +4487,33 @@ export async function registerRoutes(app: FastifyInstance) {
         },
         forwardUserIdHeader: false,
         responseSchema: internalOwnerSummarySchema
+      });
+    }
+  );
+
+  app.post(
+    "/v1/internal/locations/:locationId/owner/invite/resend",
+    {
+      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("owners:write")]
+    },
+    async (request, reply) => {
+      const { locationId } = internalOwnerProvisionParamsSchema.parse(request.params);
+      const input = internalOwnerInviteRequestSchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: identityBaseUrl,
+        serviceLabel: "Identity",
+        method: "POST",
+        path: `/v1/identity/internal/locations/${locationId}/owner/invite/resend`,
+        body: input,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken,
+          ...internalAdminActorHeader(request)
+        },
+        forwardUserIdHeader: false,
+        responseSchema: internalOwnerInviteResponseSchema
       });
     }
   );
