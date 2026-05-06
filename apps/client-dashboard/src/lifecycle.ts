@@ -1,5 +1,6 @@
 import {
   fetchDashboardLocations,
+  fetchOperatorOnboardingSummary,
   fetchOperatorOrders,
   fetchOperatorSnapshot,
   isApiRequestError,
@@ -7,7 +8,7 @@ import {
   refreshOperatorSession,
   type OperatorSession
 } from "./api.js";
-import { isStoreOperator, sessionNeedsRefresh } from "./model.js";
+import { isOnboardingIncomplete, isOwnerOperator, isStoreOperator, sessionNeedsRefresh } from "./model.js";
 import { clearStoredSession, persistApiBaseUrl, persistSection, persistSession } from "./storage.js";
 import { resetDashboardData, setError, setNotice, state } from "./state.js";
 import { snapshotCustomizationDrafts } from "./customizations.js";
@@ -99,6 +100,38 @@ function resolveSelectedLocationId() {
   return availableLocationIds.size > 1 ? ("all" as const) : state.availableLocations[0]?.locationId ?? null;
 }
 
+async function loadOwnerOnboarding(session: OperatorSession) {
+  if (!isOwnerOperator(session.operator) || !state.selectedLocationId || state.selectedLocationId === "all") {
+    state.onboardingSummary = null;
+    return;
+  }
+
+  try {
+    state.onboardingSummary = await fetchOperatorOnboardingSummary(session, state.selectedLocationId);
+  } catch (error) {
+    if (isApiRequestError(error) && error.statusCode === 404) {
+      state.onboardingSummary = null;
+      return;
+    }
+    throw error;
+  }
+}
+
+function autoOpenOwnerOnboarding() {
+  if (
+    state.onboardingAutoOpened ||
+    !isOwnerOperator(state.session?.operator ?? null) ||
+    !state.onboardingSummary ||
+    !isOnboardingIncomplete(state.onboardingSummary.status)
+  ) {
+    return;
+  }
+
+  state.section = "onboarding";
+  persistSection(state.section);
+  state.onboardingAutoOpened = true;
+}
+
 export async function loadDashboard(options: { silent?: boolean } = {}): Promise<void> {
   if (!state.session) {
     state.loading = false;
@@ -155,6 +188,8 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
       state.teamUsers = snapshot.team;
     }
 
+    await loadOwnerOnboarding(session);
+    autoOpenOwnerOnboarding();
     state.lastRefreshedAt = Date.now();
     ensureSectionIsAvailable();
     reconcileSelectedOrder();

@@ -2254,6 +2254,112 @@ label.field > span {
 }
 
 /* ============================================================
+   ONBOARDING
+   ============================================================ */
+
+.onboarding-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 260px);
+  align-items: center;
+  gap: 18px;
+  padding: 18px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.onboarding-hero strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 24px;
+  color: var(--color-text);
+}
+
+.onboarding-progress {
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+}
+
+.onboarding-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-accent);
+}
+
+.onboarding-steps {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.onboarding-step,
+.onboarding-review {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.onboarding-step--complete {
+  border-color: var(--color-success-border);
+  background: var(--color-success-subtle);
+}
+
+.onboarding-step__main {
+  display: grid;
+  gap: 6px;
+}
+
+.onboarding-step__main h3,
+.onboarding-review h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.onboarding-step__main p {
+  color: var(--color-text-2);
+  font-size: 13px;
+  max-width: 620px;
+}
+
+.onboarding-step__status {
+  display: flex;
+}
+
+.onboarding-step__optional {
+  width: max-content;
+  color: var(--color-text-3);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.onboarding-step__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.onboarding-review {
+  margin-top: 14px;
+  border-color: var(--color-accent-border);
+  background: var(--color-accent-subtle);
+}
+
+/* ============================================================
    CUSTOMIZATIONS
    ============================================================ */
 
@@ -2738,6 +2844,22 @@ label.field > span {
   .dash-data-group__header {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .onboarding-hero,
+  .onboarding-step,
+  .onboarding-review {
+    grid-template-columns: 1fr;
+  }
+
+  .onboarding-step__actions {
+    justify-content: stretch;
+  }
+
+  .onboarding-step__actions .button,
+  .onboarding-step__actions form,
+  .onboarding-review .button {
+    width: 100%;
   }
 
   .dash-menu-image-field {

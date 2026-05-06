@@ -115,6 +115,7 @@ export function loadStoredSection(): DashboardSection {
   const storage = getStorage();
   const nextSection = storage?.getItem(DASHBOARD_SECTION_STORAGE_KEY);
   return nextSection === "orders" ||
+    nextSection === "onboarding" ||
     nextSection === "menu" ||
     nextSection === "cards" ||
     nextSection === "discounts" ||

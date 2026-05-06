@@ -13,6 +13,7 @@ import {
 import { reconcileMenuCreateDraft } from "../menu-wizard.js";
 import { renderBanner } from "./common.js";
 import { renderOverviewSection } from "./overview.js";
+import { renderOnboardingSection } from "./onboarding.js";
 import { renderOrdersSection } from "./orders.js";
 import { renderMenuSection } from "./menu.js";
 import { renderMenuCreateWizard } from "./menu-wizard.js";
@@ -50,6 +51,8 @@ function renderNavItems() {
 
 function renderDashboardContent() {
   switch (state.section) {
+    case "onboarding":
+      return renderOnboardingSection();
     case "orders":
       return renderOrdersSection();
     case "menu":

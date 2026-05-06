@@ -46,6 +46,7 @@ import { handleDiscountCodeCreateSubmit, handleDiscountCodeSubmit } from "./cont
 import { handleStoreSubmit } from "./controllers/store.js";
 import { handleTeamCreateSubmit, handleTeamUserSubmit } from "./controllers/team.js";
 import { handleOrderAdvance } from "./controllers/orders.js";
+import { handleOnboardingReviewSubmit, handleOnboardingStepSubmit } from "./controllers/onboarding.js";
 
 function closeOpenAccountMenus(target?: Node) {
   root.querySelectorAll<HTMLDetailsElement>(".dash-account-menu[open]").forEach((menu) => {
@@ -103,6 +104,9 @@ export function registerEvents() {
         return;
       case "store-config":
         void handleStoreSubmit(target);
+        return;
+      case "onboarding-step":
+        void handleOnboardingStepSubmit(target);
         return;
       case "team-create":
         void handleTeamCreateSubmit(target);
@@ -191,11 +195,20 @@ export function registerEvents() {
       case "sign-out":
         void signOut();
         return;
+      case "return-to-onboarding":
+        state.section = "onboarding";
+        persistSection(state.section);
+        render();
+        return;
+      case "submit-onboarding-review":
+        void handleOnboardingReviewSubmit();
+        return;
     }
 
     if (action === "set-section") {
       const section = actionElement.dataset.section;
       if (
+        section === "onboarding" ||
         section === "overview" ||
         section === "orders" ||
         section === "menu" ||

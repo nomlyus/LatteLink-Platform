@@ -5,13 +5,17 @@ import {
   acceptOperatorInvite,
   extractApiErrorMessage,
   fetchDashboardLocations,
+  fetchOperatorOnboardingSummary,
   fetchOperatorSnapshot,
   isApiRequestError,
   lookupOperatorInvite,
   normalizeApiBaseUrl,
+  submitOperatorOnboardingReview,
   signInOperatorWithPassword,
+  updateOperatorOnboarding,
   updateOperatorOrderStatus,
-  uploadOperatorMenuItemImage
+  uploadOperatorMenuItemImage,
+  type OperatorSession
 } from "../src/api";
 
 describe("client dashboard api helpers", () => {
@@ -185,6 +189,114 @@ describe("client dashboard api helpers", () => {
         body: JSON.stringify({
           password: "AcceptedPassword123!"
         })
+      })
+    );
+  });
+
+  it("loads and updates operator onboarding progress", async () => {
+    const onboardingPayload = {
+      tenantId: "tenant-northside",
+      brandId: "northside-coffee",
+      brandName: "Northside Coffee",
+      locationId: "northside-01",
+      locationName: "Northside Flagship",
+      marketLabel: "Detroit, MI",
+      status: "in_progress",
+      readyForReview: false,
+      checklist: [
+        {
+          id: "business_profile_complete",
+          label: "Business profile complete",
+          status: "pending",
+          passed: false
+        }
+      ],
+      updatedAt: "2026-05-06T12:00:00.000Z"
+    };
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(onboardingPayload), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ...onboardingPayload,
+            checklist: [
+              {
+                id: "business_profile_complete",
+                label: "Business profile complete",
+                status: "complete",
+                passed: true
+              }
+            ]
+          }),
+          { status: 200 }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ...onboardingPayload,
+            status: "ready_for_review",
+            readyForReview: true
+          }),
+          { status: 200 }
+        )
+      );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const session: OperatorSession = {
+      accessToken: "access-token",
+      refreshToken: "refresh-token",
+      apiBaseUrl: "https://api.nomly.us/v1",
+      expiresAt: "2026-04-23T23:00:00.000Z",
+      operator: {
+        operatorUserId: "11111111-1111-4111-8111-111111111111",
+        displayName: "Avery Quinn",
+        email: "avery@store.com",
+        role: "owner" as const,
+        locationId: "northside-01",
+        locationIds: ["northside-01"],
+        active: true,
+        capabilities: ["store:read", "store:write"],
+        createdAt: "2026-04-23T20:00:00.000Z",
+        updatedAt: "2026-04-23T20:00:00.000Z"
+      }
+    };
+
+    const summary = await fetchOperatorOnboardingSummary(session, "northside-01");
+    const updated = await updateOperatorOnboarding(session, "northside-01", {
+      businessProfileComplete: true
+    });
+    const submitted = await submitOperatorOnboardingReview(session, "northside-01");
+
+    expect(summary.status).toBe("in_progress");
+    expect(updated.checklist[0]?.passed).toBe(true);
+    expect(submitted.status).toBe("ready_for_review");
+    expect(fetchSpy).toHaveBeenNthCalledWith(
+      1,
+      "https://api.nomly.us/v1/admin/onboarding?locationId=northside-01",
+      expect.objectContaining({
+        method: "GET",
+        headers: {
+          authorization: "Bearer access-token"
+        }
+      })
+    );
+    expect(fetchSpy).toHaveBeenNthCalledWith(
+      2,
+      "https://api.nomly.us/v1/admin/onboarding?locationId=northside-01",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({
+          businessProfileComplete: true
+        })
+      })
+    );
+    expect(fetchSpy).toHaveBeenNthCalledWith(
+      3,
+      "https://api.nomly.us/v1/admin/onboarding/submit-review?locationId=northside-01",
+      expect.objectContaining({
+        method: "POST"
       })
     );
   });

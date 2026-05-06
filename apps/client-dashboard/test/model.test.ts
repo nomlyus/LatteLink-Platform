@@ -23,6 +23,8 @@ import {
   getOrderCustomerLabel,
   isAbortedCheckoutOrder,
   isActiveOrder,
+  isOnboardingIncomplete,
+  isOwnerOperator,
   normalizeMenuItemCreateForm,
   normalizeMenuItemForm,
   normalizeOperatorUserCreateForm,
@@ -306,6 +308,12 @@ describe("client dashboard model", () => {
     expect(getOperatorRoleLabel("owner")).toBe("Store owner");
     expect(getOperatorRoleLabel("manager")).toBe("Manager");
     expect(getOperatorRoleLabel("store")).toBe("Store screen");
+
+    expect(isOwnerOperator({ role: "owner" })).toBe(true);
+    expect(isOwnerOperator({ role: "manager" })).toBe(false);
+    expect(isOnboardingIncomplete("in_progress")).toBe(true);
+    expect(isOnboardingIncomplete("ready_for_review")).toBe(true);
+    expect(isOnboardingIncomplete("live")).toBe(false);
 
     expect(canAccessCapability(sampleOperator, "orders:write")).toBe(true);
     expect(canAccessCapability(sampleOperator, "team:write")).toBe(false);

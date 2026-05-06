@@ -37,7 +37,7 @@ const operatorOrderSchema = orderSchema.extend({
 export type OperatorOrder = z.output<typeof operatorOrderSchema>;
 export type OperatorOrderStatus = z.output<typeof orderStatusSchema>;
 export type OperatorOrderFilter = "all" | "active" | "completed";
-export type DashboardSection = "overview" | "orders" | "menu" | "cards" | "discounts" | "store" | "team";
+export type DashboardSection = "onboarding" | "overview" | "orders" | "menu" | "cards" | "discounts" | "store" | "team";
 export type OperatorCapability = z.output<typeof operatorCapabilitySchema>;
 export type OperatorUser = z.output<typeof operatorUserSchema>;
 export const operatorMenuItemSchema = adminMenuItemSchema.extend({
@@ -182,6 +182,16 @@ export function isStoreOperator(
   operator: Pick<OperatorUser, "role"> | null | undefined
 ) {
   return operator?.role === "store";
+}
+
+export function isOwnerOperator(
+  operator: Pick<OperatorUser, "role"> | null | undefined
+) {
+  return operator?.role === "owner";
+}
+
+export function isOnboardingIncomplete(status: string | null | undefined) {
+  return Boolean(status && status !== "live");
 }
 
 export function formatOrderStatus(status: OperatorOrderStatus) {

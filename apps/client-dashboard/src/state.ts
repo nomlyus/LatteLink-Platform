@@ -7,6 +7,7 @@ import type {
   DashboardLocation,
   OperatorAuthProviders,
   OperatorInviteLookup,
+  OperatorOnboardingSummary,
   OperatorSession,
   OperatorUser
 } from "./api.js";
@@ -36,6 +37,9 @@ export type AppState = {
     lookup: OperatorInviteLookup | null;
     accepting: boolean;
   } | null;
+  onboardingSummary: OperatorOnboardingSummary | null;
+  onboardingAutoOpened: boolean;
+  updatingOnboarding: boolean;
   initializing: boolean;
   loading: boolean;
   signingIn: boolean;
@@ -108,6 +112,9 @@ export const state: AppState = {
   authPassword: "",
   authProviders: null,
   ownerInvite: null,
+  onboardingSummary: null,
+  onboardingAutoOpened: false,
+  updatingOnboarding: false,
   initializing: true,
   loading: false,
   signingIn: false,
@@ -207,6 +214,9 @@ export function resetDashboardData() {
   state.discountCodes = [];
   state.storeConfig = null;
   state.teamUsers = [];
+  state.onboardingSummary = null;
+  state.onboardingAutoOpened = false;
+  state.updatingOnboarding = false;
   state.selectedOrderId = null;
   state.lastRefreshedAt = null;
   state.busyOrderId = null;

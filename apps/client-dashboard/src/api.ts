@@ -21,7 +21,9 @@ import {
   adminStoreConfigSchema,
   adminStoreConfigUpdateSchema,
   appConfigSchema,
-  homeNewsCardsResponseSchema
+  homeNewsCardsResponseSchema,
+  onboardingSummarySchema,
+  operatorOnboardingUpdateSchema
 } from "@lattelink/contracts-catalog";
 import {
   createDiscountCodeRequestSchema,
@@ -57,6 +59,7 @@ export type OperatorSession = z.output<typeof storedOperatorSessionSchema>;
 export type OperatorAuthProviders = z.output<typeof operatorAuthProvidersSchema>;
 export type OperatorInviteLookup = z.output<typeof operatorInviteLookupResponseSchema>;
 export type OperatorInviteAcceptResponse = z.output<typeof operatorInviteAcceptResponseSchema>;
+export type OperatorOnboardingSummary = z.output<typeof onboardingSummarySchema>;
 export type DashboardLocation = {
   locationId: string;
   locationName: string;
@@ -597,6 +600,44 @@ export async function fetchOperatorSnapshot(
     storeConfig,
     team: teamResponse.users
   };
+}
+
+export function fetchOperatorOnboardingSummary(session: OperatorSession, locationId: string) {
+  return requestJson({
+    apiBaseUrl: session.apiBaseUrl,
+    accessToken: session.accessToken,
+    path: "/admin/onboarding",
+    query: { locationId },
+    schema: onboardingSummarySchema
+  });
+}
+
+export function updateOperatorOnboarding(
+  session: OperatorSession,
+  locationId: string,
+  input: z.input<typeof operatorOnboardingUpdateSchema>
+) {
+  return requestJson({
+    apiBaseUrl: session.apiBaseUrl,
+    accessToken: session.accessToken,
+    path: "/admin/onboarding",
+    query: { locationId },
+    method: "PATCH",
+    body: operatorOnboardingUpdateSchema.parse(input),
+    schema: onboardingSummarySchema
+  });
+}
+
+export function submitOperatorOnboardingReview(session: OperatorSession, locationId: string) {
+  return requestJson({
+    apiBaseUrl: session.apiBaseUrl,
+    accessToken: session.accessToken,
+    path: "/admin/onboarding/submit-review",
+    query: { locationId },
+    method: "POST",
+    body: {},
+    schema: onboardingSummarySchema
+  });
 }
 
 function requireSelectedLocationId(locationId: string | null) {
