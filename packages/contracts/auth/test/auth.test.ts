@@ -4,11 +4,16 @@ import {
   authSuccessSchema,
   customerProfileRequestSchema,
   googleOAuthStartRequestSchema,
+  internalOwnerInviteRequestSchema,
+  internalOwnerInviteResponseSchema,
   internalOwnerProvisionRequestSchema,
   internalOwnerProvisionResponseSchema,
   internalOwnerSummarySchema,
   meResponseSchema,
   normalizeOperatorRole,
+  operatorInviteAcceptRequestSchema,
+  operatorInviteAcceptResponseSchema,
+  operatorInviteLookupResponseSchema,
   operatorGoogleExchangeRequestSchema,
   operatorPasswordSignInSchema,
   operatorUserCreateSchema,
@@ -211,5 +216,80 @@ describe("contracts-auth", () => {
     });
 
     expect(summary.owner?.email).toBe("owner@northside.com");
+  });
+
+  it("validates owner invite lifecycle payloads", () => {
+    const request = internalOwnerInviteRequestSchema.parse({
+      displayName: " Pilot Owner ",
+      email: " owner@northside.com ",
+      dashboardUrl: "https://client.example.com"
+    });
+    const operator = {
+      operatorUserId: "123e4567-e89b-12d3-a456-426614174000",
+      displayName: "Pilot Owner",
+      email: "owner@northside.com",
+      role: "owner" as const,
+      locationId: "northside-01",
+      active: false,
+      capabilities: [
+        "orders:read",
+        "orders:write",
+        "menu:read",
+        "menu:write",
+        "menu:visibility",
+        "store:read",
+        "store:write",
+        "team:read",
+        "team:write"
+      ],
+      createdAt: "2026-04-01T00:00:00.000Z",
+      updatedAt: "2026-04-01T00:00:00.000Z"
+    };
+    const invite = {
+      inviteId: "123e4567-e89b-12d3-a456-426614174001",
+      locationId: "northside-01",
+      operatorUserId: operator.operatorUserId,
+      email: "owner@northside.com",
+      status: "pending" as const,
+      expiresAt: "2026-04-08T00:00:00.000Z",
+      inviteUrl: "https://client.example.com/invites/token",
+      createdAt: "2026-04-01T00:00:00.000Z",
+      updatedAt: "2026-04-01T00:00:00.000Z"
+    };
+
+    const response = internalOwnerInviteResponseSchema.parse({
+      operator,
+      invite,
+      action: "created"
+    });
+    const lookup = operatorInviteLookupResponseSchema.parse({
+      invite,
+      operator: {
+        displayName: operator.displayName,
+        email: operator.email,
+        role: operator.role,
+        locationId: operator.locationId
+      }
+    });
+    const acceptRequest = operatorInviteAcceptRequestSchema.parse({
+      password: "Password123!"
+    });
+    const acceptResponse = operatorInviteAcceptResponseSchema.parse({
+      operator: {
+        ...operator,
+        active: true
+      },
+      invite: {
+        ...invite,
+        status: "consumed",
+        consumedAt: "2026-04-01T01:00:00.000Z"
+      }
+    });
+
+    expect(request.email).toBe("owner@northside.com");
+    expect(response.invite.inviteUrl).toContain("/invites/");
+    expect(lookup.operator.role).toBe("owner");
+    expect(acceptRequest.password).toBe("Password123!");
+    expect(acceptResponse.operator.active).toBe(true);
   });
 });

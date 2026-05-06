@@ -4,6 +4,8 @@ import {
   adminMenuItemImageUploadRequestSchema,
   adminMenuItemImageUploadResponseSchema,
   adminMenuItemUpdateSchema,
+  adminClientCreateRequestSchema,
+  adminClientCreateResponseSchema,
   adminStoreConfigSchema,
   adminStoreConfigUpdateSchema,
   appConfigSchema,
@@ -21,7 +23,11 @@ import {
   isLoyaltyVisible,
   isOrderTrackingEnabled,
   isPlatformManagedMenu,
+  launchApprovalRequestSchema,
   menuResponseSchema,
+  mobileReleaseProfileUpdateSchema,
+  onboardingSummarySchema,
+  operatorOnboardingUpdateSchema,
   paymentReadinessSchema,
   priceMenuItemCustomization,
   resolveAppConfigFulfillmentMode,
@@ -397,6 +403,191 @@ describe("contracts-catalog", () => {
     });
 
     expect(list.locations).toHaveLength(1);
+  });
+
+  it("allows internal location bootstrap payloads without generated identifiers", () => {
+    const bootstrap = internalLocationBootstrapSchema.parse({
+      brandName: "Northside Coffee",
+      locationName: "Northside Flagship",
+      marketLabel: "Detroit, MI"
+    });
+
+    expect(bootstrap.brandId).toBeUndefined();
+    expect(bootstrap.locationId).toBeUndefined();
+  });
+
+  it("validates admin client create contracts with response-owned identifiers", () => {
+    const request = adminClientCreateRequestSchema.parse({
+      clientName: "Northside Coffee",
+      locationName: "Northside Flagship",
+      marketLabel: "Detroit, MI",
+      ownerEmail: "owner@northside.example",
+      ownerName: "Avery Owner",
+      storeName: "Northside Coffee",
+      taxRateBasisPoints: 675
+    });
+
+    expect(request.clientName).toBe("Northside Coffee");
+    expect("tenantId" in request).toBe(false);
+    expect("locationId" in request).toBe(false);
+
+    expect(() =>
+      adminClientCreateRequestSchema.parse({
+        ...request,
+        locationId: "client_supplied"
+      })
+    ).toThrow();
+
+    const response = adminClientCreateResponseSchema.parse({
+      tenantId: "ten_123",
+      locationId: "loc_123",
+      onboarding: {
+        tenantId: "ten_123",
+        brandId: "brd_123",
+        brandName: "Northside Coffee",
+        locationId: "loc_123",
+        locationName: "Northside Flagship",
+        marketLabel: "Detroit, MI",
+        status: "invited",
+        readyForReview: false,
+        checklist: [
+          {
+            id: "owner_invited",
+            label: "Owner invited",
+            status: "complete",
+            passed: true
+          },
+          {
+            id: "payments_connected",
+            label: "Payments connected",
+            status: "pending",
+            passed: false
+          }
+        ],
+        mobileRelease: {
+          locationId: "loc_123",
+          status: "not_started"
+        }
+      }
+    });
+
+    expect(response.tenantId).toBe("ten_123");
+    expect(response.onboarding.checklist[0]?.required).toBe(true);
+  });
+
+  it("validates complete onboarding summaries", () => {
+    const summary = onboardingSummarySchema.parse({
+      tenantId: "ten_123",
+      brandId: "brd_123",
+      brandName: "Northside Coffee",
+      locationId: "loc_123",
+      locationName: "Northside Flagship",
+      marketLabel: "Detroit, MI",
+      status: "ready_for_review",
+      readyForReview: true,
+      checklist: [
+        "owner_invited",
+        "owner_activated",
+        "business_profile_complete",
+        "store_operations_complete",
+        "payments_connected",
+        "menu_ready",
+        "team_configured_or_skipped",
+        "test_order_completed",
+        "mobile_release_ready",
+        "admin_launch_approved"
+      ].map((id) => ({
+        id,
+        label: id.replaceAll("_", " "),
+        status: "complete",
+        passed: true
+      })),
+      paymentReadiness: {
+        ready: true,
+        onboardingState: "completed",
+        missingRequiredFields: []
+      },
+      mobileRelease: {
+        locationId: "loc_123",
+        status: "ready_for_launch",
+        buildNumber: "42"
+      },
+      submittedForReviewAt: "2026-05-06T12:00:00.000Z"
+    });
+
+    expect(summary.readyForReview).toBe(true);
+    expect(summary.checklist.every((item) => item.passed)).toBe(true);
+  });
+
+  it("validates incomplete and blocked onboarding summaries", () => {
+    const incomplete = onboardingSummarySchema.parse({
+      tenantId: "ten_123",
+      brandId: "brd_123",
+      brandName: "Northside Coffee",
+      locationId: "loc_123",
+      locationName: "Northside Flagship",
+      marketLabel: "Detroit, MI",
+      status: "in_progress",
+      readyForReview: false,
+      checklist: [
+        {
+          id: "owner_activated",
+          label: "Owner activated",
+          status: "pending",
+          passed: false
+        }
+      ]
+    });
+
+    const blocked = onboardingSummarySchema.parse({
+      ...incomplete,
+      status: "blocked",
+      blockedReason: "App Store metadata is waiting on client assets.",
+      checklist: [
+        {
+          id: "mobile_release_ready",
+          label: "Mobile release ready",
+          status: "blocked",
+          passed: false,
+          manual: true,
+          detail: "Waiting on app icon."
+        }
+      ],
+      mobileRelease: {
+        locationId: "loc_123",
+        status: "blocked",
+        blockedReason: "Waiting on app icon."
+      }
+    });
+
+    expect(incomplete.readyForReview).toBe(false);
+    expect(blocked.blockedReason).toContain("App Store");
+  });
+
+  it("validates operator onboarding, launch approval, and mobile release updates", () => {
+    const operatorUpdate = operatorOnboardingUpdateSchema.parse({
+      businessProfileComplete: true,
+      storeOperationsComplete: true,
+      menuReady: false,
+      teamConfiguredOrSkipped: true,
+      readyForReview: false,
+      blockedReason: null
+    });
+
+    const launchApproval = launchApprovalRequestSchema.parse({
+      approved: true,
+      note: "Ready for pilot launch."
+    });
+
+    const mobileReleaseUpdate = mobileReleaseProfileUpdateSchema.parse({
+      status: "submitted_for_review",
+      submittedAt: "2026-05-06T12:00:00.000Z",
+      testFlightUrl: "https://testflight.apple.com/join/example"
+    });
+
+    expect(operatorUpdate.menuReady).toBe(false);
+    expect(launchApproval.approved).toBe(true);
+    expect(mobileReleaseUpdate.status).toBe("submitted_for_review");
   });
 
   it("validates payment profile payloads", () => {

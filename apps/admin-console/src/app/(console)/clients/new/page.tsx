@@ -49,16 +49,12 @@ export default async function NewClientPage({ searchParams }: NewClientPageProps
             <div className="section-copy">
               <span className="eyebrow">Step 1</span>
               <h4>Client identity</h4>
-              <p>Define the business identity that shows up across the internal console, mobile app configuration, and dashboard handoff.</p>
+              <p>Define the business identity that shows up across the internal console, mobile app configuration, and dashboard handoff. Internal IDs are generated after creation.</p>
             </div>
             <div className="field-grid">
               <label className="field">
                 <span>Client name</span>
                 <input name="clientName" placeholder="Northside Coffee" required />
-              </label>
-              <label className="field">
-                <span>Brand slug</span>
-                <input name="brandId" placeholder="northside-coffee" />
               </label>
               <label className="field">
                 <span>Store display name</span>
@@ -81,10 +77,6 @@ export default async function NewClientPage({ searchParams }: NewClientPageProps
               <label className="field">
                 <span>Location name</span>
                 <input name="locationName" placeholder="Northside Flagship" required />
-              </label>
-              <label className="field">
-                <span>Location ID</span>
-                <input name="locationId" placeholder="northside-01" />
               </label>
               <label className="field">
                 <span>Hours</span>
@@ -190,7 +182,7 @@ export default async function NewClientPage({ searchParams }: NewClientPageProps
                 <span className="step-item-index">1</span>
                 <div className="step-item-copy">
                   <strong>Bootstrap the location</strong>
-                  <p>Create or update the internal location record that anchors the tenant.</p>
+                  <p>Create the internal location record and generate stable backend identifiers.</p>
                 </div>
               </div>
               <div className="step-item">

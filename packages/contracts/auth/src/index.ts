@@ -275,6 +275,57 @@ export const internalOwnerProvisionResponseSchema = z.object({
   action: z.enum(["created", "updated"])
 });
 
+export const ownerInviteStatusSchema = z.enum(["pending", "consumed", "revoked", "expired"]);
+
+export const internalOwnerInviteRequestSchema = z.object({
+  displayName: z.string().trim().min(1),
+  email: z.string().trim().email(),
+  dashboardUrl: z.string().trim().url().optional()
+});
+
+export const ownerInviteSchema = z.object({
+  inviteId: z.string().uuid(),
+  locationId: z.string().trim().min(1),
+  operatorUserId: z.string().uuid(),
+  email: z.string().trim().email(),
+  status: ownerInviteStatusSchema,
+  expiresAt: z.string().datetime(),
+  consumedAt: z.string().datetime().optional(),
+  revokedAt: z.string().datetime().optional(),
+  inviteUrl: z.string().trim().url().optional(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+
+export const internalOwnerInviteResponseSchema = z.object({
+  operator: operatorUserSchema,
+  invite: ownerInviteSchema,
+  action: z.enum(["created", "updated", "resent"])
+});
+
+export const operatorInviteTokenParamsSchema = z.object({
+  token: z.string().trim().min(20)
+});
+
+export const operatorInviteLookupResponseSchema = z.object({
+  invite: ownerInviteSchema.omit({ inviteUrl: true }),
+  operator: z.object({
+    displayName: z.string().min(1),
+    email: z.string().trim().email(),
+    role: operatorRoleSchema,
+    locationId: z.string().min(1)
+  })
+});
+
+export const operatorInviteAcceptRequestSchema = z.object({
+  password: operatorPasswordSchema
+});
+
+export const operatorInviteAcceptResponseSchema = z.object({
+  operator: operatorUserSchema,
+  invite: ownerInviteSchema.omit({ inviteUrl: true })
+});
+
 export const internalOwnerSummarySchema = z.object({
   locationId: z.string().trim().min(1),
   owner: operatorUserSchema.nullable()
@@ -460,5 +511,12 @@ export type InternalAdminUser = z.output<typeof internalAdminUserSchema>;
 export type InternalAdminSession = z.output<typeof internalAdminSessionSchema>;
 export type InternalOwnerProvisionRequest = z.output<typeof internalOwnerProvisionRequestSchema>;
 export type InternalOwnerProvisionResponse = z.output<typeof internalOwnerProvisionResponseSchema>;
+export type OwnerInviteStatus = z.output<typeof ownerInviteStatusSchema>;
+export type InternalOwnerInviteRequest = z.output<typeof internalOwnerInviteRequestSchema>;
+export type InternalOwnerInviteResponse = z.output<typeof internalOwnerInviteResponseSchema>;
+export type OwnerInvite = z.output<typeof ownerInviteSchema>;
+export type OperatorInviteLookupResponse = z.output<typeof operatorInviteLookupResponseSchema>;
+export type OperatorInviteAcceptRequest = z.output<typeof operatorInviteAcceptRequestSchema>;
+export type OperatorInviteAcceptResponse = z.output<typeof operatorInviteAcceptResponseSchema>;
 export type InternalOwnerSummary = z.output<typeof internalOwnerSummarySchema>;
 export type OperatorSession = z.output<typeof operatorSessionSchema>;

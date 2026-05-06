@@ -389,6 +389,88 @@ export interface CatalogPaymentProfileTable {
   updated_at: Generated<string>;
 }
 
+export interface CatalogClientTable {
+  tenant_id: string;
+  brand_id: string;
+  client_name: string;
+  status: "draft" | "invited" | "in_progress" | "ready_for_review" | "approved" | "live" | "blocked";
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
+export interface CatalogClientLocationTable {
+  tenant_id: string;
+  location_id: string;
+  brand_id: string;
+  location_name: string;
+  market_label: string;
+  primary_location: boolean;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
+export interface CatalogOnboardingProgressTable {
+  location_id: string;
+  tenant_id: string;
+  status: "draft" | "invited" | "in_progress" | "ready_for_review" | "approved" | "live" | "blocked";
+  owner_invited: boolean;
+  owner_activated: boolean;
+  business_profile_complete: boolean;
+  store_operations_complete: boolean;
+  menu_ready: boolean;
+  team_configured_or_skipped: boolean;
+  test_order_completed: boolean;
+  admin_launch_approved: boolean;
+  submitted_for_review_at: string | null;
+  approved_at: string | null;
+  live_at: string | null;
+  blocked_reason: string | null;
+  notes: string | null;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
+export interface CatalogMobileReleaseProfileTable {
+  location_id: string;
+  tenant_id: string;
+  status:
+    | "not_started"
+    | "metadata_pending"
+    | "metadata_ready"
+    | "build_configuring"
+    | "build_ready"
+    | "submitted_for_review"
+    | "approved"
+    | "ready_for_launch"
+    | "live"
+    | "blocked";
+  status_label: string | null;
+  app_store_url: string | null;
+  test_flight_url: string | null;
+  build_number: string | null;
+  submitted_at: string | null;
+  approved_at: string | null;
+  live_at: string | null;
+  blocked_reason: string | null;
+  notes: string | null;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
+export interface OperatorOwnerInviteTable {
+  invite_id: Generated<string>;
+  location_id: string;
+  operator_user_id: string | null;
+  email: string;
+  token_hash: string;
+  expires_at: string;
+  consumed_at: string | null;
+  revoked_at: string | null;
+  sent_at: string | null;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
 export interface AuditLogTable {
   log_id: Generated<string>;
   location_id: string;
@@ -435,6 +517,11 @@ export interface PersistenceDatabase {
   catalog_store_configs: CatalogStoreConfigTable;
   catalog_app_configs: CatalogAppConfigTable;
   catalog_payment_profiles: CatalogPaymentProfileTable;
+  catalog_clients: CatalogClientTable;
+  catalog_client_locations: CatalogClientLocationTable;
+  catalog_onboarding_progress: CatalogOnboardingProgressTable;
+  catalog_mobile_release_profiles: CatalogMobileReleaseProfileTable;
+  operator_owner_invites: OperatorOwnerInviteTable;
   audit_log: AuditLogTable;
 }
 

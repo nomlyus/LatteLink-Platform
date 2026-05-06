@@ -7,6 +7,8 @@ import {
   resolveOperatorCapabilities,
   type InternalAdminRole,
   type InternalAdminUser,
+  type OwnerInvite,
+  type OwnerInviteStatus,
   type OperatorRole,
   type OperatorUser
 } from "@lattelink/contracts-auth";
@@ -123,6 +125,20 @@ type PersistedOperatorSessionRow = {
   created_at: string | Date;
 };
 
+type PersistedOwnerInviteRow = {
+  invite_id: string;
+  location_id: string;
+  operator_user_id: string;
+  email: string;
+  token_hash: string;
+  expires_at: string | Date;
+  consumed_at: string | Date | null;
+  revoked_at: string | Date | null;
+  sent_at: string | Date | null;
+  created_at: string | Date;
+  updated_at: string | Date;
+};
+
 type PersistedInternalAdminUserRow = {
   internal_admin_user_id: string;
   email: string;
@@ -188,6 +204,10 @@ export type AppleAccountRecord = {
 
 export type OperatorUserRecord = OperatorUser;
 export type InternalAdminUserRecord = InternalAdminUser;
+export type OwnerInviteRecord = OwnerInvite & {
+  tokenHash: string;
+  sentAt?: string;
+};
 
 export type IdentityRepository = {
   backend: "memory" | "postgres";
@@ -246,6 +266,17 @@ export type IdentityRepository = {
     operatorUserId: string,
     input: { displayName?: string; email?: string; role?: OperatorRole; active?: boolean; password?: string }
   ): Promise<OperatorUserRecord | undefined>;
+  createOwnerInvite(input: {
+    locationId: string;
+    operatorUserId: string;
+    email: string;
+    tokenHash: string;
+    expiresAt: string;
+  }): Promise<OwnerInviteRecord>;
+  getOwnerInviteByTokenHash(tokenHash: string): Promise<OwnerInviteRecord | undefined>;
+  revokeActiveOwnerInvites(input: { locationId: string; email: string }): Promise<void>;
+  markOwnerInviteConsumed(inviteId: string): Promise<OwnerInviteRecord | undefined>;
+  markOwnerInviteSent(inviteId: string): Promise<OwnerInviteRecord | undefined>;
   saveOperatorSession(session: StoredOperatorSession, authMethod: "password" | "google" | "refresh"): Promise<void>;
   rotateOperatorRefreshSession(
     refreshToken: string,
@@ -383,6 +414,43 @@ function toIdentityUserRecord(row: PersistedIdentityUserRow): IdentityUserRecord
     phoneNumber: row.phone_number?.trim() || undefined,
     birthday: parseDbDate(row.birthday),
     profileCompletedAt: row.profile_completed_at ? parseIsoDate(row.profile_completed_at) : undefined,
+    createdAt: parseIsoDate(row.created_at),
+    updatedAt: parseIsoDate(row.updated_at)
+  };
+}
+
+function resolveOwnerInviteStatus(input: {
+  expiresAt: string;
+  consumedAt?: string;
+  revokedAt?: string;
+}): OwnerInviteStatus {
+  if (input.consumedAt) {
+    return "consumed";
+  }
+  if (input.revokedAt) {
+    return "revoked";
+  }
+  if (Date.parse(input.expiresAt) <= Date.now()) {
+    return "expired";
+  }
+  return "pending";
+}
+
+function toOwnerInviteRecord(row: PersistedOwnerInviteRow): OwnerInviteRecord {
+  const expiresAt = parseIsoDate(row.expires_at);
+  const consumedAt = row.consumed_at ? parseIsoDate(row.consumed_at) : undefined;
+  const revokedAt = row.revoked_at ? parseIsoDate(row.revoked_at) : undefined;
+  return {
+    inviteId: row.invite_id,
+    locationId: row.location_id,
+    operatorUserId: row.operator_user_id,
+    email: normalizeEmail(row.email),
+    tokenHash: row.token_hash,
+    status: resolveOwnerInviteStatus({ expiresAt, consumedAt, revokedAt }),
+    expiresAt,
+    consumedAt,
+    revokedAt,
+    sentAt: row.sent_at ? parseIsoDate(row.sent_at) : undefined,
     createdAt: parseIsoDate(row.created_at),
     updatedAt: parseIsoDate(row.updated_at)
   };
@@ -536,6 +604,7 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
   const operatorUserIdByEmail = new Map<string, string>();
   const operatorUserIdByGoogleSub = new Map<string, string>();
   const operatorPasswordHashByUserId = new Map<string, string>();
+  const ownerInvitesById = new Map<string, OwnerInviteRecord>();
   const internalAdminUsersById = new Map<string, InternalAdminUserRecord>();
   const internalAdminUserIdByEmail = new Map<string, string>();
   const internalAdminPasswordHashByUserId = new Map<string, string>();
@@ -1011,6 +1080,74 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
       }
       setOperatorLocationAccess(operatorUserId, updated.locationId, getOperatorLocationIds(operatorUserId, existing.locationId));
       return cloneOperatorRecord(updated);
+    },
+    async createOwnerInvite(input) {
+      const now = new Date().toISOString();
+      const record: OwnerInviteRecord = {
+        inviteId: randomUUID(),
+        locationId: input.locationId,
+        operatorUserId: input.operatorUserId,
+        email: normalizeEmail(input.email),
+        tokenHash: input.tokenHash,
+        status: resolveOwnerInviteStatus({ expiresAt: input.expiresAt }),
+        expiresAt: input.expiresAt,
+        createdAt: now,
+        updatedAt: now
+      };
+      ownerInvitesById.set(record.inviteId, record);
+      return record;
+    },
+    async getOwnerInviteByTokenHash(tokenHash) {
+      const invite = Array.from(ownerInvitesById.values()).find((entry) => entry.tokenHash === tokenHash);
+      if (!invite) {
+        return undefined;
+      }
+      return {
+        ...invite,
+        status: resolveOwnerInviteStatus(invite)
+      };
+    },
+    async revokeActiveOwnerInvites(input) {
+      const now = new Date().toISOString();
+      const email = normalizeEmail(input.email);
+      for (const [inviteId, invite] of ownerInvitesById.entries()) {
+        if (invite.locationId !== input.locationId || invite.email !== email || invite.status !== "pending") {
+          continue;
+        }
+        ownerInvitesById.set(inviteId, {
+          ...invite,
+          status: "revoked",
+          revokedAt: now,
+          updatedAt: now
+        });
+      }
+    },
+    async markOwnerInviteConsumed(inviteId) {
+      const invite = ownerInvitesById.get(inviteId);
+      if (!invite) {
+        return undefined;
+      }
+      const now = new Date().toISOString();
+      const next: OwnerInviteRecord = {
+        ...invite,
+        status: "consumed",
+        consumedAt: now,
+        updatedAt: now
+      };
+      ownerInvitesById.set(inviteId, next);
+      return next;
+    },
+    async markOwnerInviteSent(inviteId) {
+      const invite = ownerInvitesById.get(inviteId);
+      if (!invite) {
+        return undefined;
+      }
+      const next = {
+        ...invite,
+        sentAt: new Date().toISOString()
+      };
+      ownerInvitesById.set(inviteId, next);
+      return next;
     },
     async saveOperatorSession(session) {
       operatorSessionsByAccessToken.set(session.accessToken, { session });
@@ -2201,6 +2338,65 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         .executeTakeFirstOrThrow();
 
       return (await hydrateOperatorUser(updated as PersistedOperatorUserRow)) as OperatorUserRecord;
+    },
+    async createOwnerInvite(input) {
+      const created = await db
+        .insertInto("operator_owner_invites")
+        .values({
+          location_id: input.locationId,
+          operator_user_id: input.operatorUserId,
+          email: normalizeEmail(input.email),
+          token_hash: input.tokenHash,
+          expires_at: input.expiresAt
+        })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      return toOwnerInviteRecord(created as PersistedOwnerInviteRow);
+    },
+    async getOwnerInviteByTokenHash(tokenHash) {
+      const row = await db
+        .selectFrom("operator_owner_invites")
+        .selectAll()
+        .where("token_hash", "=", tokenHash)
+        .executeTakeFirst();
+      return row ? toOwnerInviteRecord(row as PersistedOwnerInviteRow) : undefined;
+    },
+    async revokeActiveOwnerInvites(input) {
+      await db
+        .updateTable("operator_owner_invites")
+        .set({
+          revoked_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .where("location_id", "=", input.locationId)
+        .where("email", "=", normalizeEmail(input.email))
+        .where("consumed_at", "is", null)
+        .where("revoked_at", "is", null)
+        .execute();
+    },
+    async markOwnerInviteConsumed(inviteId) {
+      const updated = await db
+        .updateTable("operator_owner_invites")
+        .set({
+          consumed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .where("invite_id", "=", inviteId)
+        .returningAll()
+        .executeTakeFirst();
+      return updated ? toOwnerInviteRecord(updated as PersistedOwnerInviteRow) : undefined;
+    },
+    async markOwnerInviteSent(inviteId) {
+      const updated = await db
+        .updateTable("operator_owner_invites")
+        .set({
+          sent_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .where("invite_id", "=", inviteId)
+        .returningAll()
+        .executeTakeFirst();
+      return updated ? toOwnerInviteRecord(updated as PersistedOwnerInviteRow) : undefined;
     },
     async saveOperatorSession(session, authMethod) {
       try {

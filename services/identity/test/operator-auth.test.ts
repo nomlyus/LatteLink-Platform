@@ -2,7 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
 import { createInMemoryIdentityRepository } from "../src/repository.js";
 import { provisionOwnerAccess } from "../src/provisioning.js";
-import { internalOwnerProvisionResponseSchema, internalOwnerSummarySchema } from "@lattelink/contracts-auth";
+import {
+  internalOwnerInviteResponseSchema,
+  internalOwnerProvisionResponseSchema,
+  internalOwnerSummarySchema,
+  operatorInviteAcceptResponseSchema,
+  operatorInviteLookupResponseSchema
+} from "@lattelink/contracts-auth";
 
 const ownerEmail = "owner@gazellecoffee.com";
 const ownerPassword = "LatteLinkOwner123!";
@@ -623,5 +629,137 @@ describe("operator auth", () => {
     });
 
     await app.close();
+  });
+
+  it("invites an owner through the gateway route and accepts the one-time link", async () => {
+    process.env.GATEWAY_INTERNAL_API_TOKEN = "identity-gateway-token";
+    const repository = createInMemoryIdentityRepository();
+    const app = await buildApp({ repository });
+
+    const inviteResponse = await app.inject({
+      method: "POST",
+      url: "/v1/identity/internal/locations/pilot-01/owner/invite",
+      headers: {
+        "x-gateway-token": "identity-gateway-token"
+      },
+      payload: {
+        displayName: "Pilot Owner",
+        email: "pilot.owner@example.com",
+        dashboardUrl: "https://client.example.com"
+      }
+    });
+
+    expect(inviteResponse.statusCode).toBe(200);
+    const invite = internalOwnerInviteResponseSchema.parse(inviteResponse.json());
+    expect(invite.operator.active).toBe(false);
+    expect(invite.invite.inviteUrl).toContain("/invites/");
+    const token = invite.invite.inviteUrl!.split("/invites/")[1]!;
+
+    const lookupResponse = await app.inject({
+      method: "GET",
+      url: `/v1/operator/invites/${token}`
+    });
+    expect(lookupResponse.statusCode).toBe(200);
+    expect(operatorInviteLookupResponseSchema.parse(lookupResponse.json())).toMatchObject({
+      operator: {
+        email: "pilot.owner@example.com",
+        role: "owner"
+      }
+    });
+
+    const signInBeforeAcceptance = await app.inject({
+      method: "POST",
+      url: "/v1/operator/auth/sign-in",
+      payload: {
+        email: "pilot.owner@example.com",
+        password: "AcceptedPassword123!"
+      }
+    });
+    expect(signInBeforeAcceptance.statusCode).toBe(401);
+
+    const acceptResponse = await app.inject({
+      method: "POST",
+      url: `/v1/operator/invites/${token}/accept`,
+      payload: {
+        password: "AcceptedPassword123!"
+      }
+    });
+    expect(acceptResponse.statusCode).toBe(200);
+    expect(operatorInviteAcceptResponseSchema.parse(acceptResponse.json())).toMatchObject({
+      operator: {
+        email: "pilot.owner@example.com",
+        active: true
+      },
+      invite: {
+        status: "consumed"
+      }
+    });
+
+    const reuseResponse = await app.inject({
+      method: "POST",
+      url: `/v1/operator/invites/${token}/accept`,
+      payload: {
+        password: "AcceptedPassword123!"
+      }
+    });
+    expect(reuseResponse.statusCode).toBe(410);
+    expect(reuseResponse.json()).toMatchObject({
+      code: "INVITE_CONSUMED"
+    });
+
+    const signInAfterAcceptance = await app.inject({
+      method: "POST",
+      url: "/v1/operator/auth/sign-in",
+      payload: {
+        email: "pilot.owner@example.com",
+        password: "AcceptedPassword123!"
+      }
+    });
+    expect(signInAfterAcceptance.statusCode).toBe(200);
+
+    await app.close();
+  });
+
+  it("fails owner invite creation clearly when production email config is incomplete", async () => {
+    process.env.GATEWAY_INTERNAL_API_TOKEN = "identity-gateway-token";
+    const previousEmailProvider = process.env.EMAIL_PROVIDER;
+    const previousResendApiKey = process.env.RESEND_API_KEY;
+    const previousEmailFrom = process.env.OWNER_INVITE_EMAIL_FROM;
+    const previousDashboardBaseUrl = process.env.CLIENT_DASHBOARD_BASE_URL;
+    process.env.EMAIL_PROVIDER = "resend";
+    process.env.CLIENT_DASHBOARD_BASE_URL = "https://client.example.com";
+    delete process.env.RESEND_API_KEY;
+    delete process.env.OWNER_INVITE_EMAIL_FROM;
+    const repository = createInMemoryIdentityRepository();
+    const app = await buildApp({ repository });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/v1/identity/internal/locations/pilot-01/owner/invite",
+        headers: {
+          "x-gateway-token": "identity-gateway-token"
+        },
+        payload: {
+          displayName: "Pilot Owner",
+          email: "pilot.owner@example.com"
+        }
+      });
+
+      expect(response.statusCode).toBe(503);
+      expect(response.json()).toMatchObject({
+        code: "EmailConfigurationError"
+      });
+    } finally {
+      if (previousEmailProvider === undefined) delete process.env.EMAIL_PROVIDER;
+      else process.env.EMAIL_PROVIDER = previousEmailProvider;
+      if (previousResendApiKey === undefined) delete process.env.RESEND_API_KEY;
+      else process.env.RESEND_API_KEY = previousResendApiKey;
+      if (previousEmailFrom === undefined) delete process.env.OWNER_INVITE_EMAIL_FROM;
+      else process.env.OWNER_INVITE_EMAIL_FROM = previousEmailFrom;
+      if (previousDashboardBaseUrl === undefined) delete process.env.CLIENT_DASHBOARD_BASE_URL;
+      else process.env.CLIENT_DASHBOARD_BASE_URL = previousDashboardBaseUrl;
+      await app.close();
+    }
   });
 });

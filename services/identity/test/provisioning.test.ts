@@ -4,6 +4,13 @@ import {
   parseOwnerProvisioningArgs,
   provisionOwnerAccess
 } from "../src/provisioning.js";
+import {
+  acceptOwnerInvite,
+  createOwnerInvite,
+  hashOwnerInviteToken,
+  lookupOwnerInvite,
+  OwnerInviteError
+} from "../src/invites.js";
 
 describe("owner provisioning", () => {
   it("parses provisioning CLI arguments", () => {
@@ -115,6 +122,79 @@ describe("owner provisioning", () => {
     await expect(repository.verifyOperatorPassword("owner@rawaq.com", "CorrectedPassword456!")).resolves.toMatchObject({
       email: "owner@rawaq.com",
       role: "owner"
+    });
+
+    await repository.close();
+  });
+
+  it("creates a pending owner invite and activates the owner only after acceptance", async () => {
+    const repository = createInMemoryIdentityRepository();
+
+    const result = await createOwnerInvite(repository, {
+      displayName: "Avery Owner",
+      email: "avery@store.com",
+      locationId: "flagship-01",
+      dashboardUrl: "https://client.example.com"
+    });
+
+    expect(result.invite.inviteUrl).toContain("/invites/");
+    expect(result.operator.active).toBe(false);
+    await expect(repository.verifyOperatorPassword("avery@store.com", "AcceptedPassword123!")).resolves.toBeUndefined();
+
+    const token = result.invite.inviteUrl?.split("/invites/")[1];
+    expect(token).toBeTruthy();
+    const lookup = await lookupOwnerInvite(repository, token!);
+    expect(lookup.operator.email).toBe("avery@store.com");
+
+    const accepted = await acceptOwnerInvite(repository, token!, {
+      password: "AcceptedPassword123!"
+    });
+    expect(accepted.operator.active).toBe(true);
+    expect(accepted.invite.status).toBe("consumed");
+    await expect(repository.verifyOperatorPassword("avery@store.com", "AcceptedPassword123!")).resolves.toMatchObject({
+      role: "owner"
+    });
+
+    await expect(acceptOwnerInvite(repository, token!, { password: "AcceptedPassword123!" })).rejects.toMatchObject({
+      code: "INVITE_CONSUMED"
+    });
+
+    await repository.close();
+  });
+
+  it("rejects invalid, expired, and revoked owner invites", async () => {
+    const repository = createInMemoryIdentityRepository();
+    await expect(lookupOwnerInvite(repository, "missing-token-value-1234567890")).rejects.toBeInstanceOf(OwnerInviteError);
+
+    const expired = await createOwnerInvite(repository, {
+      displayName: "Expired Owner",
+      email: "expired@store.com",
+      locationId: "expired-01"
+    });
+    await repository.createOwnerInvite({
+      locationId: "expired-01",
+      operatorUserId: expired.operator.operatorUserId,
+      email: "expired@store.com",
+      tokenHash: hashOwnerInviteToken("expired-token-value-1234567890"),
+      expiresAt: "2000-01-01T00:00:00.000Z"
+    });
+
+    await expect(lookupOwnerInvite(repository, "expired-token-value-1234567890")).rejects.toMatchObject({
+      code: "INVITE_EXPIRED"
+    });
+
+    const revoked = await createOwnerInvite(repository, {
+      displayName: "Revoked Owner",
+      email: "revoked@store.com",
+      locationId: "revoked-01"
+    });
+    await repository.revokeActiveOwnerInvites({
+      locationId: "revoked-01",
+      email: "revoked@store.com"
+    });
+    const revokedToken = revoked.invite.inviteUrl?.split("/invites/")[1] ?? revoked.token;
+    await expect(lookupOwnerInvite(repository, revokedToken)).rejects.toMatchObject({
+      code: "INVITE_REVOKED"
     });
 
     await repository.close();

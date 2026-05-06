@@ -15,6 +15,8 @@ import {
   internalAdminMeResponseSchema,
   internalAdminPasswordSignInSchema,
   internalAdminSessionSchema,
+  internalOwnerInviteRequestSchema,
+  internalOwnerInviteResponseSchema,
   internalOwnerProvisionParamsSchema,
   internalOwnerProvisionRequestSchema,
   internalOwnerProvisionResponseSchema,
@@ -25,6 +27,10 @@ import {
   operatorAuthProvidersSchema,
   operatorDevAccessRequestSchema,
   operatorGoogleExchangeRequestSchema,
+  operatorInviteAcceptRequestSchema,
+  operatorInviteAcceptResponseSchema,
+  operatorInviteLookupResponseSchema,
+  operatorInviteTokenParamsSchema,
   operatorMeResponseSchema,
   operatorPasswordSignInSchema,
   operatorSessionSchema,
@@ -47,6 +53,19 @@ import {
   verifyAppleIdentityToken
 } from "./apple.js";
 import { createIdentityRepository, type IdentityRepository } from "./repository.js";
+import {
+  acceptOwnerInvite,
+  createOwnerInvite,
+  lookupOwnerInvite,
+  OwnerInviteError,
+  resendOwnerInvite
+} from "./invites.js";
+import {
+  createEmailProvider,
+  EmailConfigurationError,
+  EmailDeliveryError,
+  resolveClientDashboardBaseUrl
+} from "./email.js";
 import { provisionOwnerAccess } from "./provisioning.js";
 
 type CustomerSession = NonNullable<Awaited<ReturnType<IdentityRepository["getSessionByAccessToken"]>>>;
@@ -524,6 +543,36 @@ function buildApiError(requestId: string, code: string, message: string) {
     code,
     message,
     requestId
+  });
+}
+
+function ownerInviteErrorStatus(error: OwnerInviteError) {
+  switch (error.code) {
+    case "INVITE_NOT_FOUND":
+    case "OPERATOR_NOT_FOUND":
+      return 404;
+    case "INVITE_EXPIRED":
+    case "INVITE_CONSUMED":
+    case "INVITE_REVOKED":
+      return 410;
+  }
+}
+
+async function sendOwnerInviteEmail(input: {
+  to: string;
+  displayName: string;
+  inviteUrl: string | undefined;
+  locationId: string;
+}) {
+  if (!input.inviteUrl) {
+    throw new EmailConfigurationError("CLIENT_DASHBOARD_BASE_URL is required to send owner invite email");
+  }
+
+  await createEmailProvider().sendOwnerInvite({
+    to: input.to,
+    displayName: input.displayName,
+    inviteUrl: input.inviteUrl,
+    locationId: input.locationId
   });
 }
 
@@ -2061,6 +2110,119 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
     });
 
     return internalOwnerProvisionResponseSchema.parse(result);
+  });
+
+  app.post("/v1/identity/internal/locations/:locationId/owner/invite", async (request, reply) => {
+    const authorization = authorizeGatewayRequest(request, gatewayApiToken);
+    if (!authorization.ok) {
+      return reply.status(authorization.statusCode).send(authorization.body);
+    }
+
+    const { locationId } = internalOwnerProvisionParamsSchema.parse(request.params);
+    const input = internalOwnerInviteRequestSchema.parse(request.body);
+    const result = await createOwnerInvite(repository, {
+      ...input,
+      dashboardUrl: input.dashboardUrl ?? resolveClientDashboardBaseUrl(),
+      locationId
+    });
+
+    try {
+      await sendOwnerInviteEmail({
+        to: result.operator.email,
+        displayName: result.operator.displayName,
+        inviteUrl: result.invite.inviteUrl,
+        locationId
+      });
+      await repository.markOwnerInviteSent(result.invite.inviteId);
+    } catch (error) {
+      if (error instanceof EmailConfigurationError || error instanceof EmailDeliveryError) {
+        return reply.status(503).send(buildApiError(request.id, error.name, error.message));
+      }
+
+      throw error;
+    }
+
+    logIdentityMutation(request, "internal owner invited", {
+      targetOperatorUserId: result.operator.operatorUserId,
+      targetEmail: result.operator.email,
+      locationId,
+      action: result.action
+    });
+    await recordAuditLog(request, repository, {
+      locationId,
+      actorId: getActorId(request),
+      actorType: "internal_admin",
+      action: "owner.invited",
+      targetId: result.operator.operatorUserId,
+      targetType: "operator_user",
+      payload: {
+        email: result.operator.email,
+        action: result.action,
+        inviteId: result.invite.inviteId
+      }
+    });
+
+    return internalOwnerInviteResponseSchema.parse(result);
+  });
+
+  app.post("/v1/identity/internal/locations/:locationId/owner/invite/resend", async (request, reply) => {
+    const authorization = authorizeGatewayRequest(request, gatewayApiToken);
+    if (!authorization.ok) {
+      return reply.status(authorization.statusCode).send(authorization.body);
+    }
+
+    const { locationId } = internalOwnerProvisionParamsSchema.parse(request.params);
+    const input = internalOwnerInviteRequestSchema.parse(request.body);
+    const result = await resendOwnerInvite(repository, {
+      ...input,
+      dashboardUrl: input.dashboardUrl ?? resolveClientDashboardBaseUrl(),
+      locationId
+    });
+
+    try {
+      await sendOwnerInviteEmail({
+        to: result.operator.email,
+        displayName: result.operator.displayName,
+        inviteUrl: result.invite.inviteUrl,
+        locationId
+      });
+      await repository.markOwnerInviteSent(result.invite.inviteId);
+    } catch (error) {
+      if (error instanceof EmailConfigurationError || error instanceof EmailDeliveryError) {
+        return reply.status(503).send(buildApiError(request.id, error.name, error.message));
+      }
+
+      throw error;
+    }
+
+    return internalOwnerInviteResponseSchema.parse(result);
+  });
+
+  app.get("/v1/operator/invites/:token", async (request, reply) => {
+    const { token } = operatorInviteTokenParamsSchema.parse(request.params);
+    try {
+      return operatorInviteLookupResponseSchema.parse(await lookupOwnerInvite(repository, token));
+    } catch (error) {
+      if (error instanceof OwnerInviteError) {
+        return reply.status(ownerInviteErrorStatus(error)).send(buildApiError(request.id, error.code, error.message));
+      }
+
+      throw error;
+    }
+  });
+
+  app.post("/v1/operator/invites/:token/accept", async (request, reply) => {
+    const { token } = operatorInviteTokenParamsSchema.parse(request.params);
+    const input = operatorInviteAcceptRequestSchema.parse(request.body);
+    try {
+      return operatorInviteAcceptResponseSchema.parse(await acceptOwnerInvite(repository, token, input));
+    } catch (error) {
+      if (error instanceof OwnerInviteError) {
+        return reply.status(ownerInviteErrorStatus(error)).send(buildApiError(request.id, error.code, error.message));
+      }
+
+      throw error;
+    }
   });
 
   app.get("/v1/identity/internal/locations/:locationId/owner", async (request, reply) => {

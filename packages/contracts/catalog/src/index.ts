@@ -660,9 +660,9 @@ const clientPaymentProfileSchemaBase = z.object({
 export const clientPaymentProfileSchema = clientPaymentProfileSchemaBase;
 
 export const internalLocationBootstrapSchema = z.object({
-  brandId: z.string().trim().min(1),
+  brandId: z.string().trim().min(1).optional(),
   brandName: z.string().trim().min(1),
-  locationId: z.string().trim().min(1),
+  locationId: z.string().trim().min(1).optional(),
   locationName: z.string().trim().min(1),
   marketLabel: z.string().trim().min(1),
   storeName: z.string().trim().min(1).optional(),
@@ -683,6 +683,165 @@ export const paymentReadinessSchema = z.object({
   onboardingState: clientPaymentProfileSchema.shape.stripeOnboardingStatus,
   missingRequiredFields: z.array(z.string())
 });
+
+export const onboardingStatusSchema = z.enum([
+  "draft",
+  "invited",
+  "in_progress",
+  "ready_for_review",
+  "approved",
+  "live",
+  "blocked"
+]);
+
+export const onboardingChecklistItemIdSchema = z.enum([
+  "owner_invited",
+  "owner_activated",
+  "business_profile_complete",
+  "store_operations_complete",
+  "payments_connected",
+  "menu_ready",
+  "team_configured_or_skipped",
+  "test_order_completed",
+  "mobile_release_ready",
+  "admin_launch_approved"
+]);
+
+export const onboardingChecklistItemStatusSchema = z.enum(["pending", "complete", "blocked", "skipped"]);
+
+export const onboardingChecklistItemSchema = z.object({
+  id: onboardingChecklistItemIdSchema,
+  label: z.string().trim().min(1),
+  status: onboardingChecklistItemStatusSchema.default("pending"),
+  passed: z.boolean(),
+  required: z.boolean().default(true),
+  manual: z.boolean().default(false),
+  detail: z.string().trim().min(1).optional(),
+  updatedAt: z.string().datetime().optional()
+});
+
+export const mobileReleaseStatusSchema = z.enum([
+  "not_started",
+  "metadata_pending",
+  "metadata_ready",
+  "build_configuring",
+  "build_ready",
+  "submitted_for_review",
+  "approved",
+  "ready_for_launch",
+  "live",
+  "blocked"
+]);
+
+export const mobileReleaseProfileSchema = z.object({
+  locationId: z.string().trim().min(1),
+  status: mobileReleaseStatusSchema.default("not_started"),
+  statusLabel: z.string().trim().min(1).optional(),
+  appStoreUrl: z.string().trim().url().optional(),
+  testFlightUrl: z.string().trim().url().optional(),
+  buildNumber: z.string().trim().min(1).optional(),
+  submittedAt: z.string().datetime().optional(),
+  approvedAt: z.string().datetime().optional(),
+  liveAt: z.string().datetime().optional(),
+  blockedReason: z.string().trim().min(1).optional(),
+  notes: z.string().trim().min(1).optional(),
+  updatedAt: z.string().datetime().optional()
+});
+
+export const adminClientCreateRequestSchema = z.object({
+  clientName: z.string().trim().min(1),
+  locationName: z.string().trim().min(1),
+  marketLabel: z.string().trim().min(1),
+  ownerEmail: z.string().trim().email(),
+  ownerName: z.string().trim().min(1).optional(),
+  storeName: z.string().trim().min(1).optional(),
+  hours: z.string().trim().min(1).optional(),
+  pickupInstructions: z.string().trim().min(1).optional(),
+  taxRateBasisPoints: z.number().int().min(0).max(10000).optional(),
+  capabilities: appConfigStoreCapabilitiesSchema.optional()
+}).strict();
+
+export const onboardingSummarySchema = z.object({
+  tenantId: z.string().trim().min(1),
+  brandId: z.string().trim().min(1),
+  brandName: z.string().trim().min(1),
+  locationId: z.string().trim().min(1),
+  locationName: z.string().trim().min(1),
+  marketLabel: z.string().trim().min(1),
+  status: onboardingStatusSchema,
+  readyForReview: z.boolean(),
+  checklist: z.array(onboardingChecklistItemSchema),
+  paymentReadiness: paymentReadinessSchema.optional(),
+  mobileRelease: mobileReleaseProfileSchema.optional(),
+  submittedForReviewAt: z.string().datetime().optional(),
+  approvedAt: z.string().datetime().optional(),
+  liveAt: z.string().datetime().optional(),
+  blockedReason: z.string().trim().min(1).optional(),
+  updatedAt: z.string().datetime().optional()
+});
+
+export const adminClientCreateResponseSchema = z.object({
+  tenantId: z.string().trim().min(1),
+  locationId: z.string().trim().min(1),
+  onboarding: onboardingSummarySchema
+});
+
+export const internalClientLocationSchema = z.object({
+  tenantId: z.string().trim().min(1),
+  brandId: z.string().trim().min(1),
+  locationId: z.string().trim().min(1),
+  locationName: z.string().trim().min(1),
+  marketLabel: z.string().trim().min(1),
+  primaryLocation: z.boolean(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional()
+});
+
+export const internalClientSummarySchema = z.object({
+  tenantId: z.string().trim().min(1),
+  brandId: z.string().trim().min(1),
+  clientName: z.string().trim().min(1),
+  status: onboardingStatusSchema,
+  primaryLocationId: z.string().trim().min(1).optional(),
+  locationCount: z.number().int().nonnegative(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional()
+});
+
+export const internalClientDetailSchema = internalClientSummarySchema.extend({
+  locations: z.array(internalClientLocationSchema),
+  onboarding: onboardingSummarySchema.optional()
+});
+
+export const internalClientListResponseSchema = z.object({
+  clients: z.array(internalClientSummarySchema)
+});
+
+export const operatorOnboardingUpdateSchema = z.object({
+  businessProfileComplete: z.boolean().optional(),
+  storeOperationsComplete: z.boolean().optional(),
+  menuReady: z.boolean().optional(),
+  teamConfiguredOrSkipped: z.boolean().optional(),
+  testOrderCompleted: z.boolean().optional(),
+  readyForReview: z.boolean().optional(),
+  blockedReason: z.string().trim().min(1).nullable().optional(),
+  notes: z.string().trim().min(1).optional()
+});
+
+export const launchApprovalRequestSchema = z.object({
+  approved: z.boolean(),
+  note: z.string().trim().min(1).optional()
+});
+
+export const mobileReleaseProfileUpdateSchema = mobileReleaseProfileSchema
+  .omit({
+    locationId: true,
+    updatedAt: true
+  })
+  .partial()
+  .extend({
+    status: mobileReleaseStatusSchema.optional()
+  });
 
 export const stripeConnectOnboardingLinkRequestSchema = z.object({
   locationId: z.string().trim().min(1),
@@ -784,6 +943,22 @@ export type AppConfig = z.output<typeof appConfigSchema>;
 export type ClientPaymentProfile = z.output<typeof clientPaymentProfileSchema>;
 export type InternalLocationPaymentProfileUpdate = z.output<typeof internalLocationPaymentProfileUpdateSchema>;
 export type PaymentReadiness = z.output<typeof paymentReadinessSchema>;
+export type OnboardingStatus = z.output<typeof onboardingStatusSchema>;
+export type OnboardingChecklistItemId = z.output<typeof onboardingChecklistItemIdSchema>;
+export type OnboardingChecklistItemStatus = z.output<typeof onboardingChecklistItemStatusSchema>;
+export type OnboardingChecklistItem = z.output<typeof onboardingChecklistItemSchema>;
+export type MobileReleaseStatus = z.output<typeof mobileReleaseStatusSchema>;
+export type MobileReleaseProfile = z.output<typeof mobileReleaseProfileSchema>;
+export type MobileReleaseProfileUpdate = z.output<typeof mobileReleaseProfileUpdateSchema>;
+export type AdminClientCreateRequest = z.output<typeof adminClientCreateRequestSchema>;
+export type AdminClientCreateResponse = z.output<typeof adminClientCreateResponseSchema>;
+export type InternalClientLocation = z.output<typeof internalClientLocationSchema>;
+export type InternalClientSummary = z.output<typeof internalClientSummarySchema>;
+export type InternalClientDetail = z.output<typeof internalClientDetailSchema>;
+export type InternalClientListResponse = z.output<typeof internalClientListResponseSchema>;
+export type OnboardingSummary = z.output<typeof onboardingSummarySchema>;
+export type OperatorOnboardingUpdate = z.output<typeof operatorOnboardingUpdateSchema>;
+export type LaunchApprovalRequest = z.output<typeof launchApprovalRequestSchema>;
 export type StripeConnectOnboardingLinkRequest = z.output<typeof stripeConnectOnboardingLinkRequestSchema>;
 export type StripeConnectDashboardLinkRequest = z.output<typeof stripeConnectDashboardLinkRequestSchema>;
 export type StripeConnectLinkResponse = z.output<typeof stripeConnectLinkResponseSchema>;

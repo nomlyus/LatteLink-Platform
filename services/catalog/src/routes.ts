@@ -1,6 +1,8 @@
 import { timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
+  adminClientCreateRequestSchema,
+  adminClientCreateResponseSchema,
   adminMenuItemCreateSchema,
   adminMenuItemImageUploadRequestSchema,
   adminMenuItemImageUploadResponseSchema,
@@ -9,12 +11,18 @@ import {
   adminMutationSuccessSchema,
   adminStoreConfigUpdateSchema,
   clientPaymentProfileSchema,
+  internalClientDetailSchema,
+  internalClientListResponseSchema,
   menuResponseSchema,
   internalLocationBootstrapSchema,
   internalLocationListResponseSchema,
   internalLocationPaymentProfileUpdateSchema,
   internalLocationParamsSchema,
   internalLocationSummarySchema,
+  launchApprovalRequestSchema,
+  mobileReleaseProfileUpdateSchema,
+  onboardingSummarySchema,
+  operatorOnboardingUpdateSchema,
   homeNewsCardCreateSchema,
   homeNewsCardUpdateSchema,
   homeNewsCardVisibilityUpdateSchema,
@@ -45,6 +53,9 @@ const menuItemParamsSchema = z.object({
 });
 const cardParamsSchema = z.object({
   cardId: z.string().min(1)
+});
+const tenantParamsSchema = z.object({
+  tenantId: z.string().min(1)
 });
 const adminMenuItemUpdateWithCustomizationsSchema = adminMenuItemUpdateSchema.extend({
   customizationGroups: z.array(z.unknown()).optional()
@@ -671,6 +682,48 @@ export async function registerRoutes(app: FastifyInstance) {
   );
 
   app.post(
+    "/v1/catalog/internal/clients",
+    {
+      preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess]
+    },
+    async (request) => {
+      const input = adminClientCreateRequestSchema.parse(request.body);
+      return adminClientCreateResponseSchema.parse(await repository.createInternalClient(input));
+    }
+  );
+
+  app.get(
+    "/v1/catalog/internal/clients",
+    {
+      preHandler: [app.rateLimit(gatewayReadRateLimit), requireGatewayAccess]
+    },
+    async () => internalClientListResponseSchema.parse(await repository.listInternalClients())
+  );
+
+  app.get(
+    "/v1/catalog/internal/clients/:tenantId",
+    {
+      preHandler: [app.rateLimit(gatewayReadRateLimit), requireGatewayAccess]
+    },
+    async (request, reply) => {
+      const { tenantId } = tenantParamsSchema.parse(request.params);
+      const client = await repository.getInternalClient(tenantId);
+      if (!client) {
+        return reply.status(404).send(
+          serviceErrorSchema.parse({
+            code: "CLIENT_NOT_FOUND",
+            message: "Client not found",
+            requestId: request.id,
+            details: { tenantId }
+          })
+        );
+      }
+
+      return internalClientDetailSchema.parse(client);
+    }
+  );
+
+  app.post(
     "/v1/catalog/internal/locations/bootstrap",
     {
       preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess]
@@ -712,6 +765,101 @@ export async function registerRoutes(app: FastifyInstance) {
       }
 
       return internalLocationSummarySchema.parse(summary);
+    }
+  );
+
+  app.get(
+    "/v1/catalog/internal/locations/:locationId/onboarding",
+    {
+      preHandler: [app.rateLimit(gatewayReadRateLimit), requireGatewayAccess]
+    },
+    async (request, reply) => {
+      const { locationId } = internalLocationParamsSchema.parse(request.params);
+      const onboarding = await repository.getInternalLocationOnboarding(locationId);
+      if (!onboarding) {
+        return reply.status(404).send(
+          serviceErrorSchema.parse({
+            code: "ONBOARDING_NOT_FOUND",
+            message: "Onboarding state not found",
+            requestId: request.id,
+            details: { locationId }
+          })
+        );
+      }
+
+      return onboardingSummarySchema.parse(onboarding);
+    }
+  );
+
+  app.patch(
+    "/v1/catalog/internal/locations/:locationId/onboarding",
+    {
+      preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess]
+    },
+    async (request, reply) => {
+      const { locationId } = internalLocationParamsSchema.parse(request.params);
+      const input = operatorOnboardingUpdateSchema.parse(request.body);
+      const onboarding = await repository.updateInternalLocationOnboarding(locationId, input);
+      if (!onboarding) {
+        return reply.status(404).send(
+          serviceErrorSchema.parse({
+            code: "ONBOARDING_NOT_FOUND",
+            message: "Onboarding state not found",
+            requestId: request.id,
+            details: { locationId }
+          })
+        );
+      }
+
+      return onboardingSummarySchema.parse(onboarding);
+    }
+  );
+
+  app.post(
+    "/v1/catalog/internal/locations/:locationId/launch-approval",
+    {
+      preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess]
+    },
+    async (request, reply) => {
+      const { locationId } = internalLocationParamsSchema.parse(request.params);
+      const input = launchApprovalRequestSchema.parse(request.body);
+      const onboarding = await repository.approveInternalLocationLaunch(locationId, input);
+      if (!onboarding) {
+        return reply.status(404).send(
+          serviceErrorSchema.parse({
+            code: "ONBOARDING_NOT_FOUND",
+            message: "Onboarding state not found",
+            requestId: request.id,
+            details: { locationId }
+          })
+        );
+      }
+
+      return onboardingSummarySchema.parse(onboarding);
+    }
+  );
+
+  app.patch(
+    "/v1/catalog/internal/locations/:locationId/mobile-release",
+    {
+      preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess]
+    },
+    async (request, reply) => {
+      const { locationId } = internalLocationParamsSchema.parse(request.params);
+      const input = mobileReleaseProfileUpdateSchema.parse(request.body);
+      const onboarding = await repository.updateInternalLocationMobileRelease(locationId, input);
+      if (!onboarding) {
+        return reply.status(404).send(
+          serviceErrorSchema.parse({
+            code: "ONBOARDING_NOT_FOUND",
+            message: "Onboarding state not found",
+            requestId: request.id,
+            details: { locationId }
+          })
+        );
+      }
+
+      return onboardingSummarySchema.parse(onboarding);
     }
   );
 

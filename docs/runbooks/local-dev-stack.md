@@ -68,6 +68,15 @@ Explicit non-durable in-memory mode when you do not have Postgres running:
 ALLOW_IN_MEMORY_PERSISTENCE=true pnpm dev:services
 ```
 
+Owner invite emails use a console provider by default in local development:
+
+```bash
+CLIENT_DASHBOARD_BASE_URL=http://127.0.0.1:4173
+EMAIL_PROVIDER=console
+```
+
+With that setup, owner invite creation logs the one-time setup URL instead of sending real email. For production delivery set `EMAIL_PROVIDER=resend`, `OWNER_INVITE_EMAIL_FROM`, and `RESEND_API_KEY`.
+
 ### LAN Mode (Physical Device)
 
 ```bash

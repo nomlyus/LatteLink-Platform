@@ -5,9 +5,13 @@ import {
   adminStoreConfigSchema,
   appConfigSchema,
   clientPaymentProfileSchema,
+  adminClientCreateResponseSchema,
+  internalClientDetailSchema,
+  internalClientListResponseSchema,
   internalLocationListResponseSchema,
   internalLocationSummarySchema,
   menuResponseSchema,
+  onboardingSummarySchema,
   storeConfigResponseSchema
 } from "@lattelink/contracts-catalog";
 import { buildApp } from "../src/app.js";
@@ -768,6 +772,210 @@ describe("catalog service", () => {
       locationId: "northside-01",
       stripeChargesEnabled: true,
       stripePayoutsEnabled: true
+    });
+
+    await app.close();
+  });
+
+  it("generates internal brand and location identifiers when bootstrapping a new location", async () => {
+    process.env.GATEWAY_INTERNAL_API_TOKEN = "catalog-gateway-token";
+    const app = await buildApp();
+
+    const bootstrapResponse = await app.inject({
+      method: "POST",
+      url: "/v1/catalog/internal/locations/bootstrap",
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        brandName: "Generated Coffee",
+        locationName: "Generated Flagship",
+        marketLabel: "Detroit, MI"
+      }
+    });
+
+    expect(bootstrapResponse.statusCode).toBe(200);
+    const bootstrap = internalLocationSummarySchema.parse(bootstrapResponse.json());
+    expect(bootstrap.action).toBe("created");
+    expect(bootstrap.brandId).toMatch(/^brd_[a-f0-9]{16}$/);
+    expect(bootstrap.locationId).toMatch(/^loc_[a-f0-9]{16}$/);
+    expect(bootstrap.brandName).toBe("Generated Coffee");
+    expect(bootstrap.locationName).toBe("Generated Flagship");
+
+    const summaryResponse = await app.inject({
+      method: "GET",
+      url: `/v1/catalog/internal/locations/${bootstrap.locationId}`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      }
+    });
+
+    expect(summaryResponse.statusCode).toBe(200);
+    expect(internalLocationSummarySchema.parse(summaryResponse.json())).toMatchObject({
+      brandId: bootstrap.brandId,
+      locationId: bootstrap.locationId,
+      brandName: "Generated Coffee"
+    });
+
+    await app.close();
+  });
+
+  it("creates a client shell and tracks onboarding readiness through internal APIs", async () => {
+    process.env.GATEWAY_INTERNAL_API_TOKEN = "catalog-gateway-token";
+    const app = await buildApp();
+
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/v1/catalog/internal/clients",
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        clientName: "Wizard Coffee",
+        locationName: "Wizard Flagship",
+        marketLabel: "Detroit, MI",
+        ownerEmail: "owner@wizard.example",
+        storeName: "Wizard Coffee"
+      }
+    });
+
+    expect(createResponse.statusCode).toBe(200);
+    const created = adminClientCreateResponseSchema.parse(createResponse.json());
+    expect(created.tenantId).toMatch(/^ten_[a-f0-9]{16}$/);
+    expect(created.locationId).toMatch(/^loc_[a-f0-9]{16}$/);
+    expect(created.onboarding.readyForReview).toBe(false);
+
+    const listResponse = await app.inject({
+      method: "GET",
+      url: "/v1/catalog/internal/clients",
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      }
+    });
+    expect(listResponse.statusCode).toBe(200);
+    expect(internalClientListResponseSchema.parse(listResponse.json()).clients).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          tenantId: created.tenantId,
+          primaryLocationId: created.locationId
+        })
+      ])
+    );
+
+    const detailResponse = await app.inject({
+      method: "GET",
+      url: `/v1/catalog/internal/clients/${created.tenantId}`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      }
+    });
+    expect(detailResponse.statusCode).toBe(200);
+    expect(internalClientDetailSchema.parse(detailResponse.json())).toMatchObject({
+      tenantId: created.tenantId,
+      locations: [
+        {
+          locationId: created.locationId,
+          primaryLocation: true
+        }
+      ]
+    });
+
+    const onboardingUpdateResponse = await app.inject({
+      method: "PATCH",
+      url: `/v1/catalog/internal/locations/${created.locationId}/onboarding`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        businessProfileComplete: true,
+        storeOperationsComplete: true,
+        menuReady: true,
+        teamConfiguredOrSkipped: true,
+        testOrderCompleted: true,
+        readyForReview: true
+      }
+    });
+    expect(onboardingUpdateResponse.statusCode).toBe(200);
+    expect(onboardingSummarySchema.parse(onboardingUpdateResponse.json())).toMatchObject({
+      status: "ready_for_review",
+      readyForReview: false
+    });
+
+    const mobileReleaseResponse = await app.inject({
+      method: "PATCH",
+      url: `/v1/catalog/internal/locations/${created.locationId}/mobile-release`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        status: "ready_for_launch",
+        buildNumber: "42"
+      }
+    });
+    expect(mobileReleaseResponse.statusCode).toBe(200);
+    expect(onboardingSummarySchema.parse(mobileReleaseResponse.json()).mobileRelease).toMatchObject({
+      status: "ready_for_launch",
+      buildNumber: "42"
+    });
+
+    const paymentProfileResponse = await app.inject({
+      method: "PUT",
+      url: `/v1/catalog/internal/locations/${created.locationId}/payment-profile`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        locationId: created.locationId,
+        stripeAccountId: "acct_wizard123",
+        stripeAccountType: "express",
+        stripeOnboardingStatus: "completed",
+        stripeDetailsSubmitted: true,
+        stripeChargesEnabled: true,
+        stripePayoutsEnabled: true,
+        stripeDashboardEnabled: true,
+        country: "US",
+        currency: "USD",
+        cardEnabled: true,
+        applePayEnabled: true,
+        refundsEnabled: true,
+        cloverPosEnabled: false
+      }
+    });
+    expect(paymentProfileResponse.statusCode).toBe(200);
+
+    const onboardingReadResponse = await app.inject({
+      method: "GET",
+      url: `/v1/catalog/internal/locations/${created.locationId}/onboarding`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      }
+    });
+    expect(onboardingReadResponse.statusCode).toBe(200);
+    const onboarding = onboardingSummarySchema.parse(onboardingReadResponse.json());
+    expect(onboarding.readyForReview).toBe(false);
+    expect(onboarding.checklist).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "payments_connected", passed: true }),
+        expect.objectContaining({ id: "mobile_release_ready", passed: true }),
+        expect.objectContaining({ id: "admin_launch_approved", passed: false })
+      ])
+    );
+
+    const launchApprovalResponse = await app.inject({
+      method: "POST",
+      url: `/v1/catalog/internal/locations/${created.locationId}/launch-approval`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        approved: true,
+        note: "Manual pilot approval."
+      }
+    });
+    expect(launchApprovalResponse.statusCode).toBe(200);
+    expect(onboardingSummarySchema.parse(launchApprovalResponse.json())).toMatchObject({
+      status: "approved",
+      readyForReview: false
     });
 
     await app.close();

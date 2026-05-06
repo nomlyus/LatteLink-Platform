@@ -40,15 +40,6 @@ function readTaxRateBasisPoints(formData: FormData, key: string): number | undef
   return Math.round(percent * 100);
 }
 
-function slugify(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48);
-}
-
 function toRedirectError(error: unknown) {
   if (error instanceof Error) {
     return error.message;
@@ -106,8 +97,7 @@ export async function createClientAction(formData: FormData) {
   const marketLabel = readString(formData, "marketLabel");
   const ownerDisplayName = readString(formData, "ownerDisplayName");
   const ownerEmail = readString(formData, "ownerEmail");
-  const brandId = readOptionalString(formData, "brandId") ?? slugify(clientName);
-  const locationId = readOptionalString(formData, "locationId") ?? `${brandId}-01`;
+  let locationId = "";
 
   try {
     await requireAdminCapability("clients:write");
@@ -116,10 +106,8 @@ export async function createClientAction(formData: FormData) {
       throw new Error("Client name, location name, market, and owner fields are required.");
     }
 
-    await bootstrapInternalLocation({
-      brandId,
+    const location = await bootstrapInternalLocation({
       brandName: clientName,
-      locationId,
       locationName,
       marketLabel,
       storeName: readOptionalString(formData, "storeName") ?? clientName,
@@ -128,6 +116,7 @@ export async function createClientAction(formData: FormData) {
       taxRateBasisPoints: readTaxRateBasisPoints(formData, "taxRatePercent"),
       capabilities: readCapabilities(formData)
     });
+    locationId = location.locationId;
 
     await provisionLocationOwner(locationId, {
       displayName: ownerDisplayName,
