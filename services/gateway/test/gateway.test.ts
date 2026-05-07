@@ -107,6 +107,9 @@ let previousFreeClientDashboardDomain: string | undefined;
       marketLabel: string;
       status: "draft" | "invited" | "in_progress" | "ready_for_review" | "approved" | "live" | "blocked";
       readyForReview: boolean;
+      paymentsReady: boolean;
+      menuReady: boolean;
+      testOrderCompleted: boolean;
       mobileReleaseStatus:
         | "not_started"
         | "metadata_pending"
@@ -122,6 +125,10 @@ let previousFreeClientDashboardDomain: string | undefined;
     }> = {}
   ) {
     const locationId = overrides.locationId ?? "northside-01";
+    const paymentsReady = overrides.paymentsReady ?? false;
+    const menuReady = overrides.menuReady ?? false;
+    const testOrderCompleted = overrides.testOrderCompleted ?? false;
+    const mobileReleaseReady = overrides.mobileReleaseStatus === "ready_for_launch" || overrides.mobileReleaseStatus === "live";
     return {
       tenantId: overrides.tenantId ?? "tenant-northside",
       brandId: overrides.brandId ?? "northside-coffee",
@@ -141,20 +148,32 @@ let previousFreeClientDashboardDomain: string | undefined;
         {
           id: "payments_connected",
           label: "Payments connected",
-          status: "pending",
-          passed: false
+          status: paymentsReady ? "complete" : "pending",
+          passed: paymentsReady
+        },
+        {
+          id: "menu_ready",
+          label: "Menu ready",
+          status: menuReady ? "complete" : "pending",
+          passed: menuReady
+        },
+        {
+          id: "test_order_completed",
+          label: "Test order completed",
+          status: testOrderCompleted ? "complete" : "pending",
+          passed: testOrderCompleted
         },
         {
           id: "mobile_release_ready",
           label: "Mobile release ready",
-          status: overrides.mobileReleaseStatus === "ready_for_launch" ? "complete" : "pending",
-          passed: overrides.mobileReleaseStatus === "ready_for_launch"
+          status: mobileReleaseReady ? "complete" : "pending",
+          passed: mobileReleaseReady
         }
       ],
       paymentReadiness: {
-        ready: false,
-        onboardingState: "pending",
-        missingRequiredFields: ["stripe_connect"]
+        ready: paymentsReady,
+        onboardingState: paymentsReady ? "completed" : "pending",
+        missingRequiredFields: paymentsReady ? [] : ["stripe_connect"]
       },
       mobileRelease: {
         locationId,
@@ -1562,10 +1581,27 @@ let previousFreeClientDashboardDomain: string | undefined;
       if (internalLocationOnboardingMatch && method === "GET") {
         const locationId = internalLocationOnboardingMatch[1];
 
-        return new Response(JSON.stringify(buildOnboardingPayload({ locationId })), {
-          status: 200,
-          headers: { "content-type": "application/json" }
-        });
+        return new Response(
+          JSON.stringify(
+            buildOnboardingPayload(
+              locationId === "launch-ready-01"
+                ? {
+                    locationId,
+                    status: "approved",
+                    readyForReview: true,
+                    paymentsReady: true,
+                    menuReady: true,
+                    testOrderCompleted: true,
+                    mobileReleaseStatus: "ready_for_launch"
+                  }
+                : { locationId }
+            )
+          ),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          }
+        );
       }
 
       if (internalLocationOnboardingMatch && method === "PATCH") {
@@ -1610,13 +1646,13 @@ let previousFreeClientDashboardDomain: string | undefined;
       const internalLocationLaunchApprovalMatch = url.match(/\/v1\/catalog\/internal\/locations\/([^/]+)\/launch-approval$/);
       if (internalLocationLaunchApprovalMatch && method === "POST") {
         const locationId = internalLocationLaunchApprovalMatch[1];
-        const body = JSON.parse(String(init?.body ?? "{}")) as { approved?: boolean };
+        const body = JSON.parse(String(init?.body ?? "{}")) as { approved?: boolean; live?: boolean };
 
         return new Response(
           JSON.stringify(
             buildOnboardingPayload({
               locationId,
-              status: body.approved ? "approved" : "blocked"
+              status: body.approved ? (body.live ? "live" : "approved") : "blocked"
             })
           ),
           { status: 200, headers: { "content-type": "application/json" } }
@@ -3723,19 +3759,37 @@ let previousFreeClientDashboardDomain: string | undefined;
       }
     });
 
-    const launchApprovalResponse = await app.inject({
+    const blockedLaunchApprovalResponse = await app.inject({
       method: "POST",
       url: "/v1/internal/locations/northside-01/launch-approval",
       headers: ownerInternalAdminHeaders,
       payload: {
         approved: true,
+        note: "Should not pass while onboarding blockers remain."
+      }
+    });
+    expect(blockedLaunchApprovalResponse.statusCode, blockedLaunchApprovalResponse.body).toBe(409);
+    expect(blockedLaunchApprovalResponse.json()).toMatchObject({
+      code: "INVALID_REQUEST",
+      details: {
+        locationId: "northside-01"
+      }
+    });
+
+    const launchApprovalResponse = await app.inject({
+      method: "POST",
+      url: "/v1/internal/locations/launch-ready-01/launch-approval",
+      headers: ownerInternalAdminHeaders,
+      payload: {
+        approved: true,
+        live: true,
         note: "Manual build and App Store setup are ready."
       }
     });
     expect(launchApprovalResponse.statusCode, launchApprovalResponse.body).toBe(200);
     expect(launchApprovalResponse.json()).toMatchObject({
-      locationId: "northside-01",
-      status: "approved"
+      locationId: "launch-ready-01",
+      status: "live"
     });
 
     const resendResponse = await app.inject({

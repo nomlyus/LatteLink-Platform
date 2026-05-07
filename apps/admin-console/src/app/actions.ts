@@ -15,9 +15,12 @@ import {
 import {
   bootstrapInternalLocation,
   buildCapabilities,
+  approveInternalLocationLaunch,
   createInternalClient,
   createStripeDashboardLink,
   createStripeOnboardingLink,
+  getInternalLocationOnboarding,
+  getInternalLocationReadiness,
   resendLocationOwnerInvite,
   updateInternalLocationMobileRelease
 } from "@/lib/internal-api";
@@ -255,4 +258,59 @@ export async function updateMobileReleaseAction(formData: FormData) {
   }
 
   redirect(`/clients/${locationId}?releaseUpdated=1`);
+}
+
+function collectLaunchBlockers(
+  onboarding: Awaited<ReturnType<typeof getInternalLocationOnboarding>>,
+  readiness: Awaited<ReturnType<typeof getInternalLocationReadiness>>
+) {
+  const readinessOwnedOnboardingChecks = new Set(["owner_invited", "owner_activated"]);
+  const blockers = new Map<string, string>();
+  for (const item of onboarding.checklist) {
+    if (!item.passed && item.id !== "admin_launch_approved" && !readinessOwnedOnboardingChecks.has(item.id)) {
+      blockers.set(item.id, item.detail ? `${item.label}: ${item.detail}` : item.label);
+    }
+  }
+
+  for (const check of readiness.checks) {
+    if (!check.passed) {
+      blockers.set(check.id, check.detail ? `${check.label}: ${check.detail}` : check.label);
+    }
+  }
+
+  return Array.from(blockers.values());
+}
+
+export async function approveLaunchAction(formData: FormData) {
+  const locationId = readString(formData, "locationId");
+  const launchAction = readString(formData, "launchAction");
+  if (!locationId) {
+    redirect("/clients?error=Location ID is required.");
+  }
+
+  try {
+    await requireAdminCapability("clients:write");
+    const [onboarding, readiness] = await Promise.all([
+      getInternalLocationOnboarding(locationId),
+      getInternalLocationReadiness(locationId)
+    ]);
+    const blockers = collectLaunchBlockers(onboarding, readiness);
+    if (blockers.length > 0) {
+      throw new Error(`Launch approval is blocked by: ${blockers.slice(0, 5).join("; ")}.`);
+    }
+
+    if (launchAction === "live" && onboarding.status !== "approved" && onboarding.status !== "live") {
+      throw new Error("Approve the launch before marking the app live.");
+    }
+
+    await approveInternalLocationLaunch(locationId, {
+      approved: true,
+      live: launchAction === "live",
+      note: readOptionalString(formData, "note")
+    });
+  } catch (error) {
+    redirect(`/clients/${locationId}?launchError=${encodeURIComponent(toRedirectError(error))}`);
+  }
+
+  redirect(`/clients/${locationId}?${launchAction === "live" ? "launchLive" : "launchApproved"}=1`);
 }

@@ -41,9 +41,9 @@ export function LaunchReadinessChecklist({ readiness }: LaunchReadinessChecklist
             Automated checks come from the backend readiness endpoint. Confirm the test order manually after a successful end-to-end checkout.
           </p>
         </div>
-        <button className="primary-button" type="button" disabled={!allChecksPassed} aria-disabled={!allChecksPassed}>
-          Go Live
-        </button>
+        <span className={`status-badge is-${allChecksPassed ? "healthy" : "warning"}`}>
+          {allChecksPassed ? "Checks passed" : "Blocked"}
+        </span>
       </div>
 
       <div className="checklist">

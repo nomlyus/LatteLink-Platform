@@ -707,7 +707,7 @@ function buildOnboardingSummary(input: {
   mobileRelease?: MobileReleaseProfile;
 }) {
   const checklist = buildChecklist(input);
-  const launchBlockingIds = new Set(["admin_launch_approved"]);
+  const launchBlockingIds = new Set(["owner_invited", "owner_activated", "mobile_release_ready", "admin_launch_approved"]);
   const readyForReview = checklist.every((item) => item.passed || launchBlockingIds.has(item.id));
   const status = deriveOnboardingStatus(input.progress, readyForReview);
 
@@ -1136,11 +1136,13 @@ function createInMemoryRepository(): CatalogRepository {
         return undefined;
       }
       const now = new Date().toISOString();
+      const status = input.approved ? (input.live ? "live" : "approved") : "in_progress";
       const next: OnboardingProgressRecord = {
         ...existing,
         adminLaunchApproved: input.approved,
-        status: input.approved ? "approved" : "in_progress",
+        status,
         approvedAt: input.approved ? existing.approvedAt ?? now : undefined,
+        liveAt: input.approved && input.live ? existing.liveAt ?? now : undefined,
         notes: input.note ?? existing.notes,
         updatedAt: now
       };
@@ -2271,13 +2273,14 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         return undefined;
       }
       const now = new Date().toISOString();
-      const status = input.approved ? "approved" : "in_progress";
+      const status = input.approved ? (input.live ? "live" : "approved") : "in_progress";
       await db
         .updateTable("catalog_onboarding_progress")
         .set({
           admin_launch_approved: input.approved,
           status,
           approved_at: input.approved ? existing.approved_at ?? now : null,
+          live_at: input.approved && input.live ? existing.live_at ?? now : null,
           notes: input.note ?? existing.notes,
           updated_at: now
         })

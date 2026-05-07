@@ -13,6 +13,7 @@ import type {
   InternalLocationBootstrap,
   InternalLocationListResponse,
   InternalLocationSummary,
+  LaunchApprovalRequest,
   LaunchReadinessResponse,
   MobileReleaseProfileUpdate,
   OnboardingSummary,
@@ -150,6 +151,13 @@ export async function getInternalLocationOnboarding(locationId: string) {
 export async function updateInternalLocationMobileRelease(locationId: string, input: MobileReleaseProfileUpdate) {
   return requestInternalApi<OnboardingSummary>(`/v1/internal/locations/${locationId}/mobile-release`, {
     method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function approveInternalLocationLaunch(locationId: string, input: LaunchApprovalRequest) {
+  return requestInternalApi<OnboardingSummary>(`/v1/internal/locations/${locationId}/launch-approval`, {
+    method: "POST",
     body: JSON.stringify(input)
   });
 }

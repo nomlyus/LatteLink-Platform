@@ -952,7 +952,7 @@ describe("catalog service", () => {
     });
     expect(onboardingReadResponse.statusCode).toBe(200);
     const onboarding = onboardingSummarySchema.parse(onboardingReadResponse.json());
-    expect(onboarding.readyForReview).toBe(false);
+    expect(onboarding.readyForReview).toBe(true);
     expect(onboarding.checklist).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: "payments_connected", passed: true }),
@@ -975,7 +975,26 @@ describe("catalog service", () => {
     expect(launchApprovalResponse.statusCode).toBe(200);
     expect(onboardingSummarySchema.parse(launchApprovalResponse.json())).toMatchObject({
       status: "approved",
-      readyForReview: false
+      readyForReview: true,
+      approvedAt: expect.any(String)
+    });
+
+    const liveResponse = await app.inject({
+      method: "POST",
+      url: `/v1/catalog/internal/locations/${created.locationId}/launch-approval`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        approved: true,
+        live: true,
+        note: "App is live."
+      }
+    });
+    expect(liveResponse.statusCode).toBe(200);
+    expect(onboardingSummarySchema.parse(liveResponse.json())).toMatchObject({
+      status: "live",
+      liveAt: expect.any(String)
     });
 
     await app.close();

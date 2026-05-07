@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getInternalLocationReadiness, listInternalLocations } from "@/lib/internal-api";
+import { getInternalLocationOnboarding, getInternalLocationReadiness, listInternalLocations } from "@/lib/internal-api";
 
 type LaunchState = "healthy" | "warning" | "critical";
 
@@ -14,15 +14,23 @@ function getLaunchState(readiness: { ready: boolean; passedCount: number; totalC
 export default async function LaunchReadinessPage() {
   const locations = (await listInternalLocations()).locations;
   const readinessRows = await Promise.all(
-    locations.map(async (location) => ({
-      location,
-      readiness: await getInternalLocationReadiness(location.locationId)
-    }))
+    locations.map(async (location) => {
+      const [readiness, onboarding] = await Promise.all([
+        getInternalLocationReadiness(location.locationId),
+        getInternalLocationOnboarding(location.locationId)
+      ]);
+      return {
+        location,
+        readiness,
+        onboarding
+      };
+    })
   );
-  const rows = readinessRows.map(({ location, readiness }) => {
+  const rows = readinessRows.map(({ location, readiness, onboarding }) => {
     return {
       location,
       readiness,
+      onboarding,
       launchState: getLaunchState(readiness)
     };
   });
@@ -82,15 +90,24 @@ export default async function LaunchReadinessPage() {
                   <th>Remaining</th>
                   <th>Payment</th>
                   <th>Menu</th>
+                  <th>Review</th>
                   <th>Launch State</th>
                 <th>Action</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ location, readiness, launchState }) => {
+              {rows.map(({ location, readiness, onboarding, launchState }) => {
                 const remaining = readiness.checks.filter((check) => !check.passed && !check.manual).length;
                 const paymentCheck = readiness.checks.find((check) => check.id === "stripe_onboarded");
                 const menuCheck = readiness.checks.find((check) => check.id === "menu_has_items");
+                const reviewLabel =
+                  onboarding.status === "live"
+                    ? "Live"
+                    : onboarding.status === "approved"
+                      ? "Approved"
+                      : onboarding.readyForReview || onboarding.submittedForReviewAt
+                        ? "Submitted"
+                        : "Client setup";
 
                 return (
                 <tr key={location.locationId}>
@@ -106,6 +123,7 @@ export default async function LaunchReadinessPage() {
                   <td>{remaining === 0 ? "Automated checks passed" : `${remaining} automated gap${remaining === 1 ? "" : "s"}`}</td>
                   <td>{paymentCheck?.passed ? "Ready" : "Needs setup"}</td>
                   <td>{menuCheck?.passed ? "Visible item found" : "No visible items"}</td>
+                  <td>{reviewLabel}</td>
                   <td>
                     <span className={`status-badge is-${launchState}`}>
                       {launchState === "healthy" ? "Ready" : launchState === "warning" ? "Attention" : "Blocked"}

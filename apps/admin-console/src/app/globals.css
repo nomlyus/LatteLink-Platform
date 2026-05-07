@@ -859,6 +859,14 @@ select {
   border-color: rgba(239, 68, 68, 0.16);
 }
 
+.compact-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
 .quick-grid {
   display: grid;
   gap: 12px;

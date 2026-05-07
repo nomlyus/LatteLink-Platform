@@ -4414,7 +4414,7 @@ export async function registerRoutes(app: FastifyInstance) {
           return reply.status(404).send(resourceNotFound(request.id, "Location not found", { locationId }));
         }
 
-        const [ownerSummary, paymentProfile, menu] = await Promise.all([
+        const [ownerSummary, paymentProfile, menu, onboarding] = await Promise.all([
           fetchInternalJson({
             baseUrl: identityBaseUrl,
             path: `/v1/identity/internal/locations/${locationId}/owner`,
@@ -4433,6 +4433,12 @@ export async function registerRoutes(app: FastifyInstance) {
             path: `/v1/catalog/internal/locations/${locationId}/menu`,
             schema: menuResponseSchema,
             serviceLabel: "Catalog"
+          }),
+          fetchInternalJson({
+            baseUrl: catalogBaseUrl,
+            path: `/v1/catalog/internal/locations/${locationId}/onboarding`,
+            schema: onboardingSummarySchema,
+            serviceLabel: "Catalog"
           })
         ]);
 
@@ -4442,6 +4448,7 @@ export async function registerRoutes(app: FastifyInstance) {
             0
           ) ?? 0;
 
+        const testOrderCheck = onboarding?.checklist.find((check) => check.id === "test_order_completed");
         const checks = [
           {
             id: "owner_provisioned" as const,
@@ -4484,9 +4491,11 @@ export async function registerRoutes(app: FastifyInstance) {
           {
             id: "test_order_confirmed" as const,
             label: "Test order completed (manual)",
-            passed: false,
+            passed: Boolean(testOrderCheck?.passed),
             manual: true,
-            detail: "Confirm this from the admin console after a successful test order."
+            detail: testOrderCheck?.passed
+              ? "The client marked the launch test order complete."
+              : "Confirm this after a successful end-to-end checkout."
           }
         ];
         const nonManualChecks = checks.filter((check) => !check.manual);
@@ -4600,6 +4609,85 @@ export async function registerRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const { locationId } = internalLocationParamsSchema.parse(request.params);
       const input = launchApprovalRequestSchema.parse(request.body);
+
+      if (input.approved) {
+        const internalHeaders = {
+          "x-gateway-token": gatewayInternalApiToken ?? ""
+        };
+        const readInternal = async <TSchema extends z.ZodTypeAny>(params: {
+          baseUrl: string;
+          path: string;
+          schema: TSchema;
+          serviceLabel: string;
+        }): Promise<z.output<TSchema>> => {
+          const response = await fetch(`${params.baseUrl}${params.path}`, {
+            method: "GET",
+            headers: internalHeaders
+          });
+          const body = parseJsonSafely(await response.text());
+          if (!response.ok) {
+            throw new UpstreamHttpError(params.serviceLabel, response.status, body);
+          }
+          return params.schema.parse(body);
+        };
+
+        try {
+          const [onboarding, ownerSummary, location] = await Promise.all([
+            readInternal({
+              baseUrl: catalogBaseUrl,
+              path: `/v1/catalog/internal/locations/${locationId}/onboarding`,
+              schema: onboardingSummarySchema,
+              serviceLabel: "Catalog"
+            }),
+            readInternal({
+              baseUrl: identityBaseUrl,
+              path: `/v1/identity/internal/locations/${locationId}/owner`,
+              schema: internalOwnerSummarySchema,
+              serviceLabel: "Identity"
+            }),
+            readInternal({
+              baseUrl: catalogBaseUrl,
+              path: `/v1/catalog/internal/locations/${locationId}`,
+              schema: internalLocationSummarySchema,
+              serviceLabel: "Catalog"
+            })
+          ]);
+          const readinessOwnedOnboardingChecks = new Set(["owner_invited", "owner_activated", "admin_launch_approved"]);
+          const blockers = onboarding.checklist
+            .filter((item) => !item.passed && !readinessOwnedOnboardingChecks.has(item.id))
+            .map((item) => (item.detail ? `${item.label}: ${item.detail}` : item.label));
+          if (!ownerSummary.owner?.active) {
+            blockers.push("Active owner account is required.");
+          }
+          if (location.capabilities.operations.fulfillmentMode !== "staff") {
+            blockers.push(`Fulfillment mode must be staff. Current mode: ${location.capabilities.operations.fulfillmentMode}.`);
+          }
+          if (location.hours.trim().length === 0) {
+            blockers.push("Store hours must be configured.");
+          }
+          if (location.taxRateBasisPoints <= 0) {
+            blockers.push("Tax rate must be configured.");
+          }
+          if (input.live && onboarding.status !== "approved" && onboarding.status !== "live") {
+            blockers.push("Launch must be approved before marking the app live.");
+          }
+          if (blockers.length > 0) {
+            return reply.status(409).send(
+              invalidRequest(request.id, "Launch approval is blocked by unresolved readiness checks.", {
+                locationId,
+                blockers
+              })
+            );
+          }
+        } catch (error) {
+          if (error instanceof UpstreamHttpError) {
+            return reply.status(error.statusCode).send(
+              upstreamFailure(request.id, error.serviceLabel, error.statusCode, error.body)
+            );
+          }
+          throw error;
+        }
+      }
 
       return proxyUpstream({
         request,

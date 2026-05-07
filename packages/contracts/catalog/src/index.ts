@@ -830,6 +830,7 @@ export const operatorOnboardingUpdateSchema = z.object({
 
 export const launchApprovalRequestSchema = z.object({
   approved: z.boolean(),
+  live: z.boolean().optional(),
   note: z.string().trim().min(1).optional()
 });
 

@@ -576,6 +576,7 @@ describe("contracts-catalog", () => {
 
     const launchApproval = launchApprovalRequestSchema.parse({
       approved: true,
+      live: true,
       note: "Ready for pilot launch."
     });
 
@@ -587,6 +588,7 @@ describe("contracts-catalog", () => {
 
     expect(operatorUpdate.menuReady).toBe(false);
     expect(launchApproval.approved).toBe(true);
+    expect(launchApproval.live).toBe(true);
     expect(mobileReleaseUpdate.status).toBe("submitted_for_review");
   });
 

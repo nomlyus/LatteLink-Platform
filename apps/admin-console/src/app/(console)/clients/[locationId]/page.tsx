@@ -1,7 +1,7 @@
 import Link from "next/link";
-import type { MobileReleaseProfile, MobileReleaseStatus } from "@lattelink/contracts-catalog";
+import type { LaunchReadinessResponse, MobileReleaseProfile, MobileReleaseStatus, OnboardingSummary } from "@lattelink/contracts-catalog";
 import { notFound } from "next/navigation";
-import { updateMobileReleaseAction } from "@/app/actions";
+import { approveLaunchAction, updateMobileReleaseAction } from "@/app/actions";
 import { LaunchReadinessChecklist } from "@/components/LaunchReadinessChecklist";
 import {
   getInternalLocation,
@@ -50,6 +50,88 @@ function renderTimelineDate(label: string, value: string | undefined) {
       <dt>{label}</dt>
       <dd>{new Date(value).toLocaleString()}</dd>
     </div>
+  );
+}
+
+function collectLaunchBlockers(onboarding: OnboardingSummary, readiness: LaunchReadinessResponse) {
+  const readinessOwnedOnboardingChecks = new Set(["owner_invited", "owner_activated"]);
+  const blockers = new Map<string, string>();
+  for (const item of onboarding.checklist) {
+    if (!item.passed && item.id !== "admin_launch_approved" && !readinessOwnedOnboardingChecks.has(item.id)) {
+      blockers.set(item.id, item.detail ? `${item.label}: ${item.detail}` : item.label);
+    }
+  }
+  for (const check of readiness.checks) {
+    if (!check.passed) {
+      blockers.set(check.id, check.detail ? `${check.label}: ${check.detail}` : check.label);
+    }
+  }
+  return Array.from(blockers.values());
+}
+
+function LaunchApprovalPanel({ locationId, onboarding, readiness }: {
+  locationId: string;
+  onboarding: OnboardingSummary;
+  readiness: LaunchReadinessResponse;
+}) {
+  const blockers = collectLaunchBlockers(onboarding, readiness);
+  const approvalBlocked = blockers.length > 0;
+  const approved = onboarding.status === "approved" || onboarding.status === "live";
+  const live = onboarding.status === "live";
+
+  return (
+    <section className="panel">
+      <div className="section-heading">
+        <span className="eyebrow">Launch Approval</span>
+        <h4>{live ? "App is live" : approved ? "Launch approved" : approvalBlocked ? "Approval blocked" : "Ready for manual approval"}</h4>
+      </div>
+
+      {approvalBlocked ? (
+        <div className="callout is-warning">
+          <strong>Resolve these before approval.</strong>
+          <ul className="compact-list">
+            {blockers.map((blocker) => (
+              <li key={blocker}>{blocker}</li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <div className="callout is-success">
+          <strong>All launch blockers are clear.</strong>
+          <p>Approve only after the manual build, App Store metadata, and release checklist have been reviewed.</p>
+        </div>
+      )}
+
+      <form action={approveLaunchAction} className="stack-form">
+        <input type="hidden" name="locationId" value={locationId} />
+        <label className="field">
+          <span>Approval note</span>
+          <input name="note" defaultValue={onboarding.status === "approved" ? "Ready for live release." : ""} />
+        </label>
+        <div className="form-actions">
+          <button
+            type="submit"
+            name="launchAction"
+            value="approve"
+            className="primary-button"
+            disabled={approvalBlocked || approved}
+            aria-disabled={approvalBlocked || approved}
+          >
+            Approve Launch
+          </button>
+          <button
+            type="submit"
+            name="launchAction"
+            value="live"
+            className="secondary-button"
+            disabled={approvalBlocked || !approved || live}
+            aria-disabled={approvalBlocked || !approved || live}
+          >
+            Mark Live
+          </button>
+        </div>
+      </form>
+    </section>
   );
 }
 
@@ -161,6 +243,9 @@ export default async function ClientDetailPage({ params, searchParams }: ClientD
   const invited = typeof query.invited === "string" ? query.invited : undefined;
   const releaseUpdated = typeof query.releaseUpdated === "string" ? query.releaseUpdated : undefined;
   const releaseError = typeof query.releaseError === "string" ? query.releaseError : undefined;
+  const launchApproved = typeof query.launchApproved === "string" ? query.launchApproved : undefined;
+  const launchLive = typeof query.launchLive === "string" ? query.launchLive : undefined;
+  const launchError = typeof query.launchError === "string" ? query.launchError : undefined;
 
   try {
     const [location, ownerSummary, launchReadiness, onboarding] = await Promise.all([
@@ -203,6 +288,9 @@ export default async function ClientDetailPage({ params, searchParams }: ClientD
         {invited ? <p className="inline-message inline-message-success">Owner invite sent.</p> : null}
         {releaseUpdated ? <p className="inline-message inline-message-success">Mobile release status updated.</p> : null}
         {releaseError ? <p className="inline-message inline-message-error">{releaseError}</p> : null}
+        {launchApproved ? <p className="inline-message inline-message-success">Launch approved.</p> : null}
+        {launchLive ? <p className="inline-message inline-message-success">Launch marked live.</p> : null}
+        {launchError ? <p className="inline-message inline-message-error">{launchError}</p> : null}
 
         <div className="stat-grid">
           <article className="stat-card">
@@ -361,6 +449,8 @@ export default async function ClientDetailPage({ params, searchParams }: ClientD
         <section className="panel">
           <LaunchReadinessChecklist readiness={launchReadiness} />
         </section>
+
+        <LaunchApprovalPanel locationId={locationId} onboarding={onboarding} readiness={launchReadiness} />
 
         <MobileReleaseStatusPanel locationId={locationId} release={onboarding.mobileRelease} />
       </section>

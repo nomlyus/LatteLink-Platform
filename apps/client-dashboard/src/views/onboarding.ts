@@ -272,7 +272,8 @@ function renderLaunchReview() {
   const submitted = summary.status === "ready_for_review" || Boolean(summary.submittedForReviewAt);
   const launchStatus = checklistItem("admin_launch_approved");
   const mobileStatus = checklistItem("mobile_release_ready");
-  const blockers = summary.checklist.filter((item) => !item.passed && item.id !== "admin_launch_approved");
+  const clientBlockers = new Set(["owner_invited", "owner_activated", "mobile_release_ready", "admin_launch_approved"]);
+  const blockers = summary.checklist.filter((item) => !item.passed && !clientBlockers.has(item.id));
 
   return `
     <article class="onboarding-review">
@@ -308,12 +309,19 @@ function renderLaunchReview() {
 export function renderOnboardingSection() {
   const summary = state.onboardingSummary;
   if (!summary || !isOnboardingIncomplete(summary.status)) {
+    const launchStatus = summary?.status === "live" ? "live" : summary?.status === "approved" ? "approved" : "complete";
     return `
       ${renderSectionHeading({
         eyebrow: "Setup",
-        title: "Setup is complete",
-        description: "Your launch setup is no longer waiting on client-side onboarding."
+        title: launchStatus === "live" ? "App is live" : launchStatus === "approved" ? "Launch approved" : "Setup is complete",
+        description:
+          launchStatus === "live"
+            ? "Your app has been marked live by Nomly."
+            : launchStatus === "approved"
+              ? "Nomly approved this launch and is coordinating the live release."
+              : "Your launch setup is no longer waiting on client-side onboarding."
       })}
+      ${summary ? renderMobileReleaseTimeline() : ""}
     `;
   }
 
