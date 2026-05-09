@@ -6,6 +6,7 @@ import type { DashboardSection } from "./model.js";
 const API_BASE_URL_STORAGE_KEY = "lattelink.operator.api-base-url.v2";
 const OPERATOR_SESSION_STORAGE_KEY = "lattelink.operator.session.v2";
 const DASHBOARD_SECTION_STORAGE_KEY = "lattelink.operator.section.v2";
+const ONBOARDING_WIZARD_SHOWN_STORAGE_PREFIX = "lattelink.operator.onboarding-wizard-shown.v1";
 
 const storedSessionSchema = operatorSessionSchema.extend({
   apiBaseUrl: z.string().min(1)
@@ -114,8 +115,11 @@ export function persistApiBaseUrl(apiBaseUrl: string) {
 export function loadStoredSection(): DashboardSection {
   const storage = getStorage();
   const nextSection = storage?.getItem(DASHBOARD_SECTION_STORAGE_KEY);
+  if (nextSection === "onboarding") {
+    return "store";
+  }
+
   return nextSection === "orders" ||
-    nextSection === "onboarding" ||
     nextSection === "menu" ||
     nextSection === "cards" ||
     nextSection === "discounts" ||
@@ -128,4 +132,18 @@ export function loadStoredSection(): DashboardSection {
 export function persistSection(section: DashboardSection) {
   const storage = getStorage();
   storage?.setItem(DASHBOARD_SECTION_STORAGE_KEY, section);
+}
+
+function onboardingWizardShownStorageKey(operatorUserId: string, locationId: string) {
+  return `${ONBOARDING_WIZARD_SHOWN_STORAGE_PREFIX}.${operatorUserId}.${locationId}`;
+}
+
+export function hasSeenOnboardingWizard(operatorUserId: string, locationId: string) {
+  const storage = getStorage();
+  return storage?.getItem(onboardingWizardShownStorageKey(operatorUserId, locationId)) === "1";
+}
+
+export function markOnboardingWizardSeen(operatorUserId: string, locationId: string) {
+  const storage = getStorage();
+  storage?.setItem(onboardingWizardShownStorageKey(operatorUserId, locationId), "1");
 }

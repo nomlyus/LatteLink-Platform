@@ -209,8 +209,13 @@ export function registerEvents() {
         void signOut();
         return;
       case "return-to-onboarding":
-        state.section = "onboarding";
+        state.section = "store";
+        state.onboardingWizardOpen = false;
         persistSection(state.section);
+        render();
+        return;
+      case "close-onboarding-wizard":
+        state.onboardingWizardOpen = false;
         render();
         return;
       case "submit-onboarding-review":
@@ -227,7 +232,6 @@ export function registerEvents() {
     if (action === "set-section") {
       const section = actionElement.dataset.section;
       if (
-        section === "onboarding" ||
         section === "overview" ||
         section === "orders" ||
         section === "menu" ||

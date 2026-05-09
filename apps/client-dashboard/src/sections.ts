@@ -1,7 +1,6 @@
 import { isOrderTrackingEnabled, isPlatformManagedMenu, isStaffDashboardEnabled } from "@lattelink/contracts-catalog";
 import {
   canAccessCapability,
-  isOwnerOperator,
   isStoreOperator,
   type DashboardSection
 } from "./model.js";
@@ -9,7 +8,6 @@ import { state } from "./state.js";
 import { persistSection } from "./storage.js";
 
 export const dashboardSectionLabels: Record<DashboardSection, string> = {
-  onboarding: "Setup",
   overview: "Overview",
   orders: "Orders",
   menu: "Menu",
@@ -45,10 +43,6 @@ export function getAvailableDashboardSections() {
       : state.appConfig
         ? [state.appConfig]
         : [];
-
-  if (isOwnerOperator(state.session?.operator ?? null) && state.onboardingSummary) {
-    sections.unshift("onboarding");
-  }
 
   if (
     canAccessCapability(state.session?.operator ?? null, "orders:read") &&

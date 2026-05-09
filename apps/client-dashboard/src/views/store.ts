@@ -1,11 +1,27 @@
 import { isAllLocationsSelected, state } from "../state.js";
 import { escapeHtml } from "../ui/format.js";
-import { canUpdateStoreSettings } from "../model.js";
+import { canUpdateStoreSettings, isOwnerOperator } from "../model.js";
 import { renderLocationSelectionNotice, renderSectionHeading } from "./common.js";
+import { renderOnboardingSection } from "./onboarding.js";
+
+function renderOwnerSetupSettings() {
+  if (!isOwnerOperator(state.session?.operator ?? null) || !state.onboardingSummary) {
+    return "";
+  }
+
+  return `
+    <section class="dash-section dash-section--settings-setup">
+      ${renderOnboardingSection()}
+    </section>
+  `;
+}
 
 export function renderStoreSection() {
+  const ownerSetup = renderOwnerSetupSettings();
+
   if (isAllLocationsSelected()) {
     return `
+      ${ownerSetup}
       <section class="dash-section">
         ${renderSectionHeading({
           eyebrow: "Settings",
@@ -19,6 +35,7 @@ export function renderStoreSection() {
 
   if (!state.storeConfig) {
     return `
+      ${ownerSetup}
       <section class="dash-section">
         ${renderSectionHeading({
           eyebrow: "Settings",
@@ -33,6 +50,7 @@ export function renderStoreSection() {
   const canWrite = canUpdateStoreSettings(state.session?.operator ?? null);
 
   return `
+    ${ownerSetup}
     <section class="dash-section">
       ${renderSectionHeading({
         eyebrow: "Settings",

@@ -181,7 +181,8 @@ export async function handleStripeOnboardingStart() {
     const session = requireOwnerPaymentsAccess();
     const locationId = resolveOnboardingLocationId();
     state.updatingOnboarding = true;
-    state.section = "onboarding";
+    state.section = "store";
+    state.onboardingWizardOpen = false;
     persistSection(state.section);
     setError(null);
     render();
@@ -202,7 +203,8 @@ export async function handleStripeDashboardOpen() {
     const session = requireOwnerPaymentsAccess();
     const locationId = resolveOnboardingLocationId();
     state.updatingOnboarding = true;
-    state.section = "onboarding";
+    state.section = "store";
+    state.onboardingWizardOpen = false;
     persistSection(state.section);
     setError(null);
     render();

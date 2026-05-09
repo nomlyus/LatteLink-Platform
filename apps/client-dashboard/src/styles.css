@@ -2540,6 +2540,10 @@ label.field > span {
   max-width: 560px;
 }
 
+.dash-modal__dialog--onboarding {
+  max-width: 980px;
+}
+
 .dash-modal__header {
   display: flex;
   align-items: center;
@@ -2658,6 +2662,14 @@ label.field > span {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.dash-onboarding-wizard-body {
+  padding: 20px;
+}
+
+.dash-onboarding-wizard-body .dash-section-heading {
+  margin-bottom: 16px;
 }
 
 .dash-menu-image-field {

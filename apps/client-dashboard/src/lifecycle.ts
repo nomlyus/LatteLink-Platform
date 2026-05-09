@@ -9,7 +9,14 @@ import {
   type OperatorSession
 } from "./api.js";
 import { isOnboardingIncomplete, isOwnerOperator, isStoreOperator, sessionNeedsRefresh } from "./model.js";
-import { clearStoredSession, persistApiBaseUrl, persistSection, persistSession } from "./storage.js";
+import {
+  clearStoredSession,
+  hasSeenOnboardingWizard,
+  markOnboardingWizardSeen,
+  persistApiBaseUrl,
+  persistSection,
+  persistSession
+} from "./storage.js";
 import { resetDashboardData, setError, setNotice, state } from "./state.js";
 import { snapshotCustomizationDrafts } from "./customizations.js";
 import { reconcileMenuCreateDraft, resetMenuCreateWizard } from "./menu-wizard.js";
@@ -118,18 +125,27 @@ async function loadOwnerOnboarding(session: OperatorSession) {
 }
 
 function autoOpenOwnerOnboarding() {
+  const operator = state.session?.operator ?? null;
   if (
     state.onboardingAutoOpened ||
-    !isOwnerOperator(state.session?.operator ?? null) ||
+    !operator ||
+    !isOwnerOperator(operator) ||
     !state.onboardingSummary ||
     !isOnboardingIncomplete(state.onboardingSummary.status)
   ) {
     return;
   }
 
-  state.section = "onboarding";
+  if (hasSeenOnboardingWizard(operator.operatorUserId, state.onboardingSummary.locationId)) {
+    state.onboardingAutoOpened = true;
+    return;
+  }
+
+  state.section = "store";
   persistSection(state.section);
+  state.onboardingWizardOpen = true;
   state.onboardingAutoOpened = true;
+  markOnboardingWizardSeen(operator.operatorUserId, state.onboardingSummary.locationId);
 }
 
 export async function loadDashboard(options: { silent?: boolean } = {}): Promise<void> {

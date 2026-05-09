@@ -39,6 +39,7 @@ export type AppState = {
   } | null;
   onboardingSummary: OperatorOnboardingSummary | null;
   onboardingAutoOpened: boolean;
+  onboardingWizardOpen: boolean;
   updatingOnboarding: boolean;
   initializing: boolean;
   loading: boolean;
@@ -114,6 +115,7 @@ export const state: AppState = {
   ownerInvite: null,
   onboardingSummary: null,
   onboardingAutoOpened: false,
+  onboardingWizardOpen: false,
   updatingOnboarding: false,
   initializing: true,
   loading: false,
@@ -216,6 +218,7 @@ export function resetDashboardData() {
   state.teamUsers = [];
   state.onboardingSummary = null;
   state.onboardingAutoOpened = false;
+  state.onboardingWizardOpen = false;
   state.updatingOnboarding = false;
   state.selectedOrderId = null;
   state.lastRefreshedAt = null;

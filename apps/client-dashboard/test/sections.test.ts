@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { OperatorSession } from "../src/api";
 import { getAvailableDashboardSections } from "../src/sections";
 import { state } from "../src/state";
-import { renderOnboardingSection } from "../src/views/onboarding";
+import { renderOnboardingWizard } from "../src/views/onboarding";
+import { renderStoreSection } from "../src/views/store";
 
 const ownerSession: OperatorSession = {
   accessToken: "access-token",
@@ -36,19 +37,46 @@ const onboardingSummary = {
   updatedAt: "2026-05-06T12:00:00.000Z"
 };
 
+const storeConfig = {
+  locationId: "northside-01",
+  storeName: "Northside Coffee",
+  locationName: "Northside Flagship",
+  hours: "Daily 8 AM - 4 PM",
+  pickupInstructions: "Pick up at the front counter.",
+  taxRateBasisPoints: 600,
+  capabilities: {
+    menu: {
+      source: "platform_managed" as const
+    },
+    operations: {
+      fulfillmentMode: "staff" as const,
+      liveOrderTrackingEnabled: true,
+      dashboardEnabled: true
+    },
+    loyalty: {
+      visible: true
+    }
+  }
+};
+
 describe("dashboard sections", () => {
   afterEach(() => {
     state.session = null;
     state.onboardingSummary = null;
+    state.onboardingWizardOpen = false;
     state.availableLocations = [];
     state.appConfig = null;
+    state.storeConfig = null;
   });
 
-  it("shows setup status only to owners when onboarding exists", () => {
+  it("keeps setup out of dashboard navigation and embeds it in owner settings", () => {
     state.session = ownerSession;
     state.onboardingSummary = onboardingSummary;
+    state.storeConfig = storeConfig;
 
-    expect(getAvailableDashboardSections()).toContain("onboarding");
+    expect(getAvailableDashboardSections()).not.toContain("onboarding");
+    expect(getAvailableDashboardSections()).toContain("store");
+    expect(renderStoreSection()).toContain("Northside Coffee onboarding");
 
     state.session = {
       ...ownerSession,
@@ -58,17 +86,33 @@ describe("dashboard sections", () => {
       }
     };
     expect(getAvailableDashboardSections()).not.toContain("onboarding");
+    expect(renderStoreSection()).not.toContain("Northside Coffee onboarding");
 
     state.session = ownerSession;
     state.onboardingSummary = {
       ...onboardingSummary,
       status: "approved"
     };
-    expect(getAvailableDashboardSections()).toContain("onboarding");
+    expect(getAvailableDashboardSections()).not.toContain("onboarding");
+    expect(renderStoreSection()).toContain("Launch approved");
+  });
+
+  it("renders incomplete owner onboarding as a popup wizard when opened", () => {
+    state.session = ownerSession;
+    state.onboardingSummary = onboardingSummary;
+    state.storeConfig = storeConfig;
+    state.onboardingWizardOpen = true;
+
+    const html = renderOnboardingWizard();
+
+    expect(html).toContain("role=\"dialog\"");
+    expect(html).toContain("Finish launch setup");
+    expect(html).toContain("Northside Coffee onboarding");
   });
 
   it("renders approved and live launch states as read-only setup status", () => {
     state.session = ownerSession;
+    state.storeConfig = storeConfig;
     state.onboardingSummary = {
       ...onboardingSummary,
       status: "approved",
@@ -80,7 +124,7 @@ describe("dashboard sections", () => {
       }
     };
 
-    const approvedHtml = renderOnboardingSection();
+    const approvedHtml = renderStoreSection();
     expect(approvedHtml).toContain("Launch approved");
     expect(approvedHtml).toContain("Ready for launch");
 
@@ -96,13 +140,14 @@ describe("dashboard sections", () => {
       }
     };
 
-    const liveHtml = renderOnboardingSection();
+    const liveHtml = renderStoreSection();
     expect(liveHtml).toContain("App is live");
     expect(liveHtml).toContain("Live");
   });
 
   it("renders mobile release progress as read-only onboarding status", () => {
     state.session = ownerSession;
+    state.storeConfig = storeConfig;
     state.onboardingSummary = {
       ...onboardingSummary,
       checklist: [
@@ -124,7 +169,7 @@ describe("dashboard sections", () => {
       }
     };
 
-    const html = renderOnboardingSection();
+    const html = renderStoreSection();
 
     expect(html).toContain("Submitted for App Store review");
     expect(html).toContain("Build uploaded to TestFlight");

@@ -380,3 +380,36 @@ export function renderOnboardingSection() {
     ${renderLaunchReview()}
   `;
 }
+
+export function renderOnboardingWizard() {
+  const summary = state.onboardingSummary;
+  if (!state.onboardingWizardOpen || !summary || !isOnboardingIncomplete(summary.status)) {
+    return "";
+  }
+
+  return `
+    <div class="dash-modal" role="presentation">
+      <button
+        class="dash-modal__backdrop"
+        type="button"
+        data-action="close-onboarding-wizard"
+        aria-label="Close setup wizard"
+        ${state.updatingOnboarding ? "disabled" : ""}
+      ></button>
+      <div class="dash-modal__dialog dash-modal__dialog--onboarding" role="dialog" aria-modal="true" aria-labelledby="onboarding-wizard-title">
+        <div class="dash-modal__header">
+          <div>
+            <div class="dash-panel-title">Setup wizard</div>
+            <h3 class="dash-surface-title" id="onboarding-wizard-title">Finish launch setup</h3>
+          </div>
+          <button class="button button--ghost" type="button" data-action="close-onboarding-wizard" ${state.updatingOnboarding ? "disabled" : ""}>
+            Close
+          </button>
+        </div>
+        <div class="dash-onboarding-wizard-body">
+          ${renderOnboardingSection()}
+        </div>
+      </div>
+    </div>
+  `;
+}
