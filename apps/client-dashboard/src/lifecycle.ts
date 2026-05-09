@@ -144,6 +144,7 @@ function autoOpenOwnerOnboarding() {
   state.section = "store";
   persistSection(state.section);
   state.onboardingWizardOpen = true;
+  state.onboardingWizardStep = 1;
   state.onboardingAutoOpened = true;
   markOnboardingWizardSeen(operator.operatorUserId, state.onboardingSummary.locationId);
 }

@@ -61,7 +61,7 @@ export function renderStoreSection() {
         <div class="dash-surface-head">
           <div>
             <div class="dash-panel-title">Store</div>
-            <h3 class="dash-surface-title">${escapeHtml(state.storeConfig.locationId)}</h3>
+            <h3 class="dash-surface-title">${escapeHtml(state.storeConfig.locationName)}</h3>
           </div>
         </div>
         ${

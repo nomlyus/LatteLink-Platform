@@ -50,6 +50,7 @@ import {
   handleOnboardingBusinessProfileSubmit,
   handleOnboardingReviewSubmit,
   handleOnboardingStepSubmit,
+  handleOnboardingStoreBasicsSubmit,
   handleOnboardingStoreOperationsSubmit,
   handleStripeDashboardOpen,
   handleStripeOnboardingStart
@@ -120,6 +121,9 @@ export function registerEvents() {
         return;
       case "onboarding-store-operations":
         void handleOnboardingStoreOperationsSubmit(target);
+        return;
+      case "onboarding-store-basics":
+        void handleOnboardingStoreBasicsSubmit(target);
         return;
       case "team-create":
         void handleTeamCreateSubmit(target);
@@ -216,6 +220,26 @@ export function registerEvents() {
         return;
       case "close-onboarding-wizard":
         state.onboardingWizardOpen = false;
+        render();
+        return;
+      case "open-onboarding-wizard":
+        state.section = "store";
+        state.onboardingWizardOpen = true;
+        state.onboardingWizardStep =
+          actionElement.dataset.onboardingStep === "2" ||
+          actionElement.dataset.onboardingStep === "3" ||
+          actionElement.dataset.onboardingStep === "4"
+            ? (Number(actionElement.dataset.onboardingStep) as 2 | 3 | 4)
+            : 1;
+        persistSection(state.section);
+        render();
+        return;
+      case "onboarding-wizard-next":
+        state.onboardingWizardStep = state.onboardingWizardStep < 4 ? ((state.onboardingWizardStep + 1) as 1 | 2 | 3 | 4) : 4;
+        render();
+        return;
+      case "onboarding-wizard-prev":
+        state.onboardingWizardStep = state.onboardingWizardStep > 1 ? ((state.onboardingWizardStep - 1) as 1 | 2 | 3 | 4) : 1;
         render();
         return;
       case "submit-onboarding-review":

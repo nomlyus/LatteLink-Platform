@@ -154,6 +154,41 @@ export async function handleOnboardingStoreOperationsSubmit(form: HTMLFormElemen
   }
 }
 
+export async function handleOnboardingStoreBasicsSubmit(form: HTMLFormElement) {
+  if (!state.session || !state.storeConfig) {
+    setError("Store configuration is not ready yet.");
+    render();
+    return;
+  }
+
+  const formData = new FormData(form);
+  try {
+    state.updatingOnboarding = true;
+    setError(null);
+    render();
+    const locationId = resolveOnboardingLocationId();
+    await updateOperatorStoreConfig(state.session, locationId, {
+      storeName: formData.get("storeName"),
+      locationName: formData.get("locationName"),
+      hours: formData.get("hours"),
+      pickupInstructions: formData.get("pickupInstructions"),
+      taxRateBasisPoints: state.storeConfig.taxRateBasisPoints
+    });
+    state.onboardingSummary = await updateOperatorOnboarding(state.session, locationId, {
+      businessProfileComplete: true,
+      storeOperationsComplete: true
+    });
+    state.onboardingWizardStep = 3;
+    addToast("Saved store details.", "success");
+    await loadDashboard({ silent: true });
+  } catch (error) {
+    await handleOperatorActionError(error, "Unable to save store details.");
+  } finally {
+    state.updatingOnboarding = false;
+    render();
+  }
+}
+
 export async function handleOnboardingReviewSubmit() {
   if (!state.session) {
     setError("Sign in again before submitting setup for review.");

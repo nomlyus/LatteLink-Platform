@@ -3,381 +3,428 @@ import { state } from "../state.js";
 import { escapeHtml } from "../ui/format.js";
 import { renderSectionHeading } from "./common.js";
 
-const editableStepFields: Record<string, string> = {
-  business_profile_complete: "businessProfileComplete",
-  store_operations_complete: "storeOperationsComplete",
-  menu_ready: "menuReady",
-  team_configured_or_skipped: "teamConfiguredOrSkipped",
-  test_order_completed: "testOrderCompleted"
-};
-
-function checklistItem(id: string) {
-  return state.onboardingSummary?.checklist.find((item) => item.id === id) ?? null;
-}
-
-function stepTone(status: string | undefined) {
-  if (status === "complete") return "success";
-  if (status === "blocked") return "danger";
-  return "neutral";
-}
-
-function renderStepStatus(id: string) {
-  const item = checklistItem(id);
-  const tone = stepTone(item?.status);
-  return `<span class="dash-status-badge dash-status-badge--${tone}">${escapeHtml(item?.status ?? "pending")}</span>`;
-}
-
-function renderMarkCompleteForm(id: string, label: string) {
-  const item = checklistItem(id);
-  const field = editableStepFields[id];
-  if (!field || item?.passed) {
-    return "";
+const clientSetupSteps = [
+  {
+    id: "business_profile_complete",
+    label: "Store profile",
+    shortLabel: "Profile",
+    action: "Review store details"
+  },
+  {
+    id: "store_operations_complete",
+    label: "Hours and pickup",
+    shortLabel: "Details",
+    action: "Review store details"
+  },
+  {
+    id: "payments_connected",
+    label: "Payments",
+    shortLabel: "Payments",
+    action: "Connect Stripe"
+  },
+  {
+    id: "menu_ready",
+    label: "Menu",
+    shortLabel: "Menu",
+    action: "Review menu"
+  },
+  {
+    id: "team_configured_or_skipped",
+    label: "Team access",
+    shortLabel: "Team",
+    action: "Review team"
+  },
+  {
+    id: "test_order_completed",
+    label: "Test order",
+    shortLabel: "Test order",
+    action: "Run test order"
   }
-
-  return `
-    <form data-form="onboarding-step" data-onboarding-field="${escapeHtml(field)}">
-      <button class="button button--secondary" type="submit" ${state.updatingOnboarding ? "disabled" : ""}>${escapeHtml(label)}</button>
-    </form>
-  `;
-}
-
-function renderStep(config: {
-  id: string;
-  title: string;
-  body: string;
-  targetSection?: string;
-  completeLabel?: string;
-  optional?: boolean;
-}) {
-  const item = checklistItem(config.id);
-  const detail = item?.detail ? `<p class="muted-copy">${escapeHtml(item.detail)}</p>` : "";
-  const openAction = config.targetSection
-    ? `
-      <button class="button button--secondary" type="button" data-action="set-section" data-section="${escapeHtml(config.targetSection)}">
-        Open
-      </button>
-    `
-    : "";
-  const completeAction = config.completeLabel ? renderMarkCompleteForm(config.id, config.completeLabel) : "";
-
-  return `
-    <article class="onboarding-step ${item?.passed ? "onboarding-step--complete" : ""}">
-      <div class="onboarding-step__main">
-        <div class="onboarding-step__status">${renderStepStatus(config.id)}</div>
-        <h3>${escapeHtml(config.title)}</h3>
-        <p>${escapeHtml(config.body)}</p>
-        ${detail}
-        ${config.optional ? `<span class="onboarding-step__optional">Optional</span>` : ""}
-      </div>
-      <div class="onboarding-step__actions">
-        ${openAction}
-        ${completeAction}
-      </div>
-    </article>
-  `;
-}
-
-function renderBusinessProfileStep() {
-  const item = checklistItem("business_profile_complete");
-  if (!state.storeConfig) {
-    return renderStep({
-      id: "business_profile_complete",
-      title: "Business profile",
-      body: "Confirm the client-facing business name and location identity.",
-      targetSection: "store",
-      completeLabel: "Mark complete"
-    });
-  }
-
-  return `
-    <article class="onboarding-step ${item?.passed ? "onboarding-step--complete" : ""}">
-      <div class="onboarding-step__main">
-        <div class="onboarding-step__status">${renderStepStatus("business_profile_complete")}</div>
-        <h3>Business profile</h3>
-        <p>Confirm the client-facing business name and location identity.</p>
-        <form class="onboarding-inline-form" data-form="onboarding-business-profile">
-          <label class="field">
-            <span>Store name</span>
-            <input name="storeName" value="${escapeHtml(state.storeConfig.storeName)}" required />
-          </label>
-          <label class="field">
-            <span>Location name</span>
-            <input name="locationName" value="${escapeHtml(state.storeConfig.locationName)}" required />
-          </label>
-          <button class="button button--primary" type="submit" ${state.updatingOnboarding ? "disabled" : ""}>Save profile</button>
-        </form>
-      </div>
-    </article>
-  `;
-}
-
-function renderStoreOperationsStep() {
-  const item = checklistItem("store_operations_complete");
-  if (!state.storeConfig) {
-    return renderStep({
-      id: "store_operations_complete",
-      title: "Store operations",
-      body: "Confirm pickup instructions, hours, and operational defaults.",
-      targetSection: "store",
-      completeLabel: "Mark complete"
-    });
-  }
-
-  return `
-    <article class="onboarding-step ${item?.passed ? "onboarding-step--complete" : ""}">
-      <div class="onboarding-step__main">
-        <div class="onboarding-step__status">${renderStepStatus("store_operations_complete")}</div>
-        <h3>Store operations</h3>
-        <p>Confirm pickup instructions, hours, and tax defaults.</p>
-        <form class="onboarding-inline-form onboarding-inline-form--wide" data-form="onboarding-store-operations">
-          <label class="field">
-            <span>Hours</span>
-            <input name="hours" value="${escapeHtml(state.storeConfig.hours)}" required />
-          </label>
-          <label class="field">
-            <span>Tax rate basis points</span>
-            <input name="taxRateBasisPoints" type="number" min="0" max="10000" step="1" value="${state.storeConfig.taxRateBasisPoints}" required />
-          </label>
-          <label class="field onboarding-inline-form__wide">
-            <span>Pickup instructions</span>
-            <textarea name="pickupInstructions" rows="3" required>${escapeHtml(state.storeConfig.pickupInstructions)}</textarea>
-          </label>
-          <button class="button button--primary" type="submit" ${state.updatingOnboarding ? "disabled" : ""}>Save operations</button>
-        </form>
-      </div>
-    </article>
-  `;
-}
-
-function renderPaymentsStep() {
-  const item = checklistItem("payments_connected");
-  const readiness = state.onboardingSummary?.paymentReadiness;
-  const stripe = state.appConfig?.paymentCapabilities.stripe;
-  const dashboardAvailable = stripe?.dashboardEnabled === true;
-  const onboardingLabel =
-    readiness?.onboardingState && readiness.onboardingState !== "unconfigured"
-      ? "Continue Stripe onboarding"
-      : "Connect Stripe";
-
-  return `
-    <article class="onboarding-step ${item?.passed ? "onboarding-step--complete" : ""}">
-      <div class="onboarding-step__main">
-        <div class="onboarding-step__status">${renderStepStatus("payments_connected")}</div>
-        <h3>Payments</h3>
-        <p>Connect and complete the required payment account before launch.</p>
-        ${
-          readiness
-            ? `<p class="muted-copy">Stripe status: ${escapeHtml(readiness.onboardingState)}${readiness.missingRequiredFields.length > 0 ? ` · Missing ${escapeHtml(readiness.missingRequiredFields.join(", "))}` : ""}</p>`
-            : ""
-        }
-      </div>
-      <div class="onboarding-step__actions">
-        <button class="button button--primary" type="button" data-action="start-stripe-onboarding" ${state.updatingOnboarding ? "disabled" : ""}>
-          ${escapeHtml(onboardingLabel)}
-        </button>
-        <button class="button button--secondary" type="button" data-action="open-stripe-dashboard" ${state.updatingOnboarding || !dashboardAvailable ? "disabled" : ""}>
-          Open Stripe Express
-        </button>
-      </div>
-    </article>
-  `;
-}
-
-function renderOptionalConnectorsStep() {
-  return `
-    <article class="onboarding-step">
-      <div class="onboarding-step__main">
-        <div class="onboarding-step__status"><span class="dash-status-badge dash-status-badge--neutral">optional</span></div>
-        <h3>Optional connectors</h3>
-        <p>Clover, Toast, and Square can be connected when a location needs external menu or order sync.</p>
-        <span class="onboarding-step__optional">Optional</span>
-      </div>
-    </article>
-  `;
-}
+] as const;
 
 const mobileReleaseTimeline = [
-  { status: "not_started", label: "Release profile pending" },
-  { status: "metadata_ready", label: "App metadata configured" },
-  { status: "metadata_pending", label: "Apple identifiers pending" },
-  { status: "build_configuring", label: "Build queued" },
-  { status: "build_ready", label: "Build uploaded to TestFlight" },
-  { status: "submitted_for_review", label: "Submitted for App Store review" },
+  { status: "not_started", label: "Not started" },
+  { status: "metadata_ready", label: "App profile ready" },
+  { status: "metadata_pending", label: "App profile pending" },
+  { status: "build_configuring", label: "Build in progress" },
+  { status: "build_ready", label: "Build ready" },
+  { status: "submitted_for_review", label: "Submitted to App Store" },
   { status: "approved", label: "Approved" },
   { status: "ready_for_launch", label: "Ready for launch" },
   { status: "live", label: "Live" }
 ];
 
-function mobileReleaseStatusLabel(status: string | undefined, statusLabel?: string) {
-  return statusLabel ?? mobileReleaseTimeline.find((item) => item.status === status)?.label ?? "Release profile pending";
+function checklistItem(id: string) {
+  return state.onboardingSummary?.checklist.find((item) => item.id === id) ?? null;
 }
 
-function renderMobileReleaseTimeline() {
-  const release = state.onboardingSummary?.mobileRelease;
-  const status = release?.status ?? "not_started";
-  const activeIndex = mobileReleaseTimeline.findIndex((item) => item.status === status);
-  const normalizedActiveIndex = activeIndex >= 0 ? activeIndex : 0;
-  const currentLabel = mobileReleaseStatusLabel(status, release?.statusLabel);
+function isStepComplete(id: string) {
+  return checklistItem(id)?.passed === true;
+}
+
+function remainingClientSteps() {
+  return clientSetupSteps.filter((step) => !isStepComplete(step.id));
+}
+
+function mobileReleaseStatusLabel(status: string | undefined, statusLabel?: string) {
+  return statusLabel ?? mobileReleaseTimeline.find((item) => item.status === status)?.label ?? "Not started";
+}
+
+function renderSetupStepPills() {
+  return `
+    <div class="onboarding-pill-row">
+      ${clientSetupSteps
+        .map(
+          (step) => `
+            <span class="onboarding-pill ${isStepComplete(step.id) ? "onboarding-pill--complete" : ""}">
+              ${escapeHtml(step.shortLabel)}
+            </span>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderPrimarySetupAction() {
+  const remaining = remainingClientSteps();
+  const next = remaining[0];
+  const summary = state.onboardingSummary;
+
+  if (summary?.readyForReview && summary.status !== "ready_for_review" && !summary.submittedForReviewAt) {
+    return `
+      <button class="button button--primary" type="button" data-action="submit-onboarding-review" ${state.updatingOnboarding ? "disabled" : ""}>
+        Submit to Nomly
+      </button>
+    `;
+  }
+
+  if (!next && summary?.readyForReview) {
+    return `
+      <button class="button button--primary" type="button" data-action="submit-onboarding-review" ${state.updatingOnboarding ? "disabled" : ""}>
+        Submit to Nomly
+      </button>
+    `;
+  }
+
+  if (!next) {
+    return "";
+  }
+
+  if (next.id === "business_profile_complete" || next.id === "store_operations_complete") {
+    return `
+      <button class="button button--primary" type="button" data-action="open-onboarding-wizard" data-onboarding-step="2">
+        ${escapeHtml(next.action)}
+      </button>
+    `;
+  }
+
+  if (next.id === "payments_connected") {
+    return `
+      <button class="button button--primary" type="button" data-action="start-stripe-onboarding" ${state.updatingOnboarding ? "disabled" : ""}>
+        Connect Stripe
+      </button>
+    `;
+  }
+
+  const targetSection =
+    next.id === "menu_ready" ? "menu" : next.id === "team_configured_or_skipped" ? "team" : "orders";
+
+  return `
+    <button class="button button--primary" type="button" data-action="set-section" data-section="${targetSection}">
+      ${escapeHtml(next.action)}
+    </button>
+  `;
+}
+
+function renderLaunchSetupCard() {
+  const summary = state.onboardingSummary;
+  if (!summary) return "";
+
+  const remaining = remainingClientSteps();
+  const submitted = summary.status === "ready_for_review" || Boolean(summary.submittedForReviewAt);
+  const title = submitted
+    ? "Setup submitted"
+    : remaining.length === 0 && summary.readyForReview
+      ? "Ready for Nomly review"
+      : remaining.length === 0
+        ? "Client setup complete"
+      : `${remaining.length} setup ${remaining.length === 1 ? "item" : "items"} left`;
+  const description = submitted
+    ? "Nomly is reviewing your launch details and preparing the mobile release."
+    : remaining.length === 0 && summary.readyForReview
+      ? "Everything client-side is complete. Send it to Nomly for launch review."
+      : remaining.length === 0
+        ? "Everything client-side is complete. Nomly is checking launch readiness."
+      : `Next: ${remaining[0]?.action ?? "Finish setup"}.`;
+
+  return `
+    ${renderSectionHeading({
+      eyebrow: "Launch setup",
+      title: summary.status === "live" ? "App is live" : summary.status === "approved" ? "Launch approved" : title,
+      description
+    })}
+    <article class="dash-surface onboarding-summary-card">
+      <div class="onboarding-summary-card__main">
+        ${renderSetupStepPills()}
+        ${
+          remaining.length > 0 && !submitted
+            ? `
+              <ul class="onboarding-short-list">
+                ${remaining.map((step) => `<li>${escapeHtml(step.label)}</li>`).join("")}
+              </ul>
+            `
+            : `<p class="muted-copy">Nomly handles App Store setup, build submission, launch approval, and release updates from here.</p>`
+        }
+      </div>
+      <div class="onboarding-summary-card__actions">
+        ${submitted || summary.status === "approved" || summary.status === "live" ? "" : renderPrimarySetupAction()}
+        <button class="button button--secondary" type="button" data-action="open-onboarding-wizard">
+          Open setup
+        </button>
+      </div>
+    </article>
+  `;
+}
+
+function shouldShowLaunchStatus() {
+  const summary = state.onboardingSummary;
+  return Boolean(
+    summary?.mobileRelease ||
+      summary?.status === "ready_for_review" ||
+      summary?.status === "approved" ||
+      summary?.status === "live" ||
+      summary?.submittedForReviewAt
+  );
+}
+
+function renderLaunchStatusCard() {
+  if (!shouldShowLaunchStatus()) {
+    return "";
+  }
+
+  const summary = state.onboardingSummary;
+  const release = summary?.mobileRelease;
+  const status = summary?.status === "live" ? "live" : release?.status ?? "not_started";
+  const label = mobileReleaseStatusLabel(status, release?.statusLabel);
   const updatedAt = release?.updatedAt ? new Date(release.updatedAt).toLocaleString() : null;
 
   return `
-    <article class="onboarding-release">
-      <div class="onboarding-release__header">
-        <div>
-          <div class="dash-panel-title">Mobile release</div>
-          <h3>${escapeHtml(currentLabel)}</h3>
-          <p class="muted-copy">
-            Nomly manages App Store setup, build submission, and launch approval. This timeline is read-only.
-            ${updatedAt ? `Updated ${escapeHtml(updatedAt)}.` : ""}
-          </p>
-        </div>
-        <span class="dash-status-badge dash-status-badge--${status === "blocked" ? "danger" : ["approved", "ready_for_launch", "live"].includes(status) ? "success" : "warning"}">
-          ${escapeHtml(status === "blocked" ? "blocked" : currentLabel)}
-        </span>
+    <article class="dash-surface onboarding-status-card">
+      <div>
+        <div class="dash-panel-title">Mobile release</div>
+        <h3 class="dash-surface-title">${escapeHtml(label)}</h3>
+        <p class="muted-copy">
+          ${updatedAt ? `Updated ${escapeHtml(updatedAt)}.` : "Nomly updates this as the app moves through release."}
+        </p>
       </div>
-      <div class="timeline-stack onboarding-release__timeline">
-        ${mobileReleaseTimeline
-          .map((item, index) => {
-            const passed = status === "live" || index < normalizedActiveIndex;
-            const current = item.status === status;
-            const tone = passed ? "success" : current ? "warning" : "neutral";
-            return `
-              <div class="timeline-row">
-                <span class="dash-status-badge dash-status-badge--${tone}">${passed ? "done" : current ? "current" : "pending"}</span>
-                <strong>${escapeHtml(item.label)}</strong>
-              </div>
-            `;
-          })
-          .join("")}
+      <div class="onboarding-status-card__meta">
+        ${release?.buildNumber ? `<div><span>Build</span><strong>${escapeHtml(release.buildNumber)}</strong></div>` : ""}
+        ${release?.testFlightUrl ? `<a class="button button--secondary" href="${escapeHtml(release.testFlightUrl)}">TestFlight</a>` : ""}
+        ${release?.appStoreUrl ? `<a class="button button--secondary" href="${escapeHtml(release.appStoreUrl)}">App Store</a>` : ""}
+        ${release?.blockedReason ? `<p class="muted-copy">Blocked: ${escapeHtml(release.blockedReason)}</p>` : ""}
       </div>
-      ${
-        release?.buildNumber || release?.testFlightUrl || release?.appStoreUrl || release?.blockedReason
-          ? `
-            <dl class="onboarding-release__meta">
-              ${release.buildNumber ? `<div><dt>Build</dt><dd>${escapeHtml(release.buildNumber)}</dd></div>` : ""}
-              ${release.testFlightUrl ? `<div><dt>TestFlight</dt><dd><a href="${escapeHtml(release.testFlightUrl)}">${escapeHtml(release.testFlightUrl)}</a></dd></div>` : ""}
-              ${release.appStoreUrl ? `<div><dt>App Store</dt><dd><a href="${escapeHtml(release.appStoreUrl)}">${escapeHtml(release.appStoreUrl)}</a></dd></div>` : ""}
-              ${release.blockedReason ? `<div><dt>Blocker</dt><dd>${escapeHtml(release.blockedReason)}</dd></div>` : ""}
-            </dl>
-          `
-          : ""
-      }
     </article>
   `;
 }
 
-function renderLaunchReview() {
-  const summary = state.onboardingSummary;
-  if (!summary) return "";
-  const submitted = summary.status === "ready_for_review" || Boolean(summary.submittedForReviewAt);
-  const launchStatus = checklistItem("admin_launch_approved");
-  const mobileStatus = checklistItem("mobile_release_ready");
-  const clientBlockers = new Set(["owner_invited", "owner_activated", "mobile_release_ready", "admin_launch_approved"]);
-  const blockers = summary.checklist.filter((item) => !item.passed && !clientBlockers.has(item.id));
-
+function renderIntegrationsCard() {
   return `
-    <article class="onboarding-review">
+    <article class="dash-surface onboarding-integrations-card">
       <div>
-        <div class="dash-panel-title">Launch review</div>
-        <h3>${submitted ? "Setup submitted" : summary.readyForReview ? "Ready for review" : "Setup still in progress"}</h3>
-        <p class="muted-copy">
-          Mobile release: ${escapeHtml(mobileStatus?.status ?? "pending")} · Launch approval: ${escapeHtml(launchStatus?.status ?? "pending")}
-        </p>
-        ${
-          blockers.length > 0
-            ? `
-              <ul class="onboarding-blockers">
-                ${blockers.map((item) => `<li>${escapeHtml(item.label)}${item.detail ? ` · ${escapeHtml(item.detail)}` : ""}</li>`).join("")}
-              </ul>
-            `
-            : ""
-        }
+        <div class="dash-panel-title">Integrations</div>
+        <h3 class="dash-surface-title">Optional connectors</h3>
+        <p class="muted-copy">Clover, Toast, and Square are optional and can be connected later when a location needs external sync.</p>
       </div>
-      ${
-        summary.readyForReview && !submitted
-          ? `
-            <button class="button button--primary" type="button" data-action="submit-onboarding-review" ${state.updatingOnboarding ? "disabled" : ""}>
-              Submit for review
-            </button>
-          `
-          : ""
-      }
+      <span class="dash-status-badge dash-status-badge--neutral">Optional</span>
     </article>
   `;
+}
+
+function renderWizardSteps() {
+  const labels = ["Start", "Details", "Payments", "Finish"];
+  const step = state.onboardingWizardStep;
+  return `
+    <div class="dash-wizard-steps" aria-label="Setup progress">
+      ${labels
+        .map(
+          (label, index) => `
+            <div class="dash-wizard-step ${step === index + 1 ? "dash-wizard-step--active" : step > index + 1 ? "dash-wizard-step--complete" : ""}">
+              <span>${index + 1}</span>
+              <strong>${escapeHtml(label)}</strong>
+            </div>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderWizardWelcome() {
+  return `
+    <div class="dash-wizard-body dash-wizard-body--stacked onboarding-wizard-panel">
+      <div>
+        <div class="dash-panel-title">Launch setup</div>
+        <h3 class="dash-surface-title">We only need the essentials first.</h3>
+        <p class="muted-copy">Confirm store details, connect Stripe, then Nomly will review the launch and manage the mobile release.</p>
+      </div>
+      ${renderSetupStepPills()}
+    </div>
+    <div class="dash-wizard-actions">
+      <button class="button button--ghost" type="button" data-action="close-onboarding-wizard">Close</button>
+      <button class="button button--primary" type="button" data-action="onboarding-wizard-next">Continue</button>
+    </div>
+  `;
+}
+
+function renderWizardStoreDetails() {
+  if (!state.storeConfig) {
+    return `
+      <div class="dash-wizard-body">
+        <article class="dash-empty-surface">
+          <p class="muted-copy">Store configuration is loading.</p>
+        </article>
+      </div>
+      <div class="dash-wizard-actions">
+        <button class="button button--secondary" type="button" data-action="onboarding-wizard-prev">Back</button>
+      </div>
+    `;
+  }
+
+  return `
+    <form class="dash-wizard-form" data-form="onboarding-store-basics">
+      <div class="dash-wizard-body dash-wizard-body--stacked">
+        <label class="field">
+          <span>Store name</span>
+          <input name="storeName" value="${escapeHtml(state.storeConfig.storeName)}" required />
+        </label>
+        <label class="field">
+          <span>Location name</span>
+          <input name="locationName" value="${escapeHtml(state.storeConfig.locationName)}" required />
+        </label>
+        <label class="field">
+          <span>Hours</span>
+          <input name="hours" value="${escapeHtml(state.storeConfig.hours)}" required />
+        </label>
+        <label class="field">
+          <span>Pickup instructions</span>
+          <textarea name="pickupInstructions" rows="4" required>${escapeHtml(state.storeConfig.pickupInstructions)}</textarea>
+        </label>
+      </div>
+      <div class="dash-wizard-actions">
+        <button class="button button--secondary" type="button" data-action="onboarding-wizard-prev" ${state.updatingOnboarding ? "disabled" : ""}>Back</button>
+        <button class="button button--primary" type="submit" ${state.updatingOnboarding ? "disabled" : ""}>
+          ${state.updatingOnboarding ? "Saving..." : "Save and continue"}
+        </button>
+      </div>
+    </form>
+  `;
+}
+
+function renderWizardPayments() {
+  const readiness = state.onboardingSummary?.paymentReadiness;
+  const stripe = state.appConfig?.paymentCapabilities.stripe;
+  const dashboardAvailable = stripe?.dashboardEnabled === true;
+  const paymentsComplete = isStepComplete("payments_connected");
+  const paymentCopy = paymentsComplete
+    ? "Stripe is connected for this location."
+    : readiness?.onboardingState && readiness.onboardingState !== "unconfigured"
+      ? "Stripe needs a little more information before launch."
+      : "Only owner accounts can connect payments.";
+
+  return `
+    <div class="dash-wizard-body dash-wizard-body--stacked onboarding-wizard-panel">
+      <div>
+        <div class="dash-panel-title">Payments</div>
+        <h3 class="dash-surface-title">${paymentsComplete ? "Payments connected" : "Connect Stripe"}</h3>
+        <p class="muted-copy">${escapeHtml(paymentCopy)}</p>
+      </div>
+      <div class="onboarding-payment-actions">
+        <button class="button button--primary" type="button" data-action="start-stripe-onboarding" ${state.updatingOnboarding || paymentsComplete ? "disabled" : ""}>
+          ${paymentsComplete ? "Stripe connected" : "Connect Stripe"}
+        </button>
+        <button class="button button--secondary" type="button" data-action="open-stripe-dashboard" ${state.updatingOnboarding || !dashboardAvailable ? "disabled" : ""}>
+          Open Stripe Express
+        </button>
+      </div>
+    </div>
+    <div class="dash-wizard-actions">
+      <button class="button button--secondary" type="button" data-action="onboarding-wizard-prev">Back</button>
+      <button class="button button--primary" type="button" data-action="onboarding-wizard-next">Continue</button>
+    </div>
+  `;
+}
+
+function renderWizardFinish() {
+  const summary = state.onboardingSummary;
+  const remaining = remainingClientSteps();
+  const canSubmit = summary?.readyForReview === true && summary.status !== "ready_for_review" && !summary.submittedForReviewAt;
+
+  return `
+    <div class="dash-wizard-body dash-wizard-body--stacked onboarding-wizard-panel">
+      <div>
+        <div class="dash-panel-title">Finish</div>
+        <h3 class="dash-surface-title">${remaining.length === 0 ? "Ready for Nomly review" : "Setup is saved"}</h3>
+        <p class="muted-copy">
+          ${
+            remaining.length === 0
+              ? "Nomly will review the launch details, prepare the app build, and update release progress here."
+              : `Still left: ${remaining.map((step) => step.label).join(", ")}.`
+          }
+        </p>
+      </div>
+      ${renderLaunchStatusCard()}
+    </div>
+    <div class="dash-wizard-actions">
+      <button class="button button--secondary" type="button" data-action="onboarding-wizard-prev">Back</button>
+      <div class="dash-wizard-actions__group">
+        ${
+          canSubmit
+            ? `<button class="button button--primary" type="button" data-action="submit-onboarding-review" ${state.updatingOnboarding ? "disabled" : ""}>Submit to Nomly</button>`
+            : ""
+        }
+        <button class="button button--primary" type="button" data-action="close-onboarding-wizard">Done</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderWizardBody() {
+  switch (state.onboardingWizardStep) {
+    case 2:
+      return renderWizardStoreDetails();
+    case 3:
+      return renderWizardPayments();
+    case 4:
+      return renderWizardFinish();
+    case 1:
+    default:
+      return renderWizardWelcome();
+  }
 }
 
 export function renderOnboardingSection() {
   const summary = state.onboardingSummary;
-  if (!summary || !isOnboardingIncomplete(summary.status)) {
-    const launchStatus = summary?.status === "live" ? "live" : summary?.status === "approved" ? "approved" : "complete";
+  if (!summary) {
+    return "";
+  }
+
+  if (!isOnboardingIncomplete(summary.status)) {
     return `
       ${renderSectionHeading({
-        eyebrow: "Setup",
-        title: launchStatus === "live" ? "App is live" : launchStatus === "approved" ? "Launch approved" : "Setup is complete",
-        description:
-          launchStatus === "live"
-            ? "Your app has been marked live by Nomly."
-            : launchStatus === "approved"
-              ? "Nomly approved this launch and is coordinating the live release."
-              : "Your launch setup is no longer waiting on client-side onboarding."
+        eyebrow: "Launch setup",
+        title: summary.status === "live" ? "App is live" : summary.status === "approved" ? "Launch approved" : "Setup is complete",
+        description: "Nomly manages release updates from here."
       })}
-      ${summary ? renderMobileReleaseTimeline() : ""}
+      ${renderLaunchStatusCard()}
+      ${renderIntegrationsCard()}
     `;
   }
 
-  const completed = summary.checklist.filter((item) => item.passed).length;
-  const total = summary.checklist.length;
-  const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
-
   return `
-    ${renderSectionHeading({
-      eyebrow: "Setup",
-      title: `${summary.brandName} onboarding`,
-      description: `${summary.locationName} · ${summary.marketLabel}`
-    })}
-
-    <section class="onboarding-hero">
-      <div>
-        <div class="dash-panel-title">Progress</div>
-        <strong>${completed}/${total} complete</strong>
-        <p class="muted-copy">Status: ${escapeHtml(summary.status.replaceAll("_", " "))}</p>
-      </div>
-      <div class="onboarding-progress" aria-label="Onboarding progress">
-        <span style="width: ${progress}%"></span>
-      </div>
-    </section>
-
-    <section class="onboarding-steps">
-      ${renderBusinessProfileStep()}
-      ${renderStoreOperationsStep()}
-      ${renderPaymentsStep()}
-      ${renderOptionalConnectorsStep()}
-      ${renderStep({
-        id: "menu_ready",
-        title: "Menu",
-        body: "Review visible menu items and mark the launch menu ready.",
-        targetSection: "menu",
-        completeLabel: "Mark ready"
-      })}
-      ${renderStep({
-        id: "team_configured_or_skipped",
-        title: "Team",
-        body: "Invite store users or skip team setup for launch.",
-        targetSection: "team",
-        completeLabel: "Complete or skip"
-      })}
-      ${renderStep({
-        id: "test_order_completed",
-        title: "Test order",
-        body: "Run a full test order before submitting for review.",
-        targetSection: "orders",
-        completeLabel: "Mark tested"
-      })}
-    </section>
-
-    ${renderMobileReleaseTimeline()}
-
-    ${renderLaunchReview()}
+    ${renderLaunchSetupCard()}
+    ${renderLaunchStatusCard()}
+    ${renderIntegrationsCard()}
   `;
 }
 
@@ -400,15 +447,14 @@ export function renderOnboardingWizard() {
         <div class="dash-modal__header">
           <div>
             <div class="dash-panel-title">Setup wizard</div>
-            <h3 class="dash-surface-title" id="onboarding-wizard-title">Finish launch setup</h3>
+            <h3 class="dash-surface-title" id="onboarding-wizard-title">${escapeHtml(summary.brandName)} launch setup</h3>
           </div>
           <button class="button button--ghost" type="button" data-action="close-onboarding-wizard" ${state.updatingOnboarding ? "disabled" : ""}>
             Close
           </button>
         </div>
-        <div class="dash-onboarding-wizard-body">
-          ${renderOnboardingSection()}
-        </div>
+        ${renderWizardSteps()}
+        ${renderWizardBody()}
       </div>
     </div>
   `;

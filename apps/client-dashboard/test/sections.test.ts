@@ -64,6 +64,7 @@ describe("dashboard sections", () => {
     state.session = null;
     state.onboardingSummary = null;
     state.onboardingWizardOpen = false;
+    state.onboardingWizardStep = 1;
     state.availableLocations = [];
     state.appConfig = null;
     state.storeConfig = null;
@@ -76,7 +77,9 @@ describe("dashboard sections", () => {
 
     expect(getAvailableDashboardSections()).not.toContain("onboarding");
     expect(getAvailableDashboardSections()).toContain("store");
-    expect(renderStoreSection()).toContain("Northside Coffee onboarding");
+    expect(renderStoreSection()).toContain("Launch setup");
+    expect(renderStoreSection()).toContain("6 setup items left");
+    expect(renderStoreSection()).toContain("Optional connectors");
 
     state.session = {
       ...ownerSession,
@@ -86,7 +89,7 @@ describe("dashboard sections", () => {
       }
     };
     expect(getAvailableDashboardSections()).not.toContain("onboarding");
-    expect(renderStoreSection()).not.toContain("Northside Coffee onboarding");
+    expect(renderStoreSection()).not.toContain("Launch setup");
 
     state.session = ownerSession;
     state.onboardingSummary = {
@@ -106,8 +109,10 @@ describe("dashboard sections", () => {
     const html = renderOnboardingWizard();
 
     expect(html).toContain("role=\"dialog\"");
-    expect(html).toContain("Finish launch setup");
-    expect(html).toContain("Northside Coffee onboarding");
+    expect(html).toContain("Northside Coffee launch setup");
+    expect(html).toContain("We only need the essentials first.");
+    expect(html).toContain("Details");
+    expect(html).not.toContain("Launch review");
   });
 
   it("renders approved and live launch states as read-only setup status", () => {
@@ -171,9 +176,8 @@ describe("dashboard sections", () => {
 
     const html = renderStoreSection();
 
-    expect(html).toContain("Submitted for App Store review");
-    expect(html).toContain("Build uploaded to TestFlight");
-    expect(html).toContain("This timeline is read-only");
+    expect(html).toContain("Submitted to App Store");
+    expect(html).toContain("TestFlight");
     expect(html).toContain("Build");
     expect(html).not.toContain("data-action=\"mobile-release\"");
   });

@@ -40,6 +40,7 @@ export type AppState = {
   onboardingSummary: OperatorOnboardingSummary | null;
   onboardingAutoOpened: boolean;
   onboardingWizardOpen: boolean;
+  onboardingWizardStep: 1 | 2 | 3 | 4;
   updatingOnboarding: boolean;
   initializing: boolean;
   loading: boolean;
@@ -116,6 +117,7 @@ export const state: AppState = {
   onboardingSummary: null,
   onboardingAutoOpened: false,
   onboardingWizardOpen: false,
+  onboardingWizardStep: 1,
   updatingOnboarding: false,
   initializing: true,
   loading: false,
@@ -219,6 +221,7 @@ export function resetDashboardData() {
   state.onboardingSummary = null;
   state.onboardingAutoOpened = false;
   state.onboardingWizardOpen = false;
+  state.onboardingWizardStep = 1;
   state.updatingOnboarding = false;
   state.selectedOrderId = null;
   state.lastRefreshedAt = null;
