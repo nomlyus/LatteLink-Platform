@@ -1,7 +1,7 @@
 {
   "name": "lattelink-platform",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "LatteLink platform monorepo",
   "license": "MIT",
   "packageManager": "pnpm@10.5.2",
