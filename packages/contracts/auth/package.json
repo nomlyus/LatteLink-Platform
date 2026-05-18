@@ -21,7 +21,7 @@
   "devDependencies": {
     "@lattelink/config-eslint": "workspace:*",
     "@lattelink/config-typescript": "workspace:*",
-    "eslint": "^9.21.0",
+    "eslint": "^9.39.4",
     "typescript": "^5.8.2",
     "vitest": "^3.0.8"
   }
