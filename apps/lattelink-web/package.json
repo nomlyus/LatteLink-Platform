@@ -11,9 +11,9 @@
     "lint": "eslint src --max-warnings=0"
   },
   "dependencies": {
-    "@sentry/nextjs": "^10.27.0",
+    "@sentry/nextjs": "^10.53.1",
     "framer-motion": "^11.18.2",
-    "next": "^15.1.0",
+    "next": "^15.5.18",
     "react": "19.1.0",
     "react-dom": "19.1.0"
   },
