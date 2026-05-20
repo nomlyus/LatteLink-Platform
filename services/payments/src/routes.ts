@@ -2046,13 +2046,22 @@ function createStripeExpressAccount(stripeClient: Stripe, locationId: string) {
   });
 }
 
-function isStripeMissingResourceError(error: unknown) {
+function isStripeAccountUnavailableForActiveCredentialsError(error: unknown) {
   if (!error || typeof error !== "object") {
     return false;
   }
 
-  const candidate = error as { code?: unknown; statusCode?: unknown };
-  return candidate.code === "resource_missing" || candidate.statusCode === 404;
+  const candidate = error as { code?: unknown; statusCode?: unknown; message?: unknown };
+  if (candidate.code === "resource_missing" || candidate.statusCode === 404) {
+    return true;
+  }
+
+  if (candidate.code === "account_invalid" || candidate.statusCode === 403) {
+    const message = typeof candidate.message === "string" ? candidate.message.toLowerCase() : "";
+    return message.includes("does not have access to account") || message.includes("application access may have been revoked");
+  }
+
+  return false;
 }
 
 export async function registerRoutes(app: FastifyInstance) {
@@ -2651,7 +2660,7 @@ export async function registerRoutes(app: FastifyInstance) {
               ? await createStripeExpressAccount(stripeClient, input.locationId)
               : existingAccount;
           } catch (error) {
-            if (!isStripeMissingResourceError(error)) {
+            if (!isStripeAccountUnavailableForActiveCredentialsError(error)) {
               throw error;
             }
 

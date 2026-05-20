@@ -539,15 +539,30 @@ describe("payments service", () => {
     await app.close();
   });
 
-  it("replaces a stored Stripe account that is missing from the active Stripe mode", async () => {
+  it.each([
+    [
+      "when Stripe reports it is missing",
+      {
+        type: "StripeInvalidRequestError",
+        code: "resource_missing",
+        statusCode: 404,
+        message: "No such account: acct_testonly"
+      }
+    ],
+    [
+      "when the active key cannot access it",
+      {
+        type: "StripePermissionError",
+        code: "account_invalid",
+        statusCode: 403,
+        message:
+          "The provided key 'sk_live_****QwppaR' does not have access to account 'acct_testonly' (or that account does not exist). Application access may have been revoked."
+      }
+    ]
+  ])("replaces a stored Stripe account %s", async (_caseName, stripeRetrieveError) => {
     const fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal("fetch", fetchMock);
-    const stripeAccountRetrieveSpy = vi.spyOn(Object.getPrototypeOf(stripe.accounts), "retrieve").mockRejectedValue({
-      type: "StripeInvalidRequestError",
-      code: "resource_missing",
-      statusCode: 404,
-      message: "No such account: acct_testonly"
-    });
+    const stripeAccountRetrieveSpy = vi.spyOn(Object.getPrototypeOf(stripe.accounts), "retrieve").mockRejectedValue(stripeRetrieveError);
     const stripeAccountCreateSpy = vi.spyOn(Object.getPrototypeOf(stripe.accounts), "create").mockResolvedValue({
       id: "acct_livereplacement",
       type: "express",
