@@ -917,6 +917,63 @@ function requireStripePublishableKey(
   return false;
 }
 
+type StripeCredentialMode = "live" | "test" | "unconfigured" | "unknown";
+
+function resolveStripeCredentialMode(value: string | undefined, livePrefix: string, testPrefix: string): StripeCredentialMode {
+  if (!value) {
+    return "unconfigured";
+  }
+
+  if (value.startsWith(livePrefix)) {
+    return "live";
+  }
+
+  if (value.startsWith(testPrefix)) {
+    return "test";
+  }
+
+  return "unknown";
+}
+
+function resolveStripeRuntimeConfig(params: {
+  deployEnvironment: string | undefined;
+  stripeSecretKey: string | undefined;
+  stripePublishableKey: string | undefined;
+  stripeConnectWebhookSecret: string | undefined;
+}) {
+  const secretKeyMode = resolveStripeCredentialMode(params.stripeSecretKey, "sk_live_", "sk_test_");
+  const publishableKeyMode = resolveStripeCredentialMode(params.stripePublishableKey, "pk_live_", "pk_test_");
+  const expectedMode = params.deployEnvironment === "production" ? "live" : "test";
+
+  if (params.deployEnvironment === "production") {
+    if (secretKeyMode !== "live") {
+      throw new Error("Production payments must use a live Stripe secret key. Set STRIPE_SECRET_KEY to an sk_live_ key before deploying.");
+    }
+
+    if (publishableKeyMode !== "live") {
+      throw new Error("Production payments must use a live Stripe publishable key. Set STRIPE_PUBLISHABLE_KEY to a pk_live_ key before deploying.");
+    }
+  }
+
+  if (
+    params.stripeSecretKey &&
+    params.stripePublishableKey &&
+    secretKeyMode !== "unknown" &&
+    publishableKeyMode !== "unknown" &&
+    secretKeyMode !== publishableKeyMode
+  ) {
+    throw new Error("Stripe secret and publishable keys must both use the same live/test mode.");
+  }
+
+  return {
+    expectedMode,
+    secretKeyMode,
+    publishableKeyMode,
+    configured: Boolean(params.stripeSecretKey && params.stripePublishableKey),
+    connectWebhookConfigured: Boolean(params.stripeConnectWebhookSecret)
+  };
+}
+
 function resolveProviderMode(rawMode: string | undefined): ProviderMode {
   const parsed = providerModeSchema.safeParse(rawMode?.trim().toLowerCase());
   return parsed.success ? parsed.data : "simulated";
@@ -1975,6 +2032,29 @@ function buildStripePaymentProfile(params: {
   });
 }
 
+function createStripeExpressAccount(stripeClient: Stripe, locationId: string) {
+  return stripeClient.accounts.create({
+    type: "express",
+    country: "US",
+    capabilities: {
+      card_payments: { requested: true },
+      transfers: { requested: true }
+    },
+    metadata: {
+      locationId
+    }
+  });
+}
+
+function isStripeMissingResourceError(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const candidate = error as { code?: unknown; statusCode?: unknown };
+  return candidate.code === "resource_missing" || candidate.statusCode === 404;
+}
+
 export async function registerRoutes(app: FastifyInstance) {
   const repository = await createPaymentsRepository(app.log);
   const cloverProvider = resolveCloverProviderConfig(app.log);
@@ -1986,6 +2066,12 @@ export async function registerRoutes(app: FastifyInstance) {
   const stripeSecretKey = trimToUndefined(process.env.STRIPE_SECRET_KEY);
   const stripePublishableKey = trimToUndefined(process.env.STRIPE_PUBLISHABLE_KEY);
   const stripeConnectWebhookSecret = trimToUndefined(process.env.STRIPE_CONNECT_WEBHOOK_SECRET);
+  const stripeRuntime = resolveStripeRuntimeConfig({
+    deployEnvironment: process.env.DEPLOY_ENV,
+    stripeSecretKey,
+    stripePublishableKey,
+    stripeConnectWebhookSecret
+  });
   const stripeClient = new Stripe(stripeSecretKey ?? "sk_test_placeholder");
   const rateLimitWindowMs = toPositiveInteger(process.env.PAYMENTS_RATE_LIMIT_WINDOW_MS, defaultRateLimitWindowMs);
   const paymentsWriteRateLimit = {
@@ -2035,7 +2121,8 @@ export async function registerRoutes(app: FastifyInstance) {
     status: "ready",
     service: "payments",
     persistence: repository.backend,
-    environment: getPersistenceReadinessMetadata()
+    environment: getPersistenceReadinessMetadata(),
+    stripe: stripeRuntime
   }));
 
   app.post("/v1/payments/stripe/mobile-session", { preHandler: app.rateLimit(paymentsWriteRateLimit) }, async (request, reply) => {
@@ -2558,32 +2645,24 @@ export async function registerRoutes(app: FastifyInstance) {
       try {
         const existingAccountId = locationSummaryResult.response.paymentProfile?.stripeAccountId;
         if (existingAccountId) {
-          const existingAccount = await stripeClient.accounts.retrieve(existingAccountId);
-          stripeAccount = isDeletedStripeAccount(existingAccount)
-            ? await stripeClient.accounts.create({
-                type: "express",
-                country: "US",
-                capabilities: {
-                  card_payments: { requested: true },
-                  transfers: { requested: true }
-                },
-                metadata: {
-                  locationId: input.locationId
-                }
-              })
-            : existingAccount;
-        } else {
-          stripeAccount = await stripeClient.accounts.create({
-            type: "express",
-            country: "US",
-            capabilities: {
-              card_payments: { requested: true },
-              transfers: { requested: true }
-            },
-            metadata: {
-              locationId: input.locationId
+          try {
+            const existingAccount = await stripeClient.accounts.retrieve(existingAccountId);
+            stripeAccount = isDeletedStripeAccount(existingAccount)
+              ? await createStripeExpressAccount(stripeClient, input.locationId)
+              : existingAccount;
+          } catch (error) {
+            if (!isStripeMissingResourceError(error)) {
+              throw error;
             }
-          });
+
+            request.log.warn(
+              { error, requestId: request.id, locationId: input.locationId, stripeAccountId: existingAccountId },
+              "Stored Stripe account was not found by the active Stripe credentials; creating a replacement account"
+            );
+            stripeAccount = await createStripeExpressAccount(stripeClient, input.locationId);
+          }
+        } else {
+          stripeAccount = await createStripeExpressAccount(stripeClient, input.locationId);
         }
 
         const nextPaymentProfile = buildStripePaymentProfile({

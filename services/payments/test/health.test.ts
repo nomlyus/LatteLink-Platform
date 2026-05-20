@@ -75,9 +75,49 @@ describe("payments service", () => {
     expect(ready.json()).toMatchObject({
       status: "ready",
       service: "payments",
-      persistence: expect.any(String)
+      persistence: expect.any(String),
+      stripe: {
+        expectedMode: "test",
+        secretKeyMode: "test",
+        publishableKeyMode: "test",
+        configured: true,
+        connectWebhookConfigured: true
+      }
     });
     await app.close();
+  });
+
+  it("fails fast in production when Stripe keys are still test mode", async () => {
+    vi.stubEnv("DEPLOY_ENV", "production");
+
+    await expect(buildApp()).rejects.toThrow("Production payments must use a live Stripe secret key");
+  });
+
+  it("accepts live Stripe keys for production readiness", async () => {
+    vi.stubEnv("DEPLOY_ENV", "production");
+    vi.stubEnv("STRIPE_SECRET_KEY", "sk_live_payments");
+    vi.stubEnv("STRIPE_PUBLISHABLE_KEY", "pk_live_payments");
+
+    const app = await buildApp();
+    const ready = await app.inject({ method: "GET", url: "/ready" });
+
+    expect(ready.statusCode).toBe(200);
+    expect(ready.json()).toMatchObject({
+      stripe: {
+        expectedMode: "live",
+        secretKeyMode: "live",
+        publishableKeyMode: "live",
+        configured: true
+      }
+    });
+    await app.close();
+  });
+
+  it("rejects mixed Stripe key modes", async () => {
+    vi.stubEnv("STRIPE_SECRET_KEY", "sk_live_payments");
+    vi.stubEnv("STRIPE_PUBLISHABLE_KEY", "pk_test_payments");
+
+    await expect(buildApp()).rejects.toThrow("Stripe secret and publishable keys must both use the same live/test mode.");
   });
 
   it("keeps readiness green when live Clover OAuth is not configured", async () => {
@@ -494,6 +534,145 @@ describe("payments service", () => {
       refresh_url: "https://admin.example.com/clients/flagship-01/payments?refresh=1"
     });
 
+    stripeAccountCreateSpy.mockRestore();
+    accountLinkCreateSpy.mockRestore();
+    await app.close();
+  });
+
+  it("replaces a stored Stripe account that is missing from the active Stripe mode", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetchMock);
+    const stripeAccountRetrieveSpy = vi.spyOn(Object.getPrototypeOf(stripe.accounts), "retrieve").mockRejectedValue({
+      type: "StripeInvalidRequestError",
+      code: "resource_missing",
+      statusCode: 404,
+      message: "No such account: acct_testonly"
+    });
+    const stripeAccountCreateSpy = vi.spyOn(Object.getPrototypeOf(stripe.accounts), "create").mockResolvedValue({
+      id: "acct_livereplacement",
+      type: "express",
+      details_submitted: false,
+      charges_enabled: false,
+      payouts_enabled: false,
+      country: "US",
+      default_currency: "usd",
+      requirements: {
+        currently_due: ["business_profile.mcc"],
+        eventually_due: [],
+        past_due: [],
+        pending_verification: []
+      }
+    } as unknown as Stripe.Account);
+    const accountLinkCreateSpy = vi.spyOn(Object.getPrototypeOf(stripe.accountLinks), "create").mockResolvedValue({
+      object: "account_link",
+      created: 1776829800,
+      expires_at: 1776830400,
+      url: "https://connect.stripe.com/setup/s/live_123"
+    } as Stripe.AccountLink);
+
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const headers = new Headers(init?.headers);
+
+      if (url === "http://127.0.0.1:3002/v1/catalog/internal/locations/flagship-01") {
+        expect(headers.get("x-gateway-token")).toBe("gateway-payments-token");
+        return new Response(
+          JSON.stringify({
+            brandId: "gazelle",
+            brandName: "Gazelle Coffee",
+            locationId: "flagship-01",
+            locationName: "Flagship",
+            marketLabel: "Detroit, MI",
+            storeName: "Gazelle Flagship",
+            hours: "Daily · 7:00 AM - 6:00 PM",
+            pickupInstructions: "Pickup at the espresso counter.",
+            taxRateBasisPoints: 600,
+            capabilities: {
+              menu: { source: "platform_managed" },
+              operations: {
+                fulfillmentMode: "staff",
+                liveOrderTrackingEnabled: true,
+                dashboardEnabled: true
+              },
+              loyalty: { visible: true }
+            },
+            paymentProfile: {
+              locationId: "flagship-01",
+              stripeAccountId: "acct_testonly",
+              stripeAccountType: "express",
+              stripeOnboardingStatus: "restricted",
+              stripeDetailsSubmitted: false,
+              stripeChargesEnabled: false,
+              stripePayoutsEnabled: false,
+              stripeDashboardEnabled: true,
+              country: "US",
+              currency: "USD",
+              cardEnabled: true,
+              applePayEnabled: true,
+              refundsEnabled: true,
+              cloverPosEnabled: false
+            }
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      if (url === "http://127.0.0.1:3002/v1/catalog/internal/locations/flagship-01/payment-profile") {
+        expect(headers.get("x-gateway-token")).toBe("gateway-payments-token");
+        const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        expect(body).toMatchObject({
+          locationId: "flagship-01",
+          stripeAccountId: "acct_livereplacement",
+          stripeOnboardingStatus: "pending",
+          stripeChargesEnabled: false,
+          stripePayoutsEnabled: false
+        });
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+
+      throw new Error(`unexpected Stripe replacement onboarding URL: ${url}`);
+    });
+
+    const app = await buildApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/payments/stripe/connect/onboarding-link",
+      headers: {
+        "x-gateway-token": "gateway-payments-token"
+      },
+      payload: {
+        locationId: "flagship-01",
+        returnUrl: "https://admin.example.com/clients/flagship-01/payments",
+        refreshUrl: "https://admin.example.com/clients/flagship-01/payments?refresh=1"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      locationId: "flagship-01",
+      stripeAccountId: "acct_livereplacement",
+      url: "https://connect.stripe.com/setup/s/live_123"
+    });
+    expect(stripeAccountRetrieveSpy).toHaveBeenCalledWith("acct_testonly");
+    expect(stripeAccountCreateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "express",
+        country: "US",
+        metadata: {
+          locationId: "flagship-01"
+        }
+      })
+    );
+    expect(accountLinkCreateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        account: "acct_livereplacement"
+      })
+    );
+
+    stripeAccountRetrieveSpy.mockRestore();
     stripeAccountCreateSpy.mockRestore();
     accountLinkCreateSpy.mockRestore();
     await app.close();
