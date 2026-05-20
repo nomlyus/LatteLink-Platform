@@ -250,8 +250,8 @@ describe("orders service layer", () => {
         let lifetimeDelta = 0;
         if (mutationType === "EARN") {
           const amountCents = Number(body.amountCents ?? 0);
-          deltaPoints = amountCents;
-          lifetimeDelta = amountCents;
+          deltaPoints = Math.floor(amountCents / 100);
+          lifetimeDelta = deltaPoints;
         } else if (mutationType === "REDEEM") {
           deltaPoints = -Number(body.amountCents ?? 0);
         } else if (mutationType === "REFUND") {

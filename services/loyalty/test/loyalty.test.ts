@@ -81,7 +81,7 @@ describe("loyalty service", () => {
         locationId: defaultLocationId,
         orderId,
         type: "EARN",
-        amountCents: 500,
+        amountCents: 50_000,
         idempotencyKey: "evt-earn-1",
         occurredAt: "2026-03-10T10:00:00.000Z"
       }
@@ -178,6 +178,32 @@ describe("loyalty service", () => {
     await app.close();
   });
 
+  it("earns one point per whole dollar spent", async () => {
+    const app = await buildApp();
+    const userId = "123e4567-e89b-12d3-a456-426614174411";
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/loyalty/internal/ledger/apply",
+      headers: internalHeaders(),
+      payload: {
+        userId,
+        locationId: defaultLocationId,
+        type: "EARN",
+        amountCents: 599,
+        idempotencyKey: "evt-dollar-rate"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(mutationResponseSchema.parse(response.json())).toMatchObject({
+      entry: { type: "EARN", points: 5 },
+      balance: { availablePoints: 5, lifetimeEarned: 5 }
+    });
+
+    await app.close();
+  });
+
   it("keeps balances and ledgers isolated by location for the same user", async () => {
     const app = await buildApp();
     const userId = "123e4567-e89b-12d3-a456-426614174410";
@@ -220,8 +246,8 @@ describe("loyalty service", () => {
     expect(loyaltyBalanceSchema.parse(flagshipBalance.json())).toMatchObject({
       userId,
       locationId: defaultLocationId,
-      availablePoints: 500,
-      lifetimeEarned: 500
+      availablePoints: 5,
+      lifetimeEarned: 5
     });
 
     const northBalance = await app.inject({
@@ -233,8 +259,8 @@ describe("loyalty service", () => {
     expect(loyaltyBalanceSchema.parse(northBalance.json())).toMatchObject({
       userId,
       locationId: northLocationId,
-      availablePoints: 125,
-      lifetimeEarned: 125
+      availablePoints: 1,
+      lifetimeEarned: 1
     });
 
     const flagshipLedger = await app.inject({

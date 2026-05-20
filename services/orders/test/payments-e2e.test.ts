@@ -155,8 +155,8 @@ function buildLoyaltyHarnessApp() {
     let lifetimeDelta = 0;
     if (mutationType === "EARN") {
       const amountCents = Number(body.amountCents ?? 0);
-      deltaPoints = amountCents;
-      lifetimeDelta = amountCents;
+      deltaPoints = Math.floor(amountCents / 100);
+      lifetimeDelta = deltaPoints;
     } else if (mutationType === "REDEEM") {
       deltaPoints = -Number(body.amountCents ?? 0);
     } else if (mutationType === "REFUND") {
@@ -654,7 +654,7 @@ describe.sequential("orders + payments e2e", () => {
         userId,
         orderId: seedOrderId,
         type: "EARN",
-        amountCents: 500,
+        amountCents: 50_000,
         idempotencyKey: "seed-loyalty-500"
       }
     });
@@ -700,7 +700,7 @@ describe.sequential("orders + payments e2e", () => {
     expect(balanceResponse.statusCode).toBe(200);
     expect(balanceResponse.json()).toMatchObject({
       availablePoints: 500,
-      lifetimeEarned: 500 + paidOrder.total.amountCents
+      lifetimeEarned: 500 + Math.floor(paidOrder.total.amountCents / 100)
     });
 
     const ledgerResponse = await loyaltyApp.inject({
@@ -716,8 +716,8 @@ describe.sequential("orders + payments e2e", () => {
     expect(orderLedger).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ type: "REDEEM", points: -125 }),
-        expect.objectContaining({ type: "EARN", points: paidOrder.total.amountCents }),
-        expect.objectContaining({ type: "ADJUSTMENT", points: -paidOrder.total.amountCents }),
+        expect.objectContaining({ type: "EARN", points: Math.floor(paidOrder.total.amountCents / 100) }),
+        expect.objectContaining({ type: "ADJUSTMENT", points: -Math.floor(paidOrder.total.amountCents / 100) }),
         expect.objectContaining({ type: "REFUND", points: 125 })
       ])
     );

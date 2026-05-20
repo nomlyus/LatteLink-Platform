@@ -20,7 +20,7 @@ function buildOrder(status: "PAID" | "IN_PREP" | "READY" | "COMPLETED" | "CANCEL
     {
       status: "PAID",
       occurredAt: paidAt,
-      note: "Earned 795 loyalty points."
+      note: "Earned 7 loyalty points."
     }
   ];
 

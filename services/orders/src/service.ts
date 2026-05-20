@@ -145,6 +145,10 @@ const loyaltyMutationResponseSchema = z.object({
   balance: loyaltyBalanceSchema
 });
 
+function calculateEarnedLoyaltyPoints(amountCents: number) {
+  return Math.floor(amountCents / 100);
+}
+
 export type OrderQuote = z.output<typeof orderQuoteSchema>;
 export type Order = z.output<typeof orderSchema>;
 export type ServiceError = {
@@ -1623,23 +1627,26 @@ export async function cancelOrder(params: {
       await deps.repository.setSuccessfulRefund(orderId, requestedRefund.response);
     }
 
-    const reverseEarnMutation = loyaltyMutationRequestSchema.parse({
-      type: "ADJUSTMENT",
-      userId: orderUserId,
-      locationId: existingOrder.locationId,
-      orderId,
-      points: -existingOrder.total.amountCents,
-      idempotencyKey: toLoyaltyIdempotencyKey(orderId, "reverse-earn")
-    });
-    const reverseEarnResult = await applyLoyaltyMutation({
-      requestId,
-      deps,
-      mutation: reverseEarnMutation,
-      failureCode: "LOYALTY_REVERSAL_FAILED",
-      failureMessage: "Loyalty earn reversal failed"
-    });
-    if (isServiceError(reverseEarnResult)) {
-      return { error: reverseEarnResult };
+    const earnedPointsToReverse = calculateEarnedLoyaltyPoints(existingOrder.total.amountCents);
+    if (earnedPointsToReverse > 0) {
+      const reverseEarnMutation = loyaltyMutationRequestSchema.parse({
+        type: "ADJUSTMENT",
+        userId: orderUserId,
+        locationId: existingOrder.locationId,
+        orderId,
+        points: -earnedPointsToReverse,
+        idempotencyKey: toLoyaltyIdempotencyKey(orderId, "reverse-earn")
+      });
+      const reverseEarnResult = await applyLoyaltyMutation({
+        requestId,
+        deps,
+        mutation: reverseEarnMutation,
+        failureCode: "LOYALTY_REVERSAL_FAILED",
+        failureMessage: "Loyalty earn reversal failed"
+      });
+      if (isServiceError(reverseEarnResult)) {
+        return { error: reverseEarnResult };
+      }
     }
 
     if (orderQuote.pointsToRedeem > 0) {
@@ -1664,13 +1671,13 @@ export async function cancelOrder(params: {
     }
 
     const loyaltyReversalParts = [
-      `reversed ${existingOrder.total.amountCents} earned points`,
+      earnedPointsToReverse > 0 ? `reversed ${earnedPointsToReverse} earned points` : undefined,
       orderQuote.pointsToRedeem > 0 ? `refunded ${orderQuote.pointsToRedeem} redeemed points` : undefined
     ].filter((value): value is string => Boolean(value));
 
-    refundNote = ` Refund submitted: ${successfulRefund.refundId}. Loyalty updated: ${loyaltyReversalParts.join(
-      "; "
-    )}.`;
+    refundNote = ` Refund submitted: ${successfulRefund.refundId}.${
+      loyaltyReversalParts.length > 0 ? ` Loyalty updated: ${loyaltyReversalParts.join("; ")}.` : ""
+    }`;
   }
 
   const canceledTransition = transitionOrderStatus(existingOrder, "CANCELED", {
@@ -1807,6 +1814,7 @@ export async function reconcilePaymentWebhook(params: {
       }
     }
 
+    const earnedPoints = calculateEarnedLoyaltyPoints(existingOrder.total.amountCents);
     const earnMutation = loyaltyMutationRequestSchema.parse({
       type: "EARN",
       userId: orderUserId,
@@ -1833,7 +1841,7 @@ export async function reconcilePaymentWebhook(params: {
         ? `Applied ${discountRedemption.code} discount (${formatCents(discountRedemption.discountCents)})`
         : undefined,
       orderQuote.pointsToRedeem > 0 ? `redeemed ${orderQuote.pointsToRedeem} loyalty points` : undefined,
-      `Earned ${existingOrder.total.amountCents} loyalty points`
+      `Earned ${earnedPoints} loyalty points`
     ].filter((value): value is string => Boolean(value));
     const paidTransition = transitionOrderStatus(existingOrder, "PAID", {
       note: `${loyaltyParts.join("; ")}.`,
@@ -1934,23 +1942,26 @@ export async function reconcilePaymentWebhook(params: {
   if (isServiceError(orderUserId)) {
     return { error: orderUserId };
   }
-  const reverseEarnMutation = loyaltyMutationRequestSchema.parse({
-    type: "ADJUSTMENT",
-    userId: orderUserId,
-    locationId: existingOrder.locationId,
-    orderId: input.orderId,
-    points: -existingOrder.total.amountCents,
-    idempotencyKey: toLoyaltyIdempotencyKey(input.orderId, "reverse-earn")
-  });
-  const reverseEarnResult = await applyLoyaltyMutation({
-    requestId,
-    deps,
-    mutation: reverseEarnMutation,
-    failureCode: "LOYALTY_REVERSAL_FAILED",
-    failureMessage: "Loyalty earn reversal failed"
-  });
-  if (isServiceError(reverseEarnResult)) {
-    return { error: reverseEarnResult };
+  const earnedPointsToReverse = calculateEarnedLoyaltyPoints(existingOrder.total.amountCents);
+  if (earnedPointsToReverse > 0) {
+    const reverseEarnMutation = loyaltyMutationRequestSchema.parse({
+      type: "ADJUSTMENT",
+      userId: orderUserId,
+      locationId: existingOrder.locationId,
+      orderId: input.orderId,
+      points: -earnedPointsToReverse,
+      idempotencyKey: toLoyaltyIdempotencyKey(input.orderId, "reverse-earn")
+    });
+    const reverseEarnResult = await applyLoyaltyMutation({
+      requestId,
+      deps,
+      mutation: reverseEarnMutation,
+      failureCode: "LOYALTY_REVERSAL_FAILED",
+      failureMessage: "Loyalty earn reversal failed"
+    });
+    if (isServiceError(reverseEarnResult)) {
+      return { error: reverseEarnResult };
+    }
   }
 
   if (orderQuote.pointsToRedeem > 0) {
@@ -1975,12 +1986,12 @@ export async function reconcilePaymentWebhook(params: {
   }
 
   const reversalParts = [
-    `reversed ${existingOrder.total.amountCents} earned points`,
+    earnedPointsToReverse > 0 ? `reversed ${earnedPointsToReverse} earned points` : undefined,
     orderQuote.pointsToRedeem > 0 ? `refunded ${orderQuote.pointsToRedeem} redeemed points` : undefined
   ].filter((value): value is string => Boolean(value));
   const eventNote = input.eventId ? `event ${input.eventId}` : "webhook event";
   const canceledTransition = transitionOrderStatus(existingOrder, "CANCELED", {
-    note: `Refund reconciled from ${input.provider} ${eventNote}; ${reversalParts.join("; ")}.`,
+    note: `Refund reconciled from ${input.provider} ${eventNote}${reversalParts.length > 0 ? `; ${reversalParts.join("; ")}` : ""}.`,
     source: "webhook"
   });
   await deps.repository.updateOrder(input.orderId, canceledTransition.order);

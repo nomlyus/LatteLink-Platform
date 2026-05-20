@@ -50,19 +50,24 @@ const scopedLoyaltyQuerySchema = z.object({
   locationId: z.string().min(1)
 });
 
+const deterministicEarnPointsMessage = "earn points must equal one point per whole dollar";
 const deterministicMoneyPointsMessage = "points must match amountCents for deterministic money accounting";
+
+function calculateEarnPoints(amountCents: number) {
+  return Math.floor(amountCents / 100);
+}
 
 const earnMutationSchema = mutationBaseSchema
   .extend({
     type: z.literal("EARN"),
     amountCents: z.number().int().positive(),
-    points: z.number().int().positive().optional()
+    points: z.number().int().nonnegative().optional()
   })
   .superRefine((input, context) => {
-    if (input.points !== undefined && input.points !== input.amountCents) {
+    if (input.points !== undefined && input.points !== calculateEarnPoints(input.amountCents)) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: deterministicMoneyPointsMessage,
+        message: deterministicEarnPointsMessage,
         path: ["points"]
       });
     }
@@ -287,6 +292,10 @@ function resolveMutationPoints(input: ApplyLedgerMutation) {
     return Math.abs(input.points);
   }
 
+  if (input.type === "EARN") {
+    return input.points ?? calculateEarnPoints(input.amountCents);
+  }
+
   return input.points ?? input.amountCents;
 }
 
@@ -299,6 +308,10 @@ function toLedgerDeltaPoints(input: ApplyLedgerMutation) {
     return input.points;
   }
 
+  if (input.type === "EARN") {
+    return input.points ?? calculateEarnPoints(input.amountCents);
+  }
+
   return input.points ?? input.amountCents;
 }
 
@@ -307,7 +320,7 @@ function toLifetimeEarnedDelta(input: ApplyLedgerMutation) {
     return 0;
   }
 
-  return input.points ?? input.amountCents;
+  return input.points ?? calculateEarnPoints(input.amountCents);
 }
 
 function toMutationFingerprint(input: ApplyLedgerMutation, deltaPoints: number, resolvedPoints: number) {
