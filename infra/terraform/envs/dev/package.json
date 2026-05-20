@@ -1,6 +1,6 @@
 {
   "name": "@lattelink/terraform-dev",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": true,
   "scripts": {
     "validate": "terraform init -backend=false && terraform validate",
