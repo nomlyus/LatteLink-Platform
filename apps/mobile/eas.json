@@ -37,6 +37,10 @@
       "distribution": "store",
       "environment": "production",
       "channel": "production",
+      "ios": {
+        "resourceClass": "m-medium",
+        "buildConfiguration": "ReleaseProduction"
+      },
       "env": {
         "APP_VARIANT": "production",
         "EXPO_PUBLIC_APP_VARIANT": "production",
