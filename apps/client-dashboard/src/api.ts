@@ -26,7 +26,9 @@ import {
   operatorOnboardingUpdateSchema,
   stripeConnectDashboardLinkRequestSchema,
   stripeConnectLinkResponseSchema,
-  stripeConnectOnboardingLinkRequestSchema
+  stripeConnectOnboardingLinkRequestSchema,
+  stripeConnectStatusRefreshRequestSchema,
+  stripeConnectStatusRefreshResponseSchema
 } from "@lattelink/contracts-catalog";
 import {
   createDiscountCodeRequestSchema,
@@ -670,6 +672,18 @@ export function createOperatorStripeDashboardLink(session: OperatorSession, loca
     method: "POST",
     body: stripeConnectDashboardLinkRequestSchema.omit({ locationId: true }).parse({}),
     schema: stripeConnectLinkResponseSchema
+  });
+}
+
+export function refreshOperatorStripeStatus(session: OperatorSession, locationId: string) {
+  return requestJson({
+    apiBaseUrl: session.apiBaseUrl,
+    accessToken: session.accessToken,
+    path: "/admin/payments/stripe/status-refresh",
+    query: { locationId },
+    method: "POST",
+    body: stripeConnectStatusRefreshRequestSchema.omit({ locationId: true }).parse({}),
+    schema: stripeConnectStatusRefreshResponseSchema
   });
 }
 

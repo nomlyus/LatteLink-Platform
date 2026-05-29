@@ -148,13 +148,6 @@ export function renderAuthScreen() {
           <div class="auth-divider"><span>or continue with SSO</span></div>
 
           <div class="sso-stack">
-            <button class="sso-button" type="button" disabled>
-              <span class="sso-button__icon">A</span>
-              <span class="sso-button__meta">
-                <strong>Sign in with Apple</strong>
-                <small>Coming soon</small>
-              </span>
-            </button>
             <button
               class="sso-button"
               type="button"

@@ -75,6 +75,8 @@ import {
   stripeConnectDashboardLinkRequestSchema,
   stripeConnectLinkResponseSchema,
   stripeConnectOnboardingLinkRequestSchema,
+  stripeConnectStatusRefreshRequestSchema,
+  stripeConnectStatusRefreshResponseSchema,
   menuResponseSchema,
   storeConfigResponseSchema
 } from "@lattelink/contracts-catalog";
@@ -908,10 +910,10 @@ async function proxyUpstream<TResponse>(params: {
       },
       "upstream request failed before response"
     );
-    return reply.status(502).send(
+    return reply.status(503).send(
       apiErrorSchema.parse({
         code: "UPSTREAM_UNAVAILABLE",
-        message: `${serviceLabel} service is unavailable`,
+        message: `${serviceLabel} service is temporarily unavailable`,
         requestId: request.id
       })
     );
@@ -1091,10 +1093,10 @@ async function proxyOpaqueUpstream(params: {
       { error, requestId: request.id, serviceLabel, method, path },
       "opaque upstream request failed before response"
     );
-    return reply.status(502).send(
+    return reply.status(503).send(
       apiErrorSchema.parse({
         code: "UPSTREAM_UNAVAILABLE",
-        message: `${serviceLabel} service is unavailable`,
+        message: `${serviceLabel} service is temporarily unavailable`,
         requestId: request.id
       })
     );
@@ -1862,6 +1864,34 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   );
 
+  app.post(
+    "/v1/internal/locations/:locationId/stripe/status-refresh",
+    {
+      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+    },
+    async (request, reply) => {
+      const { locationId } = internalLocationParamsSchema.parse(request.params);
+      const input = stripeConnectStatusRefreshRequestSchema.parse({
+        locationId
+      });
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: paymentsBaseUrl,
+        serviceLabel: "Payments",
+        method: "POST",
+        path: "/v1/payments/stripe/connect/status-refresh",
+        body: input,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken
+        },
+        forwardUserIdHeader: false,
+        responseSchema: stripeConnectStatusRefreshResponseSchema
+      });
+    }
+  );
+
   app.get("/v1/payments/clover/oauth/connect", { preHandler: app.rateLimit(paymentsReadRateLimit) }, async (request, reply) =>
     proxyOpaqueUpstream({
       request,
@@ -2170,6 +2200,42 @@ export async function registerRoutes(app: FastifyInstance) {
         },
         forwardUserIdHeader: false,
         responseSchema: stripeConnectLinkResponseSchema
+      });
+    }
+  );
+
+  app.post(
+    "/v1/admin/payments/stripe/status-refresh",
+    {
+      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("store:write")]
+    },
+    async (request, reply) => {
+      if (request.authenticatedOperator?.role !== "owner") {
+        return reply.status(403).send(forbiddenOwnerOnly(request.id));
+      }
+
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+
+      const input = stripeConnectStatusRefreshRequestSchema.parse({
+        locationId: locationContext.locationId
+      });
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: paymentsBaseUrl,
+        serviceLabel: "Payments",
+        method: "POST",
+        path: "/v1/payments/stripe/connect/status-refresh",
+        body: input,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken
+        },
+        forwardUserIdHeader: false,
+        responseSchema: stripeConnectStatusRefreshResponseSchema
       });
     }
   );

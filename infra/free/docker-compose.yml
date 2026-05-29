@@ -12,7 +12,8 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - gateway
+      gateway:
+        condition: service_healthy
 
   gateway:
     image: ${IMAGE_REGISTRY_PREFIX:-ghcr.io/anxiousdaoud/lattelink-platform}/gateway:${IMAGE_TAG:-latest}
@@ -43,13 +44,26 @@ services:
       - GATEWAY_RATE_LIMIT_WINDOW_MS=${GATEWAY_RATE_LIMIT_WINDOW_MS:-60000}
       - VALKEY_URL=redis://valkey:6379
     depends_on:
-      - identity
-      - orders
-      - catalog
-      - payments
-      - loyalty
-      - notifications
-      - valkey
+      identity:
+        condition: service_healthy
+      orders:
+        condition: service_healthy
+      catalog:
+        condition: service_healthy
+      payments:
+        condition: service_healthy
+      loyalty:
+        condition: service_healthy
+      notifications:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8080/ready').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 15s
 
   identity:
     image: ${IMAGE_REGISTRY_PREFIX:-ghcr.io/anxiousdaoud/lattelink-platform}/identity:${IMAGE_TAG:-latest}
@@ -64,7 +78,7 @@ services:
       - HOST=0.0.0.0
       - PORT=3000
       - DATABASE_URL=${DATABASE_URL}
-      - POSTGRES_POOL_MAX=${POSTGRES_POOL_MAX:-2}
+      - POSTGRES_POOL_MAX=${IDENTITY_POSTGRES_POOL_MAX:-2}
       - POSTGRES_CONNECTION_TIMEOUT_MS=${POSTGRES_CONNECTION_TIMEOUT_MS:-5000}
       - POSTGRES_IDLE_TIMEOUT_MS=${POSTGRES_IDLE_TIMEOUT_MS:-10000}
       - EXPECTED_SUPABASE_PROJECT_REF=${EXPECTED_SUPABASE_PROJECT_REF:-}
@@ -92,6 +106,12 @@ services:
       - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET:-}
       - GOOGLE_OAUTH_STATE_SECRET=${GOOGLE_OAUTH_STATE_SECRET:-}
       - GOOGLE_OAUTH_ALLOWED_REDIRECT_URIS=${GOOGLE_OAUTH_ALLOWED_REDIRECT_URIS:-}
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/ready').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 15s
   orders:
     image: ${IMAGE_REGISTRY_PREFIX:-ghcr.io/anxiousdaoud/lattelink-platform}/orders:${IMAGE_TAG:-latest}
     restart: unless-stopped
@@ -105,7 +125,7 @@ services:
       - HOST=0.0.0.0
       - PORT=3001
       - DATABASE_URL=${DATABASE_URL}
-      - POSTGRES_POOL_MAX=${POSTGRES_POOL_MAX:-2}
+      - POSTGRES_POOL_MAX=${ORDERS_POSTGRES_POOL_MAX:-2}
       - POSTGRES_CONNECTION_TIMEOUT_MS=${POSTGRES_CONNECTION_TIMEOUT_MS:-5000}
       - POSTGRES_IDLE_TIMEOUT_MS=${POSTGRES_IDLE_TIMEOUT_MS:-10000}
       - EXPECTED_SUPABASE_PROJECT_REF=${EXPECTED_SUPABASE_PROJECT_REF:-}
@@ -120,7 +140,13 @@ services:
       - VALKEY_URL=redis://valkey:6379
     depends_on:
       valkey:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3001/ready').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 15s
 
   catalog:
     image: ${IMAGE_REGISTRY_PREFIX:-ghcr.io/anxiousdaoud/lattelink-platform}/catalog:${IMAGE_TAG:-latest}
@@ -135,7 +161,7 @@ services:
       - HOST=0.0.0.0
       - PORT=3002
       - DATABASE_URL=${DATABASE_URL}
-      - POSTGRES_POOL_MAX=${POSTGRES_POOL_MAX:-2}
+      - POSTGRES_POOL_MAX=${CATALOG_POSTGRES_POOL_MAX:-2}
       - POSTGRES_CONNECTION_TIMEOUT_MS=${POSTGRES_CONNECTION_TIMEOUT_MS:-5000}
       - POSTGRES_IDLE_TIMEOUT_MS=${POSTGRES_IDLE_TIMEOUT_MS:-10000}
       - EXPECTED_SUPABASE_PROJECT_REF=${EXPECTED_SUPABASE_PROJECT_REF:-}
@@ -152,6 +178,12 @@ services:
       - CATALOG_MEDIA_PUBLIC_BASE_URL=${CATALOG_MEDIA_PUBLIC_BASE_URL:-}
       - CATALOG_MEDIA_UPLOAD_MAX_BYTES=${CATALOG_MEDIA_UPLOAD_MAX_BYTES:-10485760}
       - CATALOG_MEDIA_UPLOAD_EXPIRY_SECONDS=${CATALOG_MEDIA_UPLOAD_EXPIRY_SECONDS:-300}
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3002/ready').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 15s
   payments:
     image: ${IMAGE_REGISTRY_PREFIX:-ghcr.io/anxiousdaoud/lattelink-platform}/payments:${IMAGE_TAG:-latest}
     restart: unless-stopped
@@ -165,7 +197,7 @@ services:
       - HOST=0.0.0.0
       - PORT=3003
       - DATABASE_URL=${DATABASE_URL}
-      - POSTGRES_POOL_MAX=${POSTGRES_POOL_MAX:-2}
+      - POSTGRES_POOL_MAX=${PAYMENTS_POSTGRES_POOL_MAX:-2}
       - POSTGRES_CONNECTION_TIMEOUT_MS=${POSTGRES_CONNECTION_TIMEOUT_MS:-5000}
       - POSTGRES_IDLE_TIMEOUT_MS=${POSTGRES_IDLE_TIMEOUT_MS:-10000}
       - EXPECTED_SUPABASE_PROJECT_REF=${EXPECTED_SUPABASE_PROJECT_REF:-}
@@ -185,7 +217,15 @@ services:
       - STRIPE_CONNECT_WEBHOOK_SECRET=${STRIPE_CONNECT_WEBHOOK_SECRET:-}
     depends_on:
       catalog:
-        condition: service_started
+        condition: service_healthy
+      orders:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3003/ready').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 15s
 
   loyalty:
     image: ${IMAGE_REGISTRY_PREFIX:-ghcr.io/anxiousdaoud/lattelink-platform}/loyalty:${IMAGE_TAG:-latest}
@@ -200,12 +240,18 @@ services:
       - HOST=0.0.0.0
       - PORT=3004
       - DATABASE_URL=${DATABASE_URL}
-      - POSTGRES_POOL_MAX=${POSTGRES_POOL_MAX:-2}
+      - POSTGRES_POOL_MAX=${LOYALTY_POSTGRES_POOL_MAX:-2}
       - POSTGRES_CONNECTION_TIMEOUT_MS=${POSTGRES_CONNECTION_TIMEOUT_MS:-5000}
       - POSTGRES_IDLE_TIMEOUT_MS=${POSTGRES_IDLE_TIMEOUT_MS:-10000}
       - EXPECTED_SUPABASE_PROJECT_REF=${EXPECTED_SUPABASE_PROJECT_REF:-}
       - GATEWAY_INTERNAL_API_TOKEN=${GATEWAY_INTERNAL_API_TOKEN:?GATEWAY_INTERNAL_API_TOKEN is required}
       - LOYALTY_INTERNAL_API_TOKEN=${LOYALTY_INTERNAL_API_TOKEN:-}
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3004/ready').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 15s
   notifications:
     image: ${IMAGE_REGISTRY_PREFIX:-ghcr.io/anxiousdaoud/lattelink-platform}/notifications:${IMAGE_TAG:-latest}
     restart: unless-stopped
@@ -219,7 +265,7 @@ services:
       - HOST=0.0.0.0
       - PORT=3005
       - DATABASE_URL=${DATABASE_URL}
-      - POSTGRES_POOL_MAX=${POSTGRES_POOL_MAX:-2}
+      - POSTGRES_POOL_MAX=${NOTIFICATIONS_POSTGRES_POOL_MAX:-2}
       - POSTGRES_CONNECTION_TIMEOUT_MS=${POSTGRES_CONNECTION_TIMEOUT_MS:-5000}
       - POSTGRES_IDLE_TIMEOUT_MS=${POSTGRES_IDLE_TIMEOUT_MS:-10000}
       - EXPECTED_SUPABASE_PROJECT_REF=${EXPECTED_SUPABASE_PROJECT_REF:-}
@@ -231,7 +277,13 @@ services:
       - VALKEY_URL=redis://valkey:6379
     depends_on:
       valkey:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3005/ready').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 15s
 
   worker-notifications-dispatch:
     image: ${IMAGE_REGISTRY_PREFIX:-ghcr.io/anxiousdaoud/lattelink-platform}/workers/notifications-dispatch:${IMAGE_TAG:-latest}
@@ -244,7 +296,8 @@ services:
       - NOTIFICATIONS_DISPATCH_INTERVAL_MS=${NOTIFICATIONS_DISPATCH_INTERVAL_MS:-5000}
       - NOTIFICATIONS_DISPATCH_BATCH_SIZE=${NOTIFICATIONS_DISPATCH_BATCH_SIZE:-50}
     depends_on:
-      - notifications
+      notifications:
+        condition: service_healthy
 
   worker-menu-sync:
     image: ${IMAGE_REGISTRY_PREFIX:-ghcr.io/anxiousdaoud/lattelink-platform}/workers/menu-sync:${IMAGE_TAG:-latest}
@@ -262,7 +315,8 @@ services:
     volumes:
       - menu_sync_dead_letter:/app/dead-letter
     depends_on:
-      - catalog
+      catalog:
+        condition: service_healthy
 
   worker-payment-reconciler:
     image: ${IMAGE_REGISTRY_PREFIX:-ghcr.io/anxiousdaoud/lattelink-platform}/workers/payment-reconciler:${IMAGE_TAG:-latest}
@@ -271,7 +325,7 @@ services:
       - NODE_ENV=production
       - DEPLOY_ENV=${DEPLOY_ENV:-unknown}
       - DATABASE_URL=${DATABASE_URL}
-      - POSTGRES_POOL_MAX=${POSTGRES_POOL_MAX:-2}
+      - POSTGRES_POOL_MAX=${PAYMENT_RECONCILER_POSTGRES_POOL_MAX:-1}
       - POSTGRES_CONNECTION_TIMEOUT_MS=${POSTGRES_CONNECTION_TIMEOUT_MS:-5000}
       - POSTGRES_IDLE_TIMEOUT_MS=${POSTGRES_IDLE_TIMEOUT_MS:-10000}
       - EXPECTED_SUPABASE_PROJECT_REF=${EXPECTED_SUPABASE_PROJECT_REF:-}
@@ -283,8 +337,10 @@ services:
       - PAYMENT_RECONCILER_STALE_THRESHOLD_MS=${PAYMENT_RECONCILER_STALE_THRESHOLD_MS:-600000}
       - PAYMENT_RECONCILER_BATCH_SIZE=${PAYMENT_RECONCILER_BATCH_SIZE:-50}
     depends_on:
-      - orders
-      - payments
+      orders:
+        condition: service_healthy
+      payments:
+        condition: service_healthy
 
   postgres:
     image: postgres:16-alpine
@@ -310,6 +366,11 @@ services:
     restart: unless-stopped
     volumes:
       - valkey_data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
 
 volumes:
   postgres_data:

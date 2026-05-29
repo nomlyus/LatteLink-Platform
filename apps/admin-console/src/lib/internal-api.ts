@@ -17,7 +17,8 @@ import type {
   LaunchReadinessResponse,
   MobileReleaseProfileUpdate,
   OnboardingSummary,
-  StripeConnectLinkResponse
+  StripeConnectLinkResponse,
+  StripeConnectStatusRefreshResponse
 } from "@lattelink/contracts-catalog";
 import { requireAdminSession } from "@/lib/auth";
 import {
@@ -215,6 +216,13 @@ export async function createStripeOnboardingLink(locationId: string, input: { re
 
 export async function createStripeDashboardLink(locationId: string) {
   return requestInternalApi<StripeConnectLinkResponse>(`/v1/internal/locations/${locationId}/stripe/dashboard-link`, {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+}
+
+export async function refreshStripeStatus(locationId: string) {
+  return requestInternalApi<StripeConnectStatusRefreshResponse>(`/v1/internal/locations/${locationId}/stripe/status-refresh`, {
     method: "POST",
     body: JSON.stringify({})
   });

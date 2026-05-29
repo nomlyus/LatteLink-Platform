@@ -1,6 +1,7 @@
 import {
   createOperatorStripeDashboardLink,
   createOperatorStripeOnboardingLink,
+  refreshOperatorStripeStatus,
   submitOperatorOnboardingReview,
   updateOperatorOnboarding,
   updateOperatorStoreConfig
@@ -249,6 +250,24 @@ export async function handleStripeDashboardOpen() {
     }
   } catch (error) {
     await handleOperatorActionError(error, "Unable to open Stripe Express.");
+  } finally {
+    state.updatingOnboarding = false;
+    render();
+  }
+}
+
+export async function handleStripeStatusRefresh() {
+  try {
+    const session = requireOwnerPaymentsAccess();
+    const locationId = resolveOnboardingLocationId();
+    state.updatingOnboarding = true;
+    setError(null);
+    render();
+    await refreshOperatorStripeStatus(session, locationId);
+    await loadDashboard({ silent: true });
+    addToast("Stripe status refreshed.", "success");
+  } catch (error) {
+    await handleOperatorActionError(error, "Unable to refresh Stripe status.");
   } finally {
     state.updatingOnboarding = false;
     render();

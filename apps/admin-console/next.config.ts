@@ -1,7 +1,12 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const appDir = dirname(fileURLToPath(import.meta.url));
 
 const nextConfig: NextConfig = {
+  outputFileTracingRoot: resolve(appDir, "../.."),
   reactStrictMode: true
 };
 

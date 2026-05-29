@@ -18,7 +18,9 @@ import {
   paymentReadinessSchema,
   stripeConnectDashboardLinkRequestSchema,
   stripeConnectLinkResponseSchema,
-  stripeConnectOnboardingLinkRequestSchema
+  stripeConnectOnboardingLinkRequestSchema,
+  stripeConnectStatusRefreshRequestSchema,
+  stripeConnectStatusRefreshResponseSchema
 } from "@lattelink/contracts-catalog";
 import {
   orderPaymentContextSchema,
@@ -2828,6 +2830,130 @@ export async function registerRoutes(app: FastifyInstance) {
           serviceErrorSchema.parse({
             code: "STRIPE_DASHBOARD_LINK_ERROR",
             message: error instanceof Error ? error.message : "Stripe dashboard link creation failed",
+            requestId: request.id
+          })
+        );
+      }
+    }
+  );
+
+  app.post(
+    "/v1/payments/stripe/connect/status-refresh",
+    { preHandler: app.rateLimit(paymentsWriteRateLimit) },
+    async (request, reply) => {
+      if (!authorizeGatewayRequest(request, reply, gatewayInternalToken)) {
+        return;
+      }
+      if (!requireStripeSecretKey(request, reply, stripeSecretKey)) {
+        return;
+      }
+
+      const input = stripeConnectStatusRefreshRequestSchema.parse(request.body);
+      const locationSummaryResult = await fetchInternalLocationSummary({
+        catalogBaseUrl,
+        gatewayToken: gatewayInternalToken,
+        requestId: request.id,
+        locationId: input.locationId
+      });
+
+      if (!locationSummaryResult.ok) {
+        const upstreamError = serviceErrorSchema.safeParse(locationSummaryResult.body);
+        return reply.status(locationSummaryResult.status ?? 502).send(
+          upstreamError.success
+            ? upstreamError.data
+            : serviceErrorSchema.parse({
+                code: "CATALOG_LOCATION_UNAVAILABLE",
+                message: "Unable to load location payment profile",
+                requestId: request.id
+              })
+        );
+      }
+
+      const stripeAccountId = locationSummaryResult.response.paymentProfile?.stripeAccountId;
+      if (!stripeAccountId) {
+        return reply.status(409).send(
+          serviceErrorSchema.parse({
+            code: "STRIPE_ACCOUNT_NOT_CONFIGURED",
+            message: "Location does not have a Stripe account configured yet",
+            requestId: request.id,
+            details: {
+              locationId: input.locationId
+            }
+          })
+        );
+      }
+
+      try {
+        const stripeAccount = await stripeClient.accounts.retrieve(stripeAccountId);
+        if (isDeletedStripeAccount(stripeAccount)) {
+          return reply.status(409).send(
+            serviceErrorSchema.parse({
+              code: "STRIPE_ACCOUNT_NOT_CONFIGURED",
+              message: "Stored Stripe account could not be used",
+              requestId: request.id,
+              details: {
+                locationId: input.locationId,
+                stripeAccountId
+              }
+            })
+          );
+        }
+
+        const nextPaymentProfile = buildStripePaymentProfile({
+          locationSummary: locationSummaryResult.response,
+          stripeAccount
+        });
+        const updatedProfileResult = await updateInternalLocationPaymentProfile({
+          catalogBaseUrl,
+          gatewayToken: gatewayInternalToken,
+          requestId: request.id,
+          locationId: input.locationId,
+          paymentProfile: nextPaymentProfile
+        });
+
+        if (!updatedProfileResult.ok) {
+          const upstreamError = serviceErrorSchema.safeParse(updatedProfileResult.body);
+          return reply.status(updatedProfileResult.status ?? 502).send(
+            upstreamError.success
+              ? upstreamError.data
+              : serviceErrorSchema.parse({
+                  code: "CATALOG_PAYMENT_PROFILE_UPDATE_FAILED",
+                  message: "Unable to persist Stripe payment profile",
+                  requestId: request.id
+                })
+          );
+        }
+
+        return stripeConnectStatusRefreshResponseSchema.parse({
+          locationId: input.locationId,
+          stripeAccountId,
+          paymentProfile: updatedProfileResult.response,
+          paymentReadiness: buildPaymentReadiness(updatedProfileResult.response)
+        });
+      } catch (error) {
+        if (isStripeAccountUnavailableForActiveCredentialsError(error)) {
+          request.log.warn(
+            { error, requestId: request.id, locationId: input.locationId, stripeAccountId },
+            "Stored Stripe account was not found by the active Stripe credentials during status refresh"
+          );
+          return reply.status(409).send(
+            serviceErrorSchema.parse({
+              code: "STRIPE_ACCOUNT_UNAVAILABLE",
+              message: "Stored Stripe account could not be reached with the active Stripe credentials",
+              requestId: request.id,
+              details: {
+                locationId: input.locationId,
+                stripeAccountId
+              }
+            })
+          );
+        }
+
+        request.log.error({ error, requestId: request.id, locationId: input.locationId, stripeAccountId }, "Stripe status refresh failed");
+        return reply.status(502).send(
+          serviceErrorSchema.parse({
+            code: "STRIPE_STATUS_REFRESH_ERROR",
+            message: error instanceof Error ? error.message : "Stripe status refresh failed",
             requestId: request.id
           })
         );

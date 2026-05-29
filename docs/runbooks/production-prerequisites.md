@@ -70,6 +70,15 @@ Set in the repository vars and secrets used by the deploy workflows and document
 - [ ] `FREE_CLOVER_MERCHANT_ID`
 - [ ] `FREE_CLOVER_WEBHOOK_SHARED_SECRET`
 
+## Supabase and Pool Budget
+
+- [ ] Production `DATABASE_URL` points to the production Supabase project, not the dev project and not bundled Postgres.
+- [ ] `EXPECTED_SUPABASE_PROJECT_REF` matches the production Supabase project ref.
+- [ ] The production Supabase pooler limit is confirmed in the Supabase dashboard.
+- [ ] The production pool budget in `deploy-prod` is still below the active provider limit with at least 20 connections of headroom.
+- [ ] `infra/free/bin/check-postgres-pool-budget.sh` passes for the production `.env`.
+- [ ] `/ready` on identity, orders, catalog, payments, loyalty, and notifications reports the expected `database.pool.max`.
+
 ## Exit Criteria
 
 - [ ] Passkey challenge + verify works on physical iOS device.

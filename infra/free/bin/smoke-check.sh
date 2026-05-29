@@ -111,6 +111,43 @@ check_operator_flow() {
   check_get_with_auth "admin-orders" "${API_BASE}/admin/orders" "$access_token"
 }
 
+check_operator_auth_forwarding() {
+  local headers_file="$WORK_DIR/operator-auth-forwarding.headers"
+  local body_file="$WORK_DIR/operator-auth-forwarding.body"
+  local status_file="$WORK_DIR/operator-auth-forwarding.status"
+  local payload
+  local status
+  local code
+
+  payload="$(node -e 'process.stdout.write(JSON.stringify({email:"smoke.invalid@example.invalid",password:"not-a-real-password-123"}))')"
+
+  echo "[smoke-check] POST ${API_BASE}/operator/auth/sign-in with invalid credentials"
+  curl --silent --show-error \
+    -D "$headers_file" \
+    -o "$body_file" \
+    -w "%{http_code}" \
+    -H "content-type: application/json" \
+    -H "x-request-id: ${TRACE_REQUEST_ID}" \
+    -d "$payload" \
+    "${API_BASE}/operator/auth/sign-in" > "$status_file"
+
+  status="$(cat "$status_file")"
+  assert_request_id_header "$headers_file"
+
+  if [[ "$status" != "401" ]]; then
+    echo "[smoke-check] expected operator auth forwarding to return 401, got ${status}"
+    cat "$body_file"
+    exit 1
+  fi
+
+  code="$(node -e 'const fs=require("node:fs");const body=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));process.stdout.write(String(body.code || ""));' "$body_file")"
+  if [[ "$code" != "INVALID_OPERATOR_CREDENTIALS" ]]; then
+    echo "[smoke-check] expected INVALID_OPERATOR_CREDENTIALS from identity, got ${code:-<missing>}"
+    cat "$body_file"
+    exit 1
+  fi
+}
+
 check_get_with_auth() {
   local name="$1"
   local url="$2"
@@ -136,6 +173,7 @@ check_get "health" "${API_ROOT}/health"
 check_get "ready" "${API_ROOT}/ready"
 check_get "metrics" "${API_ROOT}/metrics"
 check_get "contracts" "${API_BASE}/meta/contracts"
+check_operator_auth_forwarding
 
 if [[ -n "${CLIENT_DASHBOARD_ORIGIN:-}" ]]; then
   check_cors "$CLIENT_DASHBOARD_ORIGIN"

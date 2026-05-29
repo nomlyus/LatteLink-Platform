@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { refreshStripeStatusAction } from "@/app/actions";
 import { getInternalLocation, InternalApiError } from "@/lib/internal-api";
 
 type ClientPaymentsPageProps = {
@@ -17,6 +18,7 @@ export default async function ClientPaymentsPage({ params, searchParams }: Clien
   const error = readSearchParam(query, "error");
   const stripeReturn = readSearchParam(query, "stripeReturn");
   const stripeRefresh = readSearchParam(query, "stripeRefresh");
+  const stripeStatusRefresh = readSearchParam(query, "stripeStatusRefresh");
 
   try {
     const location = await getInternalLocation(locationId);
@@ -25,6 +27,7 @@ export default async function ClientPaymentsPage({ params, searchParams }: Clien
     const isReady = paymentReadiness?.ready ?? false;
     const onboardingState = paymentReadiness?.onboardingState ?? paymentProfile?.stripeOnboardingStatus ?? "unconfigured";
     const missingRequiredFields = paymentReadiness?.missingRequiredFields ?? ["stripeAccountId", "stripeChargesEnabled", "stripePayoutsEnabled"];
+    const hasStripeAccount = Boolean(paymentProfile?.stripeAccountId);
 
     return (
       <section className="page-stack">
@@ -52,6 +55,11 @@ export default async function ClientPaymentsPage({ params, searchParams }: Clien
         {stripeRefresh ? (
           <p className="inline-message inline-message-warning">
             Stripe asked for a refreshed onboarding link. Start onboarding again below.
+          </p>
+        ) : null}
+        {stripeStatusRefresh ? (
+          <p className="inline-message inline-message-success">
+            Stripe status refreshed from the connected account.
           </p>
         ) : null}
         {error ? <p className="inline-message inline-message-error">{error}</p> : null}
@@ -91,6 +99,20 @@ export default async function ClientPaymentsPage({ params, searchParams }: Clien
                 <strong>Owner action required</strong>
                 <p>Ask the owner to open Setup in the client dashboard and use the Payments step.</p>
               </div>
+              <form action={refreshStripeStatusAction} className="stack-form">
+                <input type="hidden" name="locationId" value={locationId} />
+                <div className="form-actions">
+                  <button
+                    type="submit"
+                    className="secondary-button"
+                    disabled={!hasStripeAccount}
+                    aria-disabled={!hasStripeAccount}
+                  >
+                    Refresh Stripe status
+                  </button>
+                </div>
+                <p className="field-hint">Pulls the latest connected-account status from Stripe and persists the readiness profile.</p>
+              </form>
             </div>
 
             <div className="form-card">

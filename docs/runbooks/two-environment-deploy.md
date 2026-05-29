@@ -153,3 +153,55 @@ Never share the same database, Redis instance, or payment credentials between `d
 - the bundled `postgres` service in [`infra/free/docker-compose.yml`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/infra/free/docker-compose.yml) is now local-only and only starts when you explicitly use the `local-db` profile
 
 Backup and restore operations are covered in [`database-backup-restore.md`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/database-backup-restore.md).
+
+## Postgres Pool Budget
+
+The deployed stack uses external Supabase Postgres through `DATABASE_URL`; the Compose `postgres` service is not part of dev or production. Pool sizing is configured per process so production can scale write-heavy services without exhausting the Supabase connection budget.
+
+Dev remains conservative:
+
+| Process | Pool max |
+| --- | ---: |
+| identity | 2 |
+| orders | 2 |
+| catalog | 2 |
+| payments | 2 |
+| loyalty | 2 |
+| notifications | 2 |
+| worker-payment-reconciler | 1 |
+| **Total app-side capacity** | **13** |
+
+Production starts with this explicit budget:
+
+| Process | Pool max |
+| --- | ---: |
+| identity | 5 |
+| orders | 6 |
+| catalog | 4 |
+| payments | 5 |
+| loyalty | 3 |
+| notifications | 3 |
+| worker-payment-reconciler | 1 |
+| **Total app-side capacity** | **27** |
+
+The current production gate assumes the Supabase pooler limit is at least `60` connections and keeps at least `20` connections of headroom for migrations, backups, Supabase/admin tooling, and emergency sessions. Confirm the actual project pooler limit in the Supabase dashboard before raising any `*_POSTGRES_POOL_MAX` value.
+
+Deploy scripts write and validate:
+
+- `POSTGRES_POOL_BUDGET_LIMIT`
+- `POSTGRES_POOL_HEADROOM_MIN`
+- `IDENTITY_POSTGRES_POOL_MAX`
+- `ORDERS_POSTGRES_POOL_MAX`
+- `CATALOG_POSTGRES_POOL_MAX`
+- `PAYMENTS_POSTGRES_POOL_MAX`
+- `LOYALTY_POSTGRES_POOL_MAX`
+- `NOTIFICATIONS_POSTGRES_POOL_MAX`
+- `PAYMENT_RECONCILER_POSTGRES_POOL_MAX`
+
+Run `infra/free/bin/check-postgres-pool-budget.sh infra/free/.env.example` locally, or review the deploy log line `[check-postgres-pool-budget] total app-side pool capacity=...`, before promoting a production pool change. Service `/ready` responses include non-secret persistence metadata with the effective `database.pool.max`.
+
+## Deploy Sequencing
+
+`deploy-dev` and `deploy-prod` call `infra/free/bin/deploy-compose.sh`. The script pulls images, starts shared dependencies, starts identity/catalog/orders/payments/loyalty/notifications, waits for their Docker healthchecks, and only then restarts gateway and Caddy. If an upstream service never becomes healthy, the deploy fails before replacing the gateway container where possible.
+
+Post-deploy smoke checks run `infra/free/bin/smoke-check.sh`, including an operator sign-in forwarding check that expects `401 INVALID_OPERATOR_CREDENTIALS` from identity for intentionally invalid credentials. A `502` from gateway fails the deploy smoke.

@@ -21,6 +21,7 @@ import {
   createStripeOnboardingLink,
   getInternalLocationOnboarding,
   getInternalLocationReadiness,
+  refreshStripeStatus,
   resendLocationOwnerInvite,
   updateInternalLocationMobileRelease
 } from "@/lib/internal-api";
@@ -228,6 +229,22 @@ export async function openStripeDashboardAction(formData: FormData) {
   }
 
   redirect(destinationUrl);
+}
+
+export async function refreshStripeStatusAction(formData: FormData) {
+  const locationId = readString(formData, "locationId");
+  if (!locationId) {
+    redirect("/clients?error=Location ID is required.");
+  }
+
+  try {
+    await requireAdminCapability("clients:write");
+    await refreshStripeStatus(locationId);
+  } catch (error) {
+    redirect(`/clients/${locationId}/payments?error=${encodeURIComponent(toRedirectError(error))}`);
+  }
+
+  redirect(`/clients/${locationId}/payments?stripeStatusRefresh=1`);
 }
 
 export async function updateMobileReleaseAction(formData: FormData) {

@@ -820,6 +820,188 @@ describe("payments service", () => {
     await app.close();
   });
 
+  it("refreshes stored Stripe connected account status without creating a login link", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetchMock);
+    const stripeAccountRetrieveSpy = vi.spyOn(Object.getPrototypeOf(stripe.accounts), "retrieve").mockResolvedValue({
+      id: "acct_1TOk7VE0L5J7W3jY",
+      type: "express",
+      details_submitted: true,
+      charges_enabled: true,
+      payouts_enabled: true,
+      country: "US",
+      default_currency: "usd",
+      requirements: {
+        currently_due: [],
+        eventually_due: [],
+        past_due: [],
+        pending_verification: []
+      }
+    } as unknown as Stripe.Account);
+    const createLoginLinkSpy = vi.spyOn(Object.getPrototypeOf(stripe.accounts), "createLoginLink");
+
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const headers = new Headers(init?.headers);
+
+      if (url === "http://127.0.0.1:3002/v1/catalog/internal/locations/flagship-01") {
+        expect(headers.get("x-gateway-token")).toBe("gateway-payments-token");
+        return new Response(
+          JSON.stringify({
+            brandId: "gazelle",
+            brandName: "Gazelle Coffee",
+            locationId: "flagship-01",
+            locationName: "Flagship",
+            marketLabel: "Detroit, MI",
+            storeName: "Gazelle Flagship",
+            hours: "Daily · 7:00 AM - 6:00 PM",
+            pickupInstructions: "Pickup at the espresso counter.",
+            taxRateBasisPoints: 600,
+            capabilities: {
+              menu: { source: "platform_managed" },
+              operations: {
+                fulfillmentMode: "staff",
+                liveOrderTrackingEnabled: true,
+                dashboardEnabled: true
+              },
+              loyalty: { visible: true }
+            },
+            paymentProfile: {
+              locationId: "flagship-01",
+              stripeAccountId: "acct_1TOk7VE0L5J7W3jY",
+              stripeAccountType: "express",
+              stripeOnboardingStatus: "pending",
+              stripeDetailsSubmitted: false,
+              stripeChargesEnabled: false,
+              stripePayoutsEnabled: false,
+              stripeDashboardEnabled: true,
+              country: "US",
+              currency: "USD",
+              cardEnabled: true,
+              applePayEnabled: true,
+              refundsEnabled: true,
+              cloverPosEnabled: true
+            },
+            paymentReadiness: {
+              ready: false,
+              onboardingState: "pending",
+              missingRequiredFields: ["stripeChargesEnabled", "stripePayoutsEnabled"]
+            }
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      if (url === "http://127.0.0.1:3002/v1/catalog/internal/locations/flagship-01/payment-profile") {
+        expect(headers.get("x-gateway-token")).toBe("gateway-payments-token");
+        const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        expect(body).toMatchObject({
+          locationId: "flagship-01",
+          stripeAccountId: "acct_1TOk7VE0L5J7W3jY",
+          stripeOnboardingStatus: "completed",
+          stripeChargesEnabled: true,
+          stripePayoutsEnabled: true
+        });
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+
+      throw new Error(`unexpected Stripe status refresh URL: ${url}`);
+    });
+
+    const app = await buildApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/payments/stripe/connect/status-refresh",
+      headers: {
+        "x-gateway-token": "gateway-payments-token"
+      },
+      payload: {
+        locationId: "flagship-01"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      locationId: "flagship-01",
+      stripeAccountId: "acct_1TOk7VE0L5J7W3jY",
+      paymentReadiness: {
+        ready: true,
+        onboardingState: "completed",
+        missingRequiredFields: []
+      }
+    });
+    expect(stripeAccountRetrieveSpy).toHaveBeenCalledWith("acct_1TOk7VE0L5J7W3jY");
+    expect(createLoginLinkSpy).not.toHaveBeenCalled();
+
+    stripeAccountRetrieveSpy.mockRestore();
+    createLoginLinkSpy.mockRestore();
+    await app.close();
+  });
+
+  it("rejects Stripe status refresh when the location has no stored connected account", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetchMock);
+    const stripeAccountRetrieveSpy = vi.spyOn(Object.getPrototypeOf(stripe.accounts), "retrieve");
+
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const headers = new Headers(init?.headers);
+
+      if (url === "http://127.0.0.1:3002/v1/catalog/internal/locations/flagship-01") {
+        expect(headers.get("x-gateway-token")).toBe("gateway-payments-token");
+        return new Response(
+          JSON.stringify({
+            brandId: "gazelle",
+            brandName: "Gazelle Coffee",
+            locationId: "flagship-01",
+            locationName: "Flagship",
+            marketLabel: "Detroit, MI",
+            storeName: "Gazelle Flagship",
+            hours: "Daily · 7:00 AM - 6:00 PM",
+            pickupInstructions: "Pickup at the espresso counter.",
+            taxRateBasisPoints: 600,
+            capabilities: {
+              menu: { source: "platform_managed" },
+              operations: {
+                fulfillmentMode: "staff",
+                liveOrderTrackingEnabled: true,
+                dashboardEnabled: true
+              },
+              loyalty: { visible: true }
+            }
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      throw new Error(`unexpected Stripe status refresh missing account URL: ${url}`);
+    });
+
+    const app = await buildApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/payments/stripe/connect/status-refresh",
+      headers: {
+        "x-gateway-token": "gateway-payments-token"
+      },
+      payload: {
+        locationId: "flagship-01"
+      }
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({
+      code: "STRIPE_ACCOUNT_NOT_CONFIGURED"
+    });
+    expect(stripeAccountRetrieveSpy).not.toHaveBeenCalled();
+
+    stripeAccountRetrieveSpy.mockRestore();
+    await app.close();
+  });
+
   it("reports ready when live Clover has a stored OAuth connection", async () => {
     vi.stubEnv("PAYMENTS_PROVIDER_MODE", "live");
     vi.stubEnv("CLOVER_APP_ID", "clover-app-id");

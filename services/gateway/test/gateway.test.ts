@@ -1901,6 +1901,39 @@ let previousFreeClientDashboardDomain: string | undefined;
           { status: 200, headers: { "content-type": "application/json" } }
         );
       }
+      if (url.endsWith("/v1/payments/stripe/connect/status-refresh") && method === "POST") {
+        const headers = new Headers((init?.headers ?? {}) as HeadersInit);
+        const body = JSON.parse(String(init?.body ?? "{}")) as { locationId?: string };
+        expect(headers.get("x-gateway-token")).toBe("gateway-test-token");
+        return new Response(
+          JSON.stringify({
+            locationId: body.locationId ?? "northside-01",
+            stripeAccountId: "acct_1TOk7VE0L5J7W3jY",
+            paymentProfile: {
+              locationId: body.locationId ?? "northside-01",
+              stripeAccountId: "acct_1TOk7VE0L5J7W3jY",
+              stripeAccountType: "express",
+              stripeOnboardingStatus: "completed",
+              stripeDetailsSubmitted: true,
+              stripeChargesEnabled: true,
+              stripePayoutsEnabled: true,
+              stripeDashboardEnabled: true,
+              country: "US",
+              currency: "USD",
+              cardEnabled: true,
+              applePayEnabled: true,
+              refundsEnabled: true,
+              cloverPosEnabled: true
+            },
+            paymentReadiness: {
+              ready: true,
+              onboardingState: "completed",
+              missingRequiredFields: []
+            }
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
       if (url.endsWith("/v1/payments/clover/oauth/connect") && method === "GET") {
         return new Response(
           JSON.stringify({
@@ -2345,6 +2378,26 @@ let previousFreeClientDashboardDomain: string | undefined;
         email: "owner@gazellecoffee.com",
         role: "owner"
       }
+    });
+    await app.close();
+  });
+
+  it("returns deploy-safe unavailable status when identity cannot accept operator sign-in", async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError("connect ECONNREFUSED"));
+    const app = await buildApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/operator/auth/sign-in",
+      payload: {
+        email: "owner@gazellecoffee.com",
+        password: "LatteLinkOwner123!"
+      }
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({
+      code: "UPSTREAM_UNAVAILABLE",
+      message: "Identity service is temporarily unavailable"
     });
     await app.close();
   });
@@ -4163,6 +4216,40 @@ let previousFreeClientDashboardDomain: string | undefined;
     await app.close();
   });
 
+  it("forwards Stripe status refresh through the internal gateway", async () => {
+    const app = await buildApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/internal/locations/northside-01/stripe/status-refresh",
+      headers: ownerInternalAdminHeaders,
+      payload: {}
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      locationId: "northside-01",
+      stripeAccountId: "acct_1TOk7VE0L5J7W3jY",
+      paymentReadiness: {
+        ready: true
+      }
+    });
+
+    const statusRefreshCall = fetchMock.mock.calls.find(([input]) => {
+      const url = typeof input === "string" ? input : input.url;
+      return url === "http://payments.internal/v1/payments/stripe/connect/status-refresh";
+    });
+    expect(statusRefreshCall).toBeDefined();
+    if (statusRefreshCall) {
+      const upstreamHeaders = new Headers((statusRefreshCall[1]?.headers ?? {}) as HeadersInit);
+      expect(upstreamHeaders.get("x-gateway-token")).toBe("gateway-test-token");
+      expect(JSON.parse(String(statusRefreshCall[1]?.body ?? "{}"))).toMatchObject({
+        locationId: "northside-01"
+      });
+    }
+
+    await app.close();
+  });
+
   it("lets owner operators create Stripe Connect links for their own location", async () => {
     const app = await buildApp();
     const onboardingResponse = await app.inject({
@@ -4196,6 +4283,21 @@ let previousFreeClientDashboardDomain: string | undefined;
       }
     });
 
+    const statusRefreshResponse = await app.inject({
+      method: "POST",
+      url: "/v1/admin/payments/stripe/status-refresh?locationId=flagship-01",
+      headers: ownerOperatorHeaders,
+      payload: {}
+    });
+
+    expect(statusRefreshResponse.statusCode, statusRefreshResponse.body).toBe(200);
+    expect(statusRefreshResponse.json()).toMatchObject({
+      locationId: "flagship-01",
+      paymentReadiness: {
+        ready: true
+      }
+    });
+
     const onboardingCall = fetchMock.mock.calls.find(([input]) => {
       const url = typeof input === "string" ? input : input.url;
       return url === "http://payments.internal/v1/payments/stripe/connect/onboarding-link";
@@ -4206,6 +4308,17 @@ let previousFreeClientDashboardDomain: string | undefined;
         locationId: "flagship-01",
         returnUrl: "https://dashboard.example.com/?stripeReturn=1",
         refreshUrl: "https://dashboard.example.com/?stripeRefresh=1"
+      });
+    }
+
+    const statusRefreshCall = fetchMock.mock.calls.find(([input]) => {
+      const url = typeof input === "string" ? input : input.url;
+      return url === "http://payments.internal/v1/payments/stripe/connect/status-refresh";
+    });
+    expect(statusRefreshCall).toBeDefined();
+    if (statusRefreshCall) {
+      expect(JSON.parse(String(statusRefreshCall[1]?.body ?? "{}"))).toMatchObject({
+        locationId: "flagship-01"
       });
     }
 
@@ -4226,6 +4339,15 @@ let previousFreeClientDashboardDomain: string | undefined;
       code: "FORBIDDEN"
     });
 
+    const managerRefreshResponse = await app.inject({
+      method: "POST",
+      url: "/v1/admin/payments/stripe/status-refresh?locationId=flagship-01",
+      headers: { authorization: "Bearer operator-manager-access-token" },
+      payload: {}
+    });
+
+    expect(managerRefreshResponse.statusCode).toBe(403);
+
     const crossLocationResponse = await app.inject({
       method: "POST",
       url: "/v1/admin/payments/stripe/onboarding-link?locationId=northside-01",
@@ -4237,6 +4359,15 @@ let previousFreeClientDashboardDomain: string | undefined;
     });
 
     expect(crossLocationResponse.statusCode).toBe(403);
+
+    const crossLocationRefreshResponse = await app.inject({
+      method: "POST",
+      url: "/v1/admin/payments/stripe/status-refresh?locationId=northside-01",
+      headers: ownerOperatorHeaders,
+      payload: {}
+    });
+
+    expect(crossLocationRefreshResponse.statusCode).toBe(403);
 
     await app.close();
   });

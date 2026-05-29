@@ -17,6 +17,8 @@ import {
   stripeConnectDashboardLinkRequestSchema,
   stripeConnectLinkResponseSchema,
   stripeConnectOnboardingLinkRequestSchema,
+  stripeConnectStatusRefreshRequestSchema,
+  stripeConnectStatusRefreshResponseSchema,
   internalLocationListResponseSchema,
   internalLocationPaymentProfileUpdateSchema,
   internalLocationSummarySchema,
@@ -681,6 +683,10 @@ describe("contracts-catalog", () => {
       locationId: "northside-01"
     });
 
+    const statusRefreshRequest = stripeConnectStatusRefreshRequestSchema.parse({
+      locationId: "northside-01"
+    });
+
     const response = stripeConnectLinkResponseSchema.parse({
       locationId: "northside-01",
       stripeAccountId: "acct_123456789",
@@ -711,7 +717,38 @@ describe("contracts-catalog", () => {
 
     expect(onboardingRequest.locationId).toBe("northside-01");
     expect(dashboardRequest.locationId).toBe("northside-01");
+    expect(statusRefreshRequest.locationId).toBe("northside-01");
     expect(response.paymentProfile.stripeDashboardEnabled).toBe(true);
+  });
+
+  it("validates Stripe Connect status refresh responses", () => {
+    const response = stripeConnectStatusRefreshResponseSchema.parse({
+      locationId: "northside-01",
+      stripeAccountId: "acct_123456789",
+      paymentProfile: {
+        locationId: "northside-01",
+        stripeAccountId: "acct_123456789",
+        stripeAccountType: "express",
+        stripeOnboardingStatus: "completed",
+        stripeDetailsSubmitted: true,
+        stripeChargesEnabled: true,
+        stripePayoutsEnabled: true,
+        stripeDashboardEnabled: true,
+        country: "US",
+        currency: "USD",
+        cardEnabled: true,
+        applePayEnabled: true,
+        refundsEnabled: true,
+        cloverPosEnabled: false
+      },
+      paymentReadiness: {
+        ready: true,
+        onboardingState: "completed",
+        missingRequiredFields: []
+      }
+    });
+
+    expect(response.paymentReadiness.ready).toBe(true);
   });
 
   it("rejects invalid store tax rate", () => {

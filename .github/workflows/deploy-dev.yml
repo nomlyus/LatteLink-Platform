@@ -325,6 +325,15 @@ jobs:
           DATABASE_URL=${DATABASE_URL_VALUE}
           DEPLOY_ENV=${DEPLOY_ENV_VALUE}
           EXPECTED_SUPABASE_PROJECT_REF=${EXPECTED_SUPABASE_PROJECT_REF_VALUE}
+          POSTGRES_POOL_BUDGET_LIMIT=30
+          POSTGRES_POOL_HEADROOM_MIN=10
+          IDENTITY_POSTGRES_POOL_MAX=2
+          ORDERS_POSTGRES_POOL_MAX=2
+          CATALOG_POSTGRES_POOL_MAX=2
+          PAYMENTS_POSTGRES_POOL_MAX=2
+          LOYALTY_POSTGRES_POOL_MAX=2
+          NOTIFICATIONS_POSTGRES_POOL_MAX=2
+          PAYMENT_RECONCILER_POSTGRES_POOL_MAX=1
           GATEWAY_INTERNAL_API_TOKEN=${GATEWAY_INTERNAL_API_TOKEN}
           ORDERS_INTERNAL_API_TOKEN=${ORDERS_INTERNAL_API_TOKEN}
           LOYALTY_INTERNAL_API_TOKEN=${LOYALTY_INTERNAL_API_TOKEN}
@@ -375,39 +384,23 @@ jobs:
           MENU_SYNC_RETRY_DELAY_MS=${MENU_SYNC_RETRY_DELAY_MS}
           ENVVARS
 
-          ./bin/check-live-payments-env.sh .env
           if [ -n "${GHCR_USERNAME:-}" ] && [ -n "${GHCR_TOKEN:-}" ] && printf '%s' "${IMAGE_REGISTRY_PREFIX}" | grep -q '^ghcr.io/'; then
             printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USERNAME}" --password-stdin
           fi
-          docker compose --project-name "${COMPOSE_PROJECT_NAME_VALUE}" --env-file .env pull
-          docker compose --project-name "${COMPOSE_PROJECT_NAME_VALUE}" --env-file .env up -d --remove-orphans
-          docker compose --project-name "${COMPOSE_PROJECT_NAME_VALUE}" --env-file .env ps
+          ./bin/deploy-compose.sh .env
           REMOTE
 
-      - name: Smoke check deployed gateway
+      - name: Smoke check deployed stack
         if: steps.deploy-check.outputs.enabled == 'true'
         env:
           API_DOMAIN: ${{ vars.API_DOMAIN }}
+          CLIENT_DASHBOARD_DOMAIN: ${{ vars.CLIENT_DASHBOARD_DOMAIN }}
         run: |
-          retry_curl() {
-            local url="$1"
-            local attempt
+          if [ -n "${CLIENT_DASHBOARD_DOMAIN:-}" ]; then
+            export CLIENT_DASHBOARD_ORIGIN="https://${CLIENT_DASHBOARD_DOMAIN}"
+          fi
 
-            for attempt in $(seq 1 12); do
-              if curl --fail --silent --show-error "$url"; then
-                return 0
-              fi
-
-              echo "retry ${attempt}/12 for ${url}" >&2
-              sleep 5
-            done
-
-            echo "timed out waiting for ${url}" >&2
-            return 1
-          }
-
-          retry_curl "https://${API_DOMAIN}/health"
-          retry_curl "https://${API_DOMAIN}/ready"
+          ./infra/free/bin/smoke-check.sh "https://${API_DOMAIN}/v1"
 
       - name: Skip dev deploy (prerequisites missing)
         if: steps.deploy-check.outputs.enabled != 'true'

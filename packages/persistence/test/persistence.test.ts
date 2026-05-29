@@ -100,7 +100,12 @@ describe("persistence", () => {
         backend: "postgres",
         supabaseProjectRef: "wdlyegrmosuhrrbbmnrb",
         expectedSupabaseProjectRef: "wdlyegrmosuhrrbbmnrb",
-        matchesExpected: true
+        matchesExpected: true,
+        pool: {
+          max: 2,
+          connectionTimeoutMs: 5_000,
+          idleTimeoutMs: 10_000
+        }
       }
     });
   });

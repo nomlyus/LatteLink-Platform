@@ -854,11 +854,22 @@ export const stripeConnectDashboardLinkRequestSchema = z.object({
   locationId: z.string().trim().min(1)
 });
 
+export const stripeConnectStatusRefreshRequestSchema = z.object({
+  locationId: z.string().trim().min(1)
+});
+
 export const stripeConnectLinkResponseSchema = z.object({
   locationId: z.string().trim().min(1),
   stripeAccountId: z.string().trim().regex(/^acct_[A-Za-z0-9]+$/),
   url: z.string().trim().url(),
   expiresAt: z.string().datetime().optional(),
+  paymentProfile: clientPaymentProfileSchema,
+  paymentReadiness: paymentReadinessSchema
+});
+
+export const stripeConnectStatusRefreshResponseSchema = z.object({
+  locationId: z.string().trim().min(1),
+  stripeAccountId: z.string().trim().regex(/^acct_[A-Za-z0-9]+$/),
   paymentProfile: clientPaymentProfileSchema,
   paymentReadiness: paymentReadinessSchema
 });
@@ -963,6 +974,8 @@ export type LaunchApprovalRequest = z.output<typeof launchApprovalRequestSchema>
 export type StripeConnectOnboardingLinkRequest = z.output<typeof stripeConnectOnboardingLinkRequestSchema>;
 export type StripeConnectDashboardLinkRequest = z.output<typeof stripeConnectDashboardLinkRequestSchema>;
 export type StripeConnectLinkResponse = z.output<typeof stripeConnectLinkResponseSchema>;
+export type StripeConnectStatusRefreshRequest = z.output<typeof stripeConnectStatusRefreshRequestSchema>;
+export type StripeConnectStatusRefreshResponse = z.output<typeof stripeConnectStatusRefreshResponseSchema>;
 export type InternalLocationBootstrap = z.output<typeof internalLocationBootstrapSchema>;
 export type InternalLocationSummary = z.output<typeof internalLocationSummarySchema>;
 export type InternalLocationListResponse = z.output<typeof internalLocationListResponseSchema>;
