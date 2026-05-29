@@ -2857,7 +2857,7 @@ export async function registerRoutes(app: FastifyInstance) {
         request.log.info(
           {
             service: "gateway",
-            event: "order.canceled",
+            event: "order.read",
             timestamp: new Date().toISOString(),
             requestId: request.id,
             userId,
@@ -2865,7 +2865,7 @@ export async function registerRoutes(app: FastifyInstance) {
             locationId: response.locationId,
             status: response.status
           },
-          "order canceled"
+          "order read"
         );
       }
     });

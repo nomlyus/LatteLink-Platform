@@ -108,6 +108,8 @@ describe("orders service", () => {
     vi.stubEnv("ORDERS_INTERNAL_API_TOKEN", "orders-internal-token");
     vi.stubEnv("LOYALTY_INTERNAL_API_TOKEN", "loyalty-internal-token");
     vi.stubEnv("NOTIFICATIONS_INTERNAL_API_TOKEN", "notifications-internal-token");
+    vi.stubEnv("ALLOW_UNAUTHENTICATED_ORDERS_GATEWAY", "true");
+    vi.stubEnv("ALLOW_UNAUTHENTICATED_ORDERS_INTERNAL", "true");
     const defaultUserId = "123e4567-e89b-12d3-a456-426614174000";
     const loyaltyIdempotency = new Map<
       string,
@@ -529,6 +531,56 @@ describe("orders service", () => {
     await app.close();
   });
 
+  it("hides single-order reads and customer cancellations from other users", async () => {
+    const app = await buildApp();
+    const ownerUserId = "123e4567-e89b-12d3-a456-426614174021";
+    const otherUserId = "123e4567-e89b-12d3-a456-426614174022";
+    const { order } = await createQuotedOrder(app, { userId: ownerUserId });
+
+    const ownerReadResponse = await app.inject({
+      method: "GET",
+      url: `/v1/orders/${order.id}`,
+      headers: customerHeaders(ownerUserId)
+    });
+    expect(ownerReadResponse.statusCode).toBe(200);
+    expect(orderSchema.parse(ownerReadResponse.json()).id).toBe(order.id);
+
+    const otherReadResponse = await app.inject({
+      method: "GET",
+      url: `/v1/orders/${order.id}`,
+      headers: customerHeaders(otherUserId)
+    });
+    expect(otherReadResponse.statusCode).toBe(404);
+    expect(otherReadResponse.json()).toMatchObject({
+      code: "ORDER_NOT_FOUND"
+    });
+
+    const otherCancelResponse = await app.inject({
+      method: "POST",
+      url: `/v1/orders/${order.id}/cancel`,
+      headers: customerHeaders(otherUserId),
+      payload: { reason: "not mine" }
+    });
+    expect(otherCancelResponse.statusCode).toBe(404);
+    expect(otherCancelResponse.json()).toMatchObject({
+      code: "ORDER_NOT_FOUND"
+    });
+
+    const ownerCancelResponse = await app.inject({
+      method: "POST",
+      url: `/v1/orders/${order.id}/cancel`,
+      headers: customerHeaders(ownerUserId),
+      payload: { reason: "changed mind" }
+    });
+    expect(ownerCancelResponse.statusCode).toBe(200);
+    expect(orderSchema.parse(ownerCancelResponse.json())).toMatchObject({
+      id: order.id,
+      status: "CANCELED"
+    });
+
+    await app.close();
+  });
+
   it("preserves unscoped order history when x-user-id is not provided", async () => {
     const app = await buildApp();
 
@@ -761,6 +813,7 @@ describe("orders service", () => {
     const cancelResponse = await app.inject({
       method: "POST",
       url: `/v1/orders/${order.id}/cancel`,
+      headers: customerHeaders(),
       payload: { reason: "changed mind" }
     });
     expect(cancelResponse.statusCode).toBe(200);
@@ -1034,6 +1087,7 @@ describe("orders service", () => {
     const cancelResponse = await app.inject({
       method: "POST",
       url: `/v1/orders/${order.id}/cancel`,
+      headers: customerHeaders(),
       payload: { reason: "changed mind" }
     });
     const canceledOrder = orderSchema.parse(cancelResponse.json());
@@ -1042,6 +1096,7 @@ describe("orders service", () => {
     const repeatedCancel = await app.inject({
       method: "POST",
       url: `/v1/orders/${order.id}/cancel`,
+      headers: customerHeaders(),
       payload: { reason: "still changed mind" }
     });
     const repeatedCanceledOrder = orderSchema.parse(repeatedCancel.json());
@@ -1080,6 +1135,7 @@ describe("orders service", () => {
     const successfulCancel = await app.inject({
       method: "POST",
       url: `/v1/orders/${paidOrderCandidate.id}/cancel`,
+      headers: customerHeaders(),
       payload: { reason: "changed mind" }
     });
     expect(successfulCancel.statusCode).toBe(200);
@@ -1136,6 +1192,7 @@ describe("orders service", () => {
     const rejectedCancel = await app.inject({
       method: "POST",
       url: `/v1/orders/${rejectedOrder.id}/cancel`,
+      headers: customerHeaders(),
       payload: { reason: "please reject refund" }
     });
     expect(rejectedCancel.statusCode).toBe(409);
@@ -1179,6 +1236,7 @@ describe("orders service", () => {
     const firstCancel = await app.inject({
       method: "POST",
       url: `/v1/orders/${createdOrder.id}/cancel`,
+      headers: customerHeaders(),
       payload: { reason: "changed mind" }
     });
     expect(firstCancel.statusCode).toBe(200);
@@ -1186,6 +1244,7 @@ describe("orders service", () => {
     const repeatedCancel = await app.inject({
       method: "POST",
       url: `/v1/orders/${createdOrder.id}/cancel`,
+      headers: customerHeaders(),
       payload: { reason: "still changed mind" }
     });
     expect(repeatedCancel.statusCode).toBe(200);
@@ -1819,6 +1878,54 @@ describe("orders service", () => {
       })
     });
     expect(metricsResponse.json().requests.total).toBeGreaterThanOrEqual(2);
+
+    await app.close();
+  });
+
+  it("fails closed on customer routes when gateway token is not configured", async () => {
+    vi.stubEnv("GATEWAY_INTERNAL_API_TOKEN", "");
+    vi.stubEnv("ALLOW_UNAUTHENTICATED_ORDERS_GATEWAY", "");
+    const app = await buildApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/orders/quote",
+      payload: sampleQuotePayload
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({
+      code: "GATEWAY_ACCESS_NOT_CONFIGURED"
+    });
+
+    await app.close();
+  });
+
+  it("fails closed on internal routes when internal token is not configured", async () => {
+    vi.stubEnv("ORDERS_INTERNAL_API_TOKEN", "");
+    vi.stubEnv("ALLOW_UNAUTHENTICATED_ORDERS_INTERNAL", "");
+    const app = await buildApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/orders/internal/payments/reconcile",
+      payload: {
+        eventId: "evt-missing-token",
+        provider: "STRIPE",
+        kind: "CHARGE",
+        orderId: randomUUID(),
+        paymentId: "pi-missing-token",
+        status: "SUCCEEDED",
+        amountCents: 100,
+        currency: "USD",
+        occurredAt: "2026-03-10T00:00:00.000Z"
+      }
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({
+      code: "INTERNAL_ACCESS_NOT_CONFIGURED"
+    });
 
     await app.close();
   });

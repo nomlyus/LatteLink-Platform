@@ -263,6 +263,8 @@ describe.sequential("orders + payments e2e", () => {
   let previousNotificationsBaseUrl: string | undefined;
   let previousCatalogBaseUrl: string | undefined;
   let previousOrdersInternalToken: string | undefined;
+  let previousAllowUnauthenticatedGateway: string | undefined;
+  let previousAllowUnauthenticatedInternal: string | undefined;
   let catalogApp: FastifyInstance | undefined;
 
   async function createOrder(input?: { pointsToRedeem?: number; userId?: string }) {
@@ -332,8 +334,12 @@ describe.sequential("orders + payments e2e", () => {
     previousNotificationsBaseUrl = process.env.NOTIFICATIONS_SERVICE_BASE_URL;
     previousCatalogBaseUrl = process.env.CATALOG_SERVICE_BASE_URL;
     previousOrdersInternalToken = process.env.ORDERS_INTERNAL_API_TOKEN;
+    previousAllowUnauthenticatedGateway = process.env.ALLOW_UNAUTHENTICATED_ORDERS_GATEWAY;
+    previousAllowUnauthenticatedInternal = process.env.ALLOW_UNAUTHENTICATED_ORDERS_INTERNAL;
 
     process.env.ORDERS_INTERNAL_API_TOKEN = internalPaymentsToken;
+    process.env.ALLOW_UNAUTHENTICATED_ORDERS_GATEWAY = "true";
+    process.env.ALLOW_UNAUTHENTICATED_ORDERS_INTERNAL = "true";
     paymentsApp = await buildPaymentsApp();
     await paymentsApp.listen({ host: "127.0.0.1", port: 0 });
     const paymentsAddress = paymentsApp.server.address() as AddressInfo | null;
@@ -423,6 +429,18 @@ describe.sequential("orders + payments e2e", () => {
       delete process.env.ORDERS_INTERNAL_API_TOKEN;
     } else {
       process.env.ORDERS_INTERNAL_API_TOKEN = previousOrdersInternalToken;
+    }
+
+    if (previousAllowUnauthenticatedGateway === undefined) {
+      delete process.env.ALLOW_UNAUTHENTICATED_ORDERS_GATEWAY;
+    } else {
+      process.env.ALLOW_UNAUTHENTICATED_ORDERS_GATEWAY = previousAllowUnauthenticatedGateway;
+    }
+
+    if (previousAllowUnauthenticatedInternal === undefined) {
+      delete process.env.ALLOW_UNAUTHENTICATED_ORDERS_INTERNAL;
+    } else {
+      process.env.ALLOW_UNAUTHENTICATED_ORDERS_INTERNAL = previousAllowUnauthenticatedInternal;
     }
   });
 
@@ -603,6 +621,9 @@ describe.sequential("orders + payments e2e", () => {
     const rejectedRefundCancel = await ordersApp.inject({
       method: "POST",
       url: `/v1/orders/${order.id}/cancel`,
+      headers: {
+        "x-user-id": defaultOrderUserId
+      },
       payload: {
         reason: "please reject this refund"
       }
@@ -620,6 +641,9 @@ describe.sequential("orders + payments e2e", () => {
     const recoveredCancel = await ordersApp.inject({
       method: "POST",
       url: `/v1/orders/${order.id}/cancel`,
+      headers: {
+        "x-user-id": defaultOrderUserId
+      },
       payload: {
         reason: "customer changed mind"
       }
@@ -632,6 +656,9 @@ describe.sequential("orders + payments e2e", () => {
     const repeatedCancel = await ordersApp.inject({
       method: "POST",
       url: `/v1/orders/${order.id}/cancel`,
+      headers: {
+        "x-user-id": defaultOrderUserId
+      },
       payload: {
         reason: "customer changed mind"
       }

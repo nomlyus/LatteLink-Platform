@@ -54,6 +54,19 @@ function parseSampleRate(value: string | undefined) {
   return parsed;
 }
 
+export function sanitizeRequestUrl(url: string | undefined) {
+  if (!url) {
+    return url;
+  }
+
+  const queryStart = url.indexOf("?");
+  if (queryStart === -1) {
+    return url;
+  }
+
+  return url.slice(0, queryStart) || "/";
+}
+
 export function buildFastifyLoggerOptions(service: string, env: NodeJS.ProcessEnv = process.env): LoggerOptions {
   return {
     level: env.LOG_LEVEL ?? "info",
@@ -70,7 +83,7 @@ export function buildFastifyLoggerOptions(service: string, env: NodeJS.ProcessEn
       req(request) {
         return {
           method: request.method,
-          url: request.url,
+          url: sanitizeRequestUrl(request.url),
           requestId: request.id,
           userAgent: typeof request.headers?.["user-agent"] === "string" ? request.headers["user-agent"] : undefined
         };
@@ -90,7 +103,7 @@ export function buildRequestCompletionLogPayload(input: {
     timestamp: new Date().toISOString(),
     requestId: input.request.id,
     method: input.request.method,
-    url: input.request.url,
+    url: sanitizeRequestUrl(input.request.url),
     statusCode: input.reply.statusCode,
     responseTimeMs: Math.round(input.reply.elapsedTime)
   };
@@ -148,7 +161,7 @@ export function registerSentryErrorHook(app: FastifyInstance, service: string) {
       scope.setTag("requestId", request.id);
       scope.setContext("request", {
         method: request.method,
-        url: request.url
+        url: sanitizeRequestUrl(request.url)
       });
       Sentry.captureException(error);
     });

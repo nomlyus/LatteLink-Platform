@@ -232,6 +232,37 @@ function buildMissingOrderUserContextError(orderId: string) {
   });
 }
 
+function buildOrderNotFoundError(orderId: string, details: Record<string, unknown> = { orderId }) {
+  return buildServiceError({
+    statusCode: 404,
+    code: "ORDER_NOT_FOUND",
+    message: "Order not found",
+    details
+  });
+}
+
+async function verifyCustomerOrderOwnership(params: {
+  orderId: string;
+  requestUserContext?: RequestUserContext;
+  repository: OrdersRepository;
+}) {
+  const { orderId, repository, requestUserContext } = params;
+  if (requestUserContext?.error) {
+    return requestUserContext.error;
+  }
+
+  if (!requestUserContext?.userId) {
+    return buildMissingRequestUserContextError();
+  }
+
+  const existingUserId = await repository.getOrderUserId(orderId);
+  if (existingUserId !== requestUserContext.userId) {
+    return buildOrderNotFoundError(orderId);
+  }
+
+  return undefined;
+}
+
 async function hydrateOrderCustomer(params: {
   order: Order;
   deps: OrderServiceDeps;
@@ -1460,6 +1491,7 @@ export async function listOrdersForRead(params: {
 export async function getOrderForRead(params: {
   orderId: string;
   locationId?: string;
+  requestUserId?: string;
   requestId: string;
   deps: OrderServiceDeps;
 }): Promise<{ order: Order } | { error: ServiceError }> {
@@ -1467,24 +1499,23 @@ export async function getOrderForRead(params: {
 
   if (!order) {
     return {
-      error: buildServiceError({
-        statusCode: 404,
-        code: "ORDER_NOT_FOUND",
-        message: "Order not found",
-        details: { orderId: params.orderId }
-      })
+      error: buildOrderNotFoundError(params.orderId)
     };
   }
 
   if (params.locationId && order.locationId !== params.locationId) {
     return {
-      error: buildServiceError({
-        statusCode: 404,
-        code: "ORDER_NOT_FOUND",
-        message: "Order not found",
-        details: { orderId: params.orderId, locationId: params.locationId }
-      })
+      error: buildOrderNotFoundError(params.orderId, { orderId: params.orderId, locationId: params.locationId })
     };
+  }
+
+  if (params.requestUserId) {
+    const orderUserId = await params.deps.repository.getOrderUserId(params.orderId);
+    if (orderUserId !== params.requestUserId) {
+      return {
+        error: buildOrderNotFoundError(params.orderId)
+      };
+    }
   }
 
   const reconciledOrder = await reconcilePersistedOrderFulfillmentState({
@@ -1513,24 +1544,25 @@ export async function cancelOrder(params: {
 
   if (!existingOrder) {
     return {
-      error: buildServiceError({
-        statusCode: 404,
-        code: "ORDER_NOT_FOUND",
-        message: "Order not found",
-        details: { orderId }
-      })
+      error: buildOrderNotFoundError(orderId)
     };
   }
 
   if (locationId && existingOrder.locationId !== locationId) {
     return {
-      error: buildServiceError({
-        statusCode: 404,
-        code: "ORDER_NOT_FOUND",
-        message: "Order not found",
-        details: { orderId, locationId }
-      })
+      error: buildOrderNotFoundError(orderId, { orderId, locationId })
     };
+  }
+
+  if (cancelSource === "customer") {
+    const ownershipError = await verifyCustomerOrderOwnership({
+      orderId,
+      requestUserContext,
+      repository: deps.repository
+    });
+    if (ownershipError) {
+      return { error: ownershipError };
+    }
   }
 
   if (existingOrder.status === "COMPLETED") {

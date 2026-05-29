@@ -396,6 +396,32 @@ describe("orders service layer", () => {
     expect(refundCalls).toHaveLength(0);
   });
 
+  it("cancelOrder hides customer cancellation attempts from non-owners", async () => {
+    const ownerUserId = "123e4567-e89b-12d3-a456-426614174504";
+    const otherUserId = "123e4567-e89b-12d3-a456-426614174505";
+    const { deps } = await createTestDeps(repositories);
+    const { order } = await createQuotedOrder(deps, { userId: ownerUserId });
+
+    const result = await cancelOrder({
+      orderId: order.id,
+      input: { reason: "not mine" },
+      cancelSource: "customer",
+      requestId: "service-cancel-wrong-user",
+      requestUserContext: { userId: otherUserId },
+      deps
+    });
+
+    expect("error" in result).toBe(true);
+    if (!("error" in result)) {
+      throw new Error("Expected customer ownership error");
+    }
+    expect(result.error).toMatchObject({
+      statusCode: 404,
+      code: "ORDER_NOT_FOUND",
+      details: { orderId: order.id }
+    });
+  });
+
   it("applies a discount code before loyalty, reserves it at order creation, and redeems it on payment success", async () => {
     const userId = "123e4567-e89b-12d3-a456-426614174551";
     const { deps } = await createTestDeps(repositories);
@@ -810,6 +836,38 @@ describe("orders service layer", () => {
         orderId: order.id,
         locationId: "northside-01"
       }
+    });
+  });
+
+  it("getOrderForRead hides customer reads from non-owners", async () => {
+    const ownerUserId = "123e4567-e89b-12d3-a456-426614174507";
+    const otherUserId = "123e4567-e89b-12d3-a456-426614174508";
+    const { deps } = await createTestDeps(repositories);
+    const { order } = await createQuotedOrder(deps, { userId: ownerUserId });
+
+    const ownerResult = await getOrderForRead({
+      orderId: order.id,
+      requestUserId: ownerUserId,
+      requestId: "service-read-owner",
+      deps
+    });
+    expect("error" in ownerResult).toBe(false);
+
+    const otherResult = await getOrderForRead({
+      orderId: order.id,
+      requestUserId: otherUserId,
+      requestId: "service-read-wrong-user",
+      deps
+    });
+
+    expect("error" in otherResult).toBe(true);
+    if (!("error" in otherResult)) {
+      throw new Error("Expected customer ownership error");
+    }
+    expect(otherResult.error).toMatchObject({
+      statusCode: 404,
+      code: "ORDER_NOT_FOUND",
+      details: { orderId: order.id }
     });
   });
 

@@ -355,6 +355,11 @@ function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
+function trimToUndefined(value: string | undefined) {
+  const next = value?.trim();
+  return next && next.length > 0 ? next : undefined;
+}
+
 function hashOperatorPassword(password: string) {
   const salt = randomBytes(16).toString("hex");
   const hash = scryptSync(password, salt, 64).toString("hex");
@@ -492,7 +497,7 @@ function isStoreRole(role: OperatorRole) {
   return role === "store";
 }
 
-function getDefaultInternalAdminSeeds(): Array<{
+function getInternalAdminBootstrapSeeds(): Array<{
   displayName: string;
   email: string;
   role: InternalAdminRole;
@@ -503,26 +508,49 @@ function getDefaultInternalAdminSeeds(): Array<{
     email: string;
     role: InternalAdminRole;
     password: string;
-  }> = [
-    {
-      displayName: process.env.DEFAULT_INTERNAL_ADMIN_OWNER_NAME?.trim() || "Platform Owner",
-      email: normalizeEmail(process.env.DEFAULT_INTERNAL_ADMIN_OWNER_EMAIL?.trim() || "admin@gazellecoffee.com"),
-      role: "platform_owner",
-      password: process.env.DEFAULT_INTERNAL_ADMIN_OWNER_PASSWORD?.trim() || "GazelleAdmin123!"
-    },
-    {
-      displayName: process.env.DEFAULT_INTERNAL_ADMIN_OPERATOR_NAME?.trim() || "Platform Operator",
-      email: normalizeEmail(process.env.DEFAULT_INTERNAL_ADMIN_OPERATOR_EMAIL?.trim() || "ops@gazellecoffee.com"),
-      role: "platform_operator",
-      password: process.env.DEFAULT_INTERNAL_ADMIN_OPERATOR_PASSWORD?.trim() || "GazelleOps123!"
-    }
-  ];
+  }> = [];
 
-  const supportEmail = process.env.DEFAULT_INTERNAL_ADMIN_SUPPORT_EMAIL?.trim();
-  const supportPassword = process.env.DEFAULT_INTERNAL_ADMIN_SUPPORT_PASSWORD?.trim();
-  if (supportEmail && supportPassword) {
+  const ownerEmail = trimToUndefined(process.env.DEFAULT_INTERNAL_ADMIN_OWNER_EMAIL);
+  const ownerPassword = trimToUndefined(process.env.DEFAULT_INTERNAL_ADMIN_OWNER_PASSWORD);
+  if (ownerEmail || ownerPassword) {
+    if (!ownerEmail || !ownerPassword) {
+      throw new Error("DEFAULT_INTERNAL_ADMIN_OWNER_EMAIL and DEFAULT_INTERNAL_ADMIN_OWNER_PASSWORD must be configured together");
+    }
+
     seeds.push({
-      displayName: process.env.DEFAULT_INTERNAL_ADMIN_SUPPORT_NAME?.trim() || "Support Read Only",
+      displayName: trimToUndefined(process.env.DEFAULT_INTERNAL_ADMIN_OWNER_NAME) ?? "Platform Owner",
+      email: normalizeEmail(ownerEmail),
+      role: "platform_owner",
+      password: ownerPassword
+    });
+  }
+
+  const operatorEmail = trimToUndefined(process.env.DEFAULT_INTERNAL_ADMIN_OPERATOR_EMAIL);
+  const operatorPassword = trimToUndefined(process.env.DEFAULT_INTERNAL_ADMIN_OPERATOR_PASSWORD);
+  if (operatorEmail || operatorPassword) {
+    if (!operatorEmail || !operatorPassword) {
+      throw new Error(
+        "DEFAULT_INTERNAL_ADMIN_OPERATOR_EMAIL and DEFAULT_INTERNAL_ADMIN_OPERATOR_PASSWORD must be configured together"
+      );
+    }
+
+    seeds.push({
+      displayName: trimToUndefined(process.env.DEFAULT_INTERNAL_ADMIN_OPERATOR_NAME) ?? "Platform Operator",
+      email: normalizeEmail(operatorEmail),
+      role: "platform_operator",
+      password: operatorPassword
+    });
+  }
+
+  const supportEmail = trimToUndefined(process.env.DEFAULT_INTERNAL_ADMIN_SUPPORT_EMAIL);
+  const supportPassword = trimToUndefined(process.env.DEFAULT_INTERNAL_ADMIN_SUPPORT_PASSWORD);
+  if (supportEmail || supportPassword) {
+    if (!supportEmail || !supportPassword) {
+      throw new Error("DEFAULT_INTERNAL_ADMIN_SUPPORT_EMAIL and DEFAULT_INTERNAL_ADMIN_SUPPORT_PASSWORD must be configured together");
+    }
+
+    seeds.push({
+      displayName: trimToUndefined(process.env.DEFAULT_INTERNAL_ADMIN_SUPPORT_NAME) ?? "Support Read Only",
       email: normalizeEmail(supportEmail),
       role: "support_readonly",
       password: supportPassword
@@ -639,7 +667,7 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
     }
   }
 
-  for (const seed of getDefaultInternalAdminSeeds()) {
+  for (const seed of getInternalAdminBootstrapSeeds()) {
     const now = new Date().toISOString();
     const internalAdminUserId = randomUUID();
     const record: InternalAdminUserRecord = {
@@ -1336,8 +1364,8 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
   };
 }
 
-async function ensureDefaultInternalAdminUsers(db: ReturnType<typeof createPostgresDb>) {
-  for (const seed of getDefaultInternalAdminSeeds()) {
+async function ensureBootstrapInternalAdminUsers(db: ReturnType<typeof createPostgresDb>) {
+  for (const seed of getInternalAdminBootstrapSeeds()) {
     await db
       .insertInto("internal_admin_users")
       .values({
@@ -1348,14 +1376,7 @@ async function ensureDefaultInternalAdminUsers(db: ReturnType<typeof createPostg
         role: seed.role,
         active: true
       })
-      .onConflict((oc) =>
-        oc.column("email").doUpdateSet({
-          display_name: seed.displayName,
-          role: seed.role,
-          active: true,
-          updated_at: new Date().toISOString()
-        })
-      )
+      .onConflict((oc) => oc.column("email").doNothing())
       .execute();
   }
 }
@@ -1363,7 +1384,7 @@ async function ensureDefaultInternalAdminUsers(db: ReturnType<typeof createPostg
 async function createPostgresRepository(connectionString: string): Promise<IdentityRepository> {
   const db = createPostgresDb(connectionString);
   await runMigrations(db);
-  await ensureDefaultInternalAdminUsers(db);
+  await ensureBootstrapInternalAdminUsers(db);
 
   const loadOperatorLocationIdsByUserId = async (operatorUserIds: readonly string[]) => {
     const uniqueOperatorUserIds = Array.from(new Set(operatorUserIds));

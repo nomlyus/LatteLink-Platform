@@ -337,15 +337,26 @@ function parseRequestUserContext(request: FastifyRequest): RequestUserContext {
 function authorizeInternalRequest(
   request: FastifyRequest,
   reply: FastifyReply,
-  internalToken: string | undefined
+  internalToken: string | undefined,
+  options: { allowUnauthenticated?: boolean } = {}
 ) {
   if (!internalToken) {
-    return true;
+    if (options.allowUnauthenticated) {
+      return true;
+    }
+
+    sendError(reply, {
+      statusCode: 503,
+      code: "INTERNAL_ACCESS_NOT_CONFIGURED",
+      message: "ORDERS_INTERNAL_API_TOKEN must be configured before accepting internal orders requests",
+      requestId: request.id
+    });
+    return false;
   }
 
   const parsedHeaders = internalHeadersSchema.safeParse(request.headers);
   const providedToken = parsedHeaders.success ? parsedHeaders.data["x-internal-token"] : undefined;
-  if (timingSafeTokenMatches(internalToken, providedToken)) {
+  if (providedToken && timingSafeTokenMatches(internalToken, providedToken)) {
     return true;
   }
 
@@ -361,15 +372,26 @@ function authorizeInternalRequest(
 function authorizeGatewayRequest(
   request: FastifyRequest,
   reply: FastifyReply,
-  gatewayToken: string | undefined
+  gatewayToken: string | undefined,
+  options: { allowUnauthenticated?: boolean } = {}
 ) {
   if (!gatewayToken) {
-    return true;
+    if (options.allowUnauthenticated) {
+      return true;
+    }
+
+    sendError(reply, {
+      statusCode: 503,
+      code: "GATEWAY_ACCESS_NOT_CONFIGURED",
+      message: "GATEWAY_INTERNAL_API_TOKEN must be configured before accepting gateway orders requests",
+      requestId: request.id
+    });
+    return false;
   }
 
   const parsedHeaders = gatewayHeadersSchema.safeParse(request.headers);
   const providedToken = parsedHeaders.success ? parsedHeaders.data["x-gateway-token"] : undefined;
-  if (timingSafeTokenMatches(gatewayToken, providedToken)) {
+  if (providedToken && timingSafeTokenMatches(gatewayToken, providedToken)) {
     return true;
   }
 
@@ -403,6 +425,10 @@ export async function registerRoutes(app: FastifyInstance) {
     timeWindow: ordersRateLimitWindowMs
   };
   const gatewayApiToken = trimToUndefined(process.env.GATEWAY_INTERNAL_API_TOKEN);
+  const allowUnauthenticatedInternalAccess =
+    process.env.NODE_ENV !== "production" && process.env.ALLOW_UNAUTHENTICATED_ORDERS_INTERNAL === "true";
+  const allowUnauthenticatedGatewayAccess =
+    process.env.NODE_ENV !== "production" && process.env.ALLOW_UNAUTHENTICATED_ORDERS_GATEWAY === "true";
   const valkeyUrl = trimToUndefined(process.env.VALKEY_URL);
   const eventBusPublisher = valkeyUrl ? createEventBusPublisher(valkeyUrl) : undefined;
   const fulfillmentConfigCache = createFulfillmentConfigCache({ catalogBaseUrl });
@@ -457,7 +483,7 @@ export async function registerRoutes(app: FastifyInstance) {
       preHandler: app.rateLimit(ordersInternalReconcileRateLimit)
     },
     async (request, reply) => {
-      if (!authorizeInternalRequest(request, reply, internalApiToken)) {
+      if (!authorizeInternalRequest(request, reply, internalApiToken, { allowUnauthenticated: allowUnauthenticatedInternalAccess })) {
         return;
       }
 
@@ -528,7 +554,7 @@ export async function registerRoutes(app: FastifyInstance) {
       preHandler: app.rateLimit(ordersInternalReconcileRateLimit)
     },
     async (request, reply) => {
-      if (!authorizeInternalRequest(request, reply, internalApiToken)) {
+      if (!authorizeInternalRequest(request, reply, internalApiToken, { allowUnauthenticated: allowUnauthenticatedInternalAccess })) {
         return;
       }
 
@@ -544,7 +570,7 @@ export async function registerRoutes(app: FastifyInstance) {
       preHandler: app.rateLimit(ordersInternalReconcileRateLimit)
     },
     async (request, reply) => {
-      if (!authorizeInternalRequest(request, reply, internalApiToken)) {
+      if (!authorizeInternalRequest(request, reply, internalApiToken, { allowUnauthenticated: allowUnauthenticatedInternalAccess })) {
         return;
       }
 
@@ -593,7 +619,7 @@ export async function registerRoutes(app: FastifyInstance) {
       preHandler: app.rateLimit(ordersWriteRateLimit)
     },
     async (request, reply) => {
-      if (!authorizeGatewayRequest(request, reply, gatewayApiToken)) {
+      if (!authorizeGatewayRequest(request, reply, gatewayApiToken, { allowUnauthenticated: allowUnauthenticatedGatewayAccess })) {
         return;
       }
 
@@ -615,7 +641,7 @@ export async function registerRoutes(app: FastifyInstance) {
   );
 
   app.get("/v1/orders/admin/discount-codes", async (request, reply) => {
-    if (!authorizeGatewayRequest(request, reply, gatewayApiToken)) {
+    if (!authorizeGatewayRequest(request, reply, gatewayApiToken, { allowUnauthenticated: allowUnauthenticatedGatewayAccess })) {
       return;
     }
 
@@ -633,7 +659,7 @@ export async function registerRoutes(app: FastifyInstance) {
       preHandler: app.rateLimit(ordersWriteRateLimit)
     },
     async (request, reply) => {
-      if (!authorizeGatewayRequest(request, reply, gatewayApiToken)) {
+      if (!authorizeGatewayRequest(request, reply, gatewayApiToken, { allowUnauthenticated: allowUnauthenticatedGatewayAccess })) {
         return;
       }
 
@@ -670,7 +696,7 @@ export async function registerRoutes(app: FastifyInstance) {
       preHandler: app.rateLimit(ordersWriteRateLimit)
     },
     async (request, reply) => {
-      if (!authorizeGatewayRequest(request, reply, gatewayApiToken)) {
+      if (!authorizeGatewayRequest(request, reply, gatewayApiToken, { allowUnauthenticated: allowUnauthenticatedGatewayAccess })) {
         return;
       }
 
@@ -703,7 +729,7 @@ export async function registerRoutes(app: FastifyInstance) {
   );
 
   app.get("/v1/orders/admin/discount-codes/:discountCodeId/redemptions", async (request, reply) => {
-    if (!authorizeGatewayRequest(request, reply, gatewayApiToken)) {
+    if (!authorizeGatewayRequest(request, reply, gatewayApiToken, { allowUnauthenticated: allowUnauthenticatedGatewayAccess })) {
       return;
     }
 
@@ -725,7 +751,7 @@ export async function registerRoutes(app: FastifyInstance) {
       preHandler: app.rateLimit(ordersWriteRateLimit)
     },
     async (request, reply) => {
-      if (!authorizeGatewayRequest(request, reply, gatewayApiToken)) {
+      if (!authorizeGatewayRequest(request, reply, gatewayApiToken, { allowUnauthenticated: allowUnauthenticatedGatewayAccess })) {
         return;
       }
 
@@ -754,7 +780,7 @@ export async function registerRoutes(app: FastifyInstance) {
   );
 
   app.get("/v1/orders", async (request, reply) => {
-    if (!authorizeGatewayRequest(request, reply, gatewayApiToken)) {
+    if (!authorizeGatewayRequest(request, reply, gatewayApiToken, { allowUnauthenticated: allowUnauthenticatedGatewayAccess })) {
       return;
     }
 
@@ -779,7 +805,7 @@ export async function registerRoutes(app: FastifyInstance) {
   });
 
   app.get("/v1/orders/:orderId", async (request, reply) => {
-    if (!authorizeGatewayRequest(request, reply, gatewayApiToken)) {
+    if (!authorizeGatewayRequest(request, reply, gatewayApiToken, { allowUnauthenticated: allowUnauthenticatedGatewayAccess })) {
       return;
     }
 
@@ -788,9 +814,14 @@ export async function registerRoutes(app: FastifyInstance) {
     const operatorLocationId = parsedOperatorHeaders.success
       ? parsedOperatorHeaders.data["x-operator-location-id"]
       : undefined;
+    const requestUserContext = parseRequestUserContext(request);
+    if (requestUserContext.error) {
+      return sendServiceError(reply, request, requestUserContext.error);
+    }
     const result = await getOrderForRead({
       orderId,
       locationId: operatorLocationId,
+      requestUserId: requestUserContext.userId,
       requestId: request.id,
       deps: getServiceDeps(request)
     });
@@ -808,7 +839,7 @@ export async function registerRoutes(app: FastifyInstance) {
       preHandler: app.rateLimit(ordersWriteRateLimit)
     },
     async (request, reply) => {
-      if (!authorizeGatewayRequest(request, reply, gatewayApiToken)) {
+      if (!authorizeGatewayRequest(request, reply, gatewayApiToken, { allowUnauthenticated: allowUnauthenticatedGatewayAccess })) {
         return;
       }
 
@@ -868,7 +899,7 @@ export async function registerRoutes(app: FastifyInstance) {
       preHandler: app.rateLimit(ordersWriteRateLimit)
     },
     async (request, reply) => {
-      if (!authorizeInternalRequest(request, reply, internalApiToken)) {
+      if (!authorizeInternalRequest(request, reply, internalApiToken, { allowUnauthenticated: allowUnauthenticatedInternalAccess })) {
         return;
       }
 
@@ -917,7 +948,7 @@ export async function registerRoutes(app: FastifyInstance) {
       preHandler: app.rateLimit(ordersWriteRateLimit)
     },
     async (request, reply) => {
-      if (!authorizeInternalRequest(request, reply, internalApiToken)) {
+      if (!authorizeInternalRequest(request, reply, internalApiToken, { allowUnauthenticated: allowUnauthenticatedInternalAccess })) {
         return;
       }
 
