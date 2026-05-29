@@ -25,6 +25,8 @@
     "provision:client-owner": "pnpm --filter @lattelink/identity provision:owner",
     "contracts:openapi": "turbo run openapi --filter=@lattelink/gateway --filter=@lattelink/contracts-*",
     "contracts:drift": "./scripts/verify-contract-drift.sh",
+    "release:validate-tag": "node scripts/validate-release-tag.mjs",
+    "test:release-policy": "node --test scripts/validate-release-tag.test.mjs",
     "sdk:generate": "pnpm --filter @lattelink/sdk-mobile generate",
     "terraform:fmt": "terraform -chdir=infra/terraform/envs/dev fmt -recursive -check",
     "terraform:validate": "pnpm -r --filter ./infra/terraform/envs/* run validate"

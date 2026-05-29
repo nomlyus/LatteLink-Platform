@@ -91,9 +91,10 @@ Production deploys, manual redeploys, and rollbacks should always use a known gi
 
 Versioning happens from `main`.
 
-- Tag releases from verified production commits on `main`
-- Update [CHANGELOG.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/CHANGELOG.md) when you want a formal release record
-- Use semantic versioning when cutting tags
+- Production release tags are mandatory for new production releases.
+- Release tags use semantic versioning and must advance beyond the latest `vX.Y.Z` tag.
+- The production deploy workflow creates the tag after the production smoke check passes.
+- Update [CHANGELOG.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/CHANGELOG.md) when you want a formal release record.
 
 Typical release steps:
 
@@ -103,8 +104,24 @@ git pull
 git checkout main
 git merge --ff-only develop
 git push origin main
-git tag v0.2.1
-git push origin v0.2.1
+gh workflow run deploy-prod.yml \
+  -f image_tag=<verified-main-sha> \
+  -f release_kind=release \
+  -f release_tag=v0.2.1
+```
+
+The workflow rejects a new release if:
+
+- `image_tag` is not a full git SHA
+- the SHA is not already on `origin/main`
+- `release_tag` is missing, malformed, already exists, or is not greater than the latest `vX.Y.Z` tag
+
+Rollbacks and manual redeploys use the same production deploy workflow without advancing the release tag:
+
+```bash
+gh workflow run deploy-prod.yml \
+  -f image_tag=<previous-known-good-sha> \
+  -f release_kind=rollback
 ```
 
 ---
