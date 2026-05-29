@@ -180,6 +180,15 @@ function missingLocationIdError(requestId: string) {
   });
 }
 
+function locationNotFoundError(requestId: string, locationId: string) {
+  return serviceErrorSchema.parse({
+    code: "LOCATION_NOT_FOUND",
+    message: "Location not found",
+    requestId,
+    details: { locationId }
+  });
+}
+
 export async function registerRoutes(app: FastifyInstance) {
   const repository = await createCatalogRepository(app.log);
   const menuImageUploads = createMenuImageUploadService();
@@ -200,6 +209,14 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     return undefined;
+  };
+  const getPublicLocationContext = async (locationId: string) => {
+    const [appConfig, storeConfig] = await Promise.all([
+      repository.getAppConfig(locationId),
+      repository.getStoreConfig(locationId)
+    ]);
+
+    return appConfig && storeConfig ? { appConfig, storeConfig } : undefined;
   };
 
   app.addHook("onClose", async () => {
@@ -229,7 +246,11 @@ export async function registerRoutes(app: FastifyInstance) {
     if (!resolvedLocationId) {
       return reply.status(400).send(missingLocationIdError(request.id));
     }
-    return repository.getAppConfig(resolvedLocationId);
+    const locationContext = await getPublicLocationContext(resolvedLocationId);
+    if (!locationContext) {
+      return reply.status(404).send(locationNotFoundError(request.id, resolvedLocationId));
+    }
+    return locationContext.appConfig;
   });
   app.get("/v1/menu", async (request, reply) => {
     reply.header("cache-control", publicCatalogCacheControl);
@@ -237,6 +258,10 @@ export async function registerRoutes(app: FastifyInstance) {
     const resolvedLocationId = locationId ?? defaultLocationId;
     if (!resolvedLocationId) {
       return reply.status(400).send(missingLocationIdError(request.id));
+    }
+    const locationContext = await getPublicLocationContext(resolvedLocationId);
+    if (!locationContext) {
+      return reply.status(404).send(locationNotFoundError(request.id, resolvedLocationId));
     }
     return repository.getMenu(resolvedLocationId);
   });
@@ -247,6 +272,10 @@ export async function registerRoutes(app: FastifyInstance) {
     if (!resolvedLocationId) {
       return reply.status(400).send(missingLocationIdError(request.id));
     }
+    const locationContext = await getPublicLocationContext(resolvedLocationId);
+    if (!locationContext) {
+      return reply.status(404).send(locationNotFoundError(request.id, resolvedLocationId));
+    }
     return homeNewsCardsResponseSchema.parse(await repository.getHomeNewsCards(resolvedLocationId));
   });
   app.get("/v1/store/cards", async (request, reply) => {
@@ -255,6 +284,10 @@ export async function registerRoutes(app: FastifyInstance) {
     const resolvedLocationId = locationId ?? defaultLocationId;
     if (!resolvedLocationId) {
       return reply.status(400).send(missingLocationIdError(request.id));
+    }
+    const locationContext = await getPublicLocationContext(resolvedLocationId);
+    if (!locationContext) {
+      return reply.status(404).send(locationNotFoundError(request.id, resolvedLocationId));
     }
     return homeNewsCardsResponseSchema.parse(await repository.getHomeNewsCards(resolvedLocationId));
   });
@@ -266,7 +299,11 @@ export async function registerRoutes(app: FastifyInstance) {
     if (!resolvedLocationId) {
       return reply.status(400).send(missingLocationIdError(request.id));
     }
-    return repository.getStoreConfig(resolvedLocationId);
+    const locationContext = await getPublicLocationContext(resolvedLocationId);
+    if (!locationContext) {
+      return reply.status(404).send(locationNotFoundError(request.id, resolvedLocationId));
+    }
+    return locationContext.storeConfig;
   });
 
   function getOperatorLocationId(request: FastifyRequest, reply: FastifyReply): string | undefined {
@@ -380,6 +417,9 @@ export async function registerRoutes(app: FastifyInstance) {
       const { itemId } = menuItemParamsSchema.parse(request.params);
       const input = adminMenuItemImageUploadRequestSchema.parse(request.body);
       const appConfig = await repository.getAppConfig(locationId);
+      if (!appConfig) {
+        return reply.status(404).send(locationNotFoundError(request.id, locationId));
+      }
       const menu = await repository.getAdminMenu(locationId);
       const existingItem = menu.categories.flatMap((category) => category.items).find((item) => item.itemId === itemId);
 

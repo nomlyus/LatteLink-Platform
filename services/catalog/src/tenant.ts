@@ -7,11 +7,11 @@ import {
   type AppConfig
 } from "@lattelink/contracts-catalog";
 
-export const DEFAULT_BRAND_ID = "demo-brand";
-export const DEFAULT_LOCATION_ID = "demo-location";
-export const DEFAULT_BRAND_NAME = "Demo Coffee";
-export const DEFAULT_LOCATION_NAME = "Demo Coffee Flagship";
-export const DEFAULT_MARKET_LABEL = "Pilot Market";
+export const DEFAULT_BRAND_ID = "rawaqcoffee";
+export const DEFAULT_LOCATION_ID = "rawaqcoffee01";
+export const DEFAULT_BRAND_NAME = "Rawaq Coffee";
+export const DEFAULT_LOCATION_NAME = "Rawaq Coffee Flagship";
+export const DEFAULT_MARKET_LABEL = "Ann Arbor, MI";
 export const DEFAULT_STORE_HOURS = "Daily · 7:00 AM - 6:00 PM";
 
 function trimToUndefined(value: string | undefined) {

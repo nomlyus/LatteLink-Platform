@@ -119,6 +119,28 @@ describe("catalog service", () => {
     await fallbackApp.close();
   });
 
+  it("rejects public catalog requests for unknown locations instead of returning fallback content", async () => {
+    const app = await buildApp();
+
+    for (const url of [
+      "/v1/app-config?locationId=unknown-location",
+      "/v1/menu?locationId=unknown-location",
+      "/v1/cards?locationId=unknown-location",
+      "/v1/store/cards?locationId=unknown-location",
+      "/v1/store/config?locationId=unknown-location"
+    ]) {
+      const response = await app.inject({ method: "GET", url });
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toMatchObject({
+        code: "LOCATION_NOT_FOUND",
+        message: "Location not found",
+        details: { locationId: "unknown-location" }
+      });
+    }
+
+    await app.close();
+  });
+
   it("returns v1 app config payload with staff fulfillment by default", async () => {
     const app = await buildApp();
     const response = await app.inject({ method: "GET", url: `/v1/app-config?locationId=${DEFAULT_LOCATION_ID}` });

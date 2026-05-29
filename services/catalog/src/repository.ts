@@ -328,7 +328,7 @@ type CatalogRepository = {
   createInternalClient(input: AdminClientCreateRequest): Promise<AdminClientCreateResponse>;
   listInternalClients(): Promise<InternalClientListResponse>;
   getInternalClient(tenantId: string): Promise<InternalClientDetail | undefined>;
-  getAppConfig(locationId: string): Promise<AppConfig>;
+  getAppConfig(locationId: string): Promise<AppConfig | undefined>;
   listInternalLocations(): Promise<InternalLocationSummary[]>;
   getInternalLocationSummary(locationId: string): Promise<InternalLocationSummary | undefined>;
   bootstrapInternalLocation(input: InternalLocationBootstrap): Promise<InternalLocationSummary>;
@@ -391,7 +391,7 @@ type CatalogRepository = {
     capabilities?: AppConfigStoreCapabilities;
   }): Promise<AdminStoreConfig>;
   getMenu(locationId: string): Promise<MenuResponse>;
-  getStoreConfig(locationId: string): Promise<StoreConfigResponse>;
+  getStoreConfig(locationId: string): Promise<StoreConfigResponse | undefined>;
   writeAuditLog(entry: AuditLogEntry): Promise<void>;
   pingDb(): Promise<void>;
   close(): Promise<void>;
@@ -982,8 +982,13 @@ function createInMemoryRepository(): CatalogRepository {
       });
     },
     async getAppConfig(locationId) {
+      const appConfig = appConfigsByLocation.get(locationId);
+      if (!appConfig) {
+        return undefined;
+      }
+
       return applyPaymentProfileToAppConfig(
-        applyRuntimeFulfillmentMode(appConfigsByLocation.get(locationId) ?? defaultAppConfig),
+        applyRuntimeFulfillmentMode(appConfig),
         paymentProfilesByLocation.get(locationId)
       );
     },
@@ -1516,10 +1521,15 @@ function createInMemoryRepository(): CatalogRepository {
       return nextAdminStoreConfig;
     },
     async getMenu(locationId) {
-      return menusByLocation.get(locationId) ?? defaultMenuPayload;
+      return menusByLocation.get(locationId) ?? menuResponseSchema.parse({
+        locationId,
+        currency: defaultMenuPayload.currency,
+        categories: []
+      });
     },
     async getStoreConfig(locationId) {
-      return buildStoreConfigResponse(storeConfigsByLocation.get(locationId) ?? defaultStoreConfigRecord);
+      const storeConfig = storeConfigsByLocation.get(locationId);
+      return storeConfig ? buildStoreConfigResponse(storeConfig) : undefined;
     },
     async writeAuditLog() {
       // In-memory mode is for local tests; audit persistence is covered by the Postgres repository.
@@ -1537,11 +1547,16 @@ function createInMemoryRepository(): CatalogRepository {
 
 async function seedCatalogDefaults(db: PersistenceDb) {
   const defaultAppConfigPayload = resolveDefaultAppConfigPayload();
+  const seedMenuPayload = buildProvisionedMenuPayload(defaultAppConfigPayload.brand.locationId);
+  const seedStoreConfigRecord: StoreConfigRecord = {
+    ...defaultStoreConfigRecord,
+    locationId: defaultAppConfigPayload.brand.locationId
+  };
   const existingCategory = await db
     .selectFrom("catalog_menu_categories")
     .select("category_id")
-    .where("brand_id", "=", DEFAULT_BRAND_ID)
-    .where("location_id", "=", defaultMenuPayload.locationId)
+    .where("brand_id", "=", defaultAppConfigPayload.brand.brandId)
+    .where("location_id", "=", seedMenuPayload.locationId)
     .executeTakeFirst();
 
   if (!existingCategory) {
@@ -1549,9 +1564,9 @@ async function seedCatalogDefaults(db: PersistenceDb) {
       await trx
         .insertInto("catalog_menu_categories")
         .values(
-          defaultMenuPayload.categories.map((category, index) => ({
-            brand_id: DEFAULT_BRAND_ID,
-            location_id: defaultMenuPayload.locationId,
+          seedMenuPayload.categories.map((category, index) => ({
+            brand_id: defaultAppConfigPayload.brand.brandId,
+            location_id: seedMenuPayload.locationId,
             category_id: category.id,
             title: category.title,
             sort_order: index
@@ -1563,10 +1578,10 @@ async function seedCatalogDefaults(db: PersistenceDb) {
       await trx
         .insertInto("catalog_menu_items")
         .values(
-          defaultMenuPayload.categories.flatMap((category) =>
+          seedMenuPayload.categories.flatMap((category) =>
             category.items.map((item, index) => ({
-              brand_id: DEFAULT_BRAND_ID,
-              location_id: defaultMenuPayload.locationId,
+              brand_id: defaultAppConfigPayload.brand.brandId,
+              location_id: seedMenuPayload.locationId,
               item_id: item.id,
               category_id: category.id,
               name: item.name,
@@ -1589,8 +1604,8 @@ async function seedCatalogDefaults(db: PersistenceDb) {
   const existingHomeNewsCard = await db
     .selectFrom("catalog_home_news_cards")
     .select("card_id")
-    .where("brand_id", "=", DEFAULT_BRAND_ID)
-    .where("location_id", "=", defaultHomeNewsCardsPayload.locationId)
+    .where("brand_id", "=", defaultAppConfigPayload.brand.brandId)
+    .where("location_id", "=", defaultAppConfigPayload.brand.locationId)
     .executeTakeFirst();
 
   if (!existingHomeNewsCard) {
@@ -1598,8 +1613,8 @@ async function seedCatalogDefaults(db: PersistenceDb) {
       .insertInto("catalog_home_news_cards")
       .values(
         defaultHomeNewsCardsPayload.cards.map((card) => ({
-          brand_id: DEFAULT_BRAND_ID,
-          location_id: defaultHomeNewsCardsPayload.locationId,
+          brand_id: defaultAppConfigPayload.brand.brandId,
+          location_id: defaultAppConfigPayload.brand.locationId,
           card_id: card.cardId,
           label: card.label,
           title: card.title,
@@ -1616,13 +1631,13 @@ async function seedCatalogDefaults(db: PersistenceDb) {
   await db
     .insertInto("catalog_store_configs")
     .values({
-      brand_id: DEFAULT_BRAND_ID,
-      location_id: defaultStoreConfigRecord.locationId,
-      store_name: DEFAULT_BRAND_NAME,
+      brand_id: defaultAppConfigPayload.brand.brandId,
+      location_id: seedStoreConfigRecord.locationId,
+      store_name: defaultAppConfigPayload.brand.brandName,
       hours_text: DEFAULT_STORE_HOURS,
-      prep_eta_minutes: defaultStoreConfigRecord.prepEtaMinutes,
-      tax_rate_basis_points: defaultStoreConfigRecord.taxRateBasisPoints,
-      pickup_instructions: defaultStoreConfigRecord.pickupInstructions
+      prep_eta_minutes: seedStoreConfigRecord.prepEtaMinutes,
+      tax_rate_basis_points: seedStoreConfigRecord.taxRateBasisPoints,
+      pickup_instructions: seedStoreConfigRecord.pickupInstructions
     })
     .onConflict((oc) => oc.column("location_id").doNothing())
     .execute();
@@ -1974,13 +1989,17 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         .selectAll()
         .where("location_id", "=", locationId)
         .executeTakeFirst();
+      if (!row) {
+        return undefined;
+      }
+
       const paymentProfileRow = await db
         .selectFrom("catalog_payment_profiles")
         .select("payment_profile_json")
         .where("location_id", "=", locationId)
         .executeTakeFirst();
 
-      const appConfig = row ? appConfigSchema.parse(row.app_config_json) : defaultAppConfigPayload;
+      const appConfig = appConfigSchema.parse(row.app_config_json);
       const paymentProfile = paymentProfileRow
         ? clientPaymentProfileSchema.parse(paymentProfileRow.payment_profile_json)
         : undefined;
@@ -2865,7 +2884,11 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         .execute();
 
       if (categories.length === 0) {
-        return defaultMenuPayload;
+        return menuResponseSchema.parse({
+          locationId,
+          currency: defaultMenuPayload.currency,
+          categories: []
+        });
       }
 
       const items = await db
@@ -3018,7 +3041,7 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         .executeTakeFirst();
 
       if (!row) {
-        return buildStoreConfigResponse(defaultStoreConfigRecord);
+        return undefined;
       }
 
       return buildStoreConfigResponse({
