@@ -1,6 +1,8 @@
 name: security-deps
 
 on:
+  push:
+    branches: [main, develop]
   pull_request:
 
 permissions:
@@ -18,5 +20,5 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Audit dependencies (fail on critical vulnerabilities)
-        run: pnpm audit --audit-level=critical
+      - name: Audit dependencies (fail on high vulnerabilities)
+        run: pnpm audit --audit-level=high

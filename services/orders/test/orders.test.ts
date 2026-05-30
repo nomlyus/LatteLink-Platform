@@ -1837,6 +1837,29 @@ describe("orders service", () => {
     }
   });
 
+  it("rate limits order read endpoints when configured threshold is reached", async () => {
+    vi.stubEnv("ORDERS_RATE_LIMIT_READ_MAX", "1");
+    vi.stubEnv("ORDERS_RATE_LIMIT_WINDOW_MS", "60000");
+    const app = await buildApp();
+
+    try {
+      const firstRead = await app.inject({
+        method: "GET",
+        url: "/v1/orders"
+      });
+      expect(firstRead.statusCode).toBe(200);
+
+      const secondRead = await app.inject({
+        method: "GET",
+        url: "/v1/orders"
+      });
+      expect(secondRead.statusCode).toBe(429);
+      expect(secondRead.json()).toMatchObject({ statusCode: 429 });
+    } finally {
+      await app.close();
+    }
+  });
+
   it("rejects invalid x-user-id header and exposes metrics counters", async () => {
     const app = await buildApp();
     const quoteResponse = await app.inject({

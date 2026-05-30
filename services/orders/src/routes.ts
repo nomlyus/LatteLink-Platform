@@ -140,6 +140,7 @@ const supportOrderLookupResponseSchema = z.object({
 });
 
 const defaultRateLimitWindowMs = 60_000;
+const defaultOrdersReadRateLimitMax = 240;
 const defaultOrdersWriteRateLimitMax = 120;
 const defaultOrdersInternalReconcileRateLimitMax = 180;
 
@@ -413,6 +414,10 @@ export async function registerRoutes(app: FastifyInstance) {
   const loyaltyInternalApiToken = trimToUndefined(process.env.LOYALTY_INTERNAL_API_TOKEN);
   const notificationsInternalApiToken = trimToUndefined(process.env.NOTIFICATIONS_INTERNAL_API_TOKEN);
   const ordersRateLimitWindowMs = toPositiveInteger(process.env.ORDERS_RATE_LIMIT_WINDOW_MS, defaultRateLimitWindowMs);
+  const ordersReadRateLimit = {
+    max: toPositiveInteger(process.env.ORDERS_RATE_LIMIT_READ_MAX, defaultOrdersReadRateLimitMax),
+    timeWindow: ordersRateLimitWindowMs
+  };
   const ordersWriteRateLimit = {
     max: toPositiveInteger(process.env.ORDERS_RATE_LIMIT_WRITE_MAX, defaultOrdersWriteRateLimitMax),
     timeWindow: ordersRateLimitWindowMs
@@ -640,18 +645,25 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   );
 
-  app.get("/v1/orders/admin/discount-codes", async (request, reply) => {
-    if (!authorizeGatewayRequest(request, reply, gatewayApiToken, { allowUnauthenticated: allowUnauthenticatedGatewayAccess })) {
-      return;
-    }
+  // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
+  app.get(
+    "/v1/orders/admin/discount-codes",
+    {
+      preHandler: app.rateLimit(ordersReadRateLimit)
+    },
+    async (request, reply) => {
+      if (!authorizeGatewayRequest(request, reply, gatewayApiToken, { allowUnauthenticated: allowUnauthenticatedGatewayAccess })) {
+        return;
+      }
 
-    const { locationId } = locationQuerySchema.parse(request.query);
-    const result = await listDiscountCodes({
-      locationId,
-      deps: getServiceDeps(request)
-    });
-    return discountCodeListResponseSchema.parse(result);
-  });
+      const { locationId } = locationQuerySchema.parse(request.query);
+      const result = await listDiscountCodes({
+        locationId,
+        deps: getServiceDeps(request)
+      });
+      return discountCodeListResponseSchema.parse(result);
+    }
+  );
 
   app.post(
     "/v1/orders/admin/discount-codes",
@@ -728,22 +740,29 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   );
 
-  app.get("/v1/orders/admin/discount-codes/:discountCodeId/redemptions", async (request, reply) => {
-    if (!authorizeGatewayRequest(request, reply, gatewayApiToken, { allowUnauthenticated: allowUnauthenticatedGatewayAccess })) {
-      return;
+  // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
+  app.get(
+    "/v1/orders/admin/discount-codes/:discountCodeId/redemptions",
+    {
+      preHandler: app.rateLimit(ordersReadRateLimit)
+    },
+    async (request, reply) => {
+      if (!authorizeGatewayRequest(request, reply, gatewayApiToken, { allowUnauthenticated: allowUnauthenticatedGatewayAccess })) {
+        return;
+      }
+
+      const { discountCodeId } = discountCodeIdParamsSchema.parse(request.params);
+      const query = discountRedemptionsQuerySchema.parse(request.query);
+      const result = await listDiscountCodeRedemptions({
+        discountCodeId,
+        locationId: query.locationId,
+        limit: query.limit,
+        deps: getServiceDeps(request)
+      });
+
+      return discountCodeRedemptionsResponseSchema.parse(result);
     }
-
-    const { discountCodeId } = discountCodeIdParamsSchema.parse(request.params);
-    const query = discountRedemptionsQuerySchema.parse(request.query);
-    const result = await listDiscountCodeRedemptions({
-      discountCodeId,
-      locationId: query.locationId,
-      limit: query.limit,
-      deps: getServiceDeps(request)
-    });
-
-    return discountCodeRedemptionsResponseSchema.parse(result);
-  });
+  );
 
   app.post(
     "/v1/orders",
@@ -779,59 +798,73 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   );
 
-  app.get("/v1/orders", async (request, reply) => {
-    if (!authorizeGatewayRequest(request, reply, gatewayApiToken, { allowUnauthenticated: allowUnauthenticatedGatewayAccess })) {
-      return;
+  // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
+  app.get(
+    "/v1/orders",
+    {
+      preHandler: app.rateLimit(ordersReadRateLimit)
+    },
+    async (request, reply) => {
+      if (!authorizeGatewayRequest(request, reply, gatewayApiToken, { allowUnauthenticated: allowUnauthenticatedGatewayAccess })) {
+        return;
+      }
+
+      const parsedOperatorHeaders = operatorLocationHeadersSchema.safeParse(request.headers);
+      const operatorLocationId = parsedOperatorHeaders.success
+        ? parsedOperatorHeaders.data["x-operator-location-id"]
+        : undefined;
+
+      const requestUserContext = parseRequestUserContext(request);
+      if (requestUserContext.error) {
+        return sendServiceError(reply, request, requestUserContext.error);
+      }
+
+      const result = await listOrdersForRead({
+        requestId: request.id,
+        requestUserId: requestUserContext.userId,
+        locationId: operatorLocationId,
+        deps: getServiceDeps(request)
+      });
+
+      return z.array(orderSchema).parse(result.orders);
     }
+  );
 
-    const parsedOperatorHeaders = operatorLocationHeadersSchema.safeParse(request.headers);
-    const operatorLocationId = parsedOperatorHeaders.success
-      ? parsedOperatorHeaders.data["x-operator-location-id"]
-      : undefined;
+  // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
+  app.get(
+    "/v1/orders/:orderId",
+    {
+      preHandler: app.rateLimit(ordersReadRateLimit)
+    },
+    async (request, reply) => {
+      if (!authorizeGatewayRequest(request, reply, gatewayApiToken, { allowUnauthenticated: allowUnauthenticatedGatewayAccess })) {
+        return;
+      }
 
-    const requestUserContext = parseRequestUserContext(request);
-    if (requestUserContext.error) {
-      return sendServiceError(reply, request, requestUserContext.error);
+      const { orderId } = orderIdParamsSchema.parse(request.params);
+      const parsedOperatorHeaders = operatorLocationHeadersSchema.safeParse(request.headers);
+      const operatorLocationId = parsedOperatorHeaders.success
+        ? parsedOperatorHeaders.data["x-operator-location-id"]
+        : undefined;
+      const requestUserContext = parseRequestUserContext(request);
+      if (requestUserContext.error) {
+        return sendServiceError(reply, request, requestUserContext.error);
+      }
+      const result = await getOrderForRead({
+        orderId,
+        locationId: operatorLocationId,
+        requestUserId: requestUserContext.userId,
+        requestId: request.id,
+        deps: getServiceDeps(request)
+      });
+
+      if ("error" in result) {
+        return sendServiceError(reply, request, result.error);
+      }
+
+      return orderSchema.parse(result.order);
     }
-
-    const result = await listOrdersForRead({
-      requestId: request.id,
-      requestUserId: requestUserContext.userId,
-      locationId: operatorLocationId,
-      deps: getServiceDeps(request)
-    });
-
-    return z.array(orderSchema).parse(result.orders);
-  });
-
-  app.get("/v1/orders/:orderId", async (request, reply) => {
-    if (!authorizeGatewayRequest(request, reply, gatewayApiToken, { allowUnauthenticated: allowUnauthenticatedGatewayAccess })) {
-      return;
-    }
-
-    const { orderId } = orderIdParamsSchema.parse(request.params);
-    const parsedOperatorHeaders = operatorLocationHeadersSchema.safeParse(request.headers);
-    const operatorLocationId = parsedOperatorHeaders.success
-      ? parsedOperatorHeaders.data["x-operator-location-id"]
-      : undefined;
-    const requestUserContext = parseRequestUserContext(request);
-    if (requestUserContext.error) {
-      return sendServiceError(reply, request, requestUserContext.error);
-    }
-    const result = await getOrderForRead({
-      orderId,
-      locationId: operatorLocationId,
-      requestUserId: requestUserContext.userId,
-      requestId: request.id,
-      deps: getServiceDeps(request)
-    });
-
-    if ("error" in result) {
-      return sendServiceError(reply, request, result.error);
-    }
-
-    return orderSchema.parse(result.order);
-  });
+  );
 
   app.post(
     "/v1/orders/:orderId/cancel",

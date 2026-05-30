@@ -37,8 +37,28 @@
     "eslint": "^9.21.0",
     "eslint-config-prettier": "^10.1.1",
     "prettier": "^3.5.3",
-    "turbo": "^2.4.4",
+    "turbo": "^2.9.14",
     "typescript": "^5.8.2",
     "vitest": "^3.0.8"
+  },
+  "pnpm": {
+    "overrides": {
+      "@fastify/static": "9.1.1",
+      "@xmldom/xmldom": "0.8.13",
+      "brace-expansion@<1.1.13": "1.1.13",
+      "brace-expansion@>=2.0.0 <2.0.3": "2.0.3",
+      "brace-expansion@>=4.0.0 <5.0.6": "5.0.6",
+      "fast-uri": "3.1.2",
+      "fastify": "5.8.5",
+      "flatted": "3.4.2",
+      "node-forge": "1.4.0",
+      "picomatch": "4.0.4",
+      "postcss": "8.5.10",
+      "tar": "7.5.11",
+      "undici": "6.24.0",
+      "uuid": "11.1.1",
+      "ws": "8.20.1",
+      "yaml": "2.8.3"
+    }
   }
 }

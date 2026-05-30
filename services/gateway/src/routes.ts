@@ -2567,6 +2567,7 @@ export async function registerRoutes(app: FastifyInstance) {
       })
   );
 
+  // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
   app.get("/v1/menu", { preHandler: app.rateLimit(catalogReadRateLimit) }, async (request, reply) =>
     proxyUpstream({
       request,
@@ -2623,6 +2624,7 @@ export async function registerRoutes(app: FastifyInstance) {
     })
   );
 
+  // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
   app.post(
     "/v1/orders/quote",
     { preHandler: [app.rateLimit(ordersWriteRateLimit), requireCustomerAuth] },
@@ -2669,6 +2671,7 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   );
 
+  // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
   app.post("/v1/orders", { preHandler: [app.rateLimit(ordersWriteRateLimit), requireCustomerAuth] }, async (request, reply) => {
     const input = createOrderRequestSchema.parse(request.body);
     const userId = await resolveAuthenticatedUserId({

@@ -2,7 +2,7 @@ name: security-codeql
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
   schedule:
     - cron: "0 7 * * 1"

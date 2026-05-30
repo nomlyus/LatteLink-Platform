@@ -750,6 +750,53 @@ describe("operator auth", () => {
     await app.close();
   });
 
+  it("rate limits internal owner invite creation when configured threshold is reached", async () => {
+    process.env.GATEWAY_INTERNAL_API_TOKEN = "identity-gateway-token";
+    const previousAuthWriteLimit = process.env.IDENTITY_RATE_LIMIT_AUTH_WRITE_MAX;
+    const previousRateLimitWindow = process.env.IDENTITY_RATE_LIMIT_WINDOW_MS;
+    process.env.IDENTITY_RATE_LIMIT_AUTH_WRITE_MAX = "1";
+    process.env.IDENTITY_RATE_LIMIT_WINDOW_MS = "60000";
+    const repository = createInMemoryIdentityRepository();
+    const app = await buildApp({ repository });
+
+    try {
+      const firstInvite = await app.inject({
+        method: "POST",
+        url: "/v1/identity/internal/locations/pilot-01/owner/invite",
+        headers: {
+          "x-gateway-token": "identity-gateway-token"
+        },
+        payload: {
+          displayName: "Pilot Owner",
+          email: "pilot.owner@example.com",
+          dashboardUrl: "https://client.example.com"
+        }
+      });
+      expect(firstInvite.statusCode).toBe(200);
+
+      const secondInvite = await app.inject({
+        method: "POST",
+        url: "/v1/identity/internal/locations/pilot-01/owner/invite",
+        headers: {
+          "x-gateway-token": "identity-gateway-token"
+        },
+        payload: {
+          displayName: "Second Pilot Owner",
+          email: "pilot.second@example.com",
+          dashboardUrl: "https://client.example.com"
+        }
+      });
+      expect(secondInvite.statusCode).toBe(429);
+      expect(secondInvite.json()).toMatchObject({ statusCode: 429 });
+    } finally {
+      if (previousAuthWriteLimit === undefined) delete process.env.IDENTITY_RATE_LIMIT_AUTH_WRITE_MAX;
+      else process.env.IDENTITY_RATE_LIMIT_AUTH_WRITE_MAX = previousAuthWriteLimit;
+      if (previousRateLimitWindow === undefined) delete process.env.IDENTITY_RATE_LIMIT_WINDOW_MS;
+      else process.env.IDENTITY_RATE_LIMIT_WINDOW_MS = previousRateLimitWindow;
+      await app.close();
+    }
+  });
+
   it("fails owner invite creation clearly when production email config is incomplete", async () => {
     process.env.GATEWAY_INTERNAL_API_TOKEN = "identity-gateway-token";
     const previousEmailProvider = process.env.EMAIL_PROVIDER;

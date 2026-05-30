@@ -821,6 +821,7 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
     }
   });
 
+  // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
   app.post(
     "/v1/auth/apple/exchange",
     {
@@ -1373,6 +1374,7 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
     }
   );
 
+  // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
   app.get(
     "/v1/auth/me",
     {
@@ -1397,6 +1399,7 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
     }
   );
 
+  // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
   app.post(
     "/v1/auth/profile",
     {
@@ -1792,6 +1795,7 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
     }
   );
 
+  // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
   app.post(
     "/v1/internal-admin/auth/sign-in",
     {
@@ -2075,171 +2079,213 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
     }
   );
 
-  app.post("/v1/identity/internal/locations/:locationId/owner/provision", async (request, reply) => {
-    const authorization = authorizeGatewayRequest(request, gatewayApiToken);
-    if (!authorization.ok) {
-      return reply.status(authorization.statusCode).send(authorization.body);
-    }
+  // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
+  app.post(
+    "/v1/identity/internal/locations/:locationId/owner/provision",
+    {
+      preHandler: app.rateLimit(authWriteRateLimit)
+    },
+    async (request, reply) => {
+      const authorization = authorizeGatewayRequest(request, gatewayApiToken);
+      if (!authorization.ok) {
+        return reply.status(authorization.statusCode).send(authorization.body);
+      }
 
-    const { locationId } = internalOwnerProvisionParamsSchema.parse(request.params);
-    const input = internalOwnerProvisionRequestSchema.parse(request.body);
-    const result = await provisionOwnerAccess(repository, {
-      ...input,
-      locationId,
-      allowInMemory: false
-    });
+      const { locationId } = internalOwnerProvisionParamsSchema.parse(request.params);
+      const input = internalOwnerProvisionRequestSchema.parse(request.body);
+      const result = await provisionOwnerAccess(repository, {
+        ...input,
+        locationId,
+        allowInMemory: false
+      });
 
-    logIdentityMutation(request, "internal owner provisioned", {
-      targetOperatorUserId: result.operator.operatorUserId,
-      targetEmail: result.operator.email,
-      locationId,
-      action: result.action
-    });
-    await recordAuditLog(request, repository, {
-      locationId,
-      actorId: getActorId(request),
-      actorType: "internal_admin",
-      action: "owner.provisioned",
-      targetId: result.operator.operatorUserId,
-      targetType: "operator_user",
-      payload: {
-        email: result.operator.email,
-        role: result.operator.role,
+      logIdentityMutation(request, "internal owner provisioned", {
+        targetOperatorUserId: result.operator.operatorUserId,
+        targetEmail: result.operator.email,
+        locationId,
         action: result.action
-      }
-    });
+      });
+      await recordAuditLog(request, repository, {
+        locationId,
+        actorId: getActorId(request),
+        actorType: "internal_admin",
+        action: "owner.provisioned",
+        targetId: result.operator.operatorUserId,
+        targetType: "operator_user",
+        payload: {
+          email: result.operator.email,
+          role: result.operator.role,
+          action: result.action
+        }
+      });
 
-    return internalOwnerProvisionResponseSchema.parse(result);
-  });
-
-  app.post("/v1/identity/internal/locations/:locationId/owner/invite", async (request, reply) => {
-    const authorization = authorizeGatewayRequest(request, gatewayApiToken);
-    if (!authorization.ok) {
-      return reply.status(authorization.statusCode).send(authorization.body);
+      return internalOwnerProvisionResponseSchema.parse(result);
     }
+  );
 
-    const { locationId } = internalOwnerProvisionParamsSchema.parse(request.params);
-    const input = internalOwnerInviteRequestSchema.parse(request.body);
-    const result = await createOwnerInvite(repository, {
-      ...input,
-      dashboardUrl: input.dashboardUrl ?? resolveClientDashboardBaseUrl(),
-      locationId
-    });
+  // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
+  app.post(
+    "/v1/identity/internal/locations/:locationId/owner/invite",
+    {
+      preHandler: app.rateLimit(authWriteRateLimit)
+    },
+    async (request, reply) => {
+      const authorization = authorizeGatewayRequest(request, gatewayApiToken);
+      if (!authorization.ok) {
+        return reply.status(authorization.statusCode).send(authorization.body);
+      }
 
-    try {
-      await sendOwnerInviteEmail({
-        to: result.operator.email,
-        displayName: result.operator.displayName,
-        inviteUrl: result.invite.inviteUrl,
+      const { locationId } = internalOwnerProvisionParamsSchema.parse(request.params);
+      const input = internalOwnerInviteRequestSchema.parse(request.body);
+      const result = await createOwnerInvite(repository, {
+        ...input,
+        dashboardUrl: input.dashboardUrl ?? resolveClientDashboardBaseUrl(),
         locationId
       });
-      await repository.markOwnerInviteSent(result.invite.inviteId);
-    } catch (error) {
-      if (error instanceof EmailConfigurationError || error instanceof EmailDeliveryError) {
-        return reply.status(503).send(buildApiError(request.id, error.name, error.message));
+
+      try {
+        await sendOwnerInviteEmail({
+          to: result.operator.email,
+          displayName: result.operator.displayName,
+          inviteUrl: result.invite.inviteUrl,
+          locationId
+        });
+        await repository.markOwnerInviteSent(result.invite.inviteId);
+      } catch (error) {
+        if (error instanceof EmailConfigurationError || error instanceof EmailDeliveryError) {
+          return reply.status(503).send(buildApiError(request.id, error.name, error.message));
+        }
+
+        throw error;
       }
 
-      throw error;
-    }
+      logIdentityMutation(request, "internal owner invited", {
+        targetOperatorUserId: result.operator.operatorUserId,
+        targetEmail: result.operator.email,
+        locationId,
+        action: result.action
+      });
+      await recordAuditLog(request, repository, {
+        locationId,
+        actorId: getActorId(request),
+        actorType: "internal_admin",
+        action: "owner.invited",
+        targetId: result.operator.operatorUserId,
+        targetType: "operator_user",
+        payload: {
+          email: result.operator.email,
+          action: result.action,
+          inviteId: result.invite.inviteId
+        }
+      });
 
-    logIdentityMutation(request, "internal owner invited", {
-      targetOperatorUserId: result.operator.operatorUserId,
-      targetEmail: result.operator.email,
-      locationId,
-      action: result.action
-    });
-    await recordAuditLog(request, repository, {
-      locationId,
-      actorId: getActorId(request),
-      actorType: "internal_admin",
-      action: "owner.invited",
-      targetId: result.operator.operatorUserId,
-      targetType: "operator_user",
-      payload: {
-        email: result.operator.email,
-        action: result.action,
-        inviteId: result.invite.inviteId
+      return internalOwnerInviteResponseSchema.parse(result);
+    }
+  );
+
+  // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
+  app.post(
+    "/v1/identity/internal/locations/:locationId/owner/invite/resend",
+    {
+      preHandler: app.rateLimit(authWriteRateLimit)
+    },
+    async (request, reply) => {
+      const authorization = authorizeGatewayRequest(request, gatewayApiToken);
+      if (!authorization.ok) {
+        return reply.status(authorization.statusCode).send(authorization.body);
       }
-    });
 
-    return internalOwnerInviteResponseSchema.parse(result);
-  });
-
-  app.post("/v1/identity/internal/locations/:locationId/owner/invite/resend", async (request, reply) => {
-    const authorization = authorizeGatewayRequest(request, gatewayApiToken);
-    if (!authorization.ok) {
-      return reply.status(authorization.statusCode).send(authorization.body);
-    }
-
-    const { locationId } = internalOwnerProvisionParamsSchema.parse(request.params);
-    const input = internalOwnerInviteRequestSchema.parse(request.body);
-    const result = await resendOwnerInvite(repository, {
-      ...input,
-      dashboardUrl: input.dashboardUrl ?? resolveClientDashboardBaseUrl(),
-      locationId
-    });
-
-    try {
-      await sendOwnerInviteEmail({
-        to: result.operator.email,
-        displayName: result.operator.displayName,
-        inviteUrl: result.invite.inviteUrl,
+      const { locationId } = internalOwnerProvisionParamsSchema.parse(request.params);
+      const input = internalOwnerInviteRequestSchema.parse(request.body);
+      const result = await resendOwnerInvite(repository, {
+        ...input,
+        dashboardUrl: input.dashboardUrl ?? resolveClientDashboardBaseUrl(),
         locationId
       });
-      await repository.markOwnerInviteSent(result.invite.inviteId);
-    } catch (error) {
-      if (error instanceof EmailConfigurationError || error instanceof EmailDeliveryError) {
-        return reply.status(503).send(buildApiError(request.id, error.name, error.message));
+
+      try {
+        await sendOwnerInviteEmail({
+          to: result.operator.email,
+          displayName: result.operator.displayName,
+          inviteUrl: result.invite.inviteUrl,
+          locationId
+        });
+        await repository.markOwnerInviteSent(result.invite.inviteId);
+      } catch (error) {
+        if (error instanceof EmailConfigurationError || error instanceof EmailDeliveryError) {
+          return reply.status(503).send(buildApiError(request.id, error.name, error.message));
+        }
+
+        throw error;
       }
 
-      throw error;
+      return internalOwnerInviteResponseSchema.parse(result);
     }
+  );
 
-    return internalOwnerInviteResponseSchema.parse(result);
-  });
+  // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
+  app.get(
+    "/v1/operator/invites/:token",
+    {
+      preHandler: app.rateLimit(authReadRateLimit)
+    },
+    async (request, reply) => {
+      const { token } = operatorInviteTokenParamsSchema.parse(request.params);
+      try {
+        return operatorInviteLookupResponseSchema.parse(await lookupOwnerInvite(repository, token));
+      } catch (error) {
+        if (error instanceof OwnerInviteError) {
+          return reply.status(ownerInviteErrorStatus(error)).send(buildApiError(request.id, error.code, error.message));
+        }
 
-  app.get("/v1/operator/invites/:token", async (request, reply) => {
-    const { token } = operatorInviteTokenParamsSchema.parse(request.params);
-    try {
-      return operatorInviteLookupResponseSchema.parse(await lookupOwnerInvite(repository, token));
-    } catch (error) {
-      if (error instanceof OwnerInviteError) {
-        return reply.status(ownerInviteErrorStatus(error)).send(buildApiError(request.id, error.code, error.message));
+        throw error;
+      }
+    }
+  );
+
+  // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
+  app.post(
+    "/v1/operator/invites/:token/accept",
+    {
+      preHandler: app.rateLimit(authWriteRateLimit)
+    },
+    async (request, reply) => {
+      const { token } = operatorInviteTokenParamsSchema.parse(request.params);
+      const input = operatorInviteAcceptRequestSchema.parse(request.body);
+      try {
+        return operatorInviteAcceptResponseSchema.parse(await acceptOwnerInvite(repository, token, input));
+      } catch (error) {
+        if (error instanceof OwnerInviteError) {
+          return reply.status(ownerInviteErrorStatus(error)).send(buildApiError(request.id, error.code, error.message));
+        }
+
+        throw error;
+      }
+    }
+  );
+
+  // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
+  app.get(
+    "/v1/identity/internal/locations/:locationId/owner",
+    {
+      preHandler: app.rateLimit(authReadRateLimit)
+    },
+    async (request, reply) => {
+      const authorization = authorizeGatewayRequest(request, gatewayApiToken);
+      if (!authorization.ok) {
+        return reply.status(authorization.statusCode).send(authorization.body);
       }
 
-      throw error;
+      const { locationId } = internalOwnerProvisionParamsSchema.parse(request.params);
+      const owners = (await repository.listOperatorUsers(locationId)).filter((operator) => operator.role === "owner");
+      const owner = owners.find((operator) => operator.active) ?? owners[0] ?? null;
+
+      return internalOwnerSummarySchema.parse({
+        locationId,
+        owner
+      });
     }
-  });
-
-  app.post("/v1/operator/invites/:token/accept", async (request, reply) => {
-    const { token } = operatorInviteTokenParamsSchema.parse(request.params);
-    const input = operatorInviteAcceptRequestSchema.parse(request.body);
-    try {
-      return operatorInviteAcceptResponseSchema.parse(await acceptOwnerInvite(repository, token, input));
-    } catch (error) {
-      if (error instanceof OwnerInviteError) {
-        return reply.status(ownerInviteErrorStatus(error)).send(buildApiError(request.id, error.code, error.message));
-      }
-
-      throw error;
-    }
-  });
-
-  app.get("/v1/identity/internal/locations/:locationId/owner", async (request, reply) => {
-    const authorization = authorizeGatewayRequest(request, gatewayApiToken);
-    if (!authorization.ok) {
-      return reply.status(authorization.statusCode).send(authorization.body);
-    }
-
-    const { locationId } = internalOwnerProvisionParamsSchema.parse(request.params);
-    const owners = (await repository.listOperatorUsers(locationId)).filter((operator) => operator.role === "owner");
-    const owner = owners.find((operator) => operator.active) ?? owners[0] ?? null;
-
-    return internalOwnerSummarySchema.parse({
-      locationId,
-      owner
-    });
-  });
+  );
 
   app.post("/v1/auth/internal/ping", async (request) => {
     const parsed = payloadSchema.parse(request.body ?? {});

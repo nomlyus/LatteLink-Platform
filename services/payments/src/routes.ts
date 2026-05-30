@@ -2136,6 +2136,7 @@ export async function registerRoutes(app: FastifyInstance) {
     stripe: stripeRuntime
   }));
 
+  // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
   app.post("/v1/payments/stripe/mobile-session", { preHandler: app.rateLimit(paymentsWriteRateLimit) }, async (request, reply) => {
     if (!authorizeGatewayRequest(request, reply, gatewayInternalToken)) {
       return;
@@ -2350,6 +2351,7 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   });
 
+  // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
   app.post("/v1/payments/stripe/mobile-session/finalize", { preHandler: app.rateLimit(paymentsWriteRateLimit) }, async (request, reply) => {
     if (!authorizeGatewayRequest(request, reply, gatewayInternalToken)) {
       return;
@@ -2620,6 +2622,7 @@ export async function registerRoutes(app: FastifyInstance) {
     });
   });
 
+  // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
   app.post(
     "/v1/payments/stripe/connect/onboarding-link",
     { preHandler: app.rateLimit(paymentsWriteRateLimit) },
@@ -2729,6 +2732,7 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   );
 
+  // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
   app.post(
     "/v1/payments/stripe/connect/dashboard-link",
     { preHandler: app.rateLimit(paymentsWriteRateLimit) },
@@ -3233,6 +3237,7 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   );
 
+  // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
   app.post("/v1/payments/refunds", { preHandler: app.rateLimit(paymentsWriteRateLimit) }, async (request, reply) => {
     if (!authorizeInternalRequest(request, reply, ordersInternalToken)) {
       return;
