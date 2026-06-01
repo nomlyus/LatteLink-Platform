@@ -73,14 +73,20 @@ jobs:
               exit 1
             fi
 
-            if git rev-parse -q --verify "refs/tags/${RELEASE_TAG}" >/dev/null; then
-              echo "Release tag ${RELEASE_TAG} already exists locally." >&2
-              exit 1
-            fi
+            existing_tag_target="$(git rev-list -n 1 "refs/tags/${RELEASE_TAG}" 2>/dev/null || true)"
+            if [ -n "${existing_tag_target}" ]; then
+              if [ "${existing_tag_target}" != "${TARGET_SHA}" ]; then
+                echo "Release tag ${RELEASE_TAG} already points at ${existing_tag_target}, not ${TARGET_SHA}." >&2
+                exit 1
+              fi
 
-            if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
-              echo "Release tag ${RELEASE_TAG} already exists on origin." >&2
-              exit 1
+              node scripts/validate-release-tag.mjs "${RELEASE_TAG}" ""
+              {
+                echo "should_tag=false"
+                echo "release_tag=${RELEASE_TAG}"
+                echo "app_version=${RELEASE_TAG#v}"
+              } >> "$GITHUB_OUTPUT"
+              exit 0
             fi
 
             latest_release_tag="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1 || true)"

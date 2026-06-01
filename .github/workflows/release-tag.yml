@@ -1,0 +1,133 @@
+name: release-tag
+
+on:
+  workflow_run:
+    workflows:
+      - ci
+      - security-deps
+      - security-secrets
+      - security-codeql
+      - publish-images
+    types:
+      - completed
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: release-tag-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  tag-main-release:
+    name: tag main release
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.conclusion == 'success'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Wait for required main checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+          REQUIRED_WORKFLOWS: ci security-deps security-secrets security-codeql publish-images
+        run: |
+          set -euo pipefail
+
+          git fetch --force origin main:refs/remotes/origin/main
+          current_main_sha="$(git rev-parse refs/remotes/origin/main)"
+          if [ "${current_main_sha}" != "${TARGET_SHA}" ]; then
+            echo "Skipping release tag: ${TARGET_SHA} is no longer origin/main (${current_main_sha})."
+            exit 0
+          fi
+
+          for attempt in $(seq 1 30); do
+            missing=""
+            failed=""
+            pending=""
+
+            runs_json="$(gh api -X GET "repos/${GITHUB_REPOSITORY}/actions/runs" \
+              -f branch=main \
+              -f event=push \
+              -f head_sha="${TARGET_SHA}" \
+              -f per_page=100)"
+
+            for workflow in ${REQUIRED_WORKFLOWS}; do
+              run_state="$(printf '%s' "${runs_json}" | jq -r --arg workflow "${workflow}" '
+                [.workflow_runs[] | select(.name == $workflow)] | sort_by(.created_at) | reverse | .[0] |
+                if . == null then "missing" else "\(.status):\(.conclusion // "")" end
+              ')"
+
+              case "${run_state}" in
+                missing)
+                  missing="${missing} ${workflow}"
+                  ;;
+                completed:success)
+                  ;;
+                completed:*)
+                  failed="${failed} ${workflow}=${run_state}"
+                  ;;
+                *)
+                  pending="${pending} ${workflow}=${run_state}"
+                  ;;
+              esac
+            done
+
+            if [ -n "${failed}" ]; then
+              echo "Not tagging ${TARGET_SHA}; required workflow failed:${failed}" >&2
+              exit 1
+            fi
+
+            if [ -z "${missing}" ] && [ -z "${pending}" ]; then
+              echo "All required main checks passed for ${TARGET_SHA}."
+              exit 0
+            fi
+
+            echo "Waiting for required workflows. Missing:${missing:- none}; pending:${pending:- none}."
+            sleep 20
+          done
+
+          echo "Timed out waiting for required main checks on ${TARGET_SHA}." >&2
+          exit 1
+
+      - name: Create next release tag
+        env:
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+
+          git fetch --force --tags origin
+
+          existing_release_tag="$(git tag --points-at "${TARGET_SHA}" --list 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n 1 || true)"
+          if [ -n "${existing_release_tag}" ]; then
+            echo "Commit ${TARGET_SHA} is already tagged as ${existing_release_tag}."
+            exit 0
+          fi
+
+          latest_release_tag="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1 || true)"
+          next_release_tag="$(node --input-type=module -e 'import { nextPatchReleaseTag } from "./scripts/validate-release-tag.mjs"; console.log(nextPatchReleaseTag(process.argv[1] ?? ""));' "${latest_release_tag}")"
+
+          node scripts/validate-release-tag.mjs "${next_release_tag}" "${latest_release_tag}"
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${next_release_tag}" >/dev/null 2>&1; then
+            echo "Release tag ${next_release_tag} already exists on origin." >&2
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${next_release_tag}" "${TARGET_SHA}" -m "Release ${next_release_tag}"
+          git push origin "refs/tags/${next_release_tag}"
+
+          echo "Created release tag ${next_release_tag} for ${TARGET_SHA}."
