@@ -100,6 +100,25 @@
         }
       }
     },
+    "/internal/locations/{locationId}/stripe/status-refresh": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "locationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/payments/clover/oauth/connect": {
       "get": {
         "responses": {
@@ -227,6 +246,15 @@
       }
     },
     "/admin/payments/stripe/dashboard-link": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/admin/payments/stripe/status-refresh": {
       "post": {
         "responses": {
           "200": {
