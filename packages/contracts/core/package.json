@@ -21,6 +21,6 @@
     "@lattelink/config-typescript": "workspace:*",
     "eslint": "^9.21.0",
     "typescript": "^5.8.2",
-    "vitest": "^3.0.8"
+    "vitest": "^4.1.8"
   }
 }

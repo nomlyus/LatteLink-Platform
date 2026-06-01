@@ -39,7 +39,7 @@
     "prettier": "^3.5.3",
     "turbo": "^2.9.14",
     "typescript": "^5.8.2",
-    "vitest": "^3.0.8"
+    "vitest": "^4.1.8"
   },
   "pnpm": {
     "overrides": {

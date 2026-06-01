@@ -1,19 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const eventBusMocks = vi.hoisted(() => ({
-  close: vi.fn(),
-  subscribeToAllOrderEvents: vi.fn(),
-  subscribeToOrderEvents: vi.fn(),
-  subscribeToOrderStatus: vi.fn()
-}));
+const eventBusMocks = vi.hoisted(() => {
+  const mocks = {
+    close: vi.fn(),
+    subscribeToAllOrderEvents: vi.fn(),
+    subscribeToOrderEvents: vi.fn(),
+    subscribeToOrderStatus: vi.fn()
+  };
+
+  return {
+    ...mocks,
+    EventBusSubscriber: vi.fn(function EventBusSubscriber() {
+      return mocks;
+    })
+  };
+});
 
 vi.mock("@lattelink/event-bus", () => ({
-  EventBusSubscriber: vi.fn().mockImplementation(() => ({
-    close: eventBusMocks.close,
-    subscribeToAllOrderEvents: eventBusMocks.subscribeToAllOrderEvents,
-    subscribeToOrderEvents: eventBusMocks.subscribeToOrderEvents,
-    subscribeToOrderStatus: eventBusMocks.subscribeToOrderStatus
-  }))
+  EventBusSubscriber: eventBusMocks.EventBusSubscriber
 }));
 
 import { buildApp } from "../src/app.js";
