@@ -1,31 +1,22 @@
 name: deploy-prod
 run-name: >-
   deploy-prod
-  ${{ inputs.release_kind || 'release' }}
-  ${{ inputs.release_tag || inputs.image_tag }}
+  ${{ github.event_name == 'release' && github.event.release.tag_name || 'rollback' }}
+  ${{ github.event_name == 'release' && github.event.release.target_commitish || inputs.image_tag }}
 
 on:
+  release:
+    types:
+      - published
   workflow_dispatch:
     inputs:
       image_tag:
-        description: Full published Git SHA to promote to production
+        description: Full published Git SHA to roll back production
         required: true
-        type: string
-      release_kind:
-        description: Use release for a new production version; use rollback for a previous known-good SHA.
-        required: true
-        default: release
-        type: choice
-        options:
-          - release
-          - rollback
-      release_tag:
-        description: Required for release. New semver tag to create after smoke passes, for example v1.0.5.
-        required: false
         type: string
 
 permissions:
-  contents: write
+  contents: read
   packages: read
 
 jobs:
@@ -35,83 +26,73 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ inputs.image_tag }}
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.image_tag }}
           fetch-depth: 0
 
-      - name: Validate production release tag policy
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Validate production deployment policy
         id: release
         env:
-          TARGET_SHA: ${{ inputs.image_tag }}
-          RELEASE_KIND: ${{ inputs.release_kind }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_IMAGE_TAG: ${{ inputs.image_tag }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_BODY: ${{ github.event.release.body }}
+          RELEASE_DRAFT: ${{ github.event.release.draft }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
           APP_VERSION_FALLBACK: ${{ vars.APP_VERSION }}
         run: |
           set -euo pipefail
 
-          if ! printf '%s' "${TARGET_SHA}" | grep -Eq '^[0-9a-f]{40}$'; then
-            echo "image_tag must be a full 40-character git SHA." >&2
+          git fetch --force --tags origin
+          git fetch --force origin main:refs/remotes/origin/main
+          main_sha="$(git rev-parse refs/remotes/origin/main)"
+
+          if [ "${EVENT_NAME}" = "release" ]; then
+            if [ -z "${RELEASE_TAG:-}" ]; then
+              echo "Release event did not include a tag name." >&2
+              exit 1
+            fi
+
+            target_sha="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+            previous_release_tag="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | grep -Fxv "${RELEASE_TAG}" | head -n 1 || true)"
+
+            TARGET_SHA="${target_sha}" \
+              MAIN_SHA="${main_sha}" \
+              PREVIOUS_RELEASE_TAG="${previous_release_tag}" \
+              node scripts/validate-production-release.mjs
+
+            {
+              echo "release_tag=${RELEASE_TAG}"
+              echo "app_version=${RELEASE_TAG#v}"
+              echo "target_sha=${target_sha}"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! printf '%s' "${DISPATCH_IMAGE_TAG}" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "Rollback image_tag must be a full 40-character git SHA." >&2
             exit 1
           fi
 
           actual_sha="$(git rev-parse HEAD)"
-          if [ "${actual_sha}" != "${TARGET_SHA}" ]; then
-            echo "Checked out ${actual_sha}, but workflow input requested ${TARGET_SHA}." >&2
+          if [ "${actual_sha}" != "${DISPATCH_IMAGE_TAG}" ]; then
+            echo "Checked out ${actual_sha}, but workflow input requested ${DISPATCH_IMAGE_TAG}." >&2
             exit 1
           fi
 
-          git fetch --force --tags origin
-          git fetch --force origin main:refs/remotes/origin/main
-
-          if ! git merge-base --is-ancestor "${TARGET_SHA}" refs/remotes/origin/main; then
-            echo "Production deploy SHA ${TARGET_SHA} must already be on origin/main before deployment." >&2
+          if ! git merge-base --is-ancestor "${DISPATCH_IMAGE_TAG}" refs/remotes/origin/main; then
+            echo "Rollback SHA ${DISPATCH_IMAGE_TAG} must already be on origin/main before deployment." >&2
             exit 1
           fi
 
-          if [ "${RELEASE_KIND}" = "release" ]; then
-            if [ -z "${RELEASE_TAG:-}" ]; then
-              echo "release_tag is required when release_kind is release." >&2
-              exit 1
-            fi
-
-            existing_tag_target="$(git rev-list -n 1 "refs/tags/${RELEASE_TAG}" 2>/dev/null || true)"
-            if [ -n "${existing_tag_target}" ]; then
-              if [ "${existing_tag_target}" != "${TARGET_SHA}" ]; then
-                echo "Release tag ${RELEASE_TAG} already points at ${existing_tag_target}, not ${TARGET_SHA}." >&2
-                exit 1
-              fi
-
-              node scripts/validate-release-tag.mjs "${RELEASE_TAG}" ""
-              {
-                echo "should_tag=false"
-                echo "release_tag=${RELEASE_TAG}"
-                echo "app_version=${RELEASE_TAG#v}"
-              } >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-
-            latest_release_tag="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1 || true)"
-            node scripts/validate-release-tag.mjs "${RELEASE_TAG}" "${latest_release_tag}"
-
-            {
-              echo "should_tag=true"
-              echo "release_tag=${RELEASE_TAG}"
-              echo "app_version=${RELEASE_TAG#v}"
-            } >> "$GITHUB_OUTPUT"
-          elif [ "${RELEASE_KIND}" = "rollback" ]; then
-            if [ -n "${RELEASE_TAG:-}" ]; then
-              echo "release_tag must be empty when release_kind is rollback." >&2
-              exit 1
-            fi
-
-            {
-              echo "should_tag=false"
-              echo "release_tag="
-              echo "app_version=${APP_VERSION_FALLBACK:-unknown}"
-            } >> "$GITHUB_OUTPUT"
-          else
-            echo "release_kind must be release or rollback." >&2
-            exit 1
-          fi
+          {
+            echo "release_tag="
+            echo "app_version=${APP_VERSION_FALLBACK:-unknown}"
+            echo "target_sha=${DISPATCH_IMAGE_TAG}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Check deploy prerequisites
         id: deploy-check
@@ -244,7 +225,7 @@ jobs:
           DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
           API_DOMAIN: ${{ vars.API_DOMAIN }}
           CLIENT_DASHBOARD_DOMAIN: ${{ vars.CLIENT_DASHBOARD_DOMAIN }}
-          IMAGE_TAG: ${{ inputs.image_tag }}
+          IMAGE_TAG: ${{ steps.release.outputs.target_sha }}
           APP_VERSION: ${{ steps.release.outputs.app_version }}
           LOG_LEVEL: ${{ vars.LOG_LEVEL }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
@@ -425,24 +406,6 @@ jobs:
           fi
 
           ./infra/free/bin/smoke-check.sh "https://${API_DOMAIN}/v1"
-
-      - name: Tag production release
-        if: steps.deploy-check.outputs.enabled == 'true' && steps.release.outputs.should_tag == 'true'
-        env:
-          RELEASE_TAG: ${{ steps.release.outputs.release_tag }}
-          TARGET_SHA: ${{ inputs.image_tag }}
-        run: |
-          set -euo pipefail
-
-          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
-            echo "Release tag ${RELEASE_TAG} was created before this workflow finished." >&2
-            exit 1
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "${RELEASE_TAG}" "${TARGET_SHA}" -m "Release ${RELEASE_TAG}"
-          git push origin "refs/tags/${RELEASE_TAG}"
 
       - name: Skip production deploy (prerequisites missing)
         if: steps.deploy-check.outputs.enabled != 'true'

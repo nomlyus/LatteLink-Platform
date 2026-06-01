@@ -46,15 +46,6 @@ export function validateReleaseTagAdvance(candidateTag, latestTag) {
   return { candidate, latest };
 }
 
-export function nextPatchReleaseTag(latestTag) {
-  if (!latestTag?.trim()) {
-    return "v0.1.0";
-  }
-
-  const latest = parseReleaseTag(latestTag);
-  return `v${latest.major}.${latest.minor}.${latest.patch + 1}`;
-}
-
 function main(argv) {
   const [candidateTag, latestTag = ""] = argv;
 

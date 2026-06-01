@@ -115,5 +115,5 @@ jobs:
             echo "- SHA tag: \`${SHA_TAG}\`"
             echo
             echo "- Pushes to \`develop\` automatically flow into \`deploy-dev\`."
-            echo "- Production deploys should promote an explicit SHA through \`deploy-prod\`."
+            echo "- Production deploys are gated on a published GitHub Release for the current \`main\` commit."
           } >> "$GITHUB_STEP_SUMMARY"

@@ -3,7 +3,6 @@ import test from "node:test";
 
 import {
   compareReleaseVersions,
-  nextPatchReleaseTag,
   parseReleaseTag,
   validateReleaseTagAdvance
 } from "./validate-release-tag.mjs";
@@ -39,10 +38,4 @@ test("requires a candidate tag to advance beyond the latest tag", () => {
 
   assert.throws(() => validateReleaseTagAdvance("v1.0.4", "v1.0.4"), /must be greater/);
   assert.throws(() => validateReleaseTagAdvance("v1.0.3", "v1.0.4"), /must be greater/);
-});
-
-test("calculates the next patch release tag", () => {
-  assert.equal(nextPatchReleaseTag("v1.0.4"), "v1.0.5");
-  assert.equal(nextPatchReleaseTag("v1.2.9"), "v1.2.10");
-  assert.equal(nextPatchReleaseTag(""), "v0.1.0");
 });

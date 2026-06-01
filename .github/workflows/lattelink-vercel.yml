@@ -1,17 +1,10 @@
 name: lattelink-vercel
 
 on:
-  workflow_dispatch:
+  release:
+    types:
+      - published
   pull_request:
-    paths:
-      - "apps/lattelink-web/**"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - ".github/workflows/lattelink-vercel.yml"
-  push:
-    branches:
-      - main
     paths:
       - "apps/lattelink-web/**"
       - "package.json"
@@ -36,6 +29,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref }}
+          fetch-depth: 0
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
@@ -95,11 +91,37 @@ jobs:
         run: echo "Preview deploy skipped until LATTELINK_VERCEL_TOKEN, LATTELINK_VERCEL_ORG_ID, and LATTELINK_VERCEL_PROJECT_ID are configured."
 
   deploy-production:
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'release' && github.event.release.prerelease == false
     runs-on: ubuntu-latest
     needs: verify
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Validate published production release
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_BODY: ${{ github.event.release.body }}
+          RELEASE_DRAFT: ${{ github.event.release.draft }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -euo pipefail
+
+          git fetch --force --tags origin
+          git fetch --force origin main:refs/remotes/origin/main
+
+          target_sha="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+          main_sha="$(git rev-parse refs/remotes/origin/main)"
+          previous_release_tag="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | grep -Fxv "${RELEASE_TAG}" | head -n 1 || true)"
+
+          TARGET_SHA="${target_sha}" \
+            MAIN_SHA="${main_sha}" \
+            PREVIOUS_RELEASE_TAG="${previous_release_tag}" \
+            node scripts/validate-production-release.mjs
       - name: Check Vercel production deploy prerequisites
         id: production-check
         env:
@@ -119,10 +141,6 @@ jobs:
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             echo "Skipping Vercel production deploy because one or more required secrets are missing."
           fi
-      - uses: actions/setup-node@v6
-        if: steps.production-check.outputs.enabled == 'true'
-        with:
-          node-version: 22
       - name: Install Vercel CLI
         if: steps.production-check.outputs.enabled == 'true'
         run: npm install --global vercel@latest

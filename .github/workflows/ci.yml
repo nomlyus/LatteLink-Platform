@@ -106,7 +106,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-      - run: node --test scripts/validate-release-tag.test.mjs
+      - run: node --test scripts/validate-release-tag.test.mjs scripts/validate-production-release.test.mjs
 
   build:
     name: build
