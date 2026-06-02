@@ -10,7 +10,10 @@
     "android": "expo run:android",
     "build": "echo 'Use EAS build for mobile artifacts'",
     "postinstall": "pnpm run build:workspace-deps",
+    "release:classify": "node scripts/classify-mobile-release.mjs",
     "release:check": "node scripts/validate-release-env.mjs",
+    "update:beta": "eas update --channel beta --environment preview",
+    "update:production": "eas update --channel production --environment production",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint app src test --max-warnings=0",
     "test": "vitest run"

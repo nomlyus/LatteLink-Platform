@@ -129,7 +129,7 @@ const config: ExpoConfig = {
           }
         : {})
     },
-    runtimeVersion: "1.0.6"
+    runtimeVersion: process.env.APP_RUNTIME_VERSION ?? "1.0.6"
   },
   android: {
     runtimeVersion: {
