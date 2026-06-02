@@ -100,7 +100,7 @@ const config: ExpoConfig = {
   name: resolveDisplayName(variant),
   slug: process.env.EXPO_SLUG ?? "lattelink-mobile",
   scheme: process.env.EXPO_SCHEME ?? "lattelink",
-  version: process.env.APP_VERSION ?? "1.0.1",
+  version: process.env.APP_VERSION ?? "1.0.6",
   orientation: "portrait",
   icon: "./assets/icon.png",
   splash: {
@@ -129,7 +129,7 @@ const config: ExpoConfig = {
           }
         : {})
     },
-    runtimeVersion: "1.0.1"
+    runtimeVersion: "1.0.6"
   },
   android: {
     runtimeVersion: {
