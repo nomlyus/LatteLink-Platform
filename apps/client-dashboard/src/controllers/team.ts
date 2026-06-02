@@ -1,8 +1,21 @@
 import { createOperatorStaffUser, updateOperatorStaffUser, updateOperatorOnboarding } from "../api.js";
 import { canManageTeamMembers } from "../model.js";
 import { addToast, setError, state } from "../state.js";
+import { persistSession } from "../storage.js";
 import { handleOperatorActionError, loadDashboard } from "../lifecycle.js";
 import { render } from "../render.js";
+import { replaceTeamUser } from "../team-state.js";
+
+function applyUpdatedTeamUser(updatedUser: ReturnType<typeof replaceTeamUser>[number]) {
+  state.teamUsers = replaceTeamUser(state.teamUsers, updatedUser);
+  if (state.session?.operator.operatorUserId === updatedUser.operatorUserId) {
+    state.session = {
+      ...state.session,
+      operator: updatedUser
+    };
+    persistSession(state.session);
+  }
+}
 
 export async function handleTeamCreateSubmit(form: HTMLFormElement) {
   if (!state.session) {
@@ -76,8 +89,7 @@ export async function handleTeamUserSubmit(form: HTMLFormElement) {
   try {
     state.busyTeamUserId = operatorUserId;
     setError(null);
-    render();
-    await updateOperatorStaffUser(
+    const updatedUser = await updateOperatorStaffUser(
       state.session,
       state.selectedLocationId === "all" ? null : state.selectedLocationId,
       operatorUserId,
@@ -89,8 +101,10 @@ export async function handleTeamUserSubmit(form: HTMLFormElement) {
       active
       }
     );
+    applyUpdatedTeamUser(updatedUser);
     addToast("Updated operator access.", "success");
     await loadDashboard();
+    applyUpdatedTeamUser(updatedUser);
   } catch (error) {
     await handleOperatorActionError(error, "Unable to update operator access.");
   } finally {
