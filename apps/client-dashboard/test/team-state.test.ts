@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { replaceTeamUser } from "../src/team-state";
+import { mergePendingTeamUserUpdates, rememberPendingTeamUserUpdate, replaceTeamUser } from "../src/team-state";
 import type { OperatorUser } from "../src/api";
 
 const baseUser: OperatorUser = {
@@ -30,5 +30,33 @@ describe("team state helpers", () => {
     };
 
     expect(replaceTeamUser([baseUser, otherUser], updatedUser)).toEqual([updatedUser, otherUser]);
+  });
+
+  it("keeps a pending updated team member when a stale dashboard snapshot arrives", () => {
+    const updatedUser: OperatorUser = {
+      ...baseUser,
+      displayName: "Updated Name",
+      updatedAt: "2026-06-01T00:10:00.000Z"
+    };
+
+    rememberPendingTeamUserUpdate(updatedUser);
+
+    expect(mergePendingTeamUserUpdates([baseUser])).toEqual([updatedUser]);
+  });
+
+  it("uses the dashboard snapshot once it catches up to the pending team member update", () => {
+    const updatedUser: OperatorUser = {
+      ...baseUser,
+      displayName: "Updated Name",
+      updatedAt: "2026-06-01T00:10:00.000Z"
+    };
+    const freshSnapshotUser: OperatorUser = {
+      ...updatedUser,
+      updatedAt: "2026-06-01T00:11:00.000Z"
+    };
+
+    rememberPendingTeamUserUpdate(updatedUser);
+
+    expect(mergePendingTeamUserUpdates([freshSnapshotUser])).toEqual([freshSnapshotUser]);
   });
 });

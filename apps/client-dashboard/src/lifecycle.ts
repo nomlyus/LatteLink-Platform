@@ -27,6 +27,7 @@ import {
   stopAutoRefresh
 } from "./orders-runtime.js";
 import { ensureSectionIsAvailable } from "./sections.js";
+import { mergePendingTeamUserUpdates } from "./team-state.js";
 import { render } from "./render.js";
 
 let dashboardLoadInFlight = false;
@@ -202,7 +203,7 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
       state.newsCards = snapshot.cards;
       state.discountCodes = snapshot.discountCodes;
       state.storeConfig = snapshot.storeConfig;
-      state.teamUsers = snapshot.team;
+      state.teamUsers = mergePendingTeamUserUpdates(snapshot.team);
     }
 
     await loadOwnerOnboarding(session);

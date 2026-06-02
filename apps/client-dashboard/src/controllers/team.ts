@@ -4,9 +4,10 @@ import { addToast, setError, state } from "../state.js";
 import { persistSession } from "../storage.js";
 import { handleOperatorActionError, loadDashboard } from "../lifecycle.js";
 import { render } from "../render.js";
-import { replaceTeamUser } from "../team-state.js";
+import { rememberPendingTeamUserUpdate, replaceTeamUser } from "../team-state.js";
 
 function applyUpdatedTeamUser(updatedUser: ReturnType<typeof replaceTeamUser>[number]) {
+  rememberPendingTeamUserUpdate(updatedUser);
   state.teamUsers = replaceTeamUser(state.teamUsers, updatedUser);
   if (state.session?.operator.operatorUserId === updatedUser.operatorUserId) {
     state.session = {
