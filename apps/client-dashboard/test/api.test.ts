@@ -5,6 +5,7 @@ import {
   acceptOperatorInvite,
   createOperatorStripeDashboardLink,
   createOperatorStripeOnboardingLink,
+  deleteOperatorStaffUser,
   extractApiErrorMessage,
   fetchDashboardLocations,
   fetchOperatorOnboardingSummary,
@@ -856,5 +857,45 @@ describe("client dashboard api helpers", () => {
         { status: "READY" }
       )
     ).toThrow("Choose a specific location before managing store settings.");
+  });
+
+  it("deletes operator staff users through the selected location", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(
+      deleteOperatorStaffUser(
+        {
+          accessToken: "access-token",
+          refreshToken: "refresh-token",
+          apiBaseUrl: "https://api.nomly.us/v1",
+          expiresAt: "2026-04-23T23:00:00.000Z",
+          operator: {
+            operatorUserId: "11111111-1111-4111-8111-111111111111",
+            displayName: "Pilot Owner",
+            email: "owner@store.com",
+            role: "owner",
+            locationId: "flagship-01",
+            locationIds: ["flagship-01"],
+            active: true,
+            capabilities: ["team:write"],
+            createdAt: "2026-04-23T20:00:00.000Z",
+            updatedAt: "2026-04-23T20:00:00.000Z"
+          }
+        },
+        "flagship-01",
+        "22222222-2222-4222-8222-222222222222"
+      )
+    ).resolves.toEqual({ success: true });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://api.nomly.us/v1/admin/staff/22222222-2222-4222-8222-222222222222?locationId=flagship-01",
+      expect.objectContaining({
+        method: "DELETE",
+        headers: expect.objectContaining({
+          authorization: "Bearer access-token"
+        })
+      })
+    );
   });
 });

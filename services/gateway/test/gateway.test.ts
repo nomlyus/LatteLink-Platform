@@ -886,6 +886,13 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
+      if (operatorUserMatch && method === "DELETE") {
+        return new Response(JSON.stringify({ success: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+
       if (url.endsWith("/v1/menu") && method === "GET") {
         return new Response(
           JSON.stringify({
@@ -3267,6 +3274,35 @@ let previousFreeClientDashboardDomain: string | undefined;
       locationId: "flagship-01"
     });
 
+    const ownerCreateResponse = await app.inject({
+      method: "POST",
+      url: "/v1/admin/staff",
+      headers: ownerOperatorHeaders,
+      payload: {
+        displayName: "Second Owner",
+        email: "second-owner@gazellecoffee.com",
+        role: "owner",
+        password: "SecondOwner123!"
+      }
+    });
+    expect(ownerCreateResponse.statusCode).toBe(403);
+    expect(ownerCreateResponse.json()).toMatchObject({
+      code: "OWNER_ACCESS_RESTRICTED"
+    });
+
+    const ownerPromotionResponse = await app.inject({
+      method: "PATCH",
+      url: `/v1/admin/staff/${operatorUserId}`,
+      headers: ownerOperatorHeaders,
+      payload: {
+        role: "owner"
+      }
+    });
+    expect(ownerPromotionResponse.statusCode).toBe(403);
+    expect(ownerPromotionResponse.json()).toMatchObject({
+      code: "OWNER_ACCESS_RESTRICTED"
+    });
+
     const patchResponse = await app.inject({
       method: "PATCH",
       url: `/v1/admin/staff/${operatorUserId}`,
@@ -3280,6 +3316,14 @@ let previousFreeClientDashboardDomain: string | undefined;
       operatorUserId,
       active: false
     });
+
+    const deleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/v1/admin/staff/${operatorUserId}`,
+      headers: ownerOperatorHeaders
+    });
+    expect(deleteResponse.statusCode).toBe(200);
+    expect(deleteResponse.json()).toEqual({ success: true });
 
     const storeUpdateResponse = await app.inject({
       method: "PUT",

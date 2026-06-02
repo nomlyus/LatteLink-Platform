@@ -916,6 +916,17 @@ export function updateOperatorStaffUser(
   });
 }
 
+export function deleteOperatorStaffUser(session: OperatorSession, locationId: string | null, operatorUserId: string) {
+  return requestJson({
+    apiBaseUrl: session.apiBaseUrl,
+    accessToken: session.accessToken,
+    path: `/admin/staff/${operatorUserId}`,
+    query: { locationId: requireSelectedLocationId(locationId) },
+    method: "DELETE",
+    schema: adminMutationSuccessSchema
+  });
+}
+
 const adminOrderStreamSnapshotSchema = z.object({
   type: z.literal("snapshot"),
   orders: z.array(orderSchema)

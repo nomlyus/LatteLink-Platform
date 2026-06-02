@@ -18,12 +18,14 @@ export function renderTeamSection() {
   }
 
   const canWrite = canManageTeamMembers(state.session?.operator ?? null);
+  const canDeleteTeamUsers = canWrite && state.session?.operator.role === "owner";
+  const assignableRoles = ["manager", "store"] as const;
   return `
     <section class="dash-section">
       ${renderSectionHeading({
         eyebrow: "Team",
         title: "Operator access",
-        description: "Control owner, manager, and store-screen access for this location."
+        description: "Control manager and store-screen access for this location."
       })}
       ${
         canWrite
@@ -47,9 +49,7 @@ export function renderTeamSection() {
                   <label class="field dash-field-inline">
                     <span>Role</span>
                     <select name="role">
-                      <option value="store">Store screen</option>
-                      <option value="manager">Manager</option>
-                      <option value="owner">Owner</option>
+                      ${assignableRoles.map((role) => `<option value="${role}">${escapeHtml(getOperatorRoleLabel(role))}</option>`).join("")}
                     </select>
                   </label>
                   <label class="field dash-field-inline">
@@ -75,14 +75,21 @@ export function renderTeamSection() {
         ${
           canWrite
             ? ""
-            : `<p class="muted-copy">Team access is read-only for your current role. Only store owners can create, deactivate, or update operator accounts.</p>`
+            : `<p class="muted-copy">Team access is read-only for your current role. Only store owners can create, deactivate, update, or delete operator accounts.</p>`
         }
         <div class="dash-data-group__rows">
         ${
           state.teamUsers.length > 0
             ? state.teamUsers
                 .map(
-                  (user) => `
+                  (user) => {
+                    const canDeleteUser =
+                      canDeleteTeamUsers &&
+                      user.role !== "owner" &&
+                      user.operatorUserId !== state.session?.operator.operatorUserId;
+                    const roleOptions: Array<(typeof assignableRoles)[number] | "owner"> =
+                      user.role === "owner" ? ["owner", ...assignableRoles] : [...assignableRoles];
+                    return `
                     <form
                       class="dash-data-row dash-data-row--team"
                       data-form="team-user"
@@ -108,7 +115,7 @@ export function renderTeamSection() {
                         <label class="field dash-field-inline">
                           <span>Role</span>
                           <select name="role" ${canWrite ? "" : "disabled"}>
-                            ${(["owner", "manager", "store"] as const)
+                            ${roleOptions
                               .map((role) => `<option value="${role}" ${role === user.role ? "selected" : ""}>${escapeHtml(getOperatorRoleLabel(role))}</option>`)
                               .join("")}
                           </select>
@@ -136,12 +143,28 @@ export function renderTeamSection() {
                                 <button class="button button--secondary" type="submit" ${state.busyTeamUserId === user.operatorUserId ? "disabled" : ""}>
                                   ${state.busyTeamUserId === user.operatorUserId ? "Saving…" : "Save"}
                                 </button>
+                                ${
+                                  canDeleteUser
+                                    ? `
+                                        <button
+                                          class="button button--danger"
+                                          type="button"
+                                          data-action="delete-team-user"
+                                          data-operator-user-id="${user.operatorUserId}"
+                                          ${state.busyTeamUserId === user.operatorUserId ? "disabled" : ""}
+                                        >
+                                          ${state.busyTeamUserId === user.operatorUserId ? "Deleting…" : "Delete"}
+                                        </button>
+                                      `
+                                    : ""
+                                }
                               `
                             : ""
                         }
                       </div>
                     </form>
-                  `
+                  `;
+                  }
                 )
                 .join("")
             : `<div class="dash-empty-surface"><p class="muted-copy">No operator accounts are available for this store yet.</p></div>`
