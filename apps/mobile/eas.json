@@ -61,11 +61,13 @@
   "submit": {
     "beta": {
       "ios": {
+        "bundleIdentifier": "com.lattelink.rawaq.beta",
         "ascAppId": "6761780971"
       }
     },
     "production": {
       "ios": {
+        "bundleIdentifier": "com.lattelink.rawaq",
         "ascAppId": "6764649231"
       }
     }
