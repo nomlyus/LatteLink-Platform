@@ -11,6 +11,7 @@ import type {
   AppConfigStoreCapabilities,
   ClientPaymentProfile,
   InternalLocationBootstrap,
+  InternalLocationCapabilitiesUpdate,
   InternalLocationListResponse,
   InternalLocationSummary,
   LaunchApprovalRequest,
@@ -189,6 +190,16 @@ export async function createInternalClient(input: AdminClientCreateRequest) {
 export async function bootstrapInternalLocation(input: InternalLocationBootstrap) {
   return requestInternalApi<InternalLocationSummary>("/v1/internal/locations/bootstrap", {
     method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function updateInternalLocationCapabilities(
+  locationId: string,
+  input: InternalLocationCapabilitiesUpdate
+) {
+  return requestInternalApi<InternalLocationSummary>(`/v1/internal/locations/${locationId}/capabilities`, {
+    method: "PUT",
     body: JSON.stringify(input)
   });
 }

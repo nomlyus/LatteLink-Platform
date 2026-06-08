@@ -673,6 +673,10 @@ export const internalLocationBootstrapSchema = z.object({
   paymentProfile: clientPaymentProfileSchema.optional()
 });
 
+export const internalLocationCapabilitiesUpdateSchema = z.object({
+  capabilities: appConfigStoreCapabilitiesSchema
+});
+
 export const internalLocationPaymentProfileUpdateSchema = clientPaymentProfileSchema.omit({
   createdAt: true,
   updatedAt: true
@@ -977,6 +981,7 @@ export type StripeConnectLinkResponse = z.output<typeof stripeConnectLinkRespons
 export type StripeConnectStatusRefreshRequest = z.output<typeof stripeConnectStatusRefreshRequestSchema>;
 export type StripeConnectStatusRefreshResponse = z.output<typeof stripeConnectStatusRefreshResponseSchema>;
 export type InternalLocationBootstrap = z.output<typeof internalLocationBootstrapSchema>;
+export type InternalLocationCapabilitiesUpdate = z.output<typeof internalLocationCapabilitiesUpdateSchema>;
 export type InternalLocationSummary = z.output<typeof internalLocationSummarySchema>;
 export type InternalLocationListResponse = z.output<typeof internalLocationListResponseSchema>;
 export type LaunchReadinessCheck = z.output<typeof launchReadinessCheckSchema>;

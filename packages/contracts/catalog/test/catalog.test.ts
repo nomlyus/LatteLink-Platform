@@ -14,6 +14,7 @@ import {
   clientPaymentProfileSchema,
   describeCustomizationSelection,
   internalLocationBootstrapSchema,
+  internalLocationCapabilitiesUpdateSchema,
   stripeConnectDashboardLinkRequestSchema,
   stripeConnectLinkResponseSchema,
   stripeConnectOnboardingLinkRequestSchema,
@@ -416,6 +417,27 @@ describe("contracts-catalog", () => {
 
     expect(bootstrap.brandId).toBeUndefined();
     expect(bootstrap.locationId).toBeUndefined();
+  });
+
+  it("validates dedicated internal location capability updates", () => {
+    const update = internalLocationCapabilitiesUpdateSchema.parse({
+      capabilities: {
+        menu: {
+          source: "external_sync"
+        },
+        operations: {
+          fulfillmentMode: "time_based",
+          liveOrderTrackingEnabled: false,
+          dashboardEnabled: true
+        },
+        loyalty: {
+          visible: false
+        }
+      }
+    });
+
+    expect(update.capabilities.menu.source).toBe("external_sync");
+    expect(update.capabilities.loyalty.visible).toBe(false);
   });
 
   it("validates admin client create contracts with response-owned identifiers", () => {

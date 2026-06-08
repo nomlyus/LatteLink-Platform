@@ -63,6 +63,7 @@ import {
   internalClientDetailSchema,
   internalClientListResponseSchema,
   internalLocationBootstrapSchema,
+  internalLocationCapabilitiesUpdateSchema,
   internalLocationListResponseSchema,
   internalLocationPaymentProfileUpdateSchema,
   internalLocationParamsSchema,
@@ -4385,6 +4386,33 @@ export async function registerRoutes(app: FastifyInstance) {
         body: input,
         additionalHeaders: {
           "x-gateway-token": gatewayInternalApiToken
+        },
+        forwardUserIdHeader: false,
+        responseSchema: internalLocationSummarySchema
+      });
+    }
+  );
+
+  app.put(
+    "/v1/internal/locations/:locationId/capabilities",
+    {
+      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+    },
+    async (request, reply) => {
+      const { locationId } = internalLocationParamsSchema.parse(request.params);
+      const input = internalLocationCapabilitiesUpdateSchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "PUT",
+        path: `/v1/catalog/internal/locations/${locationId}/capabilities`,
+        body: input,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken,
+          ...internalAdminActorHeader(request)
         },
         forwardUserIdHeader: false,
         responseSchema: internalLocationSummarySchema

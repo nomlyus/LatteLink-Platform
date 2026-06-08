@@ -1386,6 +1386,26 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
+      if (url.endsWith("/v1/catalog/internal/locations/northside-01/capabilities") && method === "PUT") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { capabilities?: unknown };
+        return new Response(
+          JSON.stringify({
+            brandId: "northside-coffee",
+            brandName: "Northside Coffee",
+            locationId: "northside-01",
+            locationName: "Northside Flagship",
+            marketLabel: "Detroit, MI",
+            storeName: "Northside Coffee",
+            hours: "Daily · 7:00 AM - 6:00 PM",
+            pickupInstructions: "Pickup at the espresso counter.",
+            taxRateBasisPoints: 600,
+            capabilities: body.capabilities,
+            action: "updated"
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
       if (url.endsWith("/v1/catalog/internal/clients") && method === "POST") {
         const body = JSON.parse(String(init?.body ?? "{}")) as {
           clientName?: string;
@@ -3580,6 +3600,46 @@ let previousFreeClientDashboardDomain: string | undefined;
       locationId: "northside-01",
       action: "created"
     });
+
+    const capabilities = {
+      menu: {
+        source: "external_sync"
+      },
+      operations: {
+        fulfillmentMode: "time_based",
+        liveOrderTrackingEnabled: false,
+        dashboardEnabled: true
+      },
+      loyalty: {
+        visible: false
+      }
+    };
+    const capabilitiesResponse = await app.inject({
+      method: "PUT",
+      url: "/v1/internal/locations/northside-01/capabilities",
+      headers: ownerInternalAdminHeaders,
+      payload: { capabilities }
+    });
+    expect(capabilitiesResponse.statusCode).toBe(200);
+    expect(capabilitiesResponse.json()).toMatchObject({
+      locationId: "northside-01",
+      capabilities,
+      action: "updated"
+    });
+    const capabilitiesCall = fetchMock.mock.calls.find(([input, init]) => {
+      const url = typeof input === "string" ? input : input.url;
+      return (
+        url === "http://catalog.internal/v1/catalog/internal/locations/northside-01/capabilities" &&
+        init?.method === "PUT"
+      );
+    });
+    expect(capabilitiesCall).toBeDefined();
+    if (capabilitiesCall) {
+      const upstreamHeaders = new Headers((capabilitiesCall[1]?.headers ?? {}) as HeadersInit);
+      expect(upstreamHeaders.get("x-gateway-token")).toBe("gateway-test-token");
+      expect(upstreamHeaders.get("x-user-id")).toBe("223e4567-e89b-12d3-a456-426614174999");
+      expect(JSON.parse(String(capabilitiesCall[1]?.body ?? "{}"))).toEqual({ capabilities });
+    }
 
     const listResponse = await app.inject({
       method: "GET",
