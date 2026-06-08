@@ -1,6 +1,6 @@
 # Mobile EAS Build Matrix
 
-Last updated: `2026-04-23`
+Last updated: `2026-06-01`
 
 ## Purpose
 
@@ -10,6 +10,36 @@ Use it when creating:
 
 - TestFlight beta builds
 - production App Store candidates
+- OTA updates with EAS Update
+
+## OTA-First Release Policy
+
+Prefer an EAS Update over a new binary whenever the change is limited to JavaScript, TypeScript, CSS,
+bundled non-native assets, generated contracts, design tokens, or the mobile SDK package.
+
+Create a new binary only when the release changes native runtime behavior or store metadata, including:
+
+- `apps/mobile/ios/**`
+- `apps/mobile/android/**`
+- native Expo config or EAS profile changes in `app.config.ts` or `eas.json`
+- dependency changes in `apps/mobile/package.json`, root `package.json`, `pnpm-lock.yaml`, or workspace package manifests
+- app icon, splash screen, bundle identifier, entitlements, Apple Pay, notification, or associated-domain configuration
+- Expo SDK, React Native, native module, CocoaPods, or Gradle changes
+
+Run the classifier before deciding the release path. It compares file content between the two refs:
+
+```bash
+pnpm --filter @lattelink/mobile release:classify origin/main HEAD
+```
+
+Exit codes:
+
+- `0`: no binary build required by the classifier; OTA may be enough after normal QA
+- `2`: binary build required
+
+The iOS `runtimeVersion` is intentionally independent from the App Store `APP_VERSION`. Keep
+`APP_RUNTIME_VERSION` unchanged for OTA-compatible changes. Advance `APP_RUNTIME_VERSION` only when a
+native/config/dependency change requires a new runtime and a new binary.
 
 ## Profiles
 
@@ -48,6 +78,9 @@ Required values for every build:
 
 Optional values:
 
+- `APP_RUNTIME_VERSION`
+  - defaults to the current native runtime line
+  - keep stable across OTA-only releases
 - `IOS_ASSOCIATED_DOMAINS`
 - `EXPO_PUBLIC_CATALOG_SERVICE_BASE_URL`
 - `EXPO_PUBLIC_CATALOG_API_BASE_URL`
@@ -115,14 +148,22 @@ For OTA updates, use the matching channel and EAS environment. The beta channel 
 environment because custom EAS environments require a paid Expo plan; production uses EAS `production`.
 
 ```bash
-eas update --channel beta --environment preview --message "<release note>"
-eas update --channel production --environment production --message "<release note>"
+pnpm --filter @lattelink/mobile update:beta -- --message "<release note>"
+pnpm --filter @lattelink/mobile update:production -- --message "<release note>"
 ```
+
+Before publishing production OTA updates:
+
+- the exact commit should already be tested on `develop`/`beta`
+- the classifier should not report binary-required files
+- the current production binary must have the same `APP_RUNTIME_VERSION`
+- use a clear customer-safe update message, for example `Performance optimizations and reliability improvements`
 
 ## TestFlight Checklist
 
 Before creating a `beta` or `production` build:
 
+- run `pnpm --filter @lattelink/mobile release:classify origin/main HEAD`
 - run the matching EAS env-backed release preflight
 - confirm the target API base URL is correct
 - confirm the Apple Pay merchant identifier matches the target environment

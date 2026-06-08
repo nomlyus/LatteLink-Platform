@@ -44,7 +44,7 @@ import {
 } from "./controllers/cards.js";
 import { handleDiscountCodeCreateSubmit, handleDiscountCodeSubmit } from "./controllers/discounts.js";
 import { handleStoreSubmit } from "./controllers/store.js";
-import { handleTeamCreateSubmit, handleTeamUserSubmit } from "./controllers/team.js";
+import { handleTeamCreateSubmit, handleTeamUserDelete, handleTeamUserSubmit } from "./controllers/team.js";
 import { handleOrderAdvance } from "./controllers/orders.js";
 import {
   handleOnboardingBusinessProfileSubmit,
@@ -251,6 +251,13 @@ export function registerEvents() {
       case "open-stripe-dashboard":
         void handleStripeDashboardOpen();
         return;
+      case "delete-team-user": {
+        const operatorUserId = actionElement.dataset.operatorUserId;
+        if (operatorUserId) {
+          void handleTeamUserDelete(operatorUserId);
+        }
+        return;
+      }
     }
 
     if (action === "set-section") {

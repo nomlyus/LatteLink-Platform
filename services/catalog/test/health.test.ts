@@ -809,6 +809,233 @@ describe("catalog service", () => {
     await app.close();
   });
 
+  it("does not reseed starter menu items when bootstrapping an existing location", async () => {
+    process.env.GATEWAY_INTERNAL_API_TOKEN = "catalog-gateway-token";
+    const app = await buildApp();
+
+    const bootstrapPayload = {
+      brandId: "existing-coffee",
+      brandName: "Existing Coffee",
+      locationId: "existing-01",
+      locationName: "Existing Flagship",
+      marketLabel: "Detroit, MI",
+      storeName: "Existing Coffee",
+      hours: "Daily · 7:00 AM - 6:00 PM",
+      pickupInstructions: "Pickup at the espresso counter.",
+      taxRateBasisPoints: 600,
+      capabilities: {
+        menu: {
+          source: "platform_managed" as const
+        },
+        operations: {
+          fulfillmentMode: "staff" as const,
+          liveOrderTrackingEnabled: true,
+          dashboardEnabled: true
+        },
+        loyalty: {
+          visible: true
+        }
+      }
+    };
+
+    const bootstrapResponse = await app.inject({
+      method: "POST",
+      url: "/v1/catalog/internal/locations/bootstrap",
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: bootstrapPayload
+    });
+    expect(bootstrapResponse.statusCode).toBe(200);
+
+    const customMenu = menuResponseSchema.parse({
+      locationId: "existing-01",
+      currency: "USD",
+      categories: [
+        {
+          id: "real-menu",
+          title: "Real Menu",
+          items: [
+            {
+              id: "house-latte",
+              name: "House Latte",
+              description: "The actual configured menu item.",
+              priceCents: 625,
+              badgeCodes: [],
+              visible: true,
+              customizationGroups: []
+            }
+          ]
+        }
+      ]
+    });
+
+    const replaceResponse = await app.inject({
+      method: "PUT",
+      url: "/v1/catalog/internal/locations/existing-01/menu",
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: customMenu
+    });
+    expect(replaceResponse.statusCode).toBe(200);
+
+    const updateResponse = await app.inject({
+      method: "POST",
+      url: "/v1/catalog/internal/locations/bootstrap",
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        ...bootstrapPayload,
+        hours: "Daily · 7:00 AM - 4:30 PM"
+      }
+    });
+    expect(updateResponse.statusCode).toBe(200);
+    expect(internalLocationSummarySchema.parse(updateResponse.json()).action).toBe("updated");
+
+    const menuResponse = await app.inject({
+      method: "GET",
+      url: "/v1/catalog/internal/locations/existing-01/menu",
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      }
+    });
+    expect(menuResponse.statusCode).toBe(200);
+    const menu = menuResponseSchema.parse(menuResponse.json());
+    expect(menu.categories).toHaveLength(1);
+    expect(menu.categories[0]).toMatchObject({
+      id: "real-menu",
+      items: [expect.objectContaining({ id: "house-latte" })]
+    });
+    expect(menu.categories.flatMap((category) => category.items.map((item) => item.id))).not.toEqual(
+      expect.arrayContaining(["matcha", "croissant"])
+    );
+
+    await app.close();
+  });
+
+  it("updates location capabilities without changing app configuration or menu data", async () => {
+    process.env.GATEWAY_INTERNAL_API_TOKEN = "catalog-gateway-token";
+    const app = await buildApp();
+
+    const bootstrapResponse = await app.inject({
+      method: "POST",
+      url: "/v1/catalog/internal/locations/bootstrap",
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        brandId: "capabilities-coffee",
+        brandName: "Capabilities Coffee",
+        locationId: "capabilities-01",
+        locationName: "Capabilities Flagship",
+        marketLabel: "Detroit, MI",
+        storeName: "Capabilities Coffee",
+        hours: "Daily · 7:00 AM - 4:30 PM",
+        pickupInstructions: "Pickup at the configured counter.",
+        taxRateBasisPoints: 675
+      }
+    });
+    expect(bootstrapResponse.statusCode).toBe(200);
+
+    const appConfigBeforeResponse = await app.inject({
+      method: "GET",
+      url: "/v1/app-config?locationId=capabilities-01"
+    });
+    const appConfigBefore = appConfigSchema.parse(appConfigBeforeResponse.json());
+    const menuBeforeResponse = await app.inject({
+      method: "GET",
+      url: "/v1/menu?locationId=capabilities-01"
+    });
+    const menuBefore = menuResponseSchema.parse(menuBeforeResponse.json());
+
+    const capabilities = {
+      menu: {
+        source: "external_sync" as const
+      },
+      operations: {
+        fulfillmentMode: "time_based" as const,
+        liveOrderTrackingEnabled: false,
+        dashboardEnabled: false
+      },
+      loyalty: {
+        visible: false
+      }
+    };
+    const updateResponse = await app.inject({
+      method: "PUT",
+      url: "/v1/catalog/internal/locations/capabilities-01/capabilities",
+      headers: {
+        "x-gateway-token": "catalog-gateway-token",
+        "x-user-id": "admin-123"
+      },
+      payload: { capabilities }
+    });
+    expect(updateResponse.statusCode).toBe(200);
+    expect(internalLocationSummarySchema.parse(updateResponse.json())).toMatchObject({
+      locationId: "capabilities-01",
+      storeName: "Capabilities Coffee",
+      hours: "Daily · 7:00 AM - 4:30 PM",
+      pickupInstructions: "Pickup at the configured counter.",
+      taxRateBasisPoints: 675,
+      capabilities,
+      action: "updated"
+    });
+
+    const appConfigAfterResponse = await app.inject({
+      method: "GET",
+      url: "/v1/app-config?locationId=capabilities-01"
+    });
+    const appConfigAfter = appConfigSchema.parse(appConfigAfterResponse.json());
+    const {
+      storeCapabilities: capabilitiesAfter,
+      featureFlags,
+      fulfillment,
+      loyaltyEnabled
+    } = appConfigAfter;
+    expect(appConfigAfter).toMatchObject({
+      brand: appConfigBefore.brand,
+      theme: appConfigBefore.theme,
+      header: appConfigBefore.header,
+      enabledTabs: appConfigBefore.enabledTabs,
+      paymentCapabilities: appConfigBefore.paymentCapabilities
+    });
+    expect(capabilitiesAfter).toEqual(capabilities);
+    expect(featureFlags).toMatchObject({
+      loyalty: false,
+      menuEditing: false,
+      orderTracking: false,
+      staffDashboard: false
+    });
+    expect(fulfillment.mode).toBe("time_based");
+    expect(loyaltyEnabled).toBe(false);
+
+    const menuAfterResponse = await app.inject({
+      method: "GET",
+      url: "/v1/menu?locationId=capabilities-01"
+    });
+    expect(menuResponseSchema.parse(menuAfterResponse.json())).toEqual(menuBefore);
+
+    const missingResponse = await app.inject({
+      method: "PUT",
+      url: "/v1/catalog/internal/locations/missing-location/capabilities",
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: { capabilities }
+    });
+    expect(missingResponse.statusCode).toBe(404);
+    expect(missingResponse.json()).toMatchObject({
+      code: "LOCATION_NOT_FOUND",
+      details: {
+        locationId: "missing-location"
+      }
+    });
+
+    await app.close();
+  });
+
   it("generates internal brand and location identifiers when bootstrapping a new location", async () => {
     process.env.GATEWAY_INTERNAL_API_TOKEN = "catalog-gateway-token";
     const app = await buildApp();

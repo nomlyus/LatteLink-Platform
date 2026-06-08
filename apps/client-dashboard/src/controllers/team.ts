@@ -1,8 +1,22 @@
-import { createOperatorStaffUser, updateOperatorStaffUser, updateOperatorOnboarding } from "../api.js";
-import { canManageTeamMembers } from "../model.js";
+import { createOperatorStaffUser, deleteOperatorStaffUser, updateOperatorStaffUser, updateOperatorOnboarding } from "../api.js";
+import { canManageTeamMembers, isOwnerOperator } from "../model.js";
 import { addToast, setError, state } from "../state.js";
+import { persistSession } from "../storage.js";
 import { handleOperatorActionError, loadDashboard } from "../lifecycle.js";
 import { render } from "../render.js";
+import { rememberPendingTeamUserUpdate, replaceTeamUser } from "../team-state.js";
+
+function applyUpdatedTeamUser(updatedUser: ReturnType<typeof replaceTeamUser>[number]) {
+  rememberPendingTeamUserUpdate(updatedUser);
+  state.teamUsers = replaceTeamUser(state.teamUsers, updatedUser);
+  if (state.session?.operator.operatorUserId === updatedUser.operatorUserId) {
+    state.session = {
+      ...state.session,
+      operator: updatedUser
+    };
+    persistSession(state.session);
+  }
+}
 
 export async function handleTeamCreateSubmit(form: HTMLFormElement) {
   if (!state.session) {
@@ -76,8 +90,7 @@ export async function handleTeamUserSubmit(form: HTMLFormElement) {
   try {
     state.busyTeamUserId = operatorUserId;
     setError(null);
-    render();
-    await updateOperatorStaffUser(
+    const updatedUser = await updateOperatorStaffUser(
       state.session,
       state.selectedLocationId === "all" ? null : state.selectedLocationId,
       operatorUserId,
@@ -89,10 +102,61 @@ export async function handleTeamUserSubmit(form: HTMLFormElement) {
       active
       }
     );
+    applyUpdatedTeamUser(updatedUser);
     addToast("Updated operator access.", "success");
     await loadDashboard();
+    applyUpdatedTeamUser(updatedUser);
   } catch (error) {
     await handleOperatorActionError(error, "Unable to update operator access.");
+  } finally {
+    state.busyTeamUserId = null;
+    render();
+  }
+}
+
+export async function handleTeamUserDelete(operatorUserId: string) {
+  if (!state.session) {
+    return;
+  }
+  if (!isOwnerOperator(state.session.operator) || !canManageTeamMembers(state.session.operator)) {
+    setError("Only owner accounts can delete operator accounts.");
+    render();
+    return;
+  }
+  if (state.session.operator.operatorUserId === operatorUserId) {
+    setError("You cannot delete your own account.");
+    render();
+    return;
+  }
+
+  const targetUser = state.teamUsers.find((user) => user.operatorUserId === operatorUserId);
+  if (!targetUser) {
+    return;
+  }
+  if (targetUser.role === "owner") {
+    setError("Owner accounts can only be managed from the admin dashboard.");
+    render();
+    return;
+  }
+
+  if (typeof window !== "undefined" && !window.confirm(`Delete ${targetUser.displayName}'s dashboard account? This cannot be undone.`)) {
+    return;
+  }
+
+  try {
+    state.busyTeamUserId = operatorUserId;
+    setError(null);
+    render();
+    await deleteOperatorStaffUser(
+      state.session,
+      state.selectedLocationId === "all" ? null : state.selectedLocationId,
+      operatorUserId
+    );
+    state.teamUsers = state.teamUsers.filter((user) => user.operatorUserId !== operatorUserId);
+    addToast("Deleted operator account.", "success");
+    await loadDashboard();
+  } catch (error) {
+    await handleOperatorActionError(error, "Unable to delete operator account.");
   } finally {
     state.busyTeamUserId = null;
     render();

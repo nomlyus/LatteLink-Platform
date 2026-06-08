@@ -266,6 +266,7 @@ export type IdentityRepository = {
     operatorUserId: string,
     input: { displayName?: string; email?: string; role?: OperatorRole; active?: boolean; password?: string }
   ): Promise<OperatorUserRecord | undefined>;
+  deleteOperatorUser(operatorUserId: string): Promise<boolean>;
   createOwnerInvite(input: {
     locationId: string;
     operatorUserId: string;
@@ -1108,6 +1109,29 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
       }
       setOperatorLocationAccess(operatorUserId, updated.locationId, getOperatorLocationIds(operatorUserId, existing.locationId));
       return cloneOperatorRecord(updated);
+    },
+    async deleteOperatorUser(operatorUserId) {
+      const existing = operatorUsersById.get(operatorUserId);
+      if (!existing) {
+        return false;
+      }
+
+      operatorUsersById.delete(operatorUserId);
+      operatorUserIdByEmail.delete(existing.email);
+      for (const [googleSub, mappedOperatorUserId] of operatorUserIdByGoogleSub.entries()) {
+        if (mappedOperatorUserId === operatorUserId) {
+          operatorUserIdByGoogleSub.delete(googleSub);
+        }
+      }
+      operatorPasswordHashByUserId.delete(operatorUserId);
+      operatorLocationIdsByUserId.delete(operatorUserId);
+      for (const [accessToken, entry] of operatorSessionsByAccessToken.entries()) {
+        if (entry.session.operatorUserId === operatorUserId) {
+          operatorSessionsByAccessToken.delete(accessToken);
+          operatorAccessTokenByRefreshToken.delete(entry.session.refreshToken);
+        }
+      }
+      return true;
     },
     async createOwnerInvite(input) {
       const now = new Date().toISOString();
@@ -2359,6 +2383,26 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         .executeTakeFirstOrThrow();
 
       return (await hydrateOperatorUser(updated as PersistedOperatorUserRow)) as OperatorUserRecord;
+    },
+    async deleteOperatorUser(operatorUserId) {
+      const existing = await db
+        .selectFrom("operator_users")
+        .select(["operator_user_id"])
+        .where("operator_user_id", "=", operatorUserId)
+        .executeTakeFirst();
+
+      if (!existing) {
+        return false;
+      }
+
+      await db.deleteFrom("operator_sessions").where("operator_user_id", "=", operatorUserId).execute();
+      await db
+        .updateTable("operator_owner_invites")
+        .set({ operator_user_id: null, updated_at: new Date().toISOString() })
+        .where("operator_user_id", "=", operatorUserId)
+        .execute();
+      await db.deleteFrom("operator_users").where("operator_user_id", "=", operatorUserId).execute();
+      return true;
     },
     async createOwnerInvite(input) {
       const created = await db

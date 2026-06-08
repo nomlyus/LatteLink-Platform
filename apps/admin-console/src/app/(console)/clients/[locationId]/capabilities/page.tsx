@@ -69,33 +69,7 @@ export default async function ClientCapabilitiesPage({ params, searchParams }: C
             {error ? <p className="inline-message inline-message-error">{error}</p> : null}
 
             <form action={updateClientCapabilitiesAction} className="stack-form">
-            <input type="hidden" name="brandId" value={location.brandId} />
-            <input type="hidden" name="brandName" value={location.brandName} />
-            <input type="hidden" name="locationId" value={location.locationId} />
-            <input type="hidden" name="locationName" value={location.locationName} />
-            <input type="hidden" name="marketLabel" value={location.marketLabel} />
-
-              <div className="form-card">
-                <div className="section-copy">
-                  <span className="eyebrow">Storefront</span>
-                  <h4>Client-facing context</h4>
-                  <p>Keep the display details aligned so the mobile app, dashboard, and internal records all describe the same location.</p>
-                </div>
-                <div className="field-grid">
-                  <label className="field">
-                    <span>Store name</span>
-                    <input name="storeName" defaultValue={location.storeName} required />
-                  </label>
-                  <label className="field">
-                    <span>Hours</span>
-                    <input name="hours" defaultValue={location.hours} required />
-                  </label>
-                  <label className="field field-wide">
-                    <span>Pickup instructions</span>
-                    <input name="pickupInstructions" defaultValue={location.pickupInstructions} required />
-                  </label>
-                </div>
-              </div>
+              <input type="hidden" name="locationId" value={location.locationId} />
 
               <div className="form-card">
                 <div className="section-copy">
@@ -104,19 +78,6 @@ export default async function ClientCapabilitiesPage({ params, searchParams }: C
                   <p>These controls decide whether operators can use the dashboard, how orders progress, and whether menu management belongs to LatteLink or an external source.</p>
                 </div>
                 <div className="field-grid">
-                  <label className="field">
-                    <span>Tax rate (%)</span>
-                    <input
-                      name="taxRatePercent"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="100"
-                      defaultValue={(location.taxRateBasisPoints / 100).toFixed(2)}
-                      required
-                    />
-                    <p className="field-hint">Sales tax rate for this location, e.g. 6.5 for 6.5%.</p>
-                  </label>
                   <label className="field">
                     <span>Menu source</span>
                     <select name="menuSource" defaultValue={location.capabilities.menu.source}>

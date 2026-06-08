@@ -368,6 +368,24 @@ describe("operator auth", () => {
       locationId: "rawaqcoffee01"
     });
 
+    const ownerRoleCreate = await app.inject({
+      method: "POST",
+      url: "/v1/operator/users",
+      headers: {
+        authorization: `Bearer ${ownerSession.accessToken}`
+      },
+      payload: {
+        displayName: "Second Owner",
+        email: "second-owner@gazellecoffee.com",
+        role: "owner",
+        password: "SecondOwner123!"
+      }
+    });
+    expect(ownerRoleCreate.statusCode).toBe(403);
+    expect(ownerRoleCreate.json()).toMatchObject({
+      code: "OWNER_ACCESS_RESTRICTED"
+    });
+
     const duplicateCreate = await app.inject({
       method: "POST",
       url: "/v1/operator/users",
@@ -419,6 +437,21 @@ describe("operator auth", () => {
       code: "INVALID_OPERATOR_UPDATE"
     });
 
+    const ownerPromotion = await app.inject({
+      method: "PATCH",
+      url: `/v1/operator/users/${ownerCreate.json().operatorUserId as string}`,
+      headers: {
+        authorization: `Bearer ${ownerSession.accessToken}`
+      },
+      payload: {
+        role: "owner"
+      }
+    });
+    expect(ownerPromotion.statusCode).toBe(403);
+    expect(ownerPromotion.json()).toMatchObject({
+      code: "OWNER_ACCESS_RESTRICTED"
+    });
+
     const conflictUpdate = await app.inject({
       method: "PATCH",
       url: `/v1/operator/users/${ownerCreate.json().operatorUserId as string}`,
@@ -433,6 +466,52 @@ describe("operator auth", () => {
     expect(conflictUpdate.json()).toMatchObject({
       code: "OPERATOR_EMAIL_ALREADY_EXISTS"
     });
+
+    const selfDelete = await app.inject({
+      method: "DELETE",
+      url: `/v1/operator/users/${ownerSession.operator.operatorUserId}`,
+      headers: {
+        authorization: `Bearer ${ownerSession.accessToken}`
+      }
+    });
+    expect(selfDelete.statusCode).toBe(400);
+    expect(selfDelete.json()).toMatchObject({
+      code: "INVALID_OPERATOR_DELETE"
+    });
+
+    const ownerDelete = await app.inject({
+      method: "DELETE",
+      url: `/v1/operator/users/${ownerSession.operator.operatorUserId}`,
+      headers: {
+        authorization: `Bearer ${storeSession.accessToken}`
+      }
+    });
+    expect(ownerDelete.statusCode).toBe(403);
+    expect(ownerDelete.json()).toMatchObject({
+      code: "FORBIDDEN"
+    });
+
+    const managerDelete = await app.inject({
+      method: "DELETE",
+      url: `/v1/operator/users/${ownerCreate.json().operatorUserId as string}`,
+      headers: {
+        authorization: `Bearer ${ownerSession.accessToken}`
+      }
+    });
+    expect(managerDelete.statusCode).toBe(200);
+    expect(managerDelete.json()).toEqual({ success: true });
+
+    const listAfterDelete = await app.inject({
+      method: "GET",
+      url: "/v1/operator/users",
+      headers: {
+        authorization: `Bearer ${ownerSession.accessToken}`
+      }
+    });
+    expect(listAfterDelete.statusCode).toBe(200);
+    expect(listAfterDelete.json().users).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ email: "nightlead@gazellecoffee.com" })])
+    );
 
     await app.close();
   });

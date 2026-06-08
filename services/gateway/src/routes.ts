@@ -63,6 +63,7 @@ import {
   internalClientDetailSchema,
   internalClientListResponseSchema,
   internalLocationBootstrapSchema,
+  internalLocationCapabilitiesUpdateSchema,
   internalLocationListResponseSchema,
   internalLocationPaymentProfileUpdateSchema,
   internalLocationParamsSchema,
@@ -4193,6 +4194,15 @@ export async function registerRoutes(app: FastifyInstance) {
       }
 
       const input = operatorUserCreateSchema.parse(request.body);
+      if (input.role === "owner") {
+        return reply.status(403).send(
+          apiErrorSchema.parse({
+            code: "OWNER_ACCESS_RESTRICTED",
+            message: "Owner access can only be configured from the admin dashboard",
+            requestId: request.id
+          })
+        );
+      }
 
       return proxyUpstream({
         request,
@@ -4224,6 +4234,15 @@ export async function registerRoutes(app: FastifyInstance) {
 
       const { operatorUserId } = operatorUserParamsSchema.parse(request.params);
       const input = operatorUserUpdateSchema.parse(request.body);
+      if (input.role === "owner") {
+        return reply.status(403).send(
+          apiErrorSchema.parse({
+            code: "OWNER_ACCESS_RESTRICTED",
+            message: "Owner access can only be configured from the admin dashboard",
+            requestId: request.id
+          })
+        );
+      }
 
       return proxyUpstream({
         request,
@@ -4234,6 +4253,45 @@ export async function registerRoutes(app: FastifyInstance) {
         path: `/v1/operator/users/${operatorUserId}${operatorLocationQuery(locationId)}`,
         body: input,
         responseSchema: operatorMeResponseSchema
+      });
+    }
+  );
+
+  app.delete(
+    "/v1/admin/staff/:operatorUserId",
+    {
+      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("team:write")]
+    },
+    async (request, reply) => {
+      if (request.authenticatedOperator?.role !== "owner") {
+        return reply.status(403).send(
+          apiErrorSchema.parse({
+            code: "FORBIDDEN",
+            message: "Only owners can delete operator accounts",
+            requestId: request.id
+          })
+        );
+      }
+
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+      const locationId = locationContext.locationId;
+      if (!locationId) {
+        return reply.status(400).send(invalidRequest(request.id, "A locationId is required for this request"));
+      }
+
+      const { operatorUserId } = operatorUserParamsSchema.parse(request.params);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: identityBaseUrl,
+        serviceLabel: "Identity",
+        method: "DELETE",
+        path: `/v1/operator/users/${operatorUserId}${operatorLocationQuery(locationId)}`,
+        responseSchema: authSuccessSchema
       });
     }
   );
@@ -4328,6 +4386,33 @@ export async function registerRoutes(app: FastifyInstance) {
         body: input,
         additionalHeaders: {
           "x-gateway-token": gatewayInternalApiToken
+        },
+        forwardUserIdHeader: false,
+        responseSchema: internalLocationSummarySchema
+      });
+    }
+  );
+
+  app.put(
+    "/v1/internal/locations/:locationId/capabilities",
+    {
+      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+    },
+    async (request, reply) => {
+      const { locationId } = internalLocationParamsSchema.parse(request.params);
+      const input = internalLocationCapabilitiesUpdateSchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "PUT",
+        path: `/v1/catalog/internal/locations/${locationId}/capabilities`,
+        body: input,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken,
+          ...internalAdminActorHeader(request)
         },
         forwardUserIdHeader: false,
         responseSchema: internalLocationSummarySchema

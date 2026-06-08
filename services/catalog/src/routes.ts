@@ -13,6 +13,7 @@ import {
   clientPaymentProfileSchema,
   internalClientDetailSchema,
   internalClientListResponseSchema,
+  internalLocationCapabilitiesUpdateSchema,
   menuResponseSchema,
   internalLocationBootstrapSchema,
   internalLocationListResponseSchema,
@@ -771,6 +772,33 @@ export async function registerRoutes(app: FastifyInstance) {
     async (request) => {
       const input = internalLocationBootstrapSchema.parse(request.body);
       return internalLocationSummarySchema.parse(await repository.bootstrapInternalLocation(input));
+    }
+  );
+
+  app.put(
+    "/v1/catalog/internal/locations/:locationId/capabilities",
+    {
+      preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess]
+    },
+    async (request, reply) => {
+      const { locationId } = internalLocationParamsSchema.parse(request.params);
+      const input = internalLocationCapabilitiesUpdateSchema.parse(request.body);
+      const summary = await repository.updateInternalLocationCapabilities(locationId, input);
+      if (!summary) {
+        return reply.status(404).send(locationNotFoundError(request.id, locationId));
+      }
+
+      await recordAuditLog(request, repository, {
+        locationId,
+        actorId: getActorId(request),
+        actorType: "internal_admin",
+        action: "location.capabilities.updated",
+        targetId: locationId,
+        targetType: "location",
+        payload: input
+      });
+
+      return internalLocationSummarySchema.parse(summary);
     }
   );
 

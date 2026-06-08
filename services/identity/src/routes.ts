@@ -34,6 +34,7 @@ import {
   operatorMeResponseSchema,
   operatorPasswordSignInSchema,
   operatorSessionSchema,
+  authSuccessSchema,
   operatorUserCreateSchema,
   operatorUserListResponseSchema,
   operatorUserParamsSchema,
@@ -1976,6 +1977,12 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
       }
 
       const input = operatorUserCreateSchema.parse(request.body);
+      if (input.role === "owner") {
+        return reply
+          .status(403)
+          .send(buildApiError(request.id, "OWNER_ACCESS_RESTRICTED", "Owner access can only be configured from the admin dashboard"));
+      }
+
       const existing = await repository.getOperatorUserByEmail(input.email);
       if (existing) {
         return reply
@@ -2037,6 +2044,12 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
 
       const { operatorUserId } = operatorUserParamsSchema.parse(request.params);
       const input = operatorUserUpdateSchema.parse(request.body);
+      if (input.role === "owner") {
+        return reply
+          .status(403)
+          .send(buildApiError(request.id, "OWNER_ACCESS_RESTRICTED", "Owner access can only be configured from the admin dashboard"));
+      }
+
       if (operator.operatorUserId === operatorUserId && input.active === false) {
         return reply.status(400).send(buildApiError(request.id, "INVALID_OPERATOR_UPDATE", "You cannot deactivate your own account"));
       }
@@ -2076,6 +2089,64 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
         locationId: updated.locationId
       });
       return updated;
+    }
+  );
+
+  app.delete(
+    "/v1/operator/users/:operatorUserId",
+    {
+      preHandler: app.rateLimit(authWriteRateLimit)
+    },
+    async (request, reply) => {
+      const parsed = authHeaderSchema.safeParse(request.headers);
+      const operator = await resolveOperatorFromBearer({
+        repository,
+        authorizationHeader: parsed.success ? parsed.data.authorization : undefined
+      });
+
+      if (!operator) {
+        return reply.status(401).send(buildApiError(request.id, "UNAUTHORIZED", "Missing or invalid auth token"));
+      }
+
+      if (operator.role !== "owner" || !operator.capabilities.includes("team:write")) {
+        return reply.status(403).send(buildApiError(request.id, "FORBIDDEN", "Only owners can delete operator accounts"));
+      }
+
+      let locationId: string;
+      try {
+        locationId = resolveRequestedOperatorLocationId(request, operator);
+      } catch {
+        return reply.status(403).send(buildApiError(request.id, "FORBIDDEN", "Operator cannot access that location"));
+      }
+
+      const { operatorUserId } = operatorUserParamsSchema.parse(request.params);
+      if (operator.operatorUserId === operatorUserId) {
+        return reply.status(400).send(buildApiError(request.id, "INVALID_OPERATOR_DELETE", "You cannot delete your own account"));
+      }
+
+      const existingTarget = await repository.getOperatorUserById(operatorUserId);
+      if (!existingTarget || !existingTarget.locationIds.includes(locationId)) {
+        return reply.status(404).send(buildApiError(request.id, "OPERATOR_NOT_FOUND", "Operator user was not found"));
+      }
+
+      if (existingTarget.role === "owner") {
+        return reply
+          .status(403)
+          .send(buildApiError(request.id, "OWNER_ACCESS_RESTRICTED", "Owner accounts can only be managed from the admin dashboard"));
+      }
+
+      const deleted = await repository.deleteOperatorUser(operatorUserId);
+      if (!deleted) {
+        return reply.status(404).send(buildApiError(request.id, "OPERATOR_NOT_FOUND", "Operator user was not found"));
+      }
+
+      logIdentityMutation(request, "operator user deleted", {
+        actorOperatorUserId: operator.operatorUserId,
+        targetOperatorUserId: operatorUserId,
+        targetRole: existingTarget.role,
+        locationId
+      });
+      return authSuccessSchema.parse({ success: true });
     }
   );
 

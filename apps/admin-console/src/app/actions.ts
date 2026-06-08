@@ -13,7 +13,6 @@ import {
   signInInternalAdmin
 } from "@/lib/auth";
 import {
-  bootstrapInternalLocation,
   buildCapabilities,
   approveInternalLocationLaunch,
   createInternalClient,
@@ -23,6 +22,7 @@ import {
   getInternalLocationReadiness,
   refreshStripeStatus,
   resendLocationOwnerInvite,
+  updateInternalLocationCapabilities,
   updateInternalLocationMobileRelease
 } from "@/lib/internal-api";
 
@@ -43,14 +43,6 @@ function readOptionalDateTime(formData: FormData, key: string) {
   const value = readOptionalString(formData, key);
   if (!value) return undefined;
   return new Date(value).toISOString();
-}
-
-function readTaxRateBasisPoints(formData: FormData, key: string): number | undefined {
-  const raw = readString(formData, key);
-  if (!raw) return undefined;
-  const percent = parseFloat(raw);
-  if (isNaN(percent) || percent < 0 || percent > 100) return undefined;
-  return Math.round(percent * 100);
 }
 
 function toRedirectError(error: unknown) {
@@ -153,16 +145,7 @@ export async function updateClientCapabilitiesAction(formData: FormData) {
 
   try {
     await requireAdminCapability("clients:write");
-    await bootstrapInternalLocation({
-      brandId: readString(formData, "brandId"),
-      brandName: readString(formData, "brandName"),
-      locationId,
-      locationName: readString(formData, "locationName"),
-      marketLabel: readString(formData, "marketLabel"),
-      storeName: readString(formData, "storeName"),
-      hours: readString(formData, "hours"),
-      pickupInstructions: readString(formData, "pickupInstructions"),
-      taxRateBasisPoints: readTaxRateBasisPoints(formData, "taxRatePercent"),
+    await updateInternalLocationCapabilities(locationId, {
       capabilities: readCapabilities(formData)
     });
   } catch (error) {
