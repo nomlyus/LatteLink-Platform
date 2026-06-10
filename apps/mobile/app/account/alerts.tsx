@@ -13,6 +13,7 @@ import { resolveAppConfigData, useAppConfigQuery } from "../../src/menu/catalog"
 import { customerProfileQueryKey, useCustomerProfileQuery } from "../../src/auth/profile";
 import { apiClient } from "../../src/api/client";
 import { GlassActionPill } from "../../src/cart/GlassActionPill";
+import { runAfterKeyboardDismiss } from "../../src/ui/keyboard";
 import { Button, Card, GlassCard, ScreenScroll, SectionLabel, uiPalette, uiTypography } from "../../src/ui/system";
 
 const COUNTRY_CODES = [
@@ -213,6 +214,14 @@ export default function ProfilePage() {
     router.replace("/(tabs)/account");
   }
 
+  function openCountrySheet() {
+    runAfterKeyboardDismiss(() => countrySheetRef.current?.snapToIndex(0));
+  }
+
+  function openDateSheet() {
+    runAfterKeyboardDismiss(() => dateSheetRef.current?.snapToIndex(0));
+  }
+
   if (!isAuthenticated) {
     return (
       <View style={styles.screenShell}>
@@ -263,7 +272,7 @@ export default function ProfilePage() {
           <View style={styles.fieldGroup}>
             <Text style={styles.fieldLabel}>Phone number</Text>
             <View style={styles.phoneRow}>
-              <TouchableOpacity style={styles.dialButton} onPress={() => countrySheetRef.current?.snapToIndex(0)}>
+              <TouchableOpacity style={styles.dialButton} onPress={openCountrySheet}>
                 <Text style={styles.dialFlag}>{dialCode.flag}</Text>
                 <Text style={styles.dialCode}>{dialCode.code}</Text>
                 <Ionicons name="chevron-down" size={12} color={uiPalette.textMuted} />
@@ -282,7 +291,7 @@ export default function ProfilePage() {
             </View>
           </View>
 
-          <TouchableOpacity style={[styles.fieldGroup, styles.fieldGroupLast, styles.fieldGroupRow]} onPress={() => dateSheetRef.current?.snapToIndex(0)}>
+          <TouchableOpacity style={[styles.fieldGroup, styles.fieldGroupLast, styles.fieldGroupRow]} onPress={openDateSheet}>
             <Text style={styles.fieldLabel}>Birthday</Text>
             <Text style={birthday ? styles.textInput : styles.textInputPlaceholder}>
               {birthday ? birthday.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "Not set"}
