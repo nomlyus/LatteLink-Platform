@@ -9,6 +9,7 @@ import { apiClient } from "../src/api/client";
 import { customerProfileQueryKey, isCustomerProfileComplete, useCustomerProfileQuery } from "../src/auth/profile";
 import { useAuthSession } from "../src/auth/session";
 import { GlassActionPill } from "../src/cart/GlassActionPill";
+import { runAfterKeyboardDismiss } from "../src/ui/keyboard";
 import { uiPalette, uiTypography } from "../src/ui/system";
 
 type ReturnToPath = "cart" | "/(tabs)/home" | "/(tabs)/orders" | "/(tabs)/account";
@@ -161,6 +162,10 @@ export default function ProfileSetupScreen() {
     continueIntoApp();
   }
 
+  function openDateSheet() {
+    runAfterKeyboardDismiss(() => dateSheetRef.current?.snapToIndex(0));
+  }
+
   if (isHydrating || profileQuery.isLoading) {
     return (
       <View style={styles.screen}>
@@ -219,7 +224,7 @@ export default function ProfileSetupScreen() {
 
           <View style={styles.fieldGroup}>
             <Text style={styles.fieldLabel}>Birthday</Text>
-            <TouchableOpacity style={styles.textInputButton} onPress={() => dateSheetRef.current?.snapToIndex(0)}>
+            <TouchableOpacity style={styles.textInputButton} onPress={openDateSheet}>
               <Text style={birthday ? styles.textInput : styles.textInputPlaceholder}>
                 {birthday ? birthday.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "Not set"}
               </Text>
