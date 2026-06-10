@@ -21,7 +21,7 @@ import {
   startAutoRefresh,
   stopAutoRefresh
 } from "./orders-runtime.js";
-import { canCreateMenuItems, isStoreOperator } from "./model.js";
+import { canCreateMenuItems } from "./model.js";
 import { primeNewOrderSound } from "./order-alert.js";
 import { loadDashboard, signOut } from "./lifecycle.js";
 import { getAvailableDashboardSections } from "./sections.js";
@@ -66,14 +66,8 @@ function closeOpenAccountMenus(target?: Node) {
   });
 }
 
-function primeStoreOrderSound() {
-  if (isStoreOperator(state.session?.operator ?? null)) {
-    primeNewOrderSound();
-  }
-}
-
 export function registerEvents() {
-  document.addEventListener("pointerdown", primeStoreOrderSound, { once: true });
+  document.addEventListener("pointerdown", primeNewOrderSound);
 
   document.addEventListener("click", (event) => {
     if (event.target instanceof Node) {
@@ -82,7 +76,7 @@ export function registerEvents() {
   });
 
   document.addEventListener("keydown", (event) => {
-    primeStoreOrderSound();
+    primeNewOrderSound();
     if (event.key === "Escape") {
       closeOpenAccountMenus();
     }
