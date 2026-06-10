@@ -22,6 +22,7 @@ import {
   stopAutoRefresh
 } from "./orders-runtime.js";
 import { canCreateMenuItems } from "./model.js";
+import { primeNewOrderSound } from "./order-alert.js";
 import { loadDashboard, signOut } from "./lifecycle.js";
 import { getAvailableDashboardSections } from "./sections.js";
 import {
@@ -66,6 +67,8 @@ function closeOpenAccountMenus(target?: Node) {
 }
 
 export function registerEvents() {
+  document.addEventListener("pointerdown", primeNewOrderSound, { once: true });
+
   document.addEventListener("click", (event) => {
     if (event.target instanceof Node) {
       closeOpenAccountMenus(event.target);
@@ -73,6 +76,7 @@ export function registerEvents() {
   });
 
   document.addEventListener("keydown", (event) => {
+    primeNewOrderSound();
     if (event.key === "Escape") {
       closeOpenAccountMenus();
     }

@@ -1,7 +1,13 @@
 import { state, ordersRefreshIntervalMs, cancelConfirmTimeoutMs } from "./state.js";
 import { subscribeToAdminOrderStream, type AdminOrderStreamEvent } from "./api.js";
 import { canAccessCapability, filterOrdersByView, isActiveOrder } from "./model.js";
+import { alertForNewOrders } from "./order-alert.js";
 import { render } from "./render.js";
+
+export function getOrderAlertScope() {
+  const operatorId = state.session?.operator.operatorUserId ?? "signed-out";
+  return `${operatorId}:${state.selectedLocationId ?? "unselected"}`;
+}
 
 export function stopAutoRefresh() {
   if (state.autoRefreshHandle !== null) {
@@ -38,6 +44,7 @@ export function startAutoRefresh(loadDashboard: (options?: { silent?: boolean })
       }
       if (event.type === "snapshot") {
         state.orders = event.orders;
+        alertForNewOrders(getOrderAlertScope(), state.orders);
         state.lastRefreshedAt = Date.now();
         reconcileSelectedOrder();
         render();
@@ -48,6 +55,7 @@ export function startAutoRefresh(loadDashboard: (options?: { silent?: boolean })
         } else {
           state.orders = [event.order, ...state.orders];
         }
+        alertForNewOrders(getOrderAlertScope(), state.orders);
         state.lastRefreshedAt = Date.now();
         reconcileSelectedOrder();
         render();
