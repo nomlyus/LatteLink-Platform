@@ -21,13 +21,13 @@ import { resetDashboardData, setError, setNotice, state } from "./state.js";
 import { snapshotCustomizationDrafts } from "./customizations.js";
 import { reconcileMenuCreateDraft, resetMenuCreateWizard } from "./menu-wizard.js";
 import {
+  alertForCurrentOrders,
   clearPendingCancel,
-  getOrderAlertScope,
   reconcileSelectedOrder,
   startAutoRefresh,
   stopAutoRefresh
 } from "./orders-runtime.js";
-import { alertForNewOrders, resetNewOrderAlert } from "./order-alert.js";
+import { resetNewOrderAlert } from "./order-alert.js";
 import { ensureSectionIsAvailable } from "./sections.js";
 import { mergePendingTeamUserUpdates } from "./team-state.js";
 import { render } from "./render.js";
@@ -209,7 +209,7 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
       state.teamUsers = mergePendingTeamUserUpdates(snapshot.team);
     }
 
-    alertForNewOrders(getOrderAlertScope(), state.orders);
+    alertForCurrentOrders();
     await loadOwnerOnboarding(session);
     autoOpenOwnerOnboarding();
     state.lastRefreshedAt = Date.now();
