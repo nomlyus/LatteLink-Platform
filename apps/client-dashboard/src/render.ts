@@ -2,6 +2,7 @@ import { renderAuthScreen } from "./views/auth.js";
 import { renderDashboard } from "./views/layout.js";
 import { renderToasts } from "./views/toasts.js";
 import { state } from "./state.js";
+import { setToastRenderHandler } from "./toast-runtime.js";
 
 const appRoot = document.querySelector<HTMLDivElement>("#app");
 if (!appRoot) {
@@ -31,3 +32,5 @@ export function render() {
     }
   }
 }
+
+setToastRenderHandler(render);

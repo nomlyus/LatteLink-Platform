@@ -1,6 +1,7 @@
 import { updateOperatorStoreConfig } from "../api.js";
 import { canUpdateStoreSettings } from "../model.js";
-import { addToast, setError, state } from "../state.js";
+import { setError, state } from "../state.js";
+import { addToast } from "../toast-runtime.js";
 import { handleOperatorActionError, loadDashboard } from "../lifecycle.js";
 import { render } from "../render.js";
 

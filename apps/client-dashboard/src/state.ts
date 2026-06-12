@@ -86,7 +86,12 @@ export type AppState = {
     priceCents: string;
     visible: boolean;
   };
-  toasts: Array<{ id: string; message: string; tone: "success" | "error" | "notice" }>;
+  toasts: Array<{
+    id: string;
+    message: string;
+    tone: "success" | "error" | "notice";
+    dismissing: boolean;
+  }>;
 };
 
 export const ordersRefreshIntervalMs = 30_000;
@@ -174,13 +179,20 @@ export function setNotice(message: string | null) {
   state.notice = message;
 }
 
-export function addToast(message: string, tone: "success" | "error" | "notice" = "notice") {
+export function createToast(message: string, tone: "success" | "error" | "notice" = "notice") {
   const id = Math.random().toString(36).slice(2);
-  state.toasts.push({ id, message, tone });
+  state.toasts.push({ id, message, tone, dismissing: false });
   return id;
 }
 
-export function dismissToast(id: string) {
+export function markToastDismissing(id: string) {
+  const toast = state.toasts.find((item) => item.id === id);
+  if (toast) {
+    toast.dismissing = true;
+  }
+}
+
+export function removeToast(id: string) {
   state.toasts = state.toasts.filter((t) => t.id !== id);
 }
 

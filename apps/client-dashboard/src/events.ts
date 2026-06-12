@@ -1,5 +1,6 @@
 import { root, render } from "./render.js";
-import { addToast, setError, dismissToast, state } from "./state.js";
+import { setError, state } from "./state.js";
+import { addToast, dismissToast } from "./toast-runtime.js";
 import { persistSection } from "./storage.js";
 import {
   syncMenuCreateDraft,

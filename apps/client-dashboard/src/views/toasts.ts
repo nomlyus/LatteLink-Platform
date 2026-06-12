@@ -6,7 +6,7 @@ export function renderToasts() {
   const items = state.toasts
     .map(
       (toast) => `
-        <div class="toast toast--${toast.tone}" role="alert">
+        <div class="toast toast--${toast.tone}${toast.dismissing ? " toast--dismissing" : ""}" role="alert">
           <span class="toast__message">${escapeHtml(toast.message)}</span>
           <button class="toast__dismiss" type="button" data-action="dismiss-toast" data-toast-id="${toast.id}" aria-label="Dismiss">&times;</button>
         </div>
