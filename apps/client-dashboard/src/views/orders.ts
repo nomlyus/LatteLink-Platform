@@ -18,6 +18,7 @@ import {
   type AppConfig
 } from "@lattelink/contracts-catalog";
 import { getSelectedOrder, getVisibleOrders } from "../orders-runtime.js";
+import { isNewOrderSoundEnabled } from "../order-alert.js";
 import { renderLocationSelectionNotice, renderOrderStatusBadge, renderSectionHeading } from "./common.js";
 
 type StoreLaneTone = "needs-action" | "in-progress" | "ready" | "closed" | "canceled";
@@ -409,6 +410,13 @@ function renderStoreModeBoard(appConfig: AppConfig | null) {
     <section class="dash-section dash-section--store-mode">
       <div class="dash-store-board__toolbar">
         ${renderStoreModeSummary(storeOrders, completedOrders)}
+        <button
+          class="button ${isNewOrderSoundEnabled() ? "button--secondary" : "button--primary"}"
+          type="button"
+          data-action="enable-order-sound"
+        >
+          ${isNewOrderSoundEnabled() ? "Order sound on" : "Enable order sound"}
+        </button>
         <button class="button button--ghost" type="button" data-action="refresh" ${state.loading ? "disabled" : ""}>
           ${state.loading ? '<span class="spinner"></span>' : "Refresh"}
         </button>

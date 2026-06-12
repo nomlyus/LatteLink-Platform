@@ -1,5 +1,5 @@
 import { root, render } from "./render.js";
-import { setError, dismissToast, state } from "./state.js";
+import { addToast, setError, dismissToast, state } from "./state.js";
 import { persistSection } from "./storage.js";
 import {
   syncMenuCreateDraft,
@@ -22,7 +22,7 @@ import {
   stopAutoRefresh
 } from "./orders-runtime.js";
 import { canCreateMenuItems } from "./model.js";
-import { primeNewOrderSound } from "./order-alert.js";
+import { enableNewOrderSound } from "./order-alert.js";
 import { loadDashboard, signOut } from "./lifecycle.js";
 import { getAvailableDashboardSections } from "./sections.js";
 import {
@@ -67,8 +67,6 @@ function closeOpenAccountMenus(target?: Node) {
 }
 
 export function registerEvents() {
-  document.addEventListener("pointerdown", primeNewOrderSound);
-
   document.addEventListener("click", (event) => {
     if (event.target instanceof Node) {
       closeOpenAccountMenus(event.target);
@@ -76,7 +74,6 @@ export function registerEvents() {
   });
 
   document.addEventListener("keydown", (event) => {
-    primeNewOrderSound();
     if (event.key === "Escape") {
       closeOpenAccountMenus();
     }
@@ -186,6 +183,17 @@ export function registerEvents() {
     }
 
     switch (action) {
+      case "enable-order-sound":
+        void enableNewOrderSound().then((enabled) => {
+          addToast(
+            enabled
+              ? "Order sound enabled. The test chime confirms audio is working."
+              : "Order sound could not be enabled. Check this site's browser audio permissions.",
+            enabled ? "success" : "error"
+          );
+          render();
+        });
+        return;
       case "refresh":
         void loadDashboard();
         return;

@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { NewOrderTracker } from "../src/order-alert";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  NewOrderTracker,
+  enableNewOrderSound,
+  isNewOrderSoundEnabled,
+  resetNewOrderAlert
+} from "../src/order-alert";
 import { resolveOrder, type OperatorOrder } from "../src/model";
 
 const orderOneId = "11111111-1111-4111-8111-111111111111";
@@ -18,6 +23,11 @@ function order(id: string, status: OperatorOrder["status"]) {
 }
 
 describe("new order tracker", () => {
+  afterEach(() => {
+    resetNewOrderAlert();
+    vi.unstubAllGlobals();
+  });
+
   it("uses the first snapshot as a silent baseline", () => {
     const tracker = new NewOrderTracker();
 
@@ -42,5 +52,43 @@ describe("new order tracker", () => {
 
     tracker.observe("operator:location-1", []);
     expect(tracker.observe("operator:location-2", [order(orderTwoId, "READY")])).toEqual([]);
+  });
+
+  it("enables a suspended audio context and plays a test chime", async () => {
+    const start = vi.fn();
+    const stop = vi.fn();
+    const context = {
+      state: "suspended",
+      currentTime: 1,
+      destination: {},
+      resume: vi.fn(async () => {
+        context.state = "running";
+      }),
+      createGain: vi.fn(() => ({
+        gain: {
+          setValueAtTime: vi.fn(),
+          exponentialRampToValueAtTime: vi.fn()
+        },
+        connect: vi.fn()
+      })),
+      createOscillator: vi.fn(() => ({
+        type: "sine",
+        frequency: { setValueAtTime: vi.fn() },
+        connect: vi.fn(),
+        start,
+        stop
+      }))
+    };
+    const AudioContext = vi.fn(function MockAudioContext() {
+      return context;
+    });
+    vi.stubGlobal("window", { AudioContext });
+
+    await expect(enableNewOrderSound()).resolves.toBe(true);
+    expect(context.resume).toHaveBeenCalledOnce();
+    expect(context.createOscillator).toHaveBeenCalledTimes(2);
+    expect(start).toHaveBeenCalledTimes(2);
+    expect(stop).toHaveBeenCalledTimes(2);
+    expect(isNewOrderSoundEnabled()).toBe(true);
   });
 });

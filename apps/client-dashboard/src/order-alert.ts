@@ -30,55 +30,75 @@ export class NewOrderTracker {
 
 const newOrderTracker = new NewOrderTracker();
 let audioContext: AudioContext | null = null;
+let soundEnabled = false;
 
 function getAudioContext() {
-  if (typeof window === "undefined" || typeof window.AudioContext === "undefined") {
+  if (typeof window === "undefined") {
     return null;
   }
-  audioContext ??= new window.AudioContext();
+
+  const AudioContextConstructor =
+    window.AudioContext ??
+    (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AudioContextConstructor) {
+    return null;
+  }
+
+  audioContext ??= new AudioContextConstructor();
   return audioContext;
 }
 
-export function primeNewOrderSound() {
-  const context = getAudioContext();
-  if (context?.state === "suspended") {
-    void context.resume();
-  }
-}
-
-function playNewOrderSound() {
-  const context = getAudioContext();
-  if (!context) {
-    return;
-  }
-
-  if (context.state === "suspended") {
-    void context.resume();
-  }
-
+function playChime(context: AudioContext) {
   const startAt = context.currentTime;
   const gain = context.createGain();
   gain.gain.setValueAtTime(0.0001, startAt);
-  gain.gain.exponentialRampToValueAtTime(0.22, startAt + 0.02);
-  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.5);
+  gain.gain.exponentialRampToValueAtTime(0.3, startAt + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.7);
   gain.connect(context.destination);
 
-  for (const [frequency, offset] of [[880, 0], [1174.66, 0.16]] as const) {
+  for (const [frequency, offset] of [[880, 0], [1174.66, 0.22]] as const) {
     const oscillator = context.createOscillator();
     oscillator.type = "sine";
     oscillator.frequency.setValueAtTime(frequency, startAt + offset);
     oscillator.connect(gain);
     oscillator.start(startAt + offset);
-    oscillator.stop(startAt + offset + 0.3);
+    oscillator.stop(startAt + offset + 0.4);
   }
 }
 
+export function isNewOrderSoundEnabled() {
+  return soundEnabled && audioContext?.state === "running";
+}
+
+export async function enableNewOrderSound() {
+  const context = getAudioContext();
+  if (!context) {
+    soundEnabled = false;
+    return false;
+  }
+
+  try {
+    if (context.state !== "running") {
+      await context.resume();
+    }
+    soundEnabled = context.state === "running";
+    if (soundEnabled) {
+      playChime(context);
+    }
+  } catch {
+    soundEnabled = false;
+  }
+
+  return soundEnabled;
+}
+
 export function alertForNewOrders(scope: string, orders: readonly OperatorOrder[]) {
-  if (newOrderTracker.observe(scope, orders).length > 0) {
-    playNewOrderSound();
+  if (newOrderTracker.observe(scope, orders).length > 0 && isNewOrderSoundEnabled() && audioContext) {
+    playChime(audioContext);
   }
 }
 
 export function resetNewOrderAlert() {
   newOrderTracker.reset();
+  soundEnabled = false;
 }
