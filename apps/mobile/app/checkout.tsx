@@ -48,7 +48,7 @@ function StatusBanner({
 }) {
   return (
     <View style={[styles.banner, tone === "warning" ? styles.bannerWarning : null]}>
-      <Text style={[styles.bannerText, tone === "warning" ? styles.bannerTextWarning : null]}>{message}</Text>
+      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.bannerText, tone === "warning" ? styles.bannerTextWarning : null]}>{message}</Text>
     </View>
   );
 }
@@ -64,8 +64,8 @@ function SummaryRow({
 }) {
   return (
     <View style={styles.summaryRow}>
-      <Text style={[styles.summaryLabel, emphasized ? styles.summaryLabelEmphasized : null]}>{label}</Text>
-      <Text style={[styles.summaryValue, emphasized ? styles.summaryValueEmphasized : null]}>{value}</Text>
+      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.summaryLabel, emphasized ? styles.summaryLabelEmphasized : null]}>{label}</Text>
+      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.summaryValue, emphasized ? styles.summaryValueEmphasized : null]}>{value}</Text>
     </View>
   );
 }
@@ -78,12 +78,12 @@ function BagLineItem({ item }: { item: CartItem }) {
 
   return (
     <View style={styles.bagItem}>
-      <Text style={styles.bagQuantity}>{item.quantity}x</Text>
+      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.bagQuantity}>{item.quantity}x</Text>
       <View style={styles.bagCopy}>
-        <Text style={styles.bagItemTitle}>{item.itemName}</Text>
-        <Text style={styles.bagItemMeta}>{customization}</Text>
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.bagItemTitle}>{item.itemName}</Text>
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.bagItemMeta}>{customization}</Text>
       </View>
-      <Text style={styles.bagItemPrice}>{formatUsd(item.lineTotalCents)}</Text>
+      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.bagItemPrice}>{formatUsd(item.lineTotalCents)}</Text>
     </View>
   );
 }
@@ -448,13 +448,13 @@ export default function CheckoutScreen() {
           <View style={styles.headerUtilityRow}>
             <Pressable onPress={refreshCheckoutContext} style={({ pressed }) => [styles.inlineAction, pressed ? styles.inlineActionPressed : null]}>
               <Ionicons name="refresh-outline" size={15} color={uiPalette.textSecondary} />
-              <Text style={styles.inlineActionText}>Retry</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.inlineActionText}>Retry</Text>
             </Pressable>
           </View>
         ) : null}
 
-        <Text style={styles.headerTitle}>Checkout</Text>
-        <Text style={styles.headerSubtitle}>
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.headerTitle}>Checkout</Text>
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.headerSubtitle}>
           {storeConfig
             ? storeConfig.isOpen
               ? `${brandName} • ${etaLabel}`
@@ -473,8 +473,8 @@ export default function CheckoutScreen() {
       >
         {items.length === 0 ? (
           <Card style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>Your cart is empty.</Text>
-            <Text style={styles.emptyBody}>Add items from the menu before opening checkout.</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emptyTitle}>Your cart is empty.</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emptyBody}>Add items from the menu before opening checkout.</Text>
             <Button label="Back to cart" variant="secondary" onPress={dismissCheckout} />
           </Card>
         ) : (
@@ -488,16 +488,16 @@ export default function CheckoutScreen() {
 
             <Card style={styles.sectionCard}>
               <SectionLabel label="Order" />
-              <Text style={styles.sectionTitle}>Summary</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionTitle}>Summary</Text>
               <View style={styles.summaryMetaRow}>
-                <Text style={styles.summaryMetaText}>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryMetaText}>
                   {itemCount} {itemCount === 1 ? "item" : "items"}
                 </Text>
-                <Text style={styles.summaryMetaDot}>•</Text>
-                <Text style={styles.summaryMetaText}>{storeStatusLabel}</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryMetaDot}>•</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryMetaText}>{storeStatusLabel}</Text>
               </View>
               {storeConfig?.pickupInstructions ? (
-                <Text style={styles.sectionBody}>{storeConfig.pickupInstructions}</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionBody}>{storeConfig.pickupInstructions}</Text>
               ) : null}
 
               <View style={styles.bagList}>
@@ -508,8 +508,8 @@ export default function CheckoutScreen() {
 
               <View style={styles.sectionDivider} />
               <View style={styles.primaryField}>
-                <Text style={styles.fieldLabel}>Discount code</Text>
-                <TextInput
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.fieldLabel}>Discount code</Text>
+                <TextInput allowFontScaling={false} maxFontSizeMultiplier={1}
                   value={discountCode}
                   onChangeText={setDiscountCode}
                   autoCapitalize="characters"
@@ -519,7 +519,7 @@ export default function CheckoutScreen() {
                   style={styles.fieldInput}
                 />
                 {discountCode ? (
-                  <Text style={styles.fieldHint}>Code will be validated before Stripe opens. The payment sheet will show the final discounted total.</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.fieldHint}>Code will be validated before Stripe opens. The payment sheet will show the final discounted total.</Text>
                 ) : null}
               </View>
               <View style={styles.sectionDivider} />

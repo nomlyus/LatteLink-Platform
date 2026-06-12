@@ -28,8 +28,8 @@ function DetailRow({
 }) {
   return (
     <View style={styles.detailRow}>
-      <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={styles.detailValue}>{value}</Text>
+      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.detailLabel}>{label}</Text>
+      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.detailValue}>{value}</Text>
     </View>
   );
 }
@@ -58,8 +58,8 @@ export default function SessionPage() {
         <ScreenScroll bottomInset={48} contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}>
           <GlassCard style={styles.heroCard}>
             <SectionLabel label="Session" />
-            <Text style={styles.heroTitle}>{recoveryCopy.title}</Text>
-            <Text style={styles.heroBody}>{recoveryCopy.body}</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>{recoveryCopy.title}</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroBody}>{recoveryCopy.body}</Text>
             <Button
               label={recoveryCopy.actionLabel}
               variant="secondary"
@@ -81,8 +81,8 @@ export default function SessionPage() {
           <View style={styles.heroTopRow}>
             <View style={styles.heroCopy}>
               <SectionLabel label="Secure session" />
-              <Text style={styles.heroTitle}>{`Member ${session?.userId.slice(0, 8).toUpperCase()}`}</Text>
-              <Text style={styles.heroBody}>{locationName}</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>{`Member ${session?.userId.slice(0, 8).toUpperCase()}`}</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroBody}>{locationName}</Text>
             </View>
             <Chip label="Secure" active />
           </View>

@@ -188,8 +188,8 @@ export function TitleBlock({ title, subtitle, action }: TitleBlockProps) {
   return (
     <View style={styles.titleWrap}>
       <View style={styles.titleCopy}>
-        <Text style={styles.titleText}>{title}</Text>
-        {subtitle ? <Text style={styles.subtitleText}>{subtitle}</Text> : null}
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.titleText}>{title}</Text>
+        {subtitle ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.subtitleText}>{subtitle}</Text> : null}
       </View>
       {action ? <View style={styles.titleAction}>{action}</View> : null}
     </View>
@@ -276,7 +276,7 @@ export function Button({
     >
       <View style={styles.buttonInner}>
         {left}
-        <Text style={[styles.buttonText, buttonTextStyles[variant], labelStyle]}>{label}</Text>
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.buttonText, buttonTextStyles[variant], labelStyle]}>{label}</Text>
         {right}
       </View>
     </Pressable>
@@ -301,13 +301,13 @@ export function Chip({ label, active = false, onPress, style }: ChipProps) {
         style
       ]}
     >
-      <Text style={[styles.chipText, active ? styles.chipTextActive : null]}>{label}</Text>
+      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.chipText, active ? styles.chipTextActive : null]}>{label}</Text>
     </Pressable>
   );
 }
 
 export function SectionLabel({ label }: { label: string }) {
-  return <Text style={styles.sectionLabel}>{label}</Text>;
+  return <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionLabel}>{label}</Text>;
 }
 
 const buttonVariantStyles = StyleSheet.create({

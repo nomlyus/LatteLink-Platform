@@ -102,7 +102,7 @@ function PickupCodePill({ code }: { code: string }) {
         <BlurView tint="light" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.pickupCodePillFrame} />
       )}
       <View pointerEvents="none" style={styles.pickupCodePillContent}>
-        <Text style={styles.pickupCodePillText}>{code}</Text>
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.pickupCodePillText}>{code}</Text>
       </View>
     </View>
   );
@@ -140,8 +140,8 @@ function SummaryRow({
 }) {
   return (
     <View style={styles.summaryRow}>
-      <Text style={styles.summaryLabel}>{label}</Text>
-      <Text style={[styles.summaryValue, emphasized ? styles.summaryValueStrong : null]}>{value}</Text>
+      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryLabel}>{label}</Text>
+      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.summaryValue, emphasized ? styles.summaryValueStrong : null]}>{value}</Text>
     </View>
   );
 }
@@ -189,10 +189,10 @@ export default function CheckoutSuccessScreen() {
           {resolvedConfirmation ? (
             <>
               <View style={styles.heroBlock}>
-                <Text style={styles.title}>{confirmationCopy.title}</Text>
-                <Text style={styles.body}>{confirmationCopy.body}</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>{confirmationCopy.title}</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>{confirmationCopy.body}</Text>
                 <View style={styles.heroCodeRow}>
-                  <Text style={styles.heroCodeLabel}>Pickup Code</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroCodeLabel}>Pickup Code</Text>
                   <PickupCodePill code={resolvedConfirmation.pickupCode} />
                 </View>
               </View>
@@ -200,7 +200,7 @@ export default function CheckoutSuccessScreen() {
               <View style={[styles.pickupCodeStage, resolvedItems.length > 0 ? styles.pickupCodeStageWithItems : null]}>
                 {resolvedItems.length > 0 ? (
                   <View style={styles.orderItemsBlock}>
-                    <Text style={styles.orderItemsLabel}>Items</Text>
+                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.orderItemsLabel}>Items</Text>
                     {resolvedItems.map((item, index) => {
                       const menuItem = menuItemsById.get(item.itemId) as MenuItem | undefined;
                       const label = item.itemName ?? menuItem?.name ?? item.itemId;
@@ -215,10 +215,10 @@ export default function CheckoutSuccessScreen() {
                               <View style={styles.menuLikeBodyContent}>
                                 <View style={styles.menuLikeCopy}>
                                   <View style={styles.menuLikeTitleRow}>
-                                    <Text style={styles.menuLikeTitle}>{label}</Text>
-                                    <Text style={styles.menuLikeMeta}>{formatUsd(lineTotal)}</Text>
+                                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.menuLikeTitle}>{label}</Text>
+                                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.menuLikeMeta}>{formatUsd(lineTotal)}</Text>
                                   </View>
-                                  <Text numberOfLines={3} style={styles.menuLikeDescription}>
+                                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} numberOfLines={3} style={styles.menuLikeDescription}>
                                     {description}
                                   </Text>
                                 </View>
@@ -240,8 +240,8 @@ export default function CheckoutSuccessScreen() {
             </>
           ) : (
             <View style={styles.heroBlockEmpty}>
-              <Text style={styles.title}>{confirmationCopy.title}</Text>
-              <Text style={styles.body}>{confirmationCopy.body}</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>{confirmationCopy.title}</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>{confirmationCopy.body}</Text>
             </View>
           )}
         </ScrollView>

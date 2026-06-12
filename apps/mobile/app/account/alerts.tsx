@@ -82,9 +82,9 @@ function CountrySheet({
     >
       <BottomSheetView>
         <View style={styles.sheetHeader}>
-          <Text style={styles.sheetTitle}>Country Code</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sheetTitle}>Country Code</Text>
           <TouchableOpacity onPress={() => sheetRef.current?.close()} style={styles.sheetDone}>
-            <Text style={styles.sheetDoneText}>Done</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sheetDoneText}>Done</Text>
           </TouchableOpacity>
         </View>
         <Picker
@@ -136,9 +136,9 @@ function DateSheet({
     >
       <BottomSheetView>
         <View style={styles.sheetHeader}>
-          <Text style={styles.sheetTitle}>Birthday</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sheetTitle}>Birthday</Text>
           <TouchableOpacity onPress={() => sheetRef.current?.close()} style={styles.sheetDone}>
-            <Text style={styles.sheetDoneText}>Done</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sheetDoneText}>Done</Text>
           </TouchableOpacity>
         </View>
         <View style={styles.datePickerWrap}>
@@ -228,8 +228,8 @@ export default function ProfilePage() {
         <ScreenScroll bottomInset={48} contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}>
           <GlassCard style={styles.heroCard}>
             <SectionLabel label="Profile" />
-            <Text style={styles.heroTitle}>Sign in to edit your profile.</Text>
-            <Text style={styles.heroBody}>Your name, phone, and birthday are tied to your account.</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>Sign in to edit your profile.</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroBody}>Your name, phone, and birthday are tied to your account.</Text>
             <Button
               label="Sign In"
               variant="secondary"
@@ -250,14 +250,14 @@ export default function ProfilePage() {
       <ScreenScroll bottomInset={100} contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}>
         <GlassCard style={styles.heroCard}>
           <SectionLabel label="Profile" />
-          <Text style={styles.heroTitle}>Your info.</Text>
-          <Text style={styles.heroBody}>Update your name, phone number, and birthday.</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>Your info.</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroBody}>Update your name, phone number, and birthday.</Text>
         </GlassCard>
 
         <Card style={styles.formCard}>
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Full name</Text>
-            <TextInput
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.fieldLabel}>Full name</Text>
+            <TextInput allowFontScaling={false} maxFontSizeMultiplier={1}
               autoCapitalize="words"
               autoComplete="name"
               autoCorrect={false}
@@ -270,15 +270,15 @@ export default function ProfilePage() {
           </View>
 
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Phone number</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.fieldLabel}>Phone number</Text>
             <View style={styles.phoneRow}>
               <TouchableOpacity style={styles.dialButton} onPress={openCountrySheet}>
-                <Text style={styles.dialFlag}>{dialCode.flag}</Text>
-                <Text style={styles.dialCode}>{dialCode.code}</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.dialFlag}>{dialCode.flag}</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.dialCode}>{dialCode.code}</Text>
                 <Ionicons name="chevron-down" size={12} color={uiPalette.textMuted} />
               </TouchableOpacity>
               <View style={styles.phoneDivider} />
-              <TextInput
+              <TextInput allowFontScaling={false} maxFontSizeMultiplier={1}
                 autoComplete="tel"
                 autoCorrect={false}
                 keyboardType="phone-pad"
@@ -292,16 +292,16 @@ export default function ProfilePage() {
           </View>
 
           <TouchableOpacity style={[styles.fieldGroup, styles.fieldGroupLast, styles.fieldGroupRow]} onPress={openDateSheet}>
-            <Text style={styles.fieldLabel}>Birthday</Text>
-            <Text style={birthday ? styles.textInput : styles.textInputPlaceholder}>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.fieldLabel}>Birthday</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={birthday ? styles.textInput : styles.textInputPlaceholder}>
               {birthday ? birthday.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "Not set"}
             </Text>
           </TouchableOpacity>
 
           {profile?.email ? (
             <View style={styles.emailRow}>
-              <Text style={styles.emailLabel}>Email</Text>
-              <Text style={styles.emailValue}>{profile.email}</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emailLabel}>Email</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emailValue}>{profile.email}</Text>
             </View>
           ) : null}
         </Card>
@@ -309,7 +309,7 @@ export default function ProfilePage() {
 
       <View pointerEvents="box-none" style={[styles.bottomDock, { bottom: Math.max(insets.bottom, 16) }]}>
         {saveMutation.isError ? (
-          <Text style={styles.errorText}>Failed to save. Please try again.</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.errorText}>Failed to save. Please try again.</Text>
         ) : null}
         <GlassActionPill
           label={saveMutation.isPending ? "Saving…" : saved ? "Saved" : "Save changes"}

@@ -239,10 +239,10 @@ export default function AuthScreen() {
           <View style={styles.handle} />
         </View>
         <View style={[styles.centerContent, { paddingTop: topContentInset }]}>
-          <Text style={styles.title}>Restoring your session…</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>Restoring your session…</Text>
           <View style={styles.loadingRow}>
             <ActivityIndicator color={uiPalette.primary} />
-            <Text style={styles.body}>Hydrating local credentials.</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>Hydrating local credentials.</Text>
           </View>
         </View>
       </View>
@@ -258,42 +258,42 @@ export default function AuthScreen() {
         {isAuthenticated ? (
           profileQuery.isLoading ? (
             <>
-              <Text style={styles.title}>Checking your profile…</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>Checking your profile…</Text>
               <View style={styles.loadingRow}>
                 <ActivityIndicator color={uiPalette.primary} />
-                <Text style={styles.body}>Preparing your account details.</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>Preparing your account details.</Text>
               </View>
             </>
           ) : profileQuery.isError ? (
             <>
-              <Text style={styles.title}>We could not load your profile.</Text>
-              <Text style={styles.body}>We’ll open profile setup so you can continue.</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>We could not load your profile.</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>We’ll open profile setup so you can continue.</Text>
             </>
           ) : profileNeedsSetup ? (
             <>
-              <Text style={styles.title}>Finish your signup.</Text>
-              <Text style={styles.body}>We need a profile setup step before you can enter the app.</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>Finish your signup.</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>We need a profile setup step before you can enter the app.</Text>
             </>
           ) : profileComplete ? (
             <>
-              <Text style={styles.title}>Returning…</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>Returning…</Text>
               <View style={styles.loadingRow}>
                 <ActivityIndicator color={uiPalette.primary} />
-                <Text style={styles.body}>Closing this sheet.</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>Closing this sheet.</Text>
               </View>
             </>
           ) : (
             <>
-              <Text style={styles.title}>You’re signed in.</Text>
-              <Text style={styles.body}>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>You’re signed in.</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>
                 {session ? `Your session is active until ${formatExpiresAt(session.expiresAt)}.` : "Your account is ready to go."}
               </Text>
             </>
           )
         ) : (
           <>
-            <Text style={styles.title}>{recoveryCopy.title}</Text>
-            <Text style={styles.body}>{recoveryCopy.body}</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>{recoveryCopy.title}</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>{recoveryCopy.body}</Text>
           </>
         )}
       </View>
@@ -319,7 +319,7 @@ export default function AuthScreen() {
               onPress={handleNativeAppleSignIn}
             />
             {MOBILE_API_ENVIRONMENT.variant ? (
-              <Text style={styles.environmentHint}>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.environmentHint}>
                 {MOBILE_API_ENVIRONMENT.variant} · {MOBILE_API_ENVIRONMENT.apiBaseUrl || "API blocked"}
               </Text>
             ) : null}
@@ -331,8 +331,8 @@ export default function AuthScreen() {
                 disabled={devAccess.isPending || appleExchange.isPending}
               />
             ) : null}
-            {appleSignInMessage ? <Text style={styles.notice}>{appleSignInMessage}</Text> : null}
-            {devAccessMessage ? <Text style={styles.notice}>{devAccessMessage}</Text> : null}
+            {appleSignInMessage ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.notice}>{appleSignInMessage}</Text> : null}
+            {devAccessMessage ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.notice}>{devAccessMessage}</Text> : null}
           </>
         ) : (
           <>
@@ -342,7 +342,7 @@ export default function AuthScreen() {
               disabled
             />
             {MOBILE_API_ENVIRONMENT.variant ? (
-              <Text style={styles.environmentHint}>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.environmentHint}>
                 {MOBILE_API_ENVIRONMENT.variant} · {MOBILE_API_ENVIRONMENT.apiBaseUrl || "API blocked"}
               </Text>
             ) : null}
@@ -353,8 +353,8 @@ export default function AuthScreen() {
                 disabled={devAccess.isPending || appleExchange.isPending}
               />
             ) : null}
-            {appleSignInMessage ? <Text style={styles.notice}>{appleSignInMessage}</Text> : null}
-            {devAccessMessage ? <Text style={styles.notice}>{devAccessMessage}</Text> : null}
+            {appleSignInMessage ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.notice}>{appleSignInMessage}</Text> : null}
+            {devAccessMessage ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.notice}>{devAccessMessage}</Text> : null}
           </>
         )}
       </View>

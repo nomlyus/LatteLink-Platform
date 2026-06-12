@@ -131,7 +131,7 @@ function SummaryStatusPill({
         <BlurView tint="light" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.statusPillFrame} />
       )}
       <View pointerEvents="none" style={styles.statusPillContent}>
-        <Text style={styles.statusPillText}>{label}</Text>
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.statusPillText}>{label}</Text>
       </View>
     </View>
   );
@@ -148,8 +148,8 @@ function SummaryRow({
 }) {
   return (
     <View style={styles.summaryRow}>
-      <Text style={styles.summaryLabel}>{label}</Text>
-      {typeof value === "string" ? <Text style={[styles.summaryValue, emphasized ? styles.summaryValueStrong : null]}>{value}</Text> : value}
+      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryLabel}>{label}</Text>
+      {typeof value === "string" ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.summaryValue, emphasized ? styles.summaryValueStrong : null]}>{value}</Text> : value}
     </View>
   );
 }
@@ -166,7 +166,7 @@ function EmptyState({
   return (
     <ScreenScroll bottomInset={48}>
       <View style={styles.emptyWrap}>
-        <Text style={styles.emptyTitle}>{title}</Text>
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emptyTitle}>{title}</Text>
         <Button
           label={actionLabel}
           onPress={onAction}
@@ -228,12 +228,12 @@ export default function RefundDetailScreen() {
       <View style={styles.content}>
         <View style={styles.mainContent}>
           <View style={styles.heroBlock}>
-            <Text style={styles.title}>{headline?.title}</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>{headline?.title}</Text>
           </View>
 
           <View style={styles.orderItemsStage}>
             <View style={styles.orderItemsBlock}>
-              <Text style={styles.orderItemsLabel}>Items</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.orderItemsLabel}>Items</Text>
               {order.items.map((item, index) => {
                 const menuItem = menuItemsById.get(item.itemId) as MenuItem | undefined;
                 const label = item.itemName ?? menuItem?.name ?? item.itemId;
@@ -248,10 +248,10 @@ export default function RefundDetailScreen() {
                         <View style={styles.menuLikeBodyContent}>
                           <View style={styles.menuLikeCopy}>
                             <View style={styles.menuLikeTitleRow}>
-                              <Text style={styles.menuLikeTitle}>{label}</Text>
-                              <Text style={styles.menuLikeMeta}>{formatUsd(lineTotal)}</Text>
+                              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.menuLikeTitle}>{label}</Text>
+                              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.menuLikeMeta}>{formatUsd(lineTotal)}</Text>
                             </View>
-                            <Text numberOfLines={3} style={styles.menuLikeDescription}>
+                            <Text allowFontScaling={false} maxFontSizeMultiplier={1} numberOfLines={3} style={styles.menuLikeDescription}>
                               {description}
                             </Text>
                           </View>

@@ -61,8 +61,8 @@ export function DeleteAccountSheet({
     >
       <BottomSheetView style={[styles.content, { paddingBottom: Math.max(bottomInset, 8) }]}>
         <View>
-          <Text style={styles.title}>Delete Account?</Text>
-          <Text style={styles.body}>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>Delete Account?</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>
             This permanently deletes your profile, sessions, rewards, notifications, and order history tied to this
             account. This cannot be undone.
           </Text>
