@@ -21,11 +21,13 @@ import { resetDashboardData, setError, setNotice, state } from "./state.js";
 import { snapshotCustomizationDrafts } from "./customizations.js";
 import { reconcileMenuCreateDraft, resetMenuCreateWizard } from "./menu-wizard.js";
 import {
+  alertForCurrentOrders,
   clearPendingCancel,
   reconcileSelectedOrder,
   startAutoRefresh,
   stopAutoRefresh
 } from "./orders-runtime.js";
+import { resetNewOrderAlert } from "./order-alert.js";
 import { ensureSectionIsAvailable } from "./sections.js";
 import { mergePendingTeamUserUpdates } from "./team-state.js";
 import { render } from "./render.js";
@@ -49,6 +51,7 @@ export async function signOut(message = "") {
   state.session = null;
   state.authPassword = "";
   stopAutoRefresh();
+  resetNewOrderAlert();
   clearPendingCancel();
   resetDashboardData();
   resetMenuCreateWizard();
@@ -206,6 +209,7 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
       state.teamUsers = mergePendingTeamUserUpdates(snapshot.team);
     }
 
+    alertForCurrentOrders();
     await loadOwnerOnboarding(session);
     autoOpenOwnerOnboarding();
     state.lastRefreshedAt = Date.now();
