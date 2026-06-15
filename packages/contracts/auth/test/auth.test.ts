@@ -17,7 +17,8 @@ import {
   operatorGoogleExchangeRequestSchema,
   operatorPasswordSignInSchema,
   operatorUserCreateSchema,
-  passkeyVerifyRequestSchema
+  passkeyVerifyRequestSchema,
+  refreshRequestSchema
 } from "../src";
 
 describe("contracts-auth", () => {
@@ -109,6 +110,14 @@ describe("contracts-auth", () => {
 
     expect(payload.email).toBe("owner@gazellecoffee.com");
     expect(payload.password).toBe("Password123!");
+  });
+
+  it("rejects oversized refresh tokens", () => {
+    expect(() =>
+      refreshRequestSchema.parse({
+        refreshToken: "x".repeat(513)
+      })
+    ).toThrowError();
   });
 
   it("normalizes the legacy staff operator role to store", () => {

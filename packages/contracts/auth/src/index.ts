@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { authSessionSchema } from "@lattelink/contracts-core";
+import { authSessionSchema, sessionTokenSchema } from "@lattelink/contracts-core";
 
 export const appleExchangeRequestSchema = z.object({
   identityToken: z.string().min(1),
@@ -77,11 +77,11 @@ export const customerDevAccessRequestSchema = z.object({
 });
 
 export const refreshRequestSchema = z.object({
-  refreshToken: z.string().min(1)
+  refreshToken: sessionTokenSchema
 });
 
 export const logoutRequestSchema = z.object({
-  refreshToken: z.string().min(1)
+  refreshToken: sessionTokenSchema
 });
 
 export const authSuccessSchema = z.object({
@@ -202,8 +202,8 @@ export const operatorUserSchema = operatorUserSchemaBase.transform((value) => ({
 }));
 
 export const operatorSessionSchema = z.object({
-  accessToken: z.string().min(1),
-  refreshToken: z.string().min(1),
+  accessToken: sessionTokenSchema,
+  refreshToken: sessionTokenSchema,
   expiresAt: z.string().datetime(),
   operator: operatorUserSchema
 });
@@ -220,8 +220,8 @@ export const internalAdminUserSchema = z.object({
 });
 
 export const internalAdminSessionSchema = z.object({
-  accessToken: z.string().min(1),
-  refreshToken: z.string().min(1),
+  accessToken: sessionTokenSchema,
+  refreshToken: sessionTokenSchema,
   expiresAt: z.string().datetime(),
   admin: internalAdminUserSchema
 });

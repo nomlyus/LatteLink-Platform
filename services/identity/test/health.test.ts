@@ -64,7 +64,9 @@ describe("identity service", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json().accessToken).toContain("nonce-value");
+    expect(response.json().accessToken).toMatch(/^access_[A-Za-z0-9_-]{43}$/);
+    expect(response.json().accessToken).not.toContain("nonce-value");
+    expect(response.json().refreshToken).toMatch(/^refresh_[A-Za-z0-9_-]{43}$/);
     expect(response.json().expiresAt).toBe("2030-01-01T00:30:00.000Z");
     await app.close();
   });
