@@ -20,7 +20,7 @@ describe("toast runtime", () => {
     vi.useRealTimers();
   });
 
-  it("fades after ten seconds and then removes the toast", () => {
+  it("fades after five seconds and then removes the toast", () => {
     const render = vi.fn();
     setToastRenderHandler(render);
     addToast("Saved.", "success");
