@@ -915,6 +915,23 @@
             "description": "Default Response"
           }
         }
+      },
+      "delete": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "operatorUserId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
       }
     },
     "/internal/clients": {
@@ -954,6 +971,25 @@
     },
     "/internal/locations/bootstrap": {
       "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/internal/locations/{locationId}/capabilities": {
+      "put": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "locationId",
+            "required": true
+          }
+        ],
         "responses": {
           "200": {
             "description": "Default Response"
