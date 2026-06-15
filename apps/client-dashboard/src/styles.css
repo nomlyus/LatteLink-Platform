@@ -438,6 +438,13 @@ label.field > span {
   }
 }
 
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
 .toast {
   display: flex;
   align-items: center;
@@ -449,6 +456,11 @@ label.field > span {
   box-shadow: var(--shadow-lg);
   pointer-events: auto;
   animation: toast-in 0.2s ease;
+}
+
+.toast--dismissing {
+  pointer-events: none;
+  animation: toast-out 0.3s ease forwards;
 }
 
 .toast--success {

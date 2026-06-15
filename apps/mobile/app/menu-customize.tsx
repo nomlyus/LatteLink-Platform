@@ -196,7 +196,7 @@ function FooterQuantityPill({
       </View>
 
       <View pointerEvents="box-none" style={styles.footerQuantityContentLayer}>
-        <Text style={styles.footerQuantityValue}>{quantity}</Text>
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.footerQuantityValue}>{quantity}</Text>
         <Pressable
           style={[styles.footerOrbButton, styles.footerQuantityOrbControlLeft, !canDecrease ? styles.footerStepperButtonDisabled : null]}
           onPress={onDecrease}
@@ -281,11 +281,11 @@ function SimpleModalState({
         <View style={styles.handleWrap}>
           <View style={styles.handle} />
         </View>
-        <Text style={styles.centerTitle}>{title}</Text>
-        <Text style={styles.centerText}>{body}</Text>
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.centerTitle}>{title}</Text>
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.centerText}>{body}</Text>
         {actionLabel && onAction ? (
           <Pressable onPress={onAction} style={styles.inlinePrimary}>
-            <Text style={styles.inlinePrimaryText}>{actionLabel}</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.inlinePrimaryText}>{actionLabel}</Text>
           </Pressable>
         ) : null}
       </View>
@@ -462,11 +462,11 @@ export default function MenuCustomizeModalScreen() {
 
             <View style={styles.content}>
               <View style={styles.titleRow}>
-                <Text style={[styles.title, styles.titleText]}>{item.name}</Text>
-                <Text style={styles.price}>{priceLine}</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.title, styles.titleText]}>{item.name}</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.price}>{priceLine}</Text>
               </View>
-              {metaLine ? <Text style={styles.meta}>{metaLine}</Text> : null}
-              <Text style={styles.description}>{item.description}</Text>
+              {metaLine ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.meta}>{metaLine}</Text> : null}
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.description}>{item.description}</Text>
 
               <View>
                 <View style={styles.customizationSectionsWrap}>
@@ -482,9 +482,9 @@ export default function MenuCustomizeModalScreen() {
                 </View>
 
                 <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Notes</Text>
-                  <Text style={styles.sectionBody}>Optional instructions for the barista.</Text>
-                  <TextInput
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionTitle}>Notes</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionBody}>Optional instructions for the barista.</Text>
+                  <TextInput allowFontScaling={false} maxFontSizeMultiplier={1}
                     value={customization.notes}
                     onChangeText={(value) =>
                       setCustomization((prev) => ({ ...prev, notes: value }))
@@ -499,15 +499,15 @@ export default function MenuCustomizeModalScreen() {
 
               <View style={styles.summarySection}>
                 <View style={styles.summaryRow}>
-                  <Text style={styles.summaryLabel}>Customization</Text>
-                  <Text style={styles.summaryValue}>{formatUsd(customizationDeltaCents)}</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryLabel}>Customization</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryValue}>{formatUsd(customizationDeltaCents)}</Text>
                 </View>
                 {showValidationErrors && !resolvedCustomization.valid ? (
-                  <Text style={styles.summaryError}>{resolvedCustomization.issues[0]?.message ?? "Please finish the required selections."}</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryError}>{resolvedCustomization.issues[0]?.message ?? "Please finish the required selections."}</Text>
                 ) : null}
                 <View style={styles.summaryRow}>
-                  <Text style={styles.summaryLabel}>Total</Text>
-                  <Text style={styles.summaryValueStrong}>{formatUsd(totalCents)}</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryLabel}>Total</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryValueStrong}>{formatUsd(totalCents)}</Text>
                 </View>
               </View>
             </View>
@@ -516,7 +516,7 @@ export default function MenuCustomizeModalScreen() {
           <View pointerEvents="box-none" style={[styles.footerRow, { bottom: footerBottom }]}>
             <FooterPill style={styles.footerPrimaryPill}>
               <Pressable onPress={addSelectedItem} style={[styles.footerButton, styles.footerPrimaryButton]}>
-                <Text style={styles.footerPrimaryText}>Add to Cart</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.footerPrimaryText}>Add to Cart</Text>
               </Pressable>
             </FooterPill>
             <FooterQuantityPill

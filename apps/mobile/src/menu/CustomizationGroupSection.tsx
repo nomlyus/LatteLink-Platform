@@ -77,13 +77,13 @@ function OptionRow({ option, active, onPress }: OptionRowProps) {
         </View>
 
         <View style={styles.optionTitleRow}>
-          <Text style={[styles.optionLabel, active ? styles.optionLabelActive : null]} numberOfLines={1}>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.optionLabel, active ? styles.optionLabelActive : null]} numberOfLines={1}>
             {option.label}
           </Text>
-          {meta ? <Text style={[styles.optionMetaInline, active ? styles.optionMetaActive : null]}>{meta}</Text> : null}
+          {meta ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.optionMetaInline, active ? styles.optionMetaActive : null]}>{meta}</Text> : null}
           {option.default ? (
             <View style={[styles.optionBadge, active ? styles.optionBadgeActive : null]}>
-              <Text style={[styles.optionBadgeText, active ? styles.optionBadgeTextActive : null]}>Default</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.optionBadgeText, active ? styles.optionBadgeTextActive : null]}>Default</Text>
             </View>
           ) : null}
         </View>
@@ -123,17 +123,17 @@ export function CustomizationGroupSection({
       <View style={styles.sectionContent}>
         <View style={styles.headerPillsRow}>
           <View style={styles.headerPrimaryPill}>
-            <Text style={styles.headerPrimaryPillText}>{getSelectionHint(group)}</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.headerPrimaryPillText}>{getSelectionHint(group)}</Text>
           </View>
           <View style={styles.headerSecondaryPill}>
-            <Text style={styles.headerSecondaryPillText}>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.headerSecondaryPillText}>
               {group.required ? "Required" : "Optional"}{group.maxSelections > 1 ? ` • ${selectedCount}/${group.maxSelections}` : ""}
             </Text>
           </View>
         </View>
 
-        <Text style={styles.sectionTitle}>{group.label}</Text>
-        {group.description ? <Text style={styles.sectionBody}>{group.description}</Text> : null}
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionTitle}>{group.label}</Text>
+        {group.description ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionBody}>{group.description}</Text> : null}
 
         <View style={styles.optionsStack}>
           {group.options
@@ -149,7 +149,7 @@ export function CustomizationGroupSection({
             ))}
         </View>
 
-        {validationMessage ? <Text style={styles.sectionError}>{validationMessage}</Text> : null}
+        {validationMessage ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionError}>{validationMessage}</Text> : null}
       </View>
     </View>
   );

@@ -57,7 +57,7 @@ function HomeNewsTag({ label }: { label: NewsLabel }) {
           : styles.newsLabelInnerFallback
       ]}
     >
-      <Text style={styles.newsLabelText}>{label}</Text>
+      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.newsLabelText}>{label}</Text>
     </View>
   );
 
@@ -209,8 +209,8 @@ export function HomeScreen() {
         <ScreenBackdrop />
         <View style={[styles.errorShell, { paddingTop: insets.top + 88, paddingBottom: contentBottomInset }]}>
           <SectionHeader label="Home" />
-          <Text style={styles.errorTitle}>Home temporarily unavailable.</Text>
-          <Text style={styles.errorBody}>{homeErrorMessage}</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.errorTitle}>Home temporarily unavailable.</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.errorBody}>{homeErrorMessage}</Text>
           <Button label="Retry" variant="secondary" onPress={handleRefresh} style={styles.errorAction} />
         </View>
         <TabBarDepthBackdrop />
@@ -255,11 +255,11 @@ export function HomeScreen() {
               </View>
 
               <View style={styles.newsCopy}>
-                <Text style={styles.newsTitle}>{item.title}</Text>
-                <Text style={styles.newsBody}>{item.body}</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.newsTitle}>{item.title}</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.newsBody}>{item.body}</Text>
               </View>
 
-              <Text style={styles.newsNote}>{item.note}</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.newsNote}>{item.note}</Text>
             </GlassCard>
           ))}
         </View>
@@ -270,17 +270,17 @@ export function HomeScreen() {
       >
         <Animated.View style={headerContentStyle}>
           <View style={styles.hero}>
-            <Animated.Text style={[styles.title, titleStyle, { color: headerForegroundColor }]}>{brandName}</Animated.Text>
+            <Animated.Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.title, titleStyle, { color: headerForegroundColor }]}>{brandName}</Animated.Text>
           </View>
 
           <Animated.View style={[styles.storeRail, storeRailStyle]}>
             <View style={styles.storeCopy}>
-              <Animated.Text style={[styles.storeTitle, storeTitleStyle, { color: headerForegroundColor }]}>{locationName}</Animated.Text>
+              <Animated.Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.storeTitle, storeTitleStyle, { color: headerForegroundColor }]}>{locationName}</Animated.Text>
             </View>
 
             <Animated.View style={menuLinkStyle}>
               <Pressable onPress={() => router.push("/(tabs)/menu")} style={styles.inlineLink}>
-                <Text style={[styles.inlineLinkText, { color: headerForegroundColor }]}>Menu</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.inlineLinkText, { color: headerForegroundColor }]}>Menu</Text>
                 <Ionicons name="chevron-forward" size={16} color={headerForegroundColor} />
               </Pressable>
             </Animated.View>

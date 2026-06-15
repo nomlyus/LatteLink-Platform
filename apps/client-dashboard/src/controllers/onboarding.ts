@@ -9,7 +9,8 @@ import {
 import { loadDashboard, handleOperatorActionError } from "../lifecycle.js";
 import { countVisibleMenuItems, isOwnerOperator } from "../model.js";
 import { render } from "../render.js";
-import { addToast, setError, state } from "../state.js";
+import { setError, state } from "../state.js";
+import { addToast } from "../toast-runtime.js";
 import { persistSection } from "../storage.js";
 
 type OnboardingBooleanField =

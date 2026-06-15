@@ -39,7 +39,7 @@ export function GlassActionPill({ label, onPress, tone = "default", disabled = f
         tone === "danger" ? styles.actionPillInnerDanger : null
       ]}
     >
-      <Text
+      <Text allowFontScaling={false} maxFontSizeMultiplier={1}
         style={[
           styles.actionPillText,
           tone === "danger" ? styles.actionPillTextDanger : null,

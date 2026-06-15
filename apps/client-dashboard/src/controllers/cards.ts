@@ -1,6 +1,7 @@
 import { replaceOperatorNewsCards } from "../api.js";
 import { canAccessCapability } from "../model.js";
-import { addToast, setError, state } from "../state.js";
+import { setError, state } from "../state.js";
+import { addToast } from "../toast-runtime.js";
 import { handleOperatorActionError } from "../lifecycle.js";
 import { render } from "../render.js";
 

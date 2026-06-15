@@ -48,6 +48,7 @@
       "brace-expansion@<1.1.13": "1.1.13",
       "brace-expansion@>=2.0.0 <2.0.3": "2.0.3",
       "brace-expansion@>=4.0.0 <5.0.6": "5.0.6",
+      "esbuild": "0.28.1",
       "fast-uri": "3.1.2",
       "fastify": "5.8.5",
       "flatted": "3.4.2",

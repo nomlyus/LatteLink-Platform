@@ -15,7 +15,6 @@ import {
   StatusBar,
   StyleSheet,
   Text,
-  TextInput,
   View
 } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -32,10 +31,6 @@ import { useOrdersRealtimeSync } from "../src/orders/useOrdersRealtimeSync";
 import { Button, ScreenBackdrop, uiPalette, uiTypography } from "../src/ui/system";
 import { usePushNotificationRegistration } from "../src/notifications/usePushNotificationRegistration";
 import { prefetchCatalogQueries, useAppConfigQuery } from "../src/menu/catalog";
-import { lockComponentFontScaling } from "../src/ui/fontScaling";
-
-lockComponentFontScaling(Text);
-lockComponentFontScaling(TextInput);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -110,8 +105,8 @@ function StartupCatalogGate({
         <ScreenBackdrop />
         <View style={styles.startupCard}>
           <ActivityIndicator color={uiPalette.primary} />
-          <Text style={styles.startupTitle}>Loading live store data</Text>
-          <Text style={styles.startupBody}>Connecting to the configured backend before showing the app.</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.startupTitle}>Loading live store data</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.startupBody}>Connecting to the configured backend before showing the app.</Text>
         </View>
       </View>
     );
@@ -122,9 +117,9 @@ function StartupCatalogGate({
       <View style={styles.startupScreen}>
         <ScreenBackdrop />
         <View style={styles.startupCard}>
-          <Text style={styles.startupEyebrow}>Configuration required</Text>
-          <Text style={styles.startupTitle}>App data unavailable.</Text>
-          <Text style={styles.startupBody}>{errorMessage}</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.startupEyebrow}>Configuration required</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.startupTitle}>App data unavailable.</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.startupBody}>{errorMessage}</Text>
           <Button
             label="Retry"
             variant="secondary"

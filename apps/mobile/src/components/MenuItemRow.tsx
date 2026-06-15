@@ -66,10 +66,10 @@ export function MenuItemRow({ item, isLast, onPress, onImageReady }: MenuItemRow
           <View style={styles.menuBodyContent}>
             <View style={styles.menuCopy}>
               <View style={styles.menuTitleRow}>
-                <Text style={styles.menuTitle}>{item.name}</Text>
-                <Text style={styles.menuMeta}>{formatUsd(item.priceCents)}</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.menuTitle}>{item.name}</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.menuMeta}>{formatUsd(item.priceCents)}</Text>
               </View>
-              <Text numberOfLines={3} style={styles.menuDescription}>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} numberOfLines={3} style={styles.menuDescription}>
                 {item.description}
               </Text>
             </View>

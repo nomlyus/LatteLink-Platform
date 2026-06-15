@@ -22,8 +22,8 @@ function DetailRow({
 }) {
   return (
     <View style={styles.detailRow}>
-      <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={[styles.detailValue, strong ? styles.detailValueStrong : null, mono ? styles.detailValueMono : null]}>
+      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.detailLabel}>{label}</Text>
+      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.detailValue, strong ? styles.detailValueStrong : null, mono ? styles.detailValueMono : null]}>
         {value}
       </Text>
     </View>
@@ -108,12 +108,12 @@ export default function CheckoutFailureScreen() {
 
           <View style={styles.heroBlock}>
             <View style={styles.heroTopRow}>
-              <Text style={styles.title}>{title}</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>{title}</Text>
               <View style={styles.heroIconWrap}>
                 <Ionicons name="alert-circle-outline" size={22} color={uiPalette.danger} />
               </View>
             </View>
-            <Text style={styles.body}>{body}</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>{body}</Text>
           </View>
 
           <View style={styles.detailsSection}>
@@ -124,15 +124,15 @@ export default function CheckoutFailureScreen() {
 
             {failure?.message ? (
               <View style={styles.messageBlock}>
-                <Text style={styles.messageLabel}>What happened</Text>
-                <Text style={styles.messageText}>{failure.message}</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.messageLabel}>What happened</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.messageText}>{failure.message}</Text>
               </View>
             ) : null}
 
             {cancelError ? (
               <View style={styles.messageBlock}>
-                <Text style={styles.messageLabel}>Cancel failed</Text>
-                <Text style={styles.messageText}>{cancelError}</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.messageLabel}>Cancel failed</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.messageText}>{cancelError}</Text>
               </View>
             ) : null}
           </View>
