@@ -24,7 +24,6 @@ import {
   useAppConfigQuery,
   useStoreConfigQuery
 } from "../src/menu/catalog";
-import { useCancelOrderMutation } from "../src/account/data";
 import { mergeOrderIntoHistory, orderHistoryQueryKey, type OrderHistoryEntry } from "../src/account/data";
 import {
   CheckoutSubmissionError,
@@ -162,14 +161,13 @@ export default function CheckoutScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { items, subtotalCents, discountCode, setDiscountCode, clear } = useCart();
-  const { retryOrder, clearRetryOrder, clearFailure, setConfirmation, setFailure } = useCheckoutFlow();
+  const { retryOrder, clearRetryOrder, clearFailure, setConfirmation, setFailure, setRetryOrder } = useCheckoutFlow();
   const appConfigQuery = useAppConfigQuery();
   const storeConfigQuery = useStoreConfigQuery();
   const appConfig = appConfigQuery.data ? resolveAppConfigData(appConfigQuery.data) : null;
   const storeConfig = storeConfigQuery.data ? resolveStoreConfigData(storeConfigQuery.data) : null;
   const pricingSummary = buildPricingSummary(subtotalCents, storeConfig?.taxRateBasisPoints ?? 0);
   const checkoutMutation = useStripeCheckoutMutation();
-  const cancelOrderMutation = useCancelOrderMutation();
   const storeConfigLoading = !storeConfig && (storeConfigQuery.isLoading || storeConfigQuery.isFetching);
   const appConfigLoading = !appConfig && (appConfigQuery.isLoading || appConfigQuery.isFetching);
   const checkoutContextLoading = storeConfigLoading || appConfigLoading;
@@ -241,28 +239,6 @@ export default function CheckoutScreen() {
     router.replace("/cart");
   }
 
-  async function cancelPreparedCheckoutOrder(
-    orderId: string,
-    reason: string,
-    fallbackMessage: string
-  ) {
-    try {
-      await cancelOrderMutation.mutateAsync({
-        orderId,
-        reason
-      });
-      clearRetryOrder();
-      clearFailure();
-      void invalidateAccountQueries();
-      return true;
-    } catch (cancelError) {
-      const cancelMessage = cancelError instanceof Error ? cancelError.message : "Unable to close the unpaid order.";
-      setStatusMessage(`${fallbackMessage} We could not close the pending order automatically. ${cancelMessage}`);
-      setStatusTone("warning");
-      return false;
-    }
-  }
-
   async function handleStripeCheckout() {
     if (!storeConfig || !appConfig) {
       setStatusMessage(checkoutUnavailableMessage ?? "Checkout is temporarily unavailable.");
@@ -309,15 +285,7 @@ export default function CheckoutScreen() {
       });
 
       if (initResult.error) {
-        const canceled = await cancelPreparedCheckoutOrder(
-          preparedCheckout.order.id,
-          `Stripe checkout failed before PaymentSheet opened: ${initResult.error.message}`,
-          "Payment could not open."
-        );
-        if (!canceled) {
-          return;
-        }
-
+        setRetryOrder(preparedCheckout.order);
         setStatusMessage("Payment could not open. Your bag is still ready, so you can try again.");
         setStatusTone("warning");
         return;
@@ -327,29 +295,16 @@ export default function CheckoutScreen() {
 
       const presentResult = await presentPaymentSheet();
       if (presentResult.error?.code === PaymentSheetError.Canceled) {
-        const canceled = await cancelPreparedCheckoutOrder(
-          preparedCheckout.order.id,
-          "Customer abandoned checkout before payment confirmation",
-          "Payment was canceled."
-        );
-        if (canceled) {
-          setStatusMessage("");
-          setStatusTone("info");
-          dismissCheckoutToCart();
-        }
+        setRetryOrder(preparedCheckout.order);
+        clearFailure();
+        setStatusMessage("");
+        setStatusTone("info");
+        dismissCheckoutToCart();
         return;
       }
 
       if (presentResult.error) {
-        const canceled = await cancelPreparedCheckoutOrder(
-          preparedCheckout.order.id,
-          `Stripe checkout failed before payment confirmation: ${presentResult.error.message}`,
-          "Payment did not go through."
-        );
-        if (!canceled) {
-          return;
-        }
-
+        setRetryOrder(preparedCheckout.order);
         setStatusMessage("Payment didn’t go through. Your bag is still ready, so you can try again.");
         setStatusTone("warning");
         return;

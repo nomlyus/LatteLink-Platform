@@ -1258,12 +1258,11 @@ describe("orders service", () => {
       .map(([, init]) => JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>)
       .filter((payload) => payload.orderId === createdOrder.id);
 
-    expect(notificationPayloads).toHaveLength(3);
+    expect(notificationPayloads).toHaveLength(2);
     expect(notificationPayloads).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ status: "PENDING_PAYMENT" }),
-        expect.objectContaining({ status: "PAID" }),
-        expect.objectContaining({ status: "CANCELED" })
+        expect.objectContaining({ status: "PAID" })
       ])
     );
 

@@ -507,6 +507,10 @@ async function sendOrderStateNotification(params: {
     }
   }
 
+  if (payload.status === "CANCELED") {
+    return;
+  }
+
   const headers: Record<string, string> = {
     "content-type": "application/json",
     "x-request-id": requestId

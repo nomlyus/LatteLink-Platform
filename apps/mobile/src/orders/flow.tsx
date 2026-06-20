@@ -24,6 +24,7 @@ type CheckoutFlowContextValue = {
   retryOrder: CheckoutOrderSnapshot | null;
   setConfirmation: (confirmation: CheckoutConfirmation) => void;
   setFailure: (failure: CheckoutFailure) => void;
+  setRetryOrder: (order: CheckoutOrderSnapshot) => void;
   clearConfirmation: () => void;
   clearFailure: () => void;
   clearRetryOrder: () => void;
@@ -50,6 +51,7 @@ export function CheckoutFlowProvider({ children }: { children: ReactNode }) {
         setFailureState(nextFailure);
         setRetryOrder(nextFailure.order ?? null);
       },
+      setRetryOrder,
       clearConfirmation: () => setConfirmationState(null),
       clearFailure: () => setFailureState(null),
       clearRetryOrder: () => setRetryOrder(null)
