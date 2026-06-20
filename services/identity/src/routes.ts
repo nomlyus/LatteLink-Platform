@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   generateAuthenticationOptions,
   generateRegistrationOptions,
@@ -117,6 +117,7 @@ const defaultRefreshSessionTtlMs = 30 * 24 * 60 * 60 * 1000;
 const defaultCustomerAbsoluteSessionTtlDays = 90;
 const defaultOperatorAbsoluteSessionTtlDays = 30;
 const defaultInternalAdminAbsoluteSessionTtlDays = 14;
+const opaqueTokenEntropyBytes = 32;
 
 function parseCommaSeparatedEnv(value: string | undefined) {
   return (value ?? "")
@@ -401,8 +402,11 @@ function loadPasskeyConfig() {
   };
 }
 
-function buildStoredSession(seed: string, userId: string) {
-  const tokenSuffix = `${seed}-${randomUUID()}`;
+function generateOpaqueToken(prefix: string) {
+  return `${prefix}_${randomBytes(opaqueTokenEntropyBytes).toString("base64url")}`;
+}
+
+function buildStoredSession(userId: string) {
   const accessExpiresAt = new Date(Date.now() + defaultAccessTokenTtlMs).toISOString();
   const refreshExpiresAt = new Date(Date.now() + defaultRefreshSessionTtlMs).toISOString();
   const createdAt = new Date().toISOString();
@@ -410,12 +414,14 @@ function buildStoredSession(seed: string, userId: string) {
   // JWT access tokens are opt-in for rollout compatibility. Refresh/logout semantics remain DB-backed
   // either way because the refresh token and session record are still persisted. The opaque path stays
   // until every identity+gateway deployment shares JWT_SECRET.
-  const accessToken = jwtSecret ? buildJwtAccessToken(userId, accessExpiresAt, jwtSecret) : `access-${tokenSuffix}`;
+  const accessToken = jwtSecret
+    ? buildJwtAccessToken(userId, accessExpiresAt, jwtSecret)
+    : generateOpaqueToken("access");
 
   return {
     ...authSessionSchema.parse({
       accessToken,
-      refreshToken: `refresh-${tokenSuffix}`,
+      refreshToken: generateOpaqueToken("refresh"),
       expiresAt: accessExpiresAt,
       userId
     }),
@@ -424,15 +430,14 @@ function buildStoredSession(seed: string, userId: string) {
   };
 }
 
-function buildStoredOperatorSession(seed: string, operatorUserId: string, activeLocationId?: string) {
-  const tokenSuffix = `${seed}-${randomUUID()}`;
+function buildStoredOperatorSession(operatorUserId: string, activeLocationId?: string) {
   const accessExpiresAt = new Date(Date.now() + defaultAccessTokenTtlMs).toISOString();
   const refreshExpiresAt = new Date(Date.now() + defaultRefreshSessionTtlMs).toISOString();
   const createdAt = new Date().toISOString();
 
   return {
-    accessToken: `operator-access-${tokenSuffix}`,
-    refreshToken: `operator-refresh-${tokenSuffix}`,
+    accessToken: generateOpaqueToken("operator_access"),
+    refreshToken: generateOpaqueToken("operator_refresh"),
     operatorUserId,
     activeLocationId,
     expiresAt: accessExpiresAt,
@@ -441,15 +446,14 @@ function buildStoredOperatorSession(seed: string, operatorUserId: string, active
   };
 }
 
-function buildStoredInternalAdminSession(seed: string, internalAdminUserId: string) {
-  const tokenSuffix = `${seed}-${randomUUID()}`;
+function buildStoredInternalAdminSession(internalAdminUserId: string) {
   const accessExpiresAt = new Date(Date.now() + defaultInternalAdminAccessTokenTtlMs).toISOString();
   const refreshExpiresAt = new Date(Date.now() + defaultRefreshSessionTtlMs).toISOString();
   const createdAt = new Date().toISOString();
 
   return {
-    accessToken: `internal-admin-access-${tokenSuffix}`,
-    refreshToken: `internal-admin-refresh-${tokenSuffix}`,
+    accessToken: generateOpaqueToken("internal_admin_access"),
+    refreshToken: generateOpaqueToken("internal_admin_refresh"),
     internalAdminUserId,
     expiresAt: accessExpiresAt,
     refreshExpiresAt,
@@ -485,23 +489,21 @@ function toPasskeyTransports(transports: string[] | undefined) {
 
 async function issueSession(params: {
   repository: IdentityRepository;
-  seed: string;
   userId: string;
   authMethod: "apple" | "passkey-register" | "passkey-auth" | "refresh";
 }) {
-  const session = buildStoredSession(params.seed, params.userId);
+  const session = buildStoredSession(params.userId);
   await params.repository.saveSession(session, params.authMethod);
   return authSessionSchema.parse(session);
 }
 
 async function issueOperatorSession(params: {
   repository: IdentityRepository;
-  seed: string;
   operatorUserId: string;
   activeLocationId?: string;
   authMethod: "password" | "google" | "refresh";
 }) {
-  const session = buildStoredOperatorSession(params.seed, params.operatorUserId, params.activeLocationId);
+  const session = buildStoredOperatorSession(params.operatorUserId, params.activeLocationId);
   await params.repository.saveOperatorSession(session, params.authMethod);
   const operator = await params.repository.getOperatorUserById(params.operatorUserId);
   if (!operator || !operator.active) {
@@ -520,11 +522,10 @@ async function issueOperatorSession(params: {
 
 async function issueInternalAdminSession(params: {
   repository: IdentityRepository;
-  seed: string;
   internalAdminUserId: string;
   authMethod: "password" | "refresh";
 }) {
-  const session = buildStoredInternalAdminSession(params.seed, params.internalAdminUserId);
+  const session = buildStoredInternalAdminSession(params.internalAdminUserId);
   await params.repository.saveInternalAdminSession(session, params.authMethod);
   const admin = await params.repository.getInternalAdminUserById(params.internalAdminUserId);
   if (!admin || !admin.active) {
@@ -545,6 +546,20 @@ function buildApiError(requestId: string, code: string, message: string) {
     message,
     requestId
   });
+}
+
+function parseSessionTokenRequest(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  schema: typeof refreshRequestSchema | typeof logoutRequestSchema
+) {
+  const parsed = schema.safeParse(request.body);
+  if (!parsed.success) {
+    reply.status(400).send(buildApiError(request.id, "INVALID_REQUEST", "Session token is invalid"));
+    return undefined;
+  }
+
+  return parsed.data;
 }
 
 function ownerInviteErrorStatus(error: OwnerInviteError) {
@@ -911,7 +926,6 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
 
       return issueSession({
         repository,
-        seed: input.nonce,
         userId: resolvedUser.userId,
         authMethod: "apple"
       });
@@ -1052,7 +1066,6 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
 
         return issueSession({
           repository,
-          seed: `passkey-register-${verifiedRegistration.registrationInfo.credential.id}`,
           userId,
           authMethod: "passkey-register"
         });
@@ -1190,7 +1203,6 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
 
         return issueSession({
           repository,
-          seed: `passkey-auth-${credential.credentialId}`,
           userId: credential.userId,
           authMethod: "passkey-auth"
         });
@@ -1231,7 +1243,6 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
 
       const session = await issueSession({
         repository,
-        seed: `dev-access:${input.email}:${Date.now()}`,
         userId,
         authMethod: "refresh"
       });
@@ -1250,7 +1261,10 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
       preHandler: app.rateLimit(authWriteRateLimit)
     },
     async (request, reply) => {
-      const input = refreshRequestSchema.parse(request.body);
+      const input = parseSessionTokenRequest(request, reply, refreshRequestSchema);
+      if (!input) {
+        return;
+      }
       const currentSession = await repository.getSessionByRefreshToken(input.refreshToken);
       if (currentSession && isPastAbsoluteSessionTtl(currentSession.createdAt, customerAbsoluteSessionTtlMs)) {
         await repository.revokeByRefreshToken(input.refreshToken);
@@ -1266,7 +1280,7 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
       const rotatedSession = await repository.rotateRefreshSession(
         input.refreshToken,
         (userId) => ({
-          ...buildStoredSession(input.refreshToken, userId),
+          ...buildStoredSession(userId),
           createdAt: currentSession?.createdAt ?? new Date().toISOString()
         }),
         "refresh"
@@ -1293,8 +1307,11 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
     {
       preHandler: app.rateLimit(authWriteRateLimit)
     },
-    async (request) => {
-      const input = logoutRequestSchema.parse(request.body);
+    async (request, reply) => {
+      const input = parseSessionTokenRequest(request, reply, logoutRequestSchema);
+      if (!input) {
+        return;
+      }
       await repository.revokeByRefreshToken(input.refreshToken);
       logIdentityMutation(request, "customer session revoked", {});
       return { success: true as const };
@@ -1463,7 +1480,6 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
 
       const session = await issueOperatorSession({
         repository,
-        seed: `password:${operator.operatorUserId}:${Date.now()}`,
         operatorUserId: operator.operatorUserId,
         activeLocationId: activeOperator.locationId,
         authMethod: "password"
@@ -1655,7 +1671,6 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
 
       const session = await issueOperatorSession({
         repository,
-        seed: `google:${parsedUserInfo.data.sub}:${Date.now()}`,
         operatorUserId: operator.operatorUserId,
         activeLocationId: activeOperator.locationId,
         authMethod: "google"
@@ -1694,7 +1709,6 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
 
       const session = await issueOperatorSession({
         repository,
-        seed: `dev-access:${operator.email}:${Date.now()}`,
         operatorUserId: operator.operatorUserId,
         authMethod: "password"
       });
@@ -1715,7 +1729,10 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
       preHandler: app.rateLimit(authWriteRateLimit)
     },
     async (request, reply) => {
-      const input = refreshRequestSchema.parse(request.body);
+      const input = parseSessionTokenRequest(request, reply, refreshRequestSchema);
+      if (!input) {
+        return;
+      }
       const currentSession = await repository.getOperatorSessionByRefreshToken(input.refreshToken);
       if (currentSession && isPastAbsoluteSessionTtl(currentSession.createdAt, operatorAbsoluteSessionTtlMs)) {
         await repository.revokeOperatorByRefreshToken(input.refreshToken);
@@ -1727,7 +1744,7 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
       const rotatedSession = await repository.rotateOperatorRefreshSession(
         input.refreshToken,
         (operatorUserId, activeLocationId) => ({
-          ...buildStoredOperatorSession(input.refreshToken, operatorUserId, activeLocationId),
+          ...buildStoredOperatorSession(operatorUserId, activeLocationId),
           createdAt: currentSession?.createdAt ?? new Date().toISOString()
         }),
         "refresh"
@@ -1768,8 +1785,11 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
     {
       preHandler: app.rateLimit(authWriteRateLimit)
     },
-    async (request) => {
-      const input = logoutRequestSchema.parse(request.body);
+    async (request, reply) => {
+      const input = parseSessionTokenRequest(request, reply, logoutRequestSchema);
+      if (!input) {
+        return;
+      }
       await repository.revokeOperatorByRefreshToken(input.refreshToken);
       logIdentityMutation(request, "operator session revoked", {});
       return { success: true as const };
@@ -1814,7 +1834,6 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
 
       const session = await issueInternalAdminSession({
         repository,
-        seed: `password:${admin.internalAdminUserId}:${Date.now()}`,
         internalAdminUserId: admin.internalAdminUserId,
         authMethod: "password"
       });
@@ -1834,7 +1853,10 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
       preHandler: app.rateLimit(authWriteRateLimit)
     },
     async (request, reply) => {
-      const input = refreshRequestSchema.parse(request.body);
+      const input = parseSessionTokenRequest(request, reply, refreshRequestSchema);
+      if (!input) {
+        return;
+      }
       const currentSession = await repository.getInternalAdminSessionByRefreshToken(input.refreshToken);
       if (
         currentSession &&
@@ -1849,7 +1871,7 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
       const rotatedSession = await repository.rotateInternalAdminRefreshSession(
         input.refreshToken,
         (internalAdminUserId) => ({
-          ...buildStoredInternalAdminSession(input.refreshToken, internalAdminUserId),
+          ...buildStoredInternalAdminSession(internalAdminUserId),
           createdAt: currentSession?.createdAt ?? new Date().toISOString()
         }),
         "refresh"
@@ -1888,8 +1910,11 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
     {
       preHandler: app.rateLimit(authWriteRateLimit)
     },
-    async (request) => {
-      const input = logoutRequestSchema.parse(request.body);
+    async (request, reply) => {
+      const input = parseSessionTokenRequest(request, reply, logoutRequestSchema);
+      if (!input) {
+        return;
+      }
       await repository.revokeInternalAdminByRefreshToken(input.refreshToken);
       logIdentityMutation(request, "internal admin session revoked", {});
       return { success: true as const };

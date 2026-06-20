@@ -91,7 +91,8 @@ describe("identity JWT access tokens", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json().accessToken).toMatch(/^access-opaque-fallback-/);
+    expect(response.json().accessToken).toMatch(/^access_[A-Za-z0-9_-]{43}$/);
+    expect(response.json().accessToken).not.toContain("opaque-fallback");
     expect(response.json().accessToken.split(".")).toHaveLength(1);
 
     await app.close();

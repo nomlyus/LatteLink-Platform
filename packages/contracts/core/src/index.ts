@@ -12,9 +12,11 @@ export const apiErrorSchema = z.object({
   requestId: z.string().min(1).optional()
 });
 
+export const sessionTokenSchema = z.string().min(1).max(512);
+
 export const authSessionSchema = z.object({
-  accessToken: z.string().min(1),
-  refreshToken: z.string().min(1),
+  accessToken: sessionTokenSchema,
+  refreshToken: sessionTokenSchema,
   expiresAt: z.string().datetime(),
   userId: z.string().uuid()
 });
