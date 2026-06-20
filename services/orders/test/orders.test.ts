@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { orderPaymentContextSchema, orderQuoteSchema, orderSchema } from "@lattelink/contracts-orders";
+import {
+  checkoutDraftSchema,
+  checkoutPaymentConfirmationResponseSchema,
+  orderPaymentContextSchema,
+  orderQuoteSchema,
+  orderSchema
+} from "@lattelink/contracts-orders";
 import { buildApp } from "../src/app.js";
 import { createOrdersRepository } from "../src/repository.js";
 
@@ -399,6 +405,101 @@ describe("orders service", () => {
       total: order.total
     });
 
+    await app.close();
+  });
+
+  it("keeps checkout drafts out of orders until verified payment promotes them", async () => {
+    const app = await buildApp();
+    const userId = "123e4567-e89b-12d3-a456-426614174880";
+    const quoteResponse = await app.inject({
+      method: "POST",
+      url: "/v1/orders/quote",
+      payload: { ...sampleQuotePayload, pointsToRedeem: 0 }
+    });
+    const quote = orderQuoteSchema.parse(quoteResponse.json());
+
+    const draftResponse = await app.inject({
+      method: "POST",
+      url: "/v1/orders/checkouts",
+      headers: customerHeaders(userId),
+      payload: { quoteId: quote.quoteId, quoteHash: quote.quoteHash }
+    });
+    expect(draftResponse.statusCode).toBe(200);
+    const checkout = checkoutDraftSchema.parse(draftResponse.json());
+    expect(checkout.status).toBe("OPEN");
+    expect(checkout.orderId).toBeUndefined();
+
+    const beforePayment = await app.inject({ method: "GET", url: "/v1/orders", headers: customerHeaders(userId) });
+    expect(beforePayment.json()).toEqual([]);
+
+    const confirmationResponse = await app.inject({
+      method: "POST",
+      url: "/v1/orders/internal/checkouts/confirm-payment",
+      headers: { "x-internal-token": "orders-internal-token" },
+      payload: {
+        eventId: "evt-checkout-promote-1",
+        checkoutId: checkout.checkoutId,
+        paymentId: "pi_checkout_promote_1",
+        occurredAt: "2026-03-10T00:00:00.000Z",
+        amountCents: checkout.total.amountCents,
+        currency: "USD"
+      }
+    });
+    expect(confirmationResponse.statusCode).toBe(200);
+    const confirmation = checkoutPaymentConfirmationResponseSchema.parse(confirmationResponse.json());
+    expect(confirmation.order).toMatchObject({
+      id: checkout.checkoutId,
+      status: "PAID",
+      pickupCode: expect.stringMatching(/^[A-F0-9]{6}$/)
+    });
+    expect(confirmation.order.timeline.map((entry) => entry.status)).toEqual(["PAID"]);
+
+    const repeatedConfirmation = await app.inject({
+      method: "POST",
+      url: "/v1/orders/internal/checkouts/confirm-payment",
+      headers: { "x-internal-token": "orders-internal-token" },
+      payload: {
+        checkoutId: checkout.checkoutId,
+        paymentId: "pi_checkout_promote_1",
+        occurredAt: "2026-03-10T00:00:00.000Z",
+        amountCents: checkout.total.amountCents,
+        currency: "USD"
+      }
+    });
+    expect(checkoutPaymentConfirmationResponseSchema.parse(repeatedConfirmation.json()).applied).toBe(false);
+
+    const afterPayment = await app.inject({ method: "GET", url: "/v1/orders", headers: customerHeaders(userId) });
+    expect(orderSchema.array().parse(afterPayment.json())).toHaveLength(1);
+    await app.close();
+  });
+
+  it("expires an unpaid checkout without creating an order", async () => {
+    const app = await buildApp();
+    const userId = "123e4567-e89b-12d3-a456-426614174881";
+    const quoteResponse = await app.inject({
+      method: "POST",
+      url: "/v1/orders/quote",
+      payload: { ...sampleQuotePayload, pointsToRedeem: 0 }
+    });
+    const quote = orderQuoteSchema.parse(quoteResponse.json());
+    const draftResponse = await app.inject({
+      method: "POST",
+      url: "/v1/orders/checkouts",
+      headers: customerHeaders(userId),
+      payload: { quoteId: quote.quoteId, quoteHash: quote.quoteHash }
+    });
+    const checkout = checkoutDraftSchema.parse(draftResponse.json());
+
+    const expirationResponse = await app.inject({
+      method: "POST",
+      url: `/v1/orders/internal/checkouts/${checkout.checkoutId}/expire`,
+      headers: { "x-internal-token": "orders-internal-token" }
+    });
+
+    expect(expirationResponse.statusCode).toBe(200);
+    expect(expirationResponse.json()).toEqual({ expired: true });
+    const ordersResponse = await app.inject({ method: "GET", url: "/v1/orders", headers: customerHeaders(userId) });
+    expect(ordersResponse.json()).toEqual([]);
     await app.close();
   });
 

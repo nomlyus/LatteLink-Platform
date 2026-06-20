@@ -118,17 +118,35 @@ export const createOrderRequestSchema = z.object({
   quoteHash: z.string().min(1)
 });
 
-export const stripeMobilePaymentSessionRequestSchema = z.object({
-  orderId: z.string().uuid()
+export const checkoutDraftStatusSchema = z.enum(["OPEN", "CONVERTED", "EXPIRED"]);
+
+export const checkoutDraftSchema = z.object({
+  checkoutId: z.string().uuid(),
+  quoteId: z.string().uuid(),
+  quoteHash: z.string().min(1),
+  locationId: z.string().min(1),
+  status: checkoutDraftStatusSchema,
+  items: z.array(orderItemSchema),
+  total: moneySchema,
+  expiresAt: z.string().datetime(),
+  orderId: z.string().uuid().optional()
 });
 
-export const stripeMobilePaymentFinalizeRequestSchema = z.object({
-  orderId: z.string().uuid(),
-  paymentIntentId: z.string().min(1)
-});
+export const createCheckoutDraftRequestSchema = createOrderRequestSchema;
 
-export const stripeMobilePaymentSessionResponseSchema = z.object({
-  orderId: z.string().uuid(),
+const stripeMobileCheckoutReferenceSchema = z.union([
+  z.object({ checkoutId: z.string().uuid() }).strict(),
+  z.object({ orderId: z.string().uuid() }).strict()
+]);
+
+export const stripeMobilePaymentSessionRequestSchema = stripeMobileCheckoutReferenceSchema;
+
+export const stripeMobilePaymentFinalizeRequestSchema = z.union([
+  z.object({ checkoutId: z.string().uuid(), paymentIntentId: z.string().min(1) }).strict(),
+  z.object({ orderId: z.string().uuid(), paymentIntentId: z.string().min(1) }).strict()
+]);
+
+const stripeMobilePaymentSessionBaseSchema = z.object({
   paymentIntentId: z.string().min(1),
   paymentIntentClientSecret: z.string().min(1),
   publishableKey: z.string().min(1),
@@ -141,13 +159,44 @@ export const stripeMobilePaymentSessionResponseSchema = z.object({
   cardEnabled: z.boolean()
 });
 
-export const stripeMobilePaymentFinalizeResponseSchema = z.object({
-  orderId: z.string().uuid(),
+export const stripeMobilePaymentSessionResponseSchema = z.union([
+  stripeMobilePaymentSessionBaseSchema.extend({ checkoutId: z.string().uuid() }),
+  stripeMobilePaymentSessionBaseSchema.extend({ orderId: z.string().uuid() })
+]);
+
+const stripeMobilePaymentFinalizeBaseSchema = z.object({
   paymentIntentId: z.string().min(1),
   accepted: z.literal(true),
   applied: z.boolean(),
-  orderStatus: orderStatusSchema,
   note: z.string().optional()
+});
+
+export const stripeMobilePaymentFinalizeResponseSchema = z.union([
+  stripeMobilePaymentFinalizeBaseSchema.extend({ checkoutId: z.string().uuid(), order: orderSchema }),
+  stripeMobilePaymentFinalizeBaseSchema.extend({ orderId: z.string().uuid(), orderStatus: orderStatusSchema })
+]);
+
+export const checkoutPaymentContextSchema = z.object({
+  checkoutId: z.string().uuid(),
+  locationId: z.string().min(1),
+  status: checkoutDraftStatusSchema,
+  total: moneySchema,
+  expiresAt: z.string().datetime()
+});
+
+export const checkoutPaymentConfirmationSchema = z.object({
+  eventId: z.string().min(1).optional(),
+  checkoutId: z.string().uuid(),
+  paymentId: z.string().min(1),
+  occurredAt: z.string().datetime(),
+  amountCents: z.number().int().positive(),
+  currency: z.literal("USD")
+});
+
+export const checkoutPaymentConfirmationResponseSchema = z.object({
+  accepted: z.literal(true),
+  applied: z.boolean(),
+  order: orderSchema
 });
 
 export const orderPaymentContextSchema = z.object({
@@ -281,6 +330,7 @@ export type AppliedDiscountCode = z.output<typeof appliedDiscountCodeSchema>;
 export type OrderQuote = z.output<typeof orderQuoteSchema>;
 export type OrderTimelineEntry = z.output<typeof orderTimelineEntrySchema>;
 export type Order = z.output<typeof orderSchema>;
+export type CheckoutDraft = z.output<typeof checkoutDraftSchema>;
 export type DiscountCode = z.output<typeof discountCodeSchema>;
 export type DiscountCodeRedemption = z.output<typeof discountCodeRedemptionSchema>;
 export type StripeMobilePaymentSessionRequest = z.output<typeof stripeMobilePaymentSessionRequestSchema>;
@@ -288,6 +338,8 @@ export type StripeMobilePaymentSessionResponse = z.output<typeof stripeMobilePay
 export type StripeMobilePaymentFinalizeRequest = z.output<typeof stripeMobilePaymentFinalizeRequestSchema>;
 export type StripeMobilePaymentFinalizeResponse = z.output<typeof stripeMobilePaymentFinalizeResponseSchema>;
 export type OrderPaymentContext = z.output<typeof orderPaymentContextSchema>;
+export type CheckoutPaymentContext = z.output<typeof checkoutPaymentContextSchema>;
+export type CheckoutPaymentConfirmation = z.output<typeof checkoutPaymentConfirmationSchema>;
 
 export const paymentReconciliationProviderSchema = z.enum(["CLOVER", "STRIPE"]);
 
@@ -345,6 +397,12 @@ export const ordersContract = {
       path: "/",
       request: createOrderRequestSchema,
       response: orderSchema
+    },
+    createCheckout: {
+      method: "POST",
+      path: "/checkouts",
+      request: createCheckoutDraftRequestSchema,
+      response: checkoutDraftSchema
     },
     list: {
       method: "GET",

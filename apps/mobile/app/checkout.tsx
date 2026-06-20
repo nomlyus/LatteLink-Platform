@@ -4,6 +4,7 @@ import Constants from "expo-constants";
 import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
 import { PaymentSheetError, initPaymentSheet, initStripe, presentPaymentSheet } from "@stripe/stripe-react-native";
+import type { Order } from "@lattelink/contracts-orders";
 import { useMemo, useState } from "react";
 import {
   Pressable,
@@ -261,7 +262,7 @@ export default function CheckoutScreen() {
         locationId: storeConfig.locationId,
         items,
         discountCode,
-        existingOrder: retryableOrder
+        existingCheckout: retryableOrder
       });
 
       await initStripe({
@@ -285,7 +286,7 @@ export default function CheckoutScreen() {
       });
 
       if (initResult.error) {
-        setRetryOrder(preparedCheckout.order);
+        setRetryOrder(preparedCheckout.checkout);
         setStatusMessage("Payment could not open. Your bag is still ready, so you can try again.");
         setStatusTone("warning");
         return;
@@ -295,7 +296,7 @@ export default function CheckoutScreen() {
 
       const presentResult = await presentPaymentSheet();
       if (presentResult.error?.code === PaymentSheetError.Canceled) {
-        setRetryOrder(preparedCheckout.order);
+        setRetryOrder(preparedCheckout.checkout);
         clearFailure();
         setStatusMessage("");
         setStatusTone("info");
@@ -304,40 +305,46 @@ export default function CheckoutScreen() {
       }
 
       if (presentResult.error) {
-        setRetryOrder(preparedCheckout.order);
+        setRetryOrder(preparedCheckout.checkout);
         setStatusMessage("Payment didn’t go through. Your bag is still ready, so you can try again.");
         setStatusTone("warning");
         return;
       }
 
       setStatusMessage("Verifying payment with Stripe…");
-      let finalizedOrderStatus = preparedCheckout.order.status;
+      let finalizedOrder: Order;
       try {
         const finalizedPayment = await apiClient.finalizeStripeMobilePayment({
-          orderId: preparedCheckout.order.id,
+          checkoutId: preparedCheckout.checkout.checkoutId,
           paymentIntentId: preparedCheckout.paymentSession.paymentIntentId
         });
-        finalizedOrderStatus = finalizedPayment.orderStatus;
+        if (!("order" in finalizedPayment)) throw new Error("Checkout finalization returned a legacy order response");
+        finalizedOrder = finalizedPayment.order;
       } catch {
-        // PaymentSheet already succeeded. Do not leave the cart active and risk a duplicate charge.
-        finalizedOrderStatus = "PENDING_PAYMENT";
+        setStatusMessage("Payment was received, but confirmation is still processing. Check Orders in a moment.");
+        setStatusTone("info");
+        clear();
+        clearRetryOrder();
+        void invalidateAccountQueries();
+        dismissCheckoutToCart();
+        return;
       }
 
       const occurredAt = new Date().toISOString();
       const nextOrder = buildCheckoutOrderHistoryEntry({
-        order: preparedCheckout.order,
-        status: finalizedOrderStatus,
+        order: finalizedOrder,
+        status: finalizedOrder.status,
         occurredAt
       });
       queryClient.setQueryData<OrderHistoryEntry[] | undefined>(orderHistoryQueryKey, (currentOrders) =>
         mergeOrderIntoHistory(currentOrders, nextOrder)
       );
       setConfirmation({
-        orderId: preparedCheckout.order.id,
-        pickupCode: preparedCheckout.order.pickupCode,
-        status: finalizedOrderStatus,
-        total: preparedCheckout.order.total,
-        items: preparedCheckout.order.items,
+        orderId: finalizedOrder.id,
+        pickupCode: finalizedOrder.pickupCode,
+        status: finalizedOrder.status,
+        total: finalizedOrder.total,
+        items: finalizedOrder.items,
         occurredAt
       });
       clear();
@@ -358,7 +365,7 @@ export default function CheckoutScreen() {
             message,
             stage: error.stage,
             occurredAt: new Date().toISOString(),
-            order: error.order
+            checkout: error.checkout
           });
           router.replace("/checkout-failure");
           return;
@@ -378,7 +385,7 @@ export default function CheckoutScreen() {
           message,
           stage: error.stage,
           occurredAt: new Date().toISOString(),
-          order: error.order
+          checkout: error.checkout
         });
         dismissCheckoutToCart();
         return;
@@ -436,7 +443,7 @@ export default function CheckoutScreen() {
           <>
             {retryableOrder ? (
               <StatusBanner
-                message={`Payment for order ${retryableOrder.pickupCode} did not complete. You can retry without rebuilding the bag.`}
+                message="Payment did not complete. Your checkout is saved temporarily so you can retry."
                 tone="warning"
               />
             ) : null}

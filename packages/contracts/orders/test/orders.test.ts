@@ -3,7 +3,9 @@ import {
   orderPaymentContextSchema,
   orderStatusSchema,
   ordersPaymentReconciliationSchema,
+  stripeMobilePaymentFinalizeRequestSchema,
   stripeMobilePaymentFinalizeResponseSchema,
+  stripeMobilePaymentSessionRequestSchema,
   stripeMobilePaymentSessionResponseSchema,
   updateDiscountCodeRequestSchema
 } from "../src";
@@ -41,7 +43,7 @@ describe("contracts-orders", () => {
 
   it("accepts Stripe mobile payment session responses", () => {
     const parsed = stripeMobilePaymentSessionResponseSchema.parse({
-      orderId: "123e4567-e89b-12d3-a456-426614174000",
+      checkoutId: "123e4567-e89b-12d3-a456-426614174000",
       paymentIntentId: "pi_3QxExample123",
       paymentIntentClientSecret: "pi_3QxExample123_secret_abc",
       publishableKey: "pk_test_123",
@@ -59,14 +61,38 @@ describe("contracts-orders", () => {
 
   it("accepts Stripe mobile payment finalization responses", () => {
     const parsed = stripeMobilePaymentFinalizeResponseSchema.parse({
-      orderId: "123e4567-e89b-12d3-a456-426614174000",
+      checkoutId: "123e4567-e89b-12d3-a456-426614174000",
       paymentIntentId: "pi_3QxExample123",
       accepted: true,
       applied: true,
-      orderStatus: "PAID"
+      order: {
+        id: "123e4567-e89b-12d3-a456-426614174000",
+        locationId: "flagship-01",
+        status: "PAID",
+        items: [],
+        total: { currency: "USD", amountCents: 1295 },
+        pickupCode: "ABC123",
+        timeline: [{ status: "PAID", occurredAt: "2026-03-10T00:00:00.000Z" }]
+      }
     });
 
-    expect(parsed.orderStatus).toBe("PAID");
+    expect("order" in parsed && parsed.order.status).toBe("PAID");
+  });
+
+  it("keeps legacy order-based Stripe mobile payloads compatible", () => {
+    const orderId = "123e4567-e89b-12d3-a456-426614174000";
+    expect(stripeMobilePaymentSessionRequestSchema.parse({ orderId })).toEqual({ orderId });
+    expect(stripeMobilePaymentFinalizeRequestSchema.parse({ orderId, paymentIntentId: "pi_legacy" })).toEqual({
+      orderId,
+      paymentIntentId: "pi_legacy"
+    });
+    expect(stripeMobilePaymentFinalizeResponseSchema.parse({
+      orderId,
+      paymentIntentId: "pi_legacy",
+      accepted: true,
+      applied: true,
+      orderStatus: "PAID"
+    })).toMatchObject({ orderId, orderStatus: "PAID" });
   });
 
   it("accepts internal order payment context payloads", () => {

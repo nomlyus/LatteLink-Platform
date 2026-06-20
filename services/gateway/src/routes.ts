@@ -82,6 +82,8 @@ import {
   storeConfigResponseSchema
 } from "@lattelink/contracts-catalog";
 import {
+  checkoutDraftSchema,
+  createCheckoutDraftRequestSchema,
   ordersContract,
   createDiscountCodeRequestSchema,
   discountCodeListResponseSchema,
@@ -1758,7 +1760,9 @@ export async function registerRoutes(app: FastifyInstance) {
               timestamp: new Date().toISOString(),
               requestId: request.id,
               userId: request.authenticatedUserId,
-              orderId: response.orderId,
+              referenceId: "checkoutId" in response
+                ? response.checkoutId
+                : z.string().uuid().parse((response as unknown as Record<string, unknown>).orderId),
               paymentIntentId: response.paymentIntentId
             },
             "Stripe mobile payment initiated"
@@ -1794,11 +1798,18 @@ export async function registerRoutes(app: FastifyInstance) {
               timestamp: new Date().toISOString(),
               requestId: request.id,
               userId: request.authenticatedUserId,
-              orderId: response.orderId,
+              referenceId: "order" in response
+                ? response.checkoutId
+                : z.string().uuid().parse((response as unknown as Record<string, unknown>).orderId),
               paymentIntentId: response.paymentIntentId,
               accepted: response.accepted,
               applied: response.applied,
-              orderStatus: response.orderStatus
+              orderId: "order" in response
+                ? response.order.id
+                : z.string().uuid().parse((response as unknown as Record<string, unknown>).orderId),
+              orderStatus: "order" in response
+                ? response.order.status
+                : (response as unknown as Record<string, unknown>).orderStatus
             },
             "Stripe mobile payment finalized"
           );
@@ -2626,6 +2637,27 @@ export async function registerRoutes(app: FastifyInstance) {
   );
 
   // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
+  app.post(
+    "/v1/orders/checkouts",
+    { preHandler: [app.rateLimit(checkoutRateLimit), requireCustomerAuth] },
+    async (request, reply) => {
+      const input = createCheckoutDraftRequestSchema.parse(request.body);
+      const userId = await resolveAuthenticatedUserId({ request, reply, identityBaseUrl, jwtSecretConfigured: Boolean(jwtSecret) });
+      if (!userId) return;
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: ordersBaseUrl,
+        serviceLabel: "Orders",
+        method: "POST",
+        path: "/v1/orders/checkouts",
+        body: input,
+        additionalHeaders: { "x-gateway-token": gatewayInternalApiToken, "x-user-id": userId },
+        responseSchema: checkoutDraftSchema
+      });
+    }
+  );
+
   app.post(
     "/v1/orders/quote",
     { preHandler: [app.rateLimit(ordersWriteRateLimit), requireCustomerAuth] },

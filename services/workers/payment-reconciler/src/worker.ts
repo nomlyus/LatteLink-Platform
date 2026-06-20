@@ -7,6 +7,9 @@ import {
   type PersistenceDb
 } from "@lattelink/persistence";
 import {
+  checkoutPaymentConfirmationResponseSchema,
+  checkoutPaymentConfirmationSchema,
+  orderQuoteSchema,
   orderSchema,
   ordersPaymentReconciliationResultSchema,
   ordersPaymentReconciliationSchema
@@ -29,6 +32,7 @@ export type PaymentReconcilerConfig = {
 };
 
 export type StalePaymentIntentCandidate = {
+  referenceType?: "ORDER" | "CHECKOUT";
   orderId: string;
   locationId: string;
   paymentIntentId: string;
@@ -64,12 +68,18 @@ export type PaymentReconcilerRuntime = {
     internalApiToken: string;
     orderId: string;
     paymentIntent: ReconcilerPaymentIntent;
+    referenceType?: "ORDER" | "CHECKOUT";
   }) => Promise<{ applied: boolean; orderStatus: string }>;
   cancelPendingOrder: (input: {
     ordersBaseUrl: string;
     internalApiToken: string;
     orderId: string;
     reason: string;
+  }) => Promise<void>;
+  expireCheckoutDraft: (input: {
+    ordersBaseUrl: string;
+    internalApiToken: string;
+    checkoutId: string;
   }) => Promise<void>;
   logger: Logger;
   setTimeoutFn: (callback: () => void, delayMs: number) => TimerHandle;
@@ -82,6 +92,7 @@ export type PaymentReconcilerLoopHandle = {
 };
 
 const stalePaymentIntentRowSchema = z.object({
+  reference_type: z.enum(["ORDER", "CHECKOUT"]).default("ORDER"),
   order_id: z.string().uuid(),
   location_id: z.string().min(1),
   payment_intent_id: z.string().min(1),
@@ -212,6 +223,7 @@ function resolveStripeMetadataOrderId(metadata: Stripe.Metadata | null | undefin
 function parseStalePaymentIntentCandidate(row: unknown): StalePaymentIntentCandidate {
   const parsed = stalePaymentIntentRowSchema.parse(row);
   return {
+    referenceType: parsed.reference_type,
     orderId: parsed.order_id,
     locationId: parsed.location_id,
     paymentIntentId: parsed.payment_intent_id,
@@ -229,7 +241,9 @@ async function listStalePendingPaymentIntents(
   batchSize: number
 ): Promise<StalePaymentIntentCandidate[]> {
   const result = await sql<z.input<typeof stalePaymentIntentRowSchema>>`
+    SELECT * FROM (
     SELECT
+      'ORDER' AS reference_type,
       spi.order_id,
       spi.location_id,
       spi.payment_intent_id,
@@ -241,8 +255,24 @@ async function listStalePendingPaymentIntents(
     FROM payments_stripe_payment_intents spi
     INNER JOIN orders o ON o.order_id = spi.order_id
     WHERE o.order_json->>'status' = 'PENDING_PAYMENT'
-      AND spi.created_at < ${cutoffIso}
-    ORDER BY spi.created_at ASC
+    UNION ALL
+    SELECT
+      'CHECKOUT' AS reference_type,
+      spi.order_id,
+      spi.location_id,
+      spi.payment_intent_id,
+      spi.stripe_account_id,
+      spi.amount_cents,
+      spi.currency,
+      spi.created_at,
+      q.quote_json AS order_json
+    FROM payments_stripe_payment_intents spi
+    INNER JOIN order_checkout_drafts d ON d.checkout_id = spi.order_id
+    INNER JOIN orders_quotes q ON q.quote_id = d.quote_id
+    WHERE d.status = 'OPEN'
+    ) candidates
+    WHERE candidates.created_at < ${cutoffIso}
+    ORDER BY candidates.created_at ASC
     LIMIT ${batchSize}
   `.execute(db);
 
@@ -278,7 +308,27 @@ async function reconcileSucceededPayment(input: {
   internalApiToken: string;
   orderId: string;
   paymentIntent: ReconcilerPaymentIntent;
+  referenceType?: "ORDER" | "CHECKOUT";
 }) {
+  if (input.referenceType === "CHECKOUT") {
+    const payload = checkoutPaymentConfirmationSchema.parse({
+      eventId: `stripe-reconciler:${input.paymentIntent.id}:succeeded`,
+      checkoutId: input.orderId,
+      paymentId: input.paymentIntent.id,
+      occurredAt: new Date().toISOString(),
+      amountCents: input.paymentIntent.amount_received > 0 ? input.paymentIntent.amount_received : input.paymentIntent.amount,
+      currency: normalizeStripeCurrency(input.paymentIntent.currency)
+    });
+    const response = await fetch(`${input.ordersBaseUrl}/v1/orders/internal/checkouts/confirm-payment`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-internal-token": input.internalApiToken },
+      body: JSON.stringify(payload)
+    });
+    const body = await parseJsonSafely(response);
+    if (!response.ok) throw new Error(`checkout confirmation failed with status ${response.status}: ${JSON.stringify(body)}`);
+    const parsed = checkoutPaymentConfirmationResponseSchema.parse(body);
+    return { applied: parsed.applied, orderStatus: parsed.order.status };
+  }
   const payload = ordersPaymentReconciliationSchema.parse({
     eventId: `stripe-reconciler:${input.paymentIntent.id}:succeeded`,
     provider: "STRIPE",
@@ -332,6 +382,21 @@ async function cancelPendingOrder(input: {
   }
 }
 
+async function expireCheckoutDraft(input: {
+  ordersBaseUrl: string;
+  internalApiToken: string;
+  checkoutId: string;
+}) {
+  const response = await fetch(`${input.ordersBaseUrl}/v1/orders/internal/checkouts/${input.checkoutId}/expire`, {
+    method: "POST",
+    headers: { "x-internal-token": input.internalApiToken }
+  });
+  const body = await parseJsonSafely(response);
+  if (!response.ok) {
+    throw new Error(`checkout expiration failed with status ${response.status}: ${JSON.stringify(body)}`);
+  }
+}
+
 export async function createPaymentReconcilerRuntime(
   config: PaymentReconcilerConfig,
   logger: Logger = console
@@ -347,6 +412,7 @@ export async function createPaymentReconcilerRuntime(
     updatePaymentIntentStatus: (paymentIntentId, status) => updatePaymentIntentStatus(db, paymentIntentId, status),
     reconcileSucceededPayment,
     cancelPendingOrder,
+    expireCheckoutDraft,
     logger,
     setTimeoutFn: (callback, delayMs) => setTimeout(callback, delayMs),
     clearTimeoutFn: (handle) => clearTimeout(handle),
@@ -371,6 +437,7 @@ export async function processStalePaymentsBatch(
     | "updatePaymentIntentStatus"
     | "reconcileSucceededPayment"
     | "cancelPendingOrder"
+    | "expireCheckoutDraft"
     | "logger"
   >
 ): Promise<PaymentReconcilerBatchResult> {
@@ -386,22 +453,26 @@ export async function processStalePaymentsBatch(
 
   for (const candidate of candidates) {
     try {
-      const order = orderSchema.parse(candidate.orderJson);
-      if (order.id !== candidate.orderId || order.locationId !== candidate.locationId) {
+      const isCheckout = candidate.referenceType === "CHECKOUT";
+      const context = isCheckout ? orderQuoteSchema.parse(candidate.orderJson) : orderSchema.parse(candidate.orderJson);
+      const contextId = isCheckout ? candidate.orderId : orderSchema.parse(context).id;
+      if (contextId !== candidate.orderId || context.locationId !== candidate.locationId) {
         throw new Error("stored order JSON does not match stale payment intent candidate");
       }
 
       const paymentIntent = await runtime.retrievePaymentIntent(candidate.paymentIntentId, candidate.stripeAccountId);
       await runtime.updatePaymentIntentStatus(candidate.paymentIntentId, paymentIntent.status);
 
-      const metadataOrderId = resolveStripeMetadataOrderId(paymentIntent.metadata);
-      if (metadataOrderId !== candidate.orderId) {
+      const metadataReferenceId = candidate.referenceType === "CHECKOUT"
+        ? paymentIntent.metadata.checkoutId
+        : resolveStripeMetadataOrderId(paymentIntent.metadata);
+      if (metadataReferenceId !== candidate.orderId) {
         throw new Error("Stripe PaymentIntent metadata does not match order");
       }
 
       const amountCents = paymentIntent.amount_received > 0 ? paymentIntent.amount_received : paymentIntent.amount;
       const currency = normalizeStripeCurrency(paymentIntent.currency);
-      if (amountCents !== order.total.amountCents || currency !== order.total.currency) {
+      if (amountCents !== context.total.amountCents || currency !== context.total.currency) {
         throw new Error("Stripe PaymentIntent amount or currency does not match order");
       }
 
@@ -410,7 +481,8 @@ export async function processStalePaymentsBatch(
           ordersBaseUrl: config.ordersBaseUrl,
           internalApiToken: config.ordersInternalApiToken,
           orderId: candidate.orderId,
-          paymentIntent
+          paymentIntent,
+          referenceType: candidate.referenceType
         });
         result.recovered += 1;
         runtime.logger.info({
@@ -422,6 +494,15 @@ export async function processStalePaymentsBatch(
       }
 
       if (shouldCancelForStripeStatus(paymentIntent.status)) {
+        if (candidate.referenceType === "CHECKOUT") {
+          await runtime.expireCheckoutDraft({
+            ordersBaseUrl: config.ordersBaseUrl,
+            internalApiToken: config.ordersInternalApiToken,
+            checkoutId: candidate.orderId
+          });
+          result.canceled += 1;
+          continue;
+        }
         await runtime.cancelPendingOrder({
           ordersBaseUrl: config.ordersBaseUrl,
           internalApiToken: config.ordersInternalApiToken,

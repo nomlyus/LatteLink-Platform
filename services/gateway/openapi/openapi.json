@@ -463,6 +463,15 @@
         }
       }
     },
+    "/orders/checkouts": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/orders/quote": {
       "post": {
         "responses": {

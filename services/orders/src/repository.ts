@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
 import { normalizeCustomizationGroups, type MenuItemCustomizationGroup } from "@lattelink/contracts-catalog";
 import {
+  checkoutDraftSchema,
   discountCodeRedemptionSchema,
   discountCodeSchema,
   orderCustomerSchema,
@@ -23,6 +24,7 @@ import { z } from "zod";
 type OrderQuote = z.output<typeof orderQuoteSchema>;
 type Order = z.output<typeof orderSchema>;
 type OrderCustomer = z.output<typeof orderCustomerSchema>;
+export type CheckoutDraft = z.output<typeof checkoutDraftSchema> & { userId: string };
 export type DiscountCode = z.output<typeof discountCodeSchema>;
 export type DiscountCodeRedemption = z.output<typeof discountCodeRedemptionSchema>;
 
@@ -75,6 +77,33 @@ type StoredOrderRecord = {
   successfulCharge?: unknown;
   successfulRefund?: unknown;
 };
+
+type PersistedCheckoutDraftRow = {
+  checkout_id: string;
+  user_id: string;
+  quote_id: string;
+  quote_hash: string;
+  status: "OPEN" | "CONVERTED" | "EXPIRED";
+  order_id: string | null;
+  expires_at: string | Date;
+};
+
+function toCheckoutDraft(row: PersistedCheckoutDraftRow, quote: OrderQuote): CheckoutDraft {
+  return {
+    ...checkoutDraftSchema.parse({
+      checkoutId: row.checkout_id,
+      quoteId: row.quote_id,
+      quoteHash: row.quote_hash,
+      locationId: quote.locationId,
+      status: row.status,
+      items: quote.items,
+      total: quote.total,
+      expiresAt: new Date(row.expires_at).toISOString(),
+      orderId: row.order_id ?? undefined
+    }),
+    userId: row.user_id
+  };
+}
 
 type PersistedOrderRow = {
   order_id: string;
@@ -237,6 +266,12 @@ export type OrdersRepository = {
   backend: "memory" | "postgres";
   saveQuote(quote: OrderQuote): Promise<void>;
   getQuote(quoteId: string): Promise<OrderQuote | undefined>;
+  createCheckoutDraft(input: CheckoutDraft): Promise<CheckoutDraft>;
+  getCheckoutDraft(checkoutId: string): Promise<CheckoutDraft | undefined>;
+  getCheckoutDraftForQuote(input: { quoteId: string; quoteHash: string; userId: string }): Promise<CheckoutDraft | undefined>;
+  listOpenCheckoutDraftsByUser(userId: string): Promise<CheckoutDraft[]>;
+  expireCheckoutDraft(checkoutId: string): Promise<void>;
+  promoteCheckoutDraft(input: { checkoutId: string; order: Order; quoteId: string; userId: string }): Promise<{ order: Order; created: boolean }>;
   createOrder(input: { order: Order; quoteId: string; userId: string }): Promise<void>;
   getOrder(orderId: string): Promise<Order | undefined>;
   listOrders(): Promise<Order[]>;
@@ -426,6 +461,7 @@ const fallbackCatalogItems = new Map<string, QuoteCatalogItem>([
 
 function createInMemoryRepository(): OrdersRepository {
   const quotesById = new Map<string, OrderQuote>();
+  const checkoutDraftsById = new Map<string, CheckoutDraft>();
   const ordersById = new Map<string, StoredOrderRecord>();
   const createOrderIdempotency = new Map<string, string>();
   const paymentIdempotency = new Map<string, string>();
@@ -459,6 +495,49 @@ function createInMemoryRepository(): OrdersRepository {
     },
     async getQuote(quoteId) {
       return quotesById.get(quoteId);
+    },
+    async createCheckoutDraft(draft) {
+      const existing = [...checkoutDraftsById.values()].find(
+        (candidate) =>
+          candidate.status === "OPEN" &&
+          candidate.quoteId === draft.quoteId &&
+          candidate.quoteHash === draft.quoteHash &&
+          candidate.userId === draft.userId
+      );
+      if (existing) {
+        return existing;
+      }
+      checkoutDraftsById.set(draft.checkoutId, draft);
+      return draft;
+    },
+    async getCheckoutDraft(checkoutId) {
+      return checkoutDraftsById.get(checkoutId);
+    },
+    async getCheckoutDraftForQuote({ quoteId, quoteHash, userId }) {
+      return [...checkoutDraftsById.values()]
+        .filter((draft) => draft.quoteId === quoteId && draft.quoteHash === quoteHash && draft.userId === userId)
+        .sort((left, right) => Date.parse(right.expiresAt) - Date.parse(left.expiresAt))[0];
+    },
+    async listOpenCheckoutDraftsByUser(userId) {
+      return [...checkoutDraftsById.values()].filter((draft) => draft.userId === userId && draft.status === "OPEN");
+    },
+    async expireCheckoutDraft(checkoutId) {
+      const draft = checkoutDraftsById.get(checkoutId);
+      if (draft?.status === "OPEN") {
+        checkoutDraftsById.set(checkoutId, { ...draft, status: "EXPIRED" });
+      }
+    },
+    async promoteCheckoutDraft({ checkoutId, order, quoteId, userId }) {
+      const existing = ordersById.get(checkoutId)?.order;
+      if (existing) {
+        return { order: existing, created: false };
+      }
+      ordersById.set(checkoutId, { order, quoteId, userId });
+      const draft = checkoutDraftsById.get(checkoutId);
+      if (draft) {
+        checkoutDraftsById.set(checkoutId, { ...draft, status: "CONVERTED", orderId: checkoutId });
+      }
+      return { order, created: true };
     },
     async createOrder({ order, quoteId, userId }) {
       ordersById.set(order.id, {
@@ -946,6 +1025,107 @@ async function createPostgresRepository(
     },
     async getQuote(quoteId) {
       return getQuoteById(quoteId);
+    },
+    async createCheckoutDraft(draft) {
+      try {
+        await db
+          .insertInto("order_checkout_drafts")
+          .values({
+            checkout_id: draft.checkoutId,
+            user_id: draft.userId,
+            quote_id: draft.quoteId,
+            quote_hash: draft.quoteHash,
+            status: draft.status,
+            order_id: draft.orderId ?? null,
+            expires_at: draft.expiresAt
+          })
+          .execute();
+      } catch (error) {
+        const existing = await db
+          .selectFrom("order_checkout_drafts")
+          .selectAll()
+          .where("quote_id", "=", draft.quoteId)
+          .where("quote_hash", "=", draft.quoteHash)
+          .where("user_id", "=", draft.userId)
+          .where("status", "=", "OPEN")
+          .executeTakeFirst();
+        if (!existing) throw error;
+        const quote = await getQuoteById(existing.quote_id);
+        if (!quote) throw error;
+        return toCheckoutDraft(existing as PersistedCheckoutDraftRow, quote);
+      }
+      const persisted = await db
+        .selectFrom("order_checkout_drafts")
+        .selectAll()
+        .where("checkout_id", "=", draft.checkoutId)
+        .executeTakeFirstOrThrow();
+      const quote = await getQuoteById(persisted.quote_id);
+      if (!quote) {
+        throw new Error("Checkout draft quote is missing");
+      }
+      return toCheckoutDraft(persisted as PersistedCheckoutDraftRow, quote);
+    },
+    async getCheckoutDraft(checkoutId) {
+      const row = await db.selectFrom("order_checkout_drafts").selectAll().where("checkout_id", "=", checkoutId).executeTakeFirst();
+      if (!row) return undefined;
+      const quote = await getQuoteById(row.quote_id);
+      return quote ? toCheckoutDraft(row as PersistedCheckoutDraftRow, quote) : undefined;
+    },
+    async getCheckoutDraftForQuote({ quoteId, quoteHash, userId }) {
+      const row = await db
+        .selectFrom("order_checkout_drafts")
+        .selectAll()
+        .where("quote_id", "=", quoteId)
+        .where("quote_hash", "=", quoteHash)
+        .where("user_id", "=", userId)
+        .orderBy("created_at", "desc")
+        .executeTakeFirst();
+      if (!row) return undefined;
+      const quote = await getQuoteById(row.quote_id);
+      return quote ? toCheckoutDraft(row as PersistedCheckoutDraftRow, quote) : undefined;
+    },
+    async listOpenCheckoutDraftsByUser(userId) {
+      const rows = await db
+        .selectFrom("order_checkout_drafts")
+        .selectAll()
+        .where("user_id", "=", userId)
+        .where("status", "=", "OPEN")
+        .execute();
+      const drafts = await Promise.all(rows.map(async (row) => {
+        const quote = await getQuoteById(row.quote_id);
+        return quote ? toCheckoutDraft(row as PersistedCheckoutDraftRow, quote) : undefined;
+      }));
+      return drafts.filter((draft): draft is CheckoutDraft => Boolean(draft));
+    },
+    async expireCheckoutDraft(checkoutId) {
+      await db
+        .updateTable("order_checkout_drafts")
+        .set({ status: "EXPIRED", updated_at: new Date().toISOString() })
+        .where("checkout_id", "=", checkoutId)
+        .where("status", "=", "OPEN")
+        .execute();
+    },
+    async promoteCheckoutDraft({ checkoutId, order, quoteId, userId }) {
+      const existing = await getOrderById(checkoutId);
+      if (existing) return { order: existing, created: false };
+      let created = false;
+      await db.transaction().execute(async (trx) => {
+        const inserted = await trx
+          .insertInto("orders")
+          .values({ order_id: checkoutId, user_id: userId, quote_id: quoteId, order_json: order })
+          .onConflict((conflict) => conflict.column("order_id").doNothing())
+          .returning("order_id")
+          .executeTakeFirst();
+        created = Boolean(inserted);
+        await trx
+          .updateTable("order_checkout_drafts")
+          .set({ status: "CONVERTED", order_id: checkoutId, updated_at: new Date().toISOString() })
+          .where("checkout_id", "=", checkoutId)
+          .execute();
+      });
+      const persistedOrder = await getOrderById(checkoutId);
+      if (!persistedOrder) throw new Error("Checkout promotion did not create an order");
+      return { order: persistedOrder, created };
     },
     async createOrder({ order, quoteId, userId }) {
       await db

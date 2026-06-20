@@ -235,13 +235,14 @@ describe("sdk-mobile", () => {
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
-            id: "123e4567-e89b-12d3-a456-426614174012",
+            checkoutId: "123e4567-e89b-12d3-a456-426614174012",
+            quoteId: "123e4567-e89b-12d3-a456-426614174011",
+            quoteHash: "quote-hash",
             locationId: "flagship-01",
-            status: "PENDING_PAYMENT",
+            status: "OPEN",
             items: [{ itemId: "latte", quantity: 1, unitPriceCents: 675 }],
             total: { currency: "USD", amountCents: 716 },
-            pickupCode: "A1B2C3",
-            timeline: [{ status: "PENDING_PAYMENT", occurredAt: "2026-03-10T00:00:00.000Z" }]
+            expiresAt: "2030-03-10T00:30:00.000Z"
           }),
           { status: 200, headers: { "content-type": "application/json" } }
         )
@@ -249,7 +250,7 @@ describe("sdk-mobile", () => {
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
-            orderId: "123e4567-e89b-12d3-a456-426614174012",
+            checkoutId: "123e4567-e89b-12d3-a456-426614174012",
             paymentIntentId: "pi_3QxExample123",
             paymentIntentClientSecret: "pi_3QxExample123_secret_abc",
             publishableKey: "pk_test_payments",
@@ -272,11 +273,11 @@ describe("sdk-mobile", () => {
       items: [{ itemId: "latte", quantity: 1 }],
       pointsToRedeem: 0
     });
-    const order = await client.createOrder({ quoteId: quote.quoteId, quoteHash: quote.quoteHash });
-    const paymentSession = await client.createStripeMobilePaymentSession({ orderId: order.id });
+    const checkout = await client.createCheckoutDraft({ quoteId: quote.quoteId, quoteHash: quote.quoteHash });
+    const paymentSession = await client.createStripeMobilePaymentSession({ checkoutId: checkout.checkoutId });
 
     expect(quote.quoteHash).toBe("quote-hash");
-    expect(order.status).toBe("PENDING_PAYMENT");
+    expect(checkout.status).toBe("OPEN");
     expect(paymentSession.paymentIntentId).toBe("pi_3QxExample123");
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
