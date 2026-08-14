@@ -201,6 +201,22 @@ jobs:
           printf '%s\n' "${DEPLOY_KEY}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
 
+      - name: Reclaim dev host disk space
+        if: steps.deploy-check.outputs.enabled == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "${DEPLOY_USER}@${DEPLOY_HOST}" <<'REMOTE'
+          set -euo pipefail
+
+          df -h / || true
+          docker container prune --force || true
+          docker image prune --all --force --filter "until=72h" || true
+          docker builder prune --all --force --filter "until=72h" || true
+          df -h / || true
+          REMOTE
+
       - name: Copy deployment bundle to server
         if: steps.deploy-check.outputs.enabled == 'true'
         env:
