@@ -206,14 +206,31 @@ jobs:
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          IMAGE_REGISTRY_PREFIX: ${{ vars.IMAGE_REGISTRY_PREFIX }}
+          IMAGE_TAG: ${{ steps.image-tag.outputs.tag }}
         run: |
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "${DEPLOY_USER}@${DEPLOY_HOST}" <<'REMOTE'
+          remote_path="${DEPLOY_PATH:-/opt/lattelink-dev}"
+
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "export DEPLOY_PATH='${remote_path}' IMAGE_REGISTRY_PREFIX='${IMAGE_REGISTRY_PREFIX}' IMAGE_TAG='${IMAGE_TAG}'; bash -s" <<'REMOTE'
           set -euo pipefail
 
+          cd "${DEPLOY_PATH}" 2>/dev/null || true
           df -h / || true
-          docker container prune --force || true
-          docker image prune --all --force --filter "until=72h" || true
-          docker builder prune --all --force --filter "until=72h" || true
+          sudo -n journalctl --vacuum-size=200M || true
+          sudo -n apt-get clean || true
+          rm -rf /tmp/lattelink-* /tmp/docker-* || true
+
+          if command -v docker >/dev/null 2>&1; then
+            docker container prune --force || true
+            docker images --format '{{.Repository}}:{{.Tag}} {{.ID}}' \
+              | awk -v prefix="${IMAGE_REGISTRY_PREFIX}" -v tag="${IMAGE_TAG}" '$1 ~ "^" prefix && $1 !~ tag { print $2 }' \
+              | sort -u \
+              | xargs -r docker rmi || true
+            timeout 90s docker builder prune --all --force --filter "until=24h" || true
+            timeout 90s docker image prune --all --force --filter "until=24h" || true
+          fi
           df -h / || true
           REMOTE
 
