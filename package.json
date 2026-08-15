@@ -25,6 +25,7 @@
     "provision:client-owner": "pnpm --filter @lattelink/identity provision:owner",
     "contracts:openapi": "turbo run openapi --filter=@lattelink/gateway --filter=@lattelink/contracts-*",
     "contracts:drift": "./scripts/verify-contract-drift.sh",
+    "e2e:dev-checkout": "node scripts/dev-checkout-e2e.mjs",
     "release:validate-tag": "node scripts/validate-release-tag.mjs",
     "test:release-policy": "node --test scripts/validate-release-tag.test.mjs scripts/validate-production-release.test.mjs",
     "sdk:generate": "pnpm --filter @lattelink/sdk-mobile generate",

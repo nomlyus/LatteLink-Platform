@@ -435,6 +435,13 @@ jobs:
 
           ./infra/free/bin/smoke-check.sh "https://${API_DOMAIN}/v1"
 
+      - name: Run deployed checkout e2e
+        if: steps.deploy-check.outputs.enabled == 'true'
+        env:
+          API_BASE_URL: https://${{ vars.API_DOMAIN }}/v1
+          DEV_E2E_LOCATION_ID: ${{ vars.DEV_E2E_LOCATION_ID || 'rawaqcoffee01' }}
+        run: node scripts/dev-checkout-e2e.mjs
+
       - name: Skip dev deploy (prerequisites missing)
         if: steps.deploy-check.outputs.enabled != 'true'
         run: echo "deploy-dev skipped due to missing required secrets/variables."
