@@ -1191,6 +1191,24 @@ let previousFreeClientDashboardDomain: string | undefined;
         });
       }
 
+      const supportCancelMatch = url.match(/\/v1\/orders\/internal\/support\/orders\/([0-9a-f-]{36})\/cancel$/);
+      if (supportCancelMatch && method === "POST") {
+        return new Response(JSON.stringify(buildOrderPayload(supportCancelMatch[1], "CANCELED")), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+
+      const supportManualReviewMatch = url.match(
+        /\/v1\/orders\/internal\/support\/orders\/([0-9a-f-]{36})\/manual-review$/
+      );
+      if (supportManualReviewMatch && method === "POST") {
+        return new Response(JSON.stringify({ marked: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+
       const getOrderMatch = url.match(/\/v1\/orders\/([0-9a-f-]{36})$/);
       if (getOrderMatch && method === "GET") {
         const orderId = getOrderMatch[1];
@@ -3963,6 +3981,87 @@ let previousFreeClientDashboardDomain: string | undefined;
       headers: readonlyInternalAdminHeaders
     });
     expect(readonlyExpireResponse.statusCode).toBe(403);
+
+    const supportCancelResponse = await app.inject({
+      method: "POST",
+      url: "/v1/internal/support/orders/123e4567-e89b-12d3-a456-426614174113/cancel",
+      headers: ownerInternalAdminHeaders,
+      payload: {
+        locationId: "northside-01",
+        reason: "Support payment recovery"
+      }
+    });
+    expect(supportCancelResponse.statusCode, supportCancelResponse.body).toBe(200);
+    expect(supportCancelResponse.json()).toMatchObject({
+      id: "123e4567-e89b-12d3-a456-426614174113",
+      status: "CANCELED"
+    });
+    const supportCancelCall = fetchMock.mock.calls.find(([input]) =>
+      (typeof input === "string" ? input : input.url).endsWith(
+        "/v1/orders/internal/support/orders/123e4567-e89b-12d3-a456-426614174113/cancel"
+      )
+    );
+    expect(supportCancelCall).toBeDefined();
+    if (supportCancelCall) {
+      const headers = new Headers(supportCancelCall[1]?.headers);
+      const payload = JSON.parse(String(supportCancelCall[1]?.body ?? "{}")) as Record<string, unknown>;
+      expect(headers.get("x-internal-token")).toBe("orders-internal-token");
+      expect(headers.get("x-user-id")).toBe("223e4567-e89b-12d3-a456-426614174999");
+      expect(payload).toMatchObject({
+        locationId: "northside-01",
+        reason: "Support payment recovery"
+      });
+    }
+
+    const readonlySupportCancelResponse = await app.inject({
+      method: "POST",
+      url: "/v1/internal/support/orders/123e4567-e89b-12d3-a456-426614174113/cancel",
+      headers: readonlyInternalAdminHeaders,
+      payload: {
+        locationId: "northside-01",
+        reason: "Support payment recovery"
+      }
+    });
+    expect(readonlySupportCancelResponse.statusCode).toBe(403);
+
+    const supportManualReviewResponse = await app.inject({
+      method: "POST",
+      url: "/v1/internal/support/orders/123e4567-e89b-12d3-a456-426614174113/manual-review",
+      headers: ownerInternalAdminHeaders,
+      payload: {
+        locationId: "northside-01",
+        reason: "Needs manual support review"
+      }
+    });
+    expect(supportManualReviewResponse.statusCode, supportManualReviewResponse.body).toBe(200);
+    expect(supportManualReviewResponse.json()).toEqual({ marked: true });
+    const supportManualReviewCall = fetchMock.mock.calls.find(([input]) =>
+      (typeof input === "string" ? input : input.url).endsWith(
+        "/v1/orders/internal/support/orders/123e4567-e89b-12d3-a456-426614174113/manual-review"
+      )
+    );
+    expect(supportManualReviewCall).toBeDefined();
+    if (supportManualReviewCall) {
+      const headers = new Headers(supportManualReviewCall[1]?.headers);
+      const payload = JSON.parse(String(supportManualReviewCall[1]?.body ?? "{}")) as Record<string, unknown>;
+      expect(headers.get("x-internal-token")).toBe("orders-internal-token");
+      expect(headers.get("x-user-id")).toBe("223e4567-e89b-12d3-a456-426614174999");
+      expect(payload).toMatchObject({
+        locationId: "northside-01",
+        reason: "Needs manual support review"
+      });
+    }
+
+    const readonlySupportManualReviewResponse = await app.inject({
+      method: "POST",
+      url: "/v1/internal/support/orders/123e4567-e89b-12d3-a456-426614174113/manual-review",
+      headers: readonlyInternalAdminHeaders,
+      payload: {
+        locationId: "northside-01",
+        reason: "Needs manual support review"
+      }
+    });
+    expect(readonlySupportManualReviewResponse.statusCode).toBe(403);
 
     const paymentProfileResponse = await app.inject({
       method: "GET",

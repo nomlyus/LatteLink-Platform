@@ -152,6 +152,13 @@ const adminMenuItemUpdateWithCustomizationsSchema = adminMenuItemUpdateSchema.ex
   customizationGroups: z.array(menuItemCustomizationGroupSchema).optional()
 });
 const cancelOrderRequestSchema = z.object({ reason: z.string().min(1) });
+const supportCancelOrderRequestSchema = cancelOrderRequestSchema.extend({
+  locationId: z.string().min(1).optional()
+});
+const supportManualReviewRequestSchema = z.object({
+  locationId: z.string().min(1).optional(),
+  reason: z.string().min(1)
+});
 const adminOrderStatusUpdateSchema = z.object({
   status: z.enum(["IN_PREP", "READY", "COMPLETED", "CANCELED"]),
   note: z.string().min(1).optional()
@@ -234,6 +241,9 @@ const supportCheckoutLookupResponseSchema = z.object({
 });
 const supportCheckoutExpireResponseSchema = z.object({
   expired: z.boolean()
+});
+const supportManualReviewResponseSchema = z.object({
+  marked: z.boolean()
 });
 const defaultRateLimitWindowMs = 60_000;
 const defaultUpstreamTimeoutMs = 5_000;
@@ -4735,6 +4745,60 @@ export async function registerRoutes(app: FastifyInstance) {
         },
         forwardUserIdHeader: false,
         responseSchema: supportCheckoutExpireResponseSchema
+      });
+    }
+  );
+
+  app.post(
+    "/v1/internal/support/orders/:orderId/cancel",
+    {
+      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+    },
+    async (request, reply) => {
+      const { orderId } = orderIdParamsSchema.parse(request.params);
+      const input = supportCancelOrderRequestSchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: ordersBaseUrl,
+        serviceLabel: "Orders",
+        method: "POST",
+        path: `/v1/orders/internal/support/orders/${orderId}/cancel`,
+        additionalHeaders: {
+          "x-internal-token": ordersInternalApiToken,
+          ...internalAdminActorHeader(request)
+        },
+        body: input,
+        forwardUserIdHeader: false,
+        responseSchema: orderSchema
+      });
+    }
+  );
+
+  app.post(
+    "/v1/internal/support/orders/:orderId/manual-review",
+    {
+      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+    },
+    async (request, reply) => {
+      const { orderId } = orderIdParamsSchema.parse(request.params);
+      const input = supportManualReviewRequestSchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: ordersBaseUrl,
+        serviceLabel: "Orders",
+        method: "POST",
+        path: `/v1/orders/internal/support/orders/${orderId}/manual-review`,
+        additionalHeaders: {
+          "x-internal-token": ordersInternalApiToken,
+          ...internalAdminActorHeader(request)
+        },
+        body: input,
+        forwardUserIdHeader: false,
+        responseSchema: supportManualReviewResponseSchema
       });
     }
   );

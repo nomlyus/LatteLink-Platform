@@ -65,6 +65,13 @@ const orderStatusUpdateRequestSchema = z.object({
 const cancelOrderRequestSchema = z.object({
   reason: z.string().min(1)
 });
+const supportCancelOrderRequestSchema = cancelOrderRequestSchema.extend({
+  locationId: z.string().min(1).optional()
+});
+const supportManualReviewRequestSchema = z.object({
+  locationId: z.string().min(1).optional(),
+  reason: z.string().min(1)
+});
 
 const serviceErrorSchema = z.object({
   code: z.string(),
@@ -163,6 +170,9 @@ const supportCheckoutLookupResultSchema = z.object({
 
 const supportCheckoutLookupResponseSchema = z.object({
   results: z.array(supportCheckoutLookupResultSchema)
+});
+const supportManualReviewResponseSchema = z.object({
+  marked: z.boolean()
 });
 
 const defaultRateLimitWindowMs = 60_000;
@@ -1089,6 +1099,106 @@ export async function registerRoutes(app: FastifyInstance) {
         }
       });
       return result.order;
+    }
+  );
+
+  app.post(
+    "/v1/orders/internal/support/orders/:orderId/cancel",
+    {
+      preHandler: app.rateLimit(ordersWriteRateLimit)
+    },
+    async (request, reply) => {
+      if (!authorizeInternalRequest(request, reply, internalApiToken, { allowUnauthenticated: allowUnauthenticatedInternalAccess })) {
+        return;
+      }
+
+      const { orderId } = orderIdParamsSchema.parse(request.params);
+      const input = supportCancelOrderRequestSchema.parse(request.body);
+      const parsedUserHeaders = userHeadersSchema.safeParse(request.headers);
+      const actorId = parsedUserHeaders.success ? parsedUserHeaders.data["x-user-id"] : undefined;
+      const result = await cancelOrder({
+        orderId,
+        input: {
+          reason: input.reason
+        },
+        cancelSource: "system",
+        locationId: input.locationId,
+        requestId: request.id,
+        deps: getServiceDeps(request)
+      });
+
+      if ("error" in result) {
+        return sendServiceError(reply, request, result.error);
+      }
+
+      logOrderMutation(request, "order recovery cancellation requested by support", {
+        event: "order.support.cancel_requested",
+        orderId: result.order.id,
+        locationId: result.order.locationId,
+        status: result.order.status,
+        reason: input.reason
+      });
+      await recordAuditLog(request, repository, {
+        locationId: result.order.locationId,
+        actorId: actorId ?? "internal-support",
+        actorType: "internal_admin",
+        action: "order.support_cancel_requested",
+        targetId: result.order.id,
+        targetType: "order",
+        payload: {
+          to: result.order.status,
+          cancelSource: "system",
+          reason: input.reason
+        }
+      });
+      return orderSchema.parse(result.order);
+    }
+  );
+
+  app.post(
+    "/v1/orders/internal/support/orders/:orderId/manual-review",
+    {
+      preHandler: app.rateLimit(ordersWriteRateLimit)
+    },
+    async (request, reply) => {
+      if (!authorizeInternalRequest(request, reply, internalApiToken, { allowUnauthenticated: allowUnauthenticatedInternalAccess })) {
+        return;
+      }
+
+      const { orderId } = orderIdParamsSchema.parse(request.params);
+      const input = supportManualReviewRequestSchema.parse(request.body);
+      const parsedUserHeaders = userHeadersSchema.safeParse(request.headers);
+      const actorId = parsedUserHeaders.success ? parsedUserHeaders.data["x-user-id"] : undefined;
+      const order = await repository.getOrder(orderId);
+      if (!order || (input.locationId && order.locationId !== input.locationId)) {
+        return sendError(reply, {
+          statusCode: 404,
+          code: "ORDER_NOT_FOUND",
+          message: "Order not found",
+          requestId: request.id
+        });
+      }
+
+      await recordAuditLog(request, repository, {
+        locationId: order.locationId,
+        actorId: actorId ?? "internal-support",
+        actorType: "internal_admin",
+        action: "order.manual_review_marked",
+        targetId: order.id,
+        targetType: "order",
+        payload: {
+          status: order.status,
+          reason: input.reason
+        }
+      });
+      logOrderMutation(request, "order marked for manual review by support", {
+        event: "order.support.manual_review_marked",
+        orderId: order.id,
+        locationId: order.locationId,
+        status: order.status,
+        reason: input.reason
+      });
+      return supportManualReviewResponseSchema.parse({ marked: true });
     }
   );
 

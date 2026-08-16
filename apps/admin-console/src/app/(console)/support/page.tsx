@@ -1,5 +1,9 @@
 import Link from "next/link";
-import { expireSupportCheckoutAction } from "@/app/actions";
+import {
+  cancelSupportOrderAction,
+  expireSupportCheckoutAction,
+  markSupportOrderManualReviewAction
+} from "@/app/actions";
 import {
   InternalApiError,
   listInternalLocations,
@@ -85,6 +89,31 @@ function getCheckoutTone(result: SupportCheckoutLookupResult) {
   return "healthy";
 }
 
+function canRunOrderRecovery(result: SupportOrderLookupResult) {
+  return ["PAID", "IN_PREP", "READY"].includes(result.order.status);
+}
+
+function formatSnapshot(value: unknown) {
+  if (!value) {
+    return "Not recorded";
+  }
+
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const status = typeof record.status === "string" ? record.status : undefined;
+    const provider = typeof record.provider === "string" ? record.provider : undefined;
+    const identifier =
+      typeof record.paymentId === "string"
+        ? record.paymentId
+        : typeof record.refundId === "string"
+          ? record.refundId
+          : undefined;
+    return [provider, status, identifier].filter(Boolean).join(" · ") || "Recorded";
+  }
+
+  return String(value);
+}
+
 export default async function SupportPage({
   searchParams
 }: {
@@ -96,6 +125,8 @@ export default async function SupportPage({
   const actionError = getParam(params.error);
   const checkoutExpired = getParam(params.checkoutExpired);
   const checkoutUnchanged = getParam(params.checkoutUnchanged);
+  const orderCanceled = getParam(params.orderCanceled);
+  const manualReviewMarked = getParam(params.manualReviewMarked);
   const [{ locations }, lookupResult, checkoutLookupResult] = await Promise.all([
     listInternalLocations(),
     query.length > 0
@@ -172,6 +203,16 @@ export default async function SupportPage({
           <div className="empty-state">
             <h4>Checkout was already settled.</h4>
             <p>{checkoutUnchanged} did not need a recovery action.</p>
+          </div>
+        ) : orderCanceled ? (
+          <div className="empty-state is-success">
+            <h4>Order recovery completed.</h4>
+            <p>{orderCanceled} was canceled through the safe refund flow.</p>
+          </div>
+        ) : manualReviewMarked ? (
+          <div className="empty-state is-success">
+            <h4>Manual review marked.</h4>
+            <p>{manualReviewMarked} was flagged in the support audit trail.</p>
           </div>
         ) : null}
 
@@ -297,7 +338,47 @@ export default async function SupportPage({
                     <dt>Created</dt>
                     <dd>{formatDate(result.createdAt)}</dd>
                   </div>
+                  <div>
+                    <dt>Charge snapshot</dt>
+                    <dd>{formatSnapshot(result.successfulCharge)}</dd>
+                  </div>
+                  <div>
+                    <dt>Refund snapshot</dt>
+                    <dd>{formatSnapshot(result.successfulRefund)}</dd>
+                  </div>
                 </dl>
+
+                {canRunOrderRecovery(result) ? (
+                  <form action={cancelSupportOrderAction} className="form-grid">
+                    <input type="hidden" name="orderId" value={result.order.id} />
+                    <input type="hidden" name="query" value={query} />
+                    <input type="hidden" name="locationId" value={locationId || result.order.locationId} />
+                    <label>
+                      <span>Recovery reason</span>
+                      <input name="reason" defaultValue="Support payment recovery" required />
+                    </label>
+                    <div className="form-actions">
+                      <button type="submit" className="secondary-button">
+                        Cancel and refund
+                      </button>
+                    </div>
+                  </form>
+                ) : null}
+
+                <form action={markSupportOrderManualReviewAction} className="form-grid">
+                  <input type="hidden" name="orderId" value={result.order.id} />
+                  <input type="hidden" name="query" value={query} />
+                  <input type="hidden" name="locationId" value={locationId || result.order.locationId} />
+                  <label>
+                    <span>Manual review reason</span>
+                    <input name="reason" defaultValue="Needs manual support review" required />
+                  </label>
+                  <div className="form-actions">
+                    <button type="submit" className="secondary-button">
+                      Mark manual review
+                    </button>
+                  </div>
+                </form>
 
                 <div className="audit-log">
                   <div className="section-heading">

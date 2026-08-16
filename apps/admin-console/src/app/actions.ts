@@ -15,12 +15,14 @@ import {
 import {
   buildCapabilities,
   approveInternalLocationLaunch,
+  cancelSupportOrder,
   createInternalClient,
   createStripeDashboardLink,
   createStripeOnboardingLink,
   expireSupportCheckout,
   getInternalLocationOnboarding,
   getInternalLocationReadiness,
+  markSupportOrderManualReview,
   refreshStripeStatus,
   resendLocationOwnerInvite,
   updateInternalLocationCapabilities,
@@ -248,6 +250,62 @@ export async function expireSupportCheckoutAction(formData: FormData) {
     await requireAdminCapability("clients:write");
     const result = await expireSupportCheckout(checkoutId);
     params.set(result.expired ? "checkoutExpired" : "checkoutUnchanged", checkoutId);
+  } catch (error) {
+    params.set("error", toRedirectError(error));
+  }
+
+  redirect(`/support?${params.toString()}`);
+}
+
+export async function cancelSupportOrderAction(formData: FormData) {
+  const orderId = readString(formData, "orderId");
+  const query = readString(formData, "query");
+  const locationId = readOptionalString(formData, "locationId");
+  const reason = readString(formData, "reason") || "Support payment recovery";
+  const params = new URLSearchParams();
+  if (query) params.set("query", query);
+  if (locationId) params.set("locationId", locationId);
+
+  if (!orderId) {
+    params.set("error", "Order ID is required.");
+    redirect(`/support?${params.toString()}`);
+  }
+
+  try {
+    await requireAdminCapability("clients:write");
+    await cancelSupportOrder(orderId, {
+      reason,
+      locationId
+    });
+    params.set("orderCanceled", orderId);
+  } catch (error) {
+    params.set("error", toRedirectError(error));
+  }
+
+  redirect(`/support?${params.toString()}`);
+}
+
+export async function markSupportOrderManualReviewAction(formData: FormData) {
+  const orderId = readString(formData, "orderId");
+  const query = readString(formData, "query");
+  const locationId = readOptionalString(formData, "locationId");
+  const reason = readString(formData, "reason") || "Needs manual support review";
+  const params = new URLSearchParams();
+  if (query) params.set("query", query);
+  if (locationId) params.set("locationId", locationId);
+
+  if (!orderId) {
+    params.set("error", "Order ID is required.");
+    redirect(`/support?${params.toString()}`);
+  }
+
+  try {
+    await requireAdminCapability("clients:write");
+    await markSupportOrderManualReview(orderId, {
+      reason,
+      locationId
+    });
+    params.set("manualReviewMarked", orderId);
   } catch (error) {
     params.set("error", toRedirectError(error));
   }

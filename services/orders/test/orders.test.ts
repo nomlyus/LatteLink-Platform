@@ -1815,6 +1815,108 @@ describe("orders service", () => {
       ]
     });
 
+    const manualReviewResponse = await app.inject({
+      method: "POST",
+      url: `/v1/orders/internal/support/orders/${order.id}/manual-review`,
+      headers: {
+        "x-internal-token": "orders-internal-token",
+        "x-user-id": "223e4567-e89b-12d3-a456-426614174999"
+      },
+      payload: {
+        locationId: order.locationId,
+        reason: "Needs manual support review"
+      }
+    });
+    expect(manualReviewResponse.statusCode, manualReviewResponse.body).toBe(200);
+    expect(manualReviewResponse.json()).toEqual({ marked: true });
+
+    const reviewedSupportResponse = await app.inject({
+      method: "GET",
+      url: `/v1/orders/internal/support/lookup?query=${order.id}`,
+      headers: {
+        "x-internal-token": "orders-internal-token"
+      }
+    });
+    expect(reviewedSupportResponse.statusCode, reviewedSupportResponse.body).toBe(200);
+    expect(reviewedSupportResponse.json()).toMatchObject({
+      results: [
+        {
+          auditLog: expect.arrayContaining([
+            expect.objectContaining({
+              actorType: "internal_admin",
+              action: "order.manual_review_marked",
+              targetId: order.id,
+              targetType: "order",
+              payload: expect.objectContaining({
+                reason: "Needs manual support review"
+              })
+            })
+          ])
+        }
+      ]
+    });
+
+    await app.close();
+  });
+
+  it("lets internal support retry order cancellation through the safe refund flow", async () => {
+    const app = await buildApp();
+    const { order } = await createQuotedOrder(app);
+    const payResponse = await reconcilePaidOrder(app, {
+      orderId: order.id,
+      eventId: "evt-support-cancel-pay"
+    });
+    expect(payResponse.statusCode).toBe(200);
+
+    const cancelResponse = await app.inject({
+      method: "POST",
+      url: `/v1/orders/internal/support/orders/${order.id}/cancel`,
+      headers: {
+        "x-internal-token": "orders-internal-token",
+        "x-user-id": "223e4567-e89b-12d3-a456-426614174999"
+      },
+      payload: {
+        locationId: order.locationId,
+        reason: "Support payment recovery"
+      }
+    });
+    expect(cancelResponse.statusCode, cancelResponse.body).toBe(200);
+    expect(orderSchema.parse(cancelResponse.json())).toMatchObject({
+      id: order.id,
+      status: "CANCELED"
+    });
+
+    const supportResponse = await app.inject({
+      method: "GET",
+      url: `/v1/orders/internal/support/lookup?query=${order.id}`,
+      headers: {
+        "x-internal-token": "orders-internal-token"
+      }
+    });
+    expect(supportResponse.statusCode, supportResponse.body).toBe(200);
+    expect(supportResponse.json()).toMatchObject({
+      results: [
+        {
+          order: {
+            id: order.id,
+            status: "CANCELED"
+          },
+          successfulRefund: expect.objectContaining({
+            status: "REFUNDED"
+          }),
+          auditLog: expect.arrayContaining([
+            expect.objectContaining({
+              actorId: "223e4567-e89b-12d3-a456-426614174999",
+              actorType: "internal_admin",
+              action: "order.support_cancel_requested",
+              targetId: order.id,
+              targetType: "order"
+            })
+          ])
+        }
+      ]
+    });
+
     await app.close();
   });
 

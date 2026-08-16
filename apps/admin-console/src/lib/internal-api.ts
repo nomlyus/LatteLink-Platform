@@ -63,6 +63,8 @@ export type SupportOrderLookupResult = {
   paymentStatus?: string;
   paymentProvider?: string;
   paymentIntentId?: string;
+  successfulCharge?: unknown;
+  successfulRefund?: unknown;
   createdAt?: string;
   updatedAt?: string;
   auditLog: SupportAuditLogEntry[];
@@ -220,6 +222,32 @@ export async function expireSupportCheckout(checkoutId: string) {
   return requestInternalApi<{ expired: boolean }>(`/v1/internal/support/checkouts/${checkoutId}/expire`, {
     method: "POST",
     body: JSON.stringify({})
+  });
+}
+
+export async function cancelSupportOrder(
+  orderId: string,
+  input: {
+    reason: string;
+    locationId?: string;
+  }
+) {
+  return requestInternalApi<SupportOrderLookupResult["order"]>(`/v1/internal/support/orders/${orderId}/cancel`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function markSupportOrderManualReview(
+  orderId: string,
+  input: {
+    reason: string;
+    locationId?: string;
+  }
+) {
+  return requestInternalApi<{ marked: boolean }>(`/v1/internal/support/orders/${orderId}/manual-review`, {
+    method: "POST",
+    body: JSON.stringify(input)
   });
 }
 
