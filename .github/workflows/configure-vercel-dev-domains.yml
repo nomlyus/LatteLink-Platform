@@ -33,4 +33,8 @@ jobs:
           ADMIN_CONSOLE_VERCEL_TOKEN: ${{ secrets.ADMIN_CONSOLE_VERCEL_TOKEN }}
           ADMIN_CONSOLE_VERCEL_ORG_ID: ${{ secrets.ADMIN_CONSOLE_VERCEL_ORG_ID }}
           ADMIN_CONSOLE_VERCEL_PROJECT_ID: ${{ secrets.ADMIN_CONSOLE_VERCEL_PROJECT_ID }}
+          LATTELINK_WEB_DEV_DOMAIN: dev.nomly.us
+          LATTELINK_WEB_VERCEL_TOKEN: ${{ secrets.LATTELINK_VERCEL_TOKEN }}
+          LATTELINK_WEB_VERCEL_ORG_ID: ${{ secrets.LATTELINK_VERCEL_ORG_ID }}
+          LATTELINK_WEB_VERCEL_PROJECT_ID: ${{ secrets.LATTELINK_VERCEL_PROJECT_ID }}
         run: node scripts/configure-vercel-dev-domains.mjs

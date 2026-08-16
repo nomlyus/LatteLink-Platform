@@ -1,6 +1,15 @@
 name: lattelink-vercel
 
 on:
+  push:
+    branches:
+      - develop
+    paths:
+      - "apps/lattelink-web/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/lattelink-vercel.yml"
   release:
     types:
       - published
@@ -42,9 +51,11 @@ jobs:
       - run: pnpm --filter @lattelink/web build
 
   deploy-preview:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-latest
     needs: verify
+    env:
+      NEXT_PUBLIC_CLIENT_DASHBOARD_URL: https://app-dev.nomly.us
     steps:
       - uses: actions/checkout@v5
       - name: Check Vercel preview deploy prerequisites

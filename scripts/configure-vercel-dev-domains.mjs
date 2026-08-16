@@ -16,6 +16,13 @@ const configs = [
     orgId: process.env.ADMIN_CONSOLE_VERCEL_ORG_ID,
     projectId: process.env.ADMIN_CONSOLE_VERCEL_PROJECT_ID,
     domain: process.env.ADMIN_CONSOLE_DEV_DOMAIN || "admin-dev.nomly.us"
+  },
+  {
+    label: "public web",
+    token: process.env.LATTELINK_WEB_VERCEL_TOKEN,
+    orgId: process.env.LATTELINK_WEB_VERCEL_ORG_ID,
+    projectId: process.env.LATTELINK_WEB_VERCEL_PROJECT_ID,
+    domain: process.env.LATTELINK_WEB_DEV_DOMAIN || "dev.nomly.us"
   }
 ];
 
