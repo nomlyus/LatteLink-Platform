@@ -4,6 +4,7 @@ const branch = process.env.DEV_BRANCH?.trim() || "develop";
 
 const configs = [
   {
+    id: "client-dashboard",
     label: "client dashboard",
     token: process.env.CLIENT_DASHBOARD_VERCEL_TOKEN,
     orgId: process.env.CLIENT_DASHBOARD_VERCEL_ORG_ID,
@@ -11,6 +12,7 @@ const configs = [
     domain: process.env.CLIENT_DASHBOARD_DEV_DOMAIN || "app-dev.nomly.us"
   },
   {
+    id: "admin-console",
     label: "admin console",
     token: process.env.ADMIN_CONSOLE_VERCEL_TOKEN,
     orgId: process.env.ADMIN_CONSOLE_VERCEL_ORG_ID,
@@ -18,6 +20,7 @@ const configs = [
     domain: process.env.ADMIN_CONSOLE_DEV_DOMAIN || "admin-dev.nomly.us"
   },
   {
+    id: "public-web",
     label: "public web",
     token: process.env.LATTELINK_WEB_VERCEL_TOKEN,
     orgId: process.env.LATTELINK_WEB_VERCEL_ORG_ID,
@@ -25,6 +28,18 @@ const configs = [
     domain: process.env.LATTELINK_WEB_DEV_DOMAIN || "dev.nomly.us"
   }
 ];
+
+const targets = new Set(
+  (process.env.DEV_DOMAIN_TARGETS?.trim() || "all")
+    .split(",")
+    .map((target) => target.trim())
+    .filter(Boolean)
+);
+const selectedConfigs = targets.has("all") ? configs : configs.filter((config) => targets.has(config.id));
+
+if (selectedConfigs.length === 0) {
+  throw new Error(`No matching dev-domain targets for: ${Array.from(targets).join(", ")}`);
+}
 
 function requireConfig(config, key) {
   const value = config[key]?.trim();
@@ -63,7 +78,7 @@ async function vercel(config, method, path, body) {
   return payload;
 }
 
-for (const config of configs) {
+for (const config of selectedConfigs) {
   const domain = requireConfig(config, "domain");
   const projectId = requireConfig(config, "projectId");
 
