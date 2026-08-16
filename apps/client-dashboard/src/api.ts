@@ -30,6 +30,7 @@ import {
   merchantLaunchRequestSchema,
   merchantLaunchResponseSchema,
   onboardingSummarySchema,
+  operatorAppIdentityProfileUpdateSchema,
   operatorOnboardingUpdateSchema,
   stripeConnectDashboardLinkRequestSchema,
   stripeConnectLinkResponseSchema,
@@ -698,6 +699,22 @@ export function updateOperatorOnboarding(
     query: { locationId },
     method: "PATCH",
     body: operatorOnboardingUpdateSchema.parse(input),
+    schema: onboardingSummarySchema
+  });
+}
+
+export function updateOperatorAppIdentity(
+  session: OperatorSession,
+  locationId: string,
+  input: z.input<typeof operatorAppIdentityProfileUpdateSchema>
+) {
+  return requestJson({
+    apiBaseUrl: session.apiBaseUrl,
+    accessToken: session.accessToken,
+    path: "/admin/app-identity",
+    query: { locationId },
+    method: "PATCH",
+    body: operatorAppIdentityProfileUpdateSchema.parse(input),
     schema: onboardingSummarySchema
   });
 }

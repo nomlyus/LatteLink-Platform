@@ -703,6 +703,7 @@ export const onboardingChecklistItemIdSchema = z.enum([
   "owner_activated",
   "business_profile_complete",
   "store_operations_complete",
+  "app_identity_ready",
   "payments_connected",
   "menu_ready",
   "team_configured_or_skipped",
@@ -752,6 +753,41 @@ export const mobileReleaseProfileSchema = z.object({
   updatedAt: z.string().datetime().optional()
 });
 
+export const appIdentityAssetModeSchema = z.enum(["placeholder", "provided"]);
+
+export const appIdentityReadinessSchema = z.object({
+  ready: z.boolean(),
+  missingRequiredFields: z.array(z.string())
+});
+
+export const appIdentityProfileSchema = z.object({
+  locationId: z.string().trim().min(1),
+  appName: z.string().trim().min(2).max(30).optional(),
+  displayName: z.string().trim().min(2).max(30).optional(),
+  bundleIdentifier: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9]*)+$/)
+    .optional(),
+  sku: z.string().trim().min(2).max(64).optional(),
+  primaryCategory: z.string().trim().min(1).max(80).default("Food & Drink"),
+  subtitle: z.string().trim().min(1).max(30).optional(),
+  description: z.string().trim().min(1).max(4000).optional(),
+  keywords: z.array(z.string().trim().min(1).max(30)).max(20).default([]),
+  supportUrl: z.string().trim().url().optional(),
+  privacyPolicyUrl: z.string().trim().url().optional(),
+  marketingUrl: z.string().trim().url().optional(),
+  iconAssetUrl: z.string().trim().url().optional(),
+  splashAssetUrl: z.string().trim().url().optional(),
+  screenshotAssetUrls: z.array(z.string().trim().url()).max(12).default([]),
+  targetLocationIds: z.array(z.string().trim().min(1)).default([]),
+  assetMode: appIdentityAssetModeSchema.default("placeholder"),
+  adminOverrideReady: z.boolean().default(false),
+  adminOverrideReason: z.string().trim().min(1).optional(),
+  readiness: appIdentityReadinessSchema,
+  updatedAt: z.string().datetime().optional()
+});
+
 export const adminClientCreateRequestSchema = z.object({
   clientName: z.string().trim().min(1),
   locationName: z.string().trim().min(1),
@@ -776,6 +812,7 @@ export const onboardingSummarySchema = z.object({
   readyForReview: z.boolean(),
   checklist: z.array(onboardingChecklistItemSchema),
   paymentReadiness: paymentReadinessSchema.optional(),
+  appIdentity: appIdentityProfileSchema.optional(),
   mobileRelease: mobileReleaseProfileSchema.optional(),
   submittedForReviewAt: z.string().datetime().optional(),
   approvedAt: z.string().datetime().optional(),
@@ -876,6 +913,24 @@ export const mobileReleaseProfileUpdateSchema = mobileReleaseProfileSchema
     status: mobileReleaseStatusSchema.optional()
   });
 
+export const operatorAppIdentityProfileUpdateSchema = appIdentityProfileSchema
+  .omit({
+    locationId: true,
+    readiness: true,
+    adminOverrideReady: true,
+    adminOverrideReason: true,
+    updatedAt: true
+  })
+  .partial();
+
+export const internalAppIdentityProfileUpdateSchema = appIdentityProfileSchema
+  .omit({
+    locationId: true,
+    readiness: true,
+    updatedAt: true
+  })
+  .partial();
+
 export const stripeConnectOnboardingLinkRequestSchema = z.object({
   locationId: z.string().trim().min(1),
   returnUrl: z.string().trim().url(),
@@ -934,6 +989,7 @@ export const launchReadinessCheckSchema = z.object({
     "fulfillment_mode_set",
     "hours_configured",
     "tax_configured",
+    "app_identity_ready",
     "test_order_confirmed"
   ]),
   label: z.string().min(1),
@@ -1138,6 +1194,11 @@ export type OnboardingChecklistItem = z.output<typeof onboardingChecklistItemSch
 export type MobileReleaseStatus = z.output<typeof mobileReleaseStatusSchema>;
 export type MobileReleaseProfile = z.output<typeof mobileReleaseProfileSchema>;
 export type MobileReleaseProfileUpdate = z.output<typeof mobileReleaseProfileUpdateSchema>;
+export type AppIdentityAssetMode = z.output<typeof appIdentityAssetModeSchema>;
+export type AppIdentityReadiness = z.output<typeof appIdentityReadinessSchema>;
+export type AppIdentityProfile = z.output<typeof appIdentityProfileSchema>;
+export type OperatorAppIdentityProfileUpdate = z.output<typeof operatorAppIdentityProfileUpdateSchema>;
+export type InternalAppIdentityProfileUpdate = z.output<typeof internalAppIdentityProfileUpdateSchema>;
 export type AdminClientCreateRequest = z.output<typeof adminClientCreateRequestSchema>;
 export type AdminClientCreateResponse = z.output<typeof adminClientCreateResponseSchema>;
 export type InternalClientLocation = z.output<typeof internalClientLocationSchema>;

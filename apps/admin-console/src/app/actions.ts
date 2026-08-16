@@ -1,7 +1,7 @@
 "use server";
 
 import type { AppConfigStoreCapabilities } from "@lattelink/contracts-catalog";
-import { mobileReleaseProfileUpdateSchema } from "@lattelink/contracts-catalog";
+import { internalAppIdentityProfileUpdateSchema, mobileReleaseProfileUpdateSchema } from "@lattelink/contracts-catalog";
 import { redirect } from "next/navigation";
 import {
   AdminAuthError,
@@ -26,6 +26,7 @@ import {
   refreshStripeStatus,
   resendLocationOwnerInvite,
   updateInternalLocationCapabilities,
+  updateInternalLocationAppIdentity,
   updateInternalLocationMobileRelease
 } from "@/lib/internal-api";
 
@@ -341,6 +342,57 @@ export async function updateMobileReleaseAction(formData: FormData) {
   }
 
   redirect(`/clients/${locationId}?releaseUpdated=1`);
+}
+
+export async function updateAppIdentityAction(formData: FormData) {
+  const locationId = readString(formData, "locationId");
+  if (!locationId) {
+    redirect("/clients?error=Location ID is required.");
+  }
+
+  const keywords = readString(formData, "keywords")
+    .split(",")
+    .map((keyword) => keyword.trim())
+    .filter(Boolean);
+  const screenshotAssetUrls = readString(formData, "screenshotAssetUrls")
+    .split("\n")
+    .map((url) => url.trim())
+    .filter(Boolean);
+  const targetLocationIds = readString(formData, "targetLocationIds")
+    .split(",")
+    .map((targetLocationId) => targetLocationId.trim())
+    .filter(Boolean);
+
+  try {
+    await requireAdminCapability("clients:write");
+    await updateInternalLocationAppIdentity(
+      locationId,
+      internalAppIdentityProfileUpdateSchema.parse({
+        appName: readOptionalString(formData, "appName"),
+        displayName: readOptionalString(formData, "displayName"),
+        bundleIdentifier: readOptionalString(formData, "bundleIdentifier"),
+        sku: readOptionalString(formData, "sku"),
+        primaryCategory: readOptionalString(formData, "primaryCategory"),
+        subtitle: readOptionalString(formData, "subtitle"),
+        description: readOptionalString(formData, "description"),
+        keywords,
+        supportUrl: readOptionalString(formData, "supportUrl"),
+        privacyPolicyUrl: readOptionalString(formData, "privacyPolicyUrl"),
+        marketingUrl: readOptionalString(formData, "marketingUrl"),
+        iconAssetUrl: readOptionalString(formData, "iconAssetUrl"),
+        splashAssetUrl: readOptionalString(formData, "splashAssetUrl"),
+        screenshotAssetUrls,
+        targetLocationIds,
+        assetMode: readString(formData, "assetMode") === "provided" ? "provided" : "placeholder",
+        adminOverrideReady: readBoolean(formData, "adminOverrideReady"),
+        adminOverrideReason: readOptionalString(formData, "adminOverrideReason")
+      })
+    );
+  } catch (error) {
+    redirect(`/clients/${locationId}?appIdentityError=${encodeURIComponent(toRedirectError(error))}`);
+  }
+
+  redirect(`/clients/${locationId}?appIdentityUpdated=1`);
 }
 
 function collectLaunchBlockers(

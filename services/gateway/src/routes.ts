@@ -68,6 +68,7 @@ import {
   internalLocationPaymentProfileUpdateSchema,
   internalLocationParamsSchema,
   internalLocationSummarySchema,
+  internalAppIdentityProfileUpdateSchema,
   internalOwnerOnboardingUpdateSchema,
   launchApprovalRequestSchema,
   launchReadinessResponseSchema,
@@ -81,6 +82,7 @@ import {
   mobileExperienceVersionsResponseSchema,
   mobileReleaseProfileUpdateSchema,
   onboardingSummarySchema,
+  operatorAppIdentityProfileUpdateSchema,
   operatorOnboardingUpdateSchema,
   stripeConnectDashboardLinkRequestSchema,
   stripeConnectLinkResponseSchema,
@@ -4618,6 +4620,38 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   );
 
+  app.patch(
+    "/v1/admin/app-identity",
+    {
+      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("store:write")]
+    },
+    async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+
+      const input = operatorAppIdentityProfileUpdateSchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "PATCH",
+        path: "/v1/catalog/admin/app-identity",
+        body: input,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken,
+          ...operatorActorHeader(request),
+          ...operatorLocationHeader(locationContext.locationId)
+        },
+        forwardUserIdHeader: false,
+        responseSchema: onboardingSummarySchema
+      });
+    }
+  );
+
   app.post(
     "/v1/admin/onboarding/submit-review",
     {
@@ -5213,6 +5247,7 @@ export async function registerRoutes(app: FastifyInstance) {
           ) ?? 0;
 
         const testOrderCheck = onboarding?.checklist.find((check) => check.id === "test_order_completed");
+        const appIdentityCheck = onboarding?.checklist.find((check) => check.id === "app_identity_ready");
         const checks = [
           {
             id: "owner_provisioned" as const,
@@ -5251,6 +5286,14 @@ export async function registerRoutes(app: FastifyInstance) {
             label: "Tax rate configured",
             passed: location.taxRateBasisPoints > 0,
             detail: `${(location.taxRateBasisPoints / 100).toFixed(2)}%`
+          },
+          {
+            id: "app_identity_ready" as const,
+            label: "App identity profile complete",
+            passed: Boolean(appIdentityCheck?.passed),
+            detail: appIdentityCheck?.passed
+              ? onboarding?.appIdentity?.bundleIdentifier ?? "App identity is ready."
+              : appIdentityCheck?.detail ?? "App identity metadata is missing."
           },
           {
             id: "test_order_confirmed" as const,
@@ -5334,6 +5377,33 @@ export async function registerRoutes(app: FastifyInstance) {
         },
         forwardUserIdHeader: false,
         responseSchema: clientPaymentProfileSchema
+      });
+    }
+  );
+
+  app.patch(
+    "/v1/internal/locations/:locationId/app-identity",
+    {
+      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+    },
+    async (request, reply) => {
+      const { locationId } = internalLocationParamsSchema.parse(request.params);
+      const input = internalAppIdentityProfileUpdateSchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "PATCH",
+        path: `/v1/catalog/internal/locations/${locationId}/app-identity`,
+        body: input,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken,
+          ...internalAdminActorHeader(request)
+        },
+        forwardUserIdHeader: false,
+        responseSchema: onboardingSummarySchema
       });
     }
   );

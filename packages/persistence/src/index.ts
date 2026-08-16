@@ -470,6 +470,31 @@ export interface CatalogMobileReleaseProfileTable {
   updated_at: Generated<string>;
 }
 
+export interface CatalogAppIdentityProfileTable {
+  location_id: string;
+  tenant_id: string;
+  app_name: string | null;
+  display_name: string | null;
+  bundle_identifier: string | null;
+  sku: string | null;
+  primary_category: string;
+  subtitle: string | null;
+  description: string | null;
+  keywords: string[];
+  support_url: string | null;
+  privacy_policy_url: string | null;
+  marketing_url: string | null;
+  icon_asset_url: string | null;
+  splash_asset_url: string | null;
+  screenshot_asset_urls: string[];
+  target_location_ids: string[];
+  asset_mode: "placeholder" | "provided";
+  admin_override_ready: boolean;
+  admin_override_reason: string | null;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
 export interface OperatorOwnerInviteTable {
   invite_id: Generated<string>;
   location_id: string;
@@ -550,6 +575,7 @@ export interface PersistenceDatabase {
   catalog_client_locations: CatalogClientLocationTable;
   catalog_onboarding_progress: CatalogOnboardingProgressTable;
   catalog_mobile_release_profiles: CatalogMobileReleaseProfileTable;
+  catalog_app_identity_profiles: CatalogAppIdentityProfileTable;
   catalog_mobile_experience_drafts: CatalogMobileExperienceDraftTable;
   catalog_mobile_experience_versions: CatalogMobileExperienceVersionTable;
   operator_owner_invites: OperatorOwnerInviteTable;

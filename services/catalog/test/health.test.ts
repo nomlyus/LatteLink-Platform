@@ -1237,6 +1237,15 @@ describe("catalog service", () => {
       locationId: created.locationId,
       status: "not_started"
     });
+    expect(created.onboarding.appIdentity).toMatchObject({
+      locationId: created.locationId,
+      appName: "Wizard Coffee",
+      displayName: "Wizard Coffee",
+      targetLocationIds: [created.locationId],
+      readiness: {
+        ready: false
+      }
+    });
 
     const duplicateCreateResponse = await app.inject({
       method: "POST",
@@ -1352,6 +1361,14 @@ describe("catalog service", () => {
       readyForReview: false
     });
 
+    const incompleteAppIdentity = onboardingSummarySchema.parse(onboardingUpdateResponse.json()).checklist.find(
+      (item) => item.id === "app_identity_ready"
+    );
+    expect(incompleteAppIdentity).toMatchObject({
+      passed: false,
+      status: "pending"
+    });
+
     const mobileReleaseResponse = await app.inject({
       method: "PATCH",
       url: `/v1/catalog/internal/locations/${created.locationId}/mobile-release`,
@@ -1394,6 +1411,36 @@ describe("catalog service", () => {
     });
     expect(paymentProfileResponse.statusCode).toBe(200);
 
+    const appIdentityResponse = await app.inject({
+      method: "PATCH",
+      url: `/v1/catalog/internal/locations/${created.locationId}/app-identity`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        appName: "Wizard Coffee",
+        displayName: "Wizard Coffee",
+        bundleIdentifier: "us.nomly.wizardcoffee",
+        sku: "wizard-coffee-ios",
+        subtitle: "Order ahead",
+        description: "Order ahead from Wizard Coffee.",
+        keywords: ["coffee", "pickup"],
+        supportUrl: "https://wizard.example/support",
+        privacyPolicyUrl: "https://wizard.example/privacy",
+        marketingUrl: "https://wizard.example",
+        targetLocationIds: [created.locationId],
+        assetMode: "placeholder"
+      }
+    });
+    expect(appIdentityResponse.statusCode).toBe(200);
+    expect(onboardingSummarySchema.parse(appIdentityResponse.json()).appIdentity).toMatchObject({
+      bundleIdentifier: "us.nomly.wizardcoffee",
+      readiness: {
+        ready: true,
+        missingRequiredFields: []
+      }
+    });
+
     const onboardingReadResponse = await app.inject({
       method: "GET",
       url: `/v1/catalog/internal/locations/${created.locationId}/onboarding`,
@@ -1406,6 +1453,7 @@ describe("catalog service", () => {
     expect(onboarding.readyForReview).toBe(true);
     expect(onboarding.checklist).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({ id: "app_identity_ready", passed: true }),
         expect.objectContaining({ id: "payments_connected", passed: true }),
         expect.objectContaining({ id: "mobile_release_ready", passed: true }),
         expect.objectContaining({ id: "admin_launch_approved", passed: false })

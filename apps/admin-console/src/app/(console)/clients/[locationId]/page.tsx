@@ -1,7 +1,13 @@
 import Link from "next/link";
-import type { LaunchReadinessResponse, MobileReleaseProfile, MobileReleaseStatus, OnboardingSummary } from "@lattelink/contracts-catalog";
+import type {
+  AppIdentityProfile,
+  LaunchReadinessResponse,
+  MobileReleaseProfile,
+  MobileReleaseStatus,
+  OnboardingSummary
+} from "@lattelink/contracts-catalog";
 import { notFound } from "next/navigation";
-import { approveLaunchAction, updateMobileReleaseAction } from "@/app/actions";
+import { approveLaunchAction, updateAppIdentityAction, updateMobileReleaseAction } from "@/app/actions";
 import { LaunchReadinessChecklist } from "@/components/LaunchReadinessChecklist";
 import {
   getInternalLocation,
@@ -236,6 +242,130 @@ function MobileReleaseStatusPanel({ locationId, release }: { locationId: string;
   );
 }
 
+function AppIdentityPanel({ locationId, identity }: { locationId: string; identity?: AppIdentityProfile }) {
+  const readiness = identity?.readiness;
+  const ready = readiness?.ready === true;
+
+  return (
+    <section className="panel">
+      <div className="section-heading">
+        <span className="eyebrow">App Identity</span>
+        <h4>Submission metadata</h4>
+      </div>
+      <dl className="detail-list">
+        <div>
+          <dt>Status</dt>
+          <dd>
+            <span className={`status-badge is-${ready ? "healthy" : "warning"}`}>
+              {ready ? "Ready" : "Missing metadata"}
+            </span>
+          </dd>
+        </div>
+        <div>
+          <dt>Bundle ID</dt>
+          <dd>{identity?.bundleIdentifier ?? "Not configured"}</dd>
+        </div>
+        <div>
+          <dt>Assets</dt>
+          <dd>{identity?.assetMode === "provided" ? "Provided assets required" : "Nomly placeholder assets"}</dd>
+        </div>
+        {!ready && readiness?.missingRequiredFields.length ? (
+          <div>
+            <dt>Missing</dt>
+            <dd>{readiness.missingRequiredFields.join(", ")}</dd>
+          </div>
+        ) : null}
+      </dl>
+
+      <form action={updateAppIdentityAction} className="stack-form release-form">
+        <input type="hidden" name="locationId" value={locationId} />
+        <div className="field-grid">
+          <label className="field">
+            <span>App name</span>
+            <input name="appName" maxLength={30} defaultValue={identity?.appName ?? ""} />
+          </label>
+          <label className="field">
+            <span>Home screen name</span>
+            <input name="displayName" maxLength={30} defaultValue={identity?.displayName ?? ""} />
+          </label>
+          <label className="field">
+            <span>Bundle identifier</span>
+            <input name="bundleIdentifier" defaultValue={identity?.bundleIdentifier ?? ""} placeholder="us.nomly.brand" />
+          </label>
+          <label className="field">
+            <span>SKU</span>
+            <input name="sku" defaultValue={identity?.sku ?? ""} />
+          </label>
+          <label className="field">
+            <span>Primary category</span>
+            <input name="primaryCategory" defaultValue={identity?.primaryCategory ?? "Food & Drink"} />
+          </label>
+          <label className="field">
+            <span>Subtitle</span>
+            <input name="subtitle" maxLength={30} defaultValue={identity?.subtitle ?? ""} />
+          </label>
+          <label className="field field-wide">
+            <span>Description</span>
+            <textarea name="description" rows={4} defaultValue={identity?.description ?? ""} />
+          </label>
+          <label className="field">
+            <span>Keywords</span>
+            <input name="keywords" defaultValue={identity?.keywords.join(", ") ?? ""} />
+          </label>
+          <label className="field">
+            <span>Asset mode</span>
+            <select name="assetMode" defaultValue={identity?.assetMode ?? "placeholder"}>
+              <option value="placeholder">Nomly placeholder assets</option>
+              <option value="provided">Provided brand assets</option>
+            </select>
+          </label>
+          <label className="field field-wide">
+            <span>Support URL</span>
+            <input name="supportUrl" type="url" defaultValue={identity?.supportUrl ?? ""} />
+          </label>
+          <label className="field field-wide">
+            <span>Privacy policy URL</span>
+            <input name="privacyPolicyUrl" type="url" defaultValue={identity?.privacyPolicyUrl ?? ""} />
+          </label>
+          <label className="field field-wide">
+            <span>Marketing URL</span>
+            <input name="marketingUrl" type="url" defaultValue={identity?.marketingUrl ?? ""} />
+          </label>
+          <label className="field field-wide">
+            <span>Icon asset URL</span>
+            <input name="iconAssetUrl" type="url" defaultValue={identity?.iconAssetUrl ?? ""} />
+          </label>
+          <label className="field field-wide">
+            <span>Splash asset URL</span>
+            <input name="splashAssetUrl" type="url" defaultValue={identity?.splashAssetUrl ?? ""} />
+          </label>
+          <label className="field field-wide">
+            <span>Screenshot URLs</span>
+            <textarea name="screenshotAssetUrls" rows={3} defaultValue={identity?.screenshotAssetUrls.join("\n") ?? ""} />
+          </label>
+          <label className="field field-wide">
+            <span>Target location IDs</span>
+            <input name="targetLocationIds" defaultValue={identity?.targetLocationIds.join(", ") ?? locationId} />
+          </label>
+          <label className="field">
+            <span>Admin override ready</span>
+            <input name="adminOverrideReady" type="checkbox" defaultChecked={identity?.adminOverrideReady === true} />
+          </label>
+          <label className="field field-wide">
+            <span>Override reason</span>
+            <input name="adminOverrideReason" defaultValue={identity?.adminOverrideReason ?? ""} />
+          </label>
+        </div>
+        <div className="form-actions">
+          <button type="submit" className="primary-button">
+            Update App Identity
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
 export default async function ClientDetailPage({ params, searchParams }: ClientDetailPageProps) {
   const { locationId } = await params;
   const query = await searchParams;
@@ -243,6 +373,8 @@ export default async function ClientDetailPage({ params, searchParams }: ClientD
   const invited = typeof query.invited === "string" ? query.invited : undefined;
   const releaseUpdated = typeof query.releaseUpdated === "string" ? query.releaseUpdated : undefined;
   const releaseError = typeof query.releaseError === "string" ? query.releaseError : undefined;
+  const appIdentityUpdated = typeof query.appIdentityUpdated === "string" ? query.appIdentityUpdated : undefined;
+  const appIdentityError = typeof query.appIdentityError === "string" ? query.appIdentityError : undefined;
   const launchApproved = typeof query.launchApproved === "string" ? query.launchApproved : undefined;
   const launchLive = typeof query.launchLive === "string" ? query.launchLive : undefined;
   const launchError = typeof query.launchError === "string" ? query.launchError : undefined;
@@ -288,6 +420,8 @@ export default async function ClientDetailPage({ params, searchParams }: ClientD
         {invited ? <p className="inline-message inline-message-success">Owner invite sent.</p> : null}
         {releaseUpdated ? <p className="inline-message inline-message-success">Mobile release status updated.</p> : null}
         {releaseError ? <p className="inline-message inline-message-error">{releaseError}</p> : null}
+        {appIdentityUpdated ? <p className="inline-message inline-message-success">App identity updated.</p> : null}
+        {appIdentityError ? <p className="inline-message inline-message-error">{appIdentityError}</p> : null}
         {launchApproved ? <p className="inline-message inline-message-success">Launch approved.</p> : null}
         {launchLive ? <p className="inline-message inline-message-success">Launch marked live.</p> : null}
         {launchError ? <p className="inline-message inline-message-error">{launchError}</p> : null}
@@ -451,6 +585,8 @@ export default async function ClientDetailPage({ params, searchParams }: ClientD
         </section>
 
         <LaunchApprovalPanel locationId={locationId} onboarding={onboarding} readiness={launchReadiness} />
+
+        <AppIdentityPanel locationId={locationId} identity={onboarding.appIdentity} />
 
         <MobileReleaseStatusPanel locationId={locationId} release={onboarding.mobileRelease} />
       </section>

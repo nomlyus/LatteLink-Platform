@@ -117,6 +117,7 @@ let previousFreeClientDashboardDomain: string | undefined;
       paymentsReady: boolean;
       menuReady: boolean;
       testOrderCompleted: boolean;
+      appIdentityReady: boolean;
       mobileReleaseStatus:
         | "not_started"
         | "metadata_pending"
@@ -135,6 +136,7 @@ let previousFreeClientDashboardDomain: string | undefined;
     const paymentsReady = overrides.paymentsReady ?? false;
     const menuReady = overrides.menuReady ?? false;
     const testOrderCompleted = overrides.testOrderCompleted ?? false;
+    const appIdentityReady = overrides.appIdentityReady ?? false;
     const mobileReleaseReady = overrides.mobileReleaseStatus === "ready_for_launch" || overrides.mobileReleaseStatus === "live";
     return {
       tenantId: overrides.tenantId ?? "tenant-northside",
@@ -165,6 +167,12 @@ let previousFreeClientDashboardDomain: string | undefined;
           passed: menuReady
         },
         {
+          id: "app_identity_ready",
+          label: "App identity ready",
+          status: appIdentityReady ? "complete" : "pending",
+          passed: appIdentityReady
+        },
+        {
           id: "test_order_completed",
           label: "Test order completed",
           status: testOrderCompleted ? "complete" : "pending",
@@ -186,6 +194,27 @@ let previousFreeClientDashboardDomain: string | undefined;
         locationId,
         status: overrides.mobileReleaseStatus ?? "not_started",
         buildNumber: overrides.buildNumber
+      },
+      appIdentity: {
+        locationId,
+        appName: "Northside Coffee",
+        displayName: "Northside Coffee",
+        bundleIdentifier: "us.nomly.northside",
+        sku: "northside-ios",
+        primaryCategory: "Food & Drink",
+        subtitle: "Order ahead",
+        description: "Order ahead from Northside Coffee.",
+        keywords: ["coffee"],
+        supportUrl: "https://northside.example/support",
+        privacyPolicyUrl: "https://northside.example/privacy",
+        screenshotAssetUrls: [],
+        targetLocationIds: [locationId],
+        assetMode: "placeholder",
+        adminOverrideReady: false,
+        readiness: {
+          ready: appIdentityReady,
+          missingRequiredFields: appIdentityReady ? [] : ["bundle identifier"]
+        }
       },
       updatedAt: "2026-05-06T12:00:00.000Z"
     };
@@ -1925,10 +1954,11 @@ let previousFreeClientDashboardDomain: string | undefined;
                     readyForReview: true,
                     paymentsReady: true,
                     menuReady: true,
+                    appIdentityReady: true,
                     testOrderCompleted: true,
                     mobileReleaseStatus: "ready_for_launch"
                   }
-                : { locationId }
+                : { locationId, appIdentityReady: locationId === "northside-01" }
             )
           ),
           {

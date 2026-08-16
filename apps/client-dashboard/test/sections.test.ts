@@ -81,7 +81,7 @@ describe("dashboard sections", () => {
     expect(getAvailableDashboardSections()).not.toContain("onboarding");
     expect(getAvailableDashboardSections()).toContain("store");
     expect(renderStoreSection()).toContain("Launch setup");
-    expect(renderStoreSection()).toContain("6 setup items left");
+    expect(renderStoreSection()).toContain("7 setup items left");
     expect(renderStoreSection()).toContain("Optional connectors");
 
     state.session = {

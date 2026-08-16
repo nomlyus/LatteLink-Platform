@@ -48,7 +48,7 @@ export type AppState = {
   };
   onboardingAutoOpened: boolean;
   onboardingWizardOpen: boolean;
-  onboardingWizardStep: 1 | 2 | 3 | 4;
+  onboardingWizardStep: 1 | 2 | 3 | 4 | 5;
   updatingOnboarding: boolean;
   initializing: boolean;
   loading: boolean;

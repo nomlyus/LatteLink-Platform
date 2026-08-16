@@ -3,6 +3,7 @@ import {
   createOperatorStripeOnboardingLink,
   refreshOperatorStripeStatus,
   submitOperatorOnboardingReview,
+  updateOperatorAppIdentity,
   updateOperatorOnboarding,
   updateOperatorStoreConfig
 } from "../api.js";
@@ -50,6 +51,11 @@ function buildStripeReturnUrls() {
     returnUrl: `${origin}/?stripeReturn=1`,
     refreshUrl: `${origin}/?stripeRefresh=1`
   };
+}
+
+function formString(formData: FormData, key: string) {
+  const value = String(formData.get(key) ?? "").trim();
+  return value.length > 0 ? value : undefined;
 }
 
 export async function handleOnboardingStepSubmit(form: HTMLFormElement) {
@@ -185,6 +191,56 @@ export async function handleOnboardingStoreBasicsSubmit(form: HTMLFormElement) {
     await loadDashboard({ silent: true });
   } catch (error) {
     await handleOperatorActionError(error, "Unable to save store details.");
+  } finally {
+    state.updatingOnboarding = false;
+    render();
+  }
+}
+
+export async function handleOnboardingAppIdentitySubmit(form: HTMLFormElement) {
+  if (!state.session) {
+    setError("Sign in again before saving app details.");
+    render();
+    return;
+  }
+
+  const formData = new FormData(form);
+  const keywords = String(formData.get("keywords") ?? "")
+    .split(",")
+    .map((keyword) => keyword.trim())
+    .filter(Boolean);
+  const screenshotAssetUrls = String(formData.get("screenshotAssetUrls") ?? "")
+    .split("\n")
+    .map((url) => url.trim())
+    .filter(Boolean);
+
+  try {
+    state.updatingOnboarding = true;
+    setError(null);
+    render();
+    const locationId = resolveOnboardingLocationId();
+    state.onboardingSummary = await updateOperatorAppIdentity(state.session, locationId, {
+      appName: formString(formData, "appName"),
+      displayName: formString(formData, "displayName"),
+      bundleIdentifier: formString(formData, "bundleIdentifier"),
+      sku: formString(formData, "sku"),
+      subtitle: formString(formData, "subtitle"),
+      description: formString(formData, "description"),
+      keywords,
+      supportUrl: formString(formData, "supportUrl"),
+      privacyPolicyUrl: formString(formData, "privacyPolicyUrl"),
+      marketingUrl: formString(formData, "marketingUrl"),
+      iconAssetUrl: formString(formData, "iconAssetUrl"),
+      splashAssetUrl: formString(formData, "splashAssetUrl"),
+      screenshotAssetUrls,
+      assetMode: formData.get("assetMode") === "provided" ? "provided" : "placeholder",
+      targetLocationIds: [locationId]
+    });
+    state.onboardingWizardStep = 4;
+    addToast("Saved app profile.", "success");
+    await loadDashboard({ silent: true });
+  } catch (error) {
+    await handleOperatorActionError(error, "Unable to save app profile.");
   } finally {
     state.updatingOnboarding = false;
     render();

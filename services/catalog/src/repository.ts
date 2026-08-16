@@ -4,6 +4,8 @@ import {
   adminClientCreateRequestSchema,
   adminMenuItemCreateSchema,
   adminMenuItemSchema,
+  appIdentityProfileSchema,
+  internalAppIdentityProfileUpdateSchema,
   clientPaymentProfileSchema,
   homeNewsCardCreateSchema,
   homeNewsCardSchema,
@@ -21,6 +23,7 @@ import {
   mobileReleaseProfileSchema,
   mobileReleaseProfileUpdateSchema,
   onboardingSummarySchema,
+  operatorAppIdentityProfileUpdateSchema,
   operatorOnboardingUpdateSchema,
   paymentReadinessSchema,
   internalLocationSummarySchema,
@@ -32,7 +35,9 @@ import {
   type AdminStoreConfig,
   type AppConfig,
   type AppConfigStoreCapabilities,
+  type AppIdentityProfile,
   type ClientPaymentProfile,
+  type InternalAppIdentityProfileUpdate,
   type InternalClientDetail,
   type InternalClientListResponse,
   type InternalLocationBootstrap,
@@ -50,6 +55,7 @@ import {
   type OnboardingStatus,
   type OnboardingSummary,
   type OperatorOnboardingUpdate,
+  type OperatorAppIdentityProfileUpdate,
   menuItemCustomizationGroupSchema,
   menuItemSchema,
   menuResponseSchema,
@@ -354,6 +360,14 @@ type CatalogRepository = {
   updateInternalLocationOwnerOnboarding(
     locationId: string,
     input: InternalOwnerOnboardingUpdate
+  ): Promise<OnboardingSummary | undefined>;
+  updateOperatorLocationAppIdentity(
+    locationId: string,
+    input: OperatorAppIdentityProfileUpdate
+  ): Promise<OnboardingSummary | undefined>;
+  updateInternalLocationAppIdentity(
+    locationId: string,
+    input: InternalAppIdentityProfileUpdate
   ): Promise<OnboardingSummary | undefined>;
   approveInternalLocationLaunch(locationId: string, input: LaunchApprovalRequest): Promise<OnboardingSummary | undefined>;
   updateInternalLocationMobileRelease(
@@ -718,6 +732,65 @@ function isMobileReleaseReady(profile: MobileReleaseProfile | undefined) {
   return profile ? ["approved", "ready_for_launch", "live"].includes(profile.status) : false;
 }
 
+type AppIdentityProfileInput = Omit<AppIdentityProfile, "readiness">;
+
+const appIdentityRequiredFields: Array<{ key: keyof AppIdentityProfileInput; label: string }> = [
+  { key: "appName", label: "app name" },
+  { key: "displayName", label: "display name" },
+  { key: "bundleIdentifier", label: "bundle identifier" },
+  { key: "sku", label: "SKU" },
+  { key: "subtitle", label: "subtitle" },
+  { key: "description", label: "description" },
+  { key: "supportUrl", label: "support URL" },
+  { key: "privacyPolicyUrl", label: "privacy policy URL" }
+];
+
+function buildAppIdentityReadiness(profile: AppIdentityProfileInput | undefined) {
+  if (!profile) {
+    return {
+      ready: false,
+      missingRequiredFields: ["app identity profile"]
+    };
+  }
+
+  const missingRequiredFields = appIdentityRequiredFields
+    .filter((field) => {
+      const value = profile[field.key];
+      return typeof value !== "string" || value.trim().length === 0;
+    })
+    .map((field) => field.label);
+
+  if (profile.assetMode === "provided") {
+    if (!profile.iconAssetUrl) missingRequiredFields.push("app icon");
+    if (!profile.splashAssetUrl) missingRequiredFields.push("splash asset");
+    if (profile.screenshotAssetUrls.length === 0) missingRequiredFields.push("App Store screenshots");
+  }
+
+  if (profile.targetLocationIds.length === 0) {
+    missingRequiredFields.push("target location");
+  }
+
+  const ready = profile.adminOverrideReady || missingRequiredFields.length === 0;
+  return {
+    ready,
+    missingRequiredFields: ready ? [] : missingRequiredFields
+  };
+}
+
+function buildAppIdentityProfile(input: AppIdentityProfileInput): AppIdentityProfile {
+  const profile = appIdentityProfileSchema
+    .omit({ readiness: true })
+    .parse({
+      ...input,
+      targetLocationIds: input.targetLocationIds.length > 0 ? input.targetLocationIds : [input.locationId]
+    });
+
+  return appIdentityProfileSchema.parse({
+    ...profile,
+    readiness: buildAppIdentityReadiness(profile)
+  });
+}
+
 function menuHasVisibleItems(menu: MenuResponse | undefined) {
   return Boolean(menu?.categories.some((category) => category.items.some((item) => item.visible)));
 }
@@ -726,10 +799,12 @@ function buildChecklist(input: {
   progress: OnboardingProgressRecord;
   paymentProfile?: ClientPaymentProfile;
   menu?: MenuResponse;
+  appIdentity?: AppIdentityProfile;
   mobileRelease?: MobileReleaseProfile;
 }) {
   const paymentReadiness = buildPaymentReadiness(input.paymentProfile);
   const menuReady = menuHasVisibleItems(input.menu) || input.progress.menuReady;
+  const appIdentityReadiness = input.appIdentity?.readiness ?? buildAppIdentityReadiness(undefined);
   const mobileReleaseReady = isMobileReleaseReady(input.mobileRelease);
 
   return [
@@ -756,6 +831,15 @@ function buildChecklist(input: {
       label: "Store operations complete",
       status: input.progress.storeOperationsComplete ? "complete" : "pending",
       passed: input.progress.storeOperationsComplete
+    },
+    {
+      id: "app_identity_ready",
+      label: "App identity ready",
+      status: appIdentityReadiness.ready ? "complete" : "pending",
+      passed: appIdentityReadiness.ready,
+      detail: appIdentityReadiness.ready
+        ? undefined
+        : `Missing ${appIdentityReadiness.missingRequiredFields.join(", ")}`
     },
     {
       id: "payments_connected",
@@ -819,6 +903,7 @@ function buildOnboardingSummary(input: {
   progress: OnboardingProgressRecord;
   paymentProfile?: ClientPaymentProfile;
   menu?: MenuResponse;
+  appIdentity?: AppIdentityProfile;
   mobileRelease?: MobileReleaseProfile;
 }) {
   const checklist = buildChecklist(input);
@@ -837,6 +922,7 @@ function buildOnboardingSummary(input: {
     readyForReview,
     checklist,
     paymentReadiness: buildPaymentReadiness(input.paymentProfile),
+    appIdentity: input.appIdentity,
     mobileRelease: input.mobileRelease,
     submittedForReviewAt: input.progress.submittedForReviewAt,
     approvedAt: input.progress.approvedAt,
@@ -937,6 +1023,7 @@ function createInMemoryRepository(): CatalogRepository {
   const clientLocationsByLocation = new Map<string, ClientLocationRecord>();
   const onboardingProgressByLocation = new Map<string, OnboardingProgressRecord>();
   const mobileReleaseProfilesByLocation = new Map<string, MobileReleaseProfile>();
+  const appIdentityProfilesByLocation = new Map<string, AppIdentityProfile>();
   const mobileExperienceDraftsByLocation = new Map<string, MobileExperienceDocument>();
   const mobileExperienceVersionsByLocation = new Map<string, MobileExperienceDocument[]>();
 
@@ -959,6 +1046,7 @@ function createInMemoryRepository(): CatalogRepository {
       progress,
       paymentProfile: paymentProfilesByLocation.get(locationId),
       menu: menusByLocation.get(locationId),
+      appIdentity: appIdentityProfilesByLocation.get(locationId),
       mobileRelease: mobileReleaseProfilesByLocation.get(locationId)
     });
   }
@@ -1041,11 +1129,24 @@ function createInMemoryRepository(): CatalogRepository {
         status: "not_started",
         updatedAt: now
       });
+      const appIdentity = buildAppIdentityProfile({
+        locationId,
+        appName: input.clientName,
+        displayName: input.clientName.slice(0, 30),
+        primaryCategory: "Food & Drink",
+        keywords: [],
+        screenshotAssetUrls: [],
+        targetLocationIds: [locationId],
+        assetMode: "placeholder",
+        adminOverrideReady: false,
+        updatedAt: now
+      });
 
       clientsByTenant.set(tenantId, client);
       clientLocationsByLocation.set(locationId, location);
       onboardingProgressByLocation.set(locationId, progress);
       mobileReleaseProfilesByLocation.set(locationId, mobileRelease);
+      appIdentityProfilesByLocation.set(locationId, appIdentity);
 
       return {
         tenantId,
@@ -1057,6 +1158,7 @@ function createInMemoryRepository(): CatalogRepository {
           progress,
           paymentProfile: paymentProfilesByLocation.get(locationId),
           menu: menusByLocation.get(locationId),
+          appIdentity,
           mobileRelease
         })
       };
@@ -1331,6 +1433,38 @@ function createInMemoryRepository(): CatalogRepository {
           updatedAt: now
         });
       }
+      return buildMemoryOnboarding(locationId);
+    },
+    async updateOperatorLocationAppIdentity(locationId, rawInput) {
+      const input = operatorAppIdentityProfileUpdateSchema.parse(rawInput);
+      const existing = appIdentityProfilesByLocation.get(locationId);
+      const location = clientLocationsByLocation.get(locationId);
+      if (!existing || !location) {
+        return undefined;
+      }
+      const next = buildAppIdentityProfile({
+        ...existing,
+        ...input,
+        locationId,
+        updatedAt: new Date().toISOString()
+      });
+      appIdentityProfilesByLocation.set(locationId, next);
+      return buildMemoryOnboarding(locationId);
+    },
+    async updateInternalLocationAppIdentity(locationId, rawInput) {
+      const input = internalAppIdentityProfileUpdateSchema.parse(rawInput);
+      const existing = appIdentityProfilesByLocation.get(locationId);
+      const location = clientLocationsByLocation.get(locationId);
+      if (!existing || !location) {
+        return undefined;
+      }
+      const next = buildAppIdentityProfile({
+        ...existing,
+        ...input,
+        locationId,
+        updatedAt: new Date().toISOString()
+      });
+      appIdentityProfilesByLocation.set(locationId, next);
       return buildMemoryOnboarding(locationId);
     },
     async approveInternalLocationLaunch(locationId, rawInput) {
@@ -2064,6 +2198,52 @@ function toMobileReleaseProfile(row: {
   });
 }
 
+function toAppIdentityProfile(row: {
+  location_id: string;
+  app_name: string | null;
+  display_name: string | null;
+  bundle_identifier: string | null;
+  sku: string | null;
+  primary_category: string;
+  subtitle: string | null;
+  description: string | null;
+  keywords: string[];
+  support_url: string | null;
+  privacy_policy_url: string | null;
+  marketing_url: string | null;
+  icon_asset_url: string | null;
+  splash_asset_url: string | null;
+  screenshot_asset_urls: string[];
+  target_location_ids: string[];
+  asset_mode: AppIdentityProfile["assetMode"];
+  admin_override_ready: boolean;
+  admin_override_reason: string | null;
+  updated_at?: CatalogTimestamp;
+}): AppIdentityProfile {
+  return buildAppIdentityProfile({
+    locationId: row.location_id,
+    appName: row.app_name ?? undefined,
+    displayName: row.display_name ?? undefined,
+    bundleIdentifier: row.bundle_identifier ?? undefined,
+    sku: row.sku ?? undefined,
+    primaryCategory: row.primary_category,
+    subtitle: row.subtitle ?? undefined,
+    description: row.description ?? undefined,
+    keywords: row.keywords,
+    supportUrl: row.support_url ?? undefined,
+    privacyPolicyUrl: row.privacy_policy_url ?? undefined,
+    marketingUrl: row.marketing_url ?? undefined,
+    iconAssetUrl: row.icon_asset_url ?? undefined,
+    splashAssetUrl: row.splash_asset_url ?? undefined,
+    screenshotAssetUrls: row.screenshot_asset_urls,
+    targetLocationIds: row.target_location_ids,
+    assetMode: row.asset_mode,
+    adminOverrideReady: row.admin_override_ready,
+    adminOverrideReason: row.admin_override_reason ?? undefined,
+    updatedAt: serializeCatalogTimestamp(row.updated_at)
+  });
+}
+
 async function createPostgresRepository(connectionString: string): Promise<CatalogRepository> {
   const db = createPostgresDb(connectionString);
   const defaultAppConfigPayload = resolveDefaultAppConfigPayload();
@@ -2101,6 +2281,11 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
       .selectAll()
       .where("location_id", "=", locationId)
       .executeTakeFirst();
+    const appIdentityRow = await db
+      .selectFrom("catalog_app_identity_profiles")
+      .selectAll()
+      .where("location_id", "=", locationId)
+      .executeTakeFirst();
 
     return buildOnboardingSummary({
       client: toClientRecord(clientRow),
@@ -2109,6 +2294,7 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
       progress: toOnboardingProgressRecord(progressRow),
       paymentProfile,
       menu: await postgresRepository.getMenu(locationId),
+      appIdentity: appIdentityRow ? toAppIdentityProfile(appIdentityRow) : undefined,
       mobileRelease: mobileReleaseRow ? toMobileReleaseProfile(mobileReleaseRow) : undefined
     });
   }
@@ -2211,6 +2397,21 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
             status: "not_started"
           })
           .execute();
+        await trx
+          .insertInto("catalog_app_identity_profiles")
+          .values({
+            tenant_id: tenantId,
+            location_id: locationId,
+            app_name: input.clientName,
+            display_name: input.clientName.slice(0, 30),
+            primary_category: "Food & Drink",
+            keywords: [],
+            screenshot_asset_urls: [],
+            target_location_ids: [locationId],
+            asset_mode: "placeholder",
+            admin_override_ready: false
+          })
+          .execute();
       });
 
       const onboarding = await buildPostgresOnboarding(locationId);
@@ -2255,6 +2456,18 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
               updatedAt: now
             },
             menu: await this.getMenu(locationId),
+            appIdentity: buildAppIdentityProfile({
+              locationId,
+              appName: input.clientName,
+              displayName: input.clientName.slice(0, 30),
+              primaryCategory: "Food & Drink",
+              keywords: [],
+              screenshotAssetUrls: [],
+              targetLocationIds: [locationId],
+              assetMode: "placeholder",
+              adminOverrideReady: false,
+              updatedAt: now
+            }),
             mobileRelease: mobileReleaseProfileSchema.parse({ locationId, status: "not_started", updatedAt: now })
           })
       };
@@ -2718,6 +2931,174 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         .updateTable("catalog_clients")
         .set({ status, updated_at: now })
         .where("tenant_id", "=", existing.tenant_id)
+        .execute();
+      return buildPostgresOnboarding(locationId);
+    },
+    async updateOperatorLocationAppIdentity(locationId, rawInput) {
+      const input = operatorAppIdentityProfileUpdateSchema.parse(rawInput);
+      const existing = await db
+        .selectFrom("catalog_app_identity_profiles")
+        .selectAll()
+        .where("location_id", "=", locationId)
+        .executeTakeFirst();
+      const location = await db
+        .selectFrom("catalog_client_locations")
+        .selectAll()
+        .where("location_id", "=", locationId)
+        .executeTakeFirst();
+      if (!location) {
+        return undefined;
+      }
+      const now = new Date().toISOString();
+      const base = existing
+        ? toAppIdentityProfile(existing)
+        : buildAppIdentityProfile({
+            locationId,
+            primaryCategory: "Food & Drink",
+            keywords: [],
+            screenshotAssetUrls: [],
+            targetLocationIds: [locationId],
+            assetMode: "placeholder",
+            adminOverrideReady: false,
+            updatedAt: now
+          });
+      const next = buildAppIdentityProfile({
+        ...base,
+        ...input,
+        locationId,
+        updatedAt: now
+      });
+      await db
+        .insertInto("catalog_app_identity_profiles")
+        .values({
+          tenant_id: location.tenant_id,
+          location_id: locationId,
+          app_name: next.appName ?? null,
+          display_name: next.displayName ?? null,
+          bundle_identifier: next.bundleIdentifier ?? null,
+          sku: next.sku ?? null,
+          primary_category: next.primaryCategory,
+          subtitle: next.subtitle ?? null,
+          description: next.description ?? null,
+          keywords: next.keywords,
+          support_url: next.supportUrl ?? null,
+          privacy_policy_url: next.privacyPolicyUrl ?? null,
+          marketing_url: next.marketingUrl ?? null,
+          icon_asset_url: next.iconAssetUrl ?? null,
+          splash_asset_url: next.splashAssetUrl ?? null,
+          screenshot_asset_urls: next.screenshotAssetUrls,
+          target_location_ids: next.targetLocationIds,
+          asset_mode: next.assetMode,
+          admin_override_ready: next.adminOverrideReady,
+          admin_override_reason: next.adminOverrideReason ?? null,
+          updated_at: now
+        })
+        .onConflict((oc) =>
+          oc.column("location_id").doUpdateSet({
+            app_name: next.appName ?? null,
+            display_name: next.displayName ?? null,
+            bundle_identifier: next.bundleIdentifier ?? null,
+            sku: next.sku ?? null,
+            primary_category: next.primaryCategory,
+            subtitle: next.subtitle ?? null,
+            description: next.description ?? null,
+            keywords: next.keywords,
+            support_url: next.supportUrl ?? null,
+            privacy_policy_url: next.privacyPolicyUrl ?? null,
+            marketing_url: next.marketingUrl ?? null,
+            icon_asset_url: next.iconAssetUrl ?? null,
+            splash_asset_url: next.splashAssetUrl ?? null,
+            screenshot_asset_urls: next.screenshotAssetUrls,
+            target_location_ids: next.targetLocationIds,
+            asset_mode: next.assetMode,
+            updated_at: now
+          })
+        )
+        .execute();
+      return buildPostgresOnboarding(locationId);
+    },
+    async updateInternalLocationAppIdentity(locationId, rawInput) {
+      const input = internalAppIdentityProfileUpdateSchema.parse(rawInput);
+      const existing = await db
+        .selectFrom("catalog_app_identity_profiles")
+        .selectAll()
+        .where("location_id", "=", locationId)
+        .executeTakeFirst();
+      const location = await db
+        .selectFrom("catalog_client_locations")
+        .selectAll()
+        .where("location_id", "=", locationId)
+        .executeTakeFirst();
+      if (!location) {
+        return undefined;
+      }
+      const now = new Date().toISOString();
+      const base = existing
+        ? toAppIdentityProfile(existing)
+        : buildAppIdentityProfile({
+            locationId,
+            primaryCategory: "Food & Drink",
+            keywords: [],
+            screenshotAssetUrls: [],
+            targetLocationIds: [locationId],
+            assetMode: "placeholder",
+            adminOverrideReady: false,
+            updatedAt: now
+          });
+      const next = buildAppIdentityProfile({
+        ...base,
+        ...input,
+        locationId,
+        updatedAt: now
+      });
+      await db
+        .insertInto("catalog_app_identity_profiles")
+        .values({
+          tenant_id: location.tenant_id,
+          location_id: locationId,
+          app_name: next.appName ?? null,
+          display_name: next.displayName ?? null,
+          bundle_identifier: next.bundleIdentifier ?? null,
+          sku: next.sku ?? null,
+          primary_category: next.primaryCategory,
+          subtitle: next.subtitle ?? null,
+          description: next.description ?? null,
+          keywords: next.keywords,
+          support_url: next.supportUrl ?? null,
+          privacy_policy_url: next.privacyPolicyUrl ?? null,
+          marketing_url: next.marketingUrl ?? null,
+          icon_asset_url: next.iconAssetUrl ?? null,
+          splash_asset_url: next.splashAssetUrl ?? null,
+          screenshot_asset_urls: next.screenshotAssetUrls,
+          target_location_ids: next.targetLocationIds,
+          asset_mode: next.assetMode,
+          admin_override_ready: next.adminOverrideReady,
+          admin_override_reason: next.adminOverrideReason ?? null,
+          updated_at: now
+        })
+        .onConflict((oc) =>
+          oc.column("location_id").doUpdateSet({
+            app_name: next.appName ?? null,
+            display_name: next.displayName ?? null,
+            bundle_identifier: next.bundleIdentifier ?? null,
+            sku: next.sku ?? null,
+            primary_category: next.primaryCategory,
+            subtitle: next.subtitle ?? null,
+            description: next.description ?? null,
+            keywords: next.keywords,
+            support_url: next.supportUrl ?? null,
+            privacy_policy_url: next.privacyPolicyUrl ?? null,
+            marketing_url: next.marketingUrl ?? null,
+            icon_asset_url: next.iconAssetUrl ?? null,
+            splash_asset_url: next.splashAssetUrl ?? null,
+            screenshot_asset_urls: next.screenshotAssetUrls,
+            target_location_ids: next.targetLocationIds,
+            asset_mode: next.assetMode,
+            admin_override_ready: next.adminOverrideReady,
+            admin_override_reason: next.adminOverrideReason ?? null,
+            updated_at: now
+          })
+        )
         .execute();
       return buildPostgresOnboarding(locationId);
     },

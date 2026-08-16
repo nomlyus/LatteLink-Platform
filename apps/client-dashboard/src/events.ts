@@ -56,6 +56,7 @@ import { handleTeamCreateSubmit, handleTeamUserDelete, handleTeamUserSubmit } fr
 import { handleOrderAdvance } from "./controllers/orders.js";
 import {
   handleOnboardingBusinessProfileSubmit,
+  handleOnboardingAppIdentitySubmit,
   handleOnboardingReviewSubmit,
   handleOnboardingStepSubmit,
   handleOnboardingStoreBasicsSubmit,
@@ -138,6 +139,9 @@ export function registerEvents() {
         return;
       case "onboarding-store-basics":
         void handleOnboardingStoreBasicsSubmit(target);
+        return;
+      case "onboarding-app-identity":
+        void handleOnboardingAppIdentitySubmit(target);
         return;
       case "team-create":
         void handleTeamCreateSubmit(target);
@@ -253,18 +257,19 @@ export function registerEvents() {
         state.onboardingWizardStep =
           actionElement.dataset.onboardingStep === "2" ||
           actionElement.dataset.onboardingStep === "3" ||
-          actionElement.dataset.onboardingStep === "4"
-            ? (Number(actionElement.dataset.onboardingStep) as 2 | 3 | 4)
+          actionElement.dataset.onboardingStep === "4" ||
+          actionElement.dataset.onboardingStep === "5"
+            ? (Number(actionElement.dataset.onboardingStep) as 2 | 3 | 4 | 5)
             : 1;
         persistSection(state.section);
         render();
         return;
       case "onboarding-wizard-next":
-        state.onboardingWizardStep = state.onboardingWizardStep < 4 ? ((state.onboardingWizardStep + 1) as 1 | 2 | 3 | 4) : 4;
+        state.onboardingWizardStep = state.onboardingWizardStep < 5 ? ((state.onboardingWizardStep + 1) as 1 | 2 | 3 | 4 | 5) : 5;
         render();
         return;
       case "onboarding-wizard-prev":
-        state.onboardingWizardStep = state.onboardingWizardStep > 1 ? ((state.onboardingWizardStep - 1) as 1 | 2 | 3 | 4) : 1;
+        state.onboardingWizardStep = state.onboardingWizardStep > 1 ? ((state.onboardingWizardStep - 1) as 1 | 2 | 3 | 4 | 5) : 1;
         render();
         return;
       case "submit-onboarding-review":

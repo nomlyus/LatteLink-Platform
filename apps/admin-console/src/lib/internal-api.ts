@@ -14,6 +14,7 @@ import type {
   InternalLocationCapabilitiesUpdate,
   InternalLocationListResponse,
   InternalLocationSummary,
+  InternalAppIdentityProfileUpdate,
   LaunchApprovalRequest,
   LaunchReadinessResponse,
   MobileReleaseProfileUpdate,
@@ -182,6 +183,13 @@ export async function getInternalLocationOnboarding(locationId: string) {
 
 export async function updateInternalLocationMobileRelease(locationId: string, input: MobileReleaseProfileUpdate) {
   return requestInternalApi<OnboardingSummary>(`/v1/internal/locations/${locationId}/mobile-release`, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function updateInternalLocationAppIdentity(locationId: string, input: InternalAppIdentityProfileUpdate) {
+  return requestInternalApi<OnboardingSummary>(`/v1/internal/locations/${locationId}/app-identity`, {
     method: "PATCH",
     body: JSON.stringify(input)
   });

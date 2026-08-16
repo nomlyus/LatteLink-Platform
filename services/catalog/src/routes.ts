@@ -20,6 +20,7 @@ import {
   internalLocationPaymentProfileUpdateSchema,
   internalLocationParamsSchema,
   internalLocationSummarySchema,
+  internalAppIdentityProfileUpdateSchema,
   internalOwnerOnboardingUpdateSchema,
   launchApprovalRequestSchema,
   mobileExperienceDocumentSchema,
@@ -30,6 +31,7 @@ import {
   mobileExperienceVersionsResponseSchema,
   mobileReleaseProfileUpdateSchema,
   onboardingSummarySchema,
+  operatorAppIdentityProfileUpdateSchema,
   operatorOnboardingUpdateSchema,
   homeNewsCardCreateSchema,
   homeNewsCardUpdateSchema,
@@ -743,6 +745,44 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   );
 
+  app.patch(
+    "/v1/catalog/admin/app-identity",
+    {
+      preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess]
+    },
+    async (request, reply) => {
+      const locationId = getOperatorLocationId(request, reply);
+      if (!locationId) return reply;
+      const input = operatorAppIdentityProfileUpdateSchema.parse(request.body);
+      const onboarding = await repository.updateOperatorLocationAppIdentity(locationId, input);
+      if (!onboarding) {
+        return reply.status(404).send(
+          serviceErrorSchema.parse({
+            code: "ONBOARDING_NOT_FOUND",
+            message: "Onboarding state not found",
+            requestId: request.id,
+            details: { locationId }
+          })
+        );
+      }
+      await recordAuditLog(request, repository, {
+        locationId,
+        actorId: getActorId(request),
+        actorType: "operator",
+        action: "app_identity.updated",
+        targetId: locationId,
+        targetType: "app_identity",
+        payload: {
+          appName: onboarding.appIdentity?.appName,
+          displayName: onboarding.appIdentity?.displayName,
+          bundleIdentifier: onboarding.appIdentity?.bundleIdentifier,
+          ready: onboarding.appIdentity?.readiness.ready
+        }
+      });
+      return onboardingSummarySchema.parse(onboarding);
+    }
+  );
+
   app.get(
     "/v1/catalog/admin/mobile-experience",
     {
@@ -1059,6 +1099,30 @@ export async function registerRoutes(app: FastifyInstance) {
       const { locationId } = internalLocationParamsSchema.parse(request.params);
       const input = internalOwnerOnboardingUpdateSchema.parse(request.body);
       const onboarding = await repository.updateInternalLocationOwnerOnboarding(locationId, input);
+      if (!onboarding) {
+        return reply.status(404).send(
+          serviceErrorSchema.parse({
+            code: "ONBOARDING_NOT_FOUND",
+            message: "Onboarding state not found",
+            requestId: request.id,
+            details: { locationId }
+          })
+        );
+      }
+
+      return onboardingSummarySchema.parse(onboarding);
+    }
+  );
+
+  app.patch(
+    "/v1/catalog/internal/locations/:locationId/app-identity",
+    {
+      preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess]
+    },
+    async (request, reply) => {
+      const { locationId } = internalLocationParamsSchema.parse(request.params);
+      const input = internalAppIdentityProfileUpdateSchema.parse(request.body);
+      const onboarding = await repository.updateInternalLocationAppIdentity(locationId, input);
       if (!onboarding) {
         return reply.status(404).send(
           serviceErrorSchema.parse({

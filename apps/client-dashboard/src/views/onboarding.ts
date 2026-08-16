@@ -23,6 +23,12 @@ const clientSetupSteps = [
     action: "Connect Stripe"
   },
   {
+    id: "app_identity_ready",
+    label: "App profile",
+    shortLabel: "App",
+    action: "Complete app profile"
+  },
+  {
     id: "menu_ready",
     label: "Menu",
     shortLabel: "Menu",
@@ -123,6 +129,14 @@ function renderPrimarySetupAction() {
     return `
       <button class="button button--primary" type="button" data-action="start-stripe-onboarding" ${state.updatingOnboarding ? "disabled" : ""}>
         Connect Stripe
+      </button>
+    `;
+  }
+
+  if (next.id === "app_identity_ready") {
+    return `
+      <button class="button button--primary" type="button" data-action="open-onboarding-wizard" data-onboarding-step="4">
+        ${escapeHtml(next.action)}
       </button>
     `;
   }
@@ -242,7 +256,7 @@ function renderIntegrationsCard() {
 }
 
 function renderWizardSteps() {
-  const labels = ["Start", "Details", "Payments", "Finish"];
+  const labels = ["Start", "Details", "Payments", "App", "Finish"];
   const step = state.onboardingWizardStep;
   return `
     <div class="dash-wizard-steps" aria-label="Setup progress">
@@ -355,6 +369,90 @@ function renderWizardPayments() {
   `;
 }
 
+function renderWizardAppIdentity() {
+  const identity = state.onboardingSummary?.appIdentity;
+  const screenshots = identity?.screenshotAssetUrls.join("\n") ?? "";
+  const keywords = identity?.keywords.join(", ") ?? "";
+  const assetMode = identity?.assetMode ?? "placeholder";
+
+  return `
+    <form class="dash-wizard-form" data-form="onboarding-app-identity">
+      <div class="dash-wizard-body dash-wizard-body--stacked">
+        <div>
+          <div class="dash-panel-title">App profile</div>
+          <h3 class="dash-surface-title">Customer-facing app details</h3>
+          <p class="muted-copy">These details are used for the app record, App Store submission, and launch review.</p>
+        </div>
+        <label class="field">
+          <span>App name</span>
+          <input name="appName" maxlength="30" value="${escapeHtml(identity?.appName ?? state.onboardingSummary?.brandName ?? "")}" required />
+        </label>
+        <label class="field">
+          <span>Home screen name</span>
+          <input name="displayName" maxlength="30" value="${escapeHtml(identity?.displayName ?? identity?.appName ?? state.onboardingSummary?.brandName ?? "")}" required />
+        </label>
+        <label class="field">
+          <span>Bundle identifier</span>
+          <input name="bundleIdentifier" value="${escapeHtml(identity?.bundleIdentifier ?? "")}" placeholder="us.nomly.brand" required />
+        </label>
+        <label class="field">
+          <span>SKU</span>
+          <input name="sku" value="${escapeHtml(identity?.sku ?? "")}" required />
+        </label>
+        <label class="field">
+          <span>App Store subtitle</span>
+          <input name="subtitle" maxlength="30" value="${escapeHtml(identity?.subtitle ?? "")}" required />
+        </label>
+        <label class="field">
+          <span>App Store description</span>
+          <textarea name="description" rows="4" required>${escapeHtml(identity?.description ?? "")}</textarea>
+        </label>
+        <label class="field">
+          <span>Keywords</span>
+          <input name="keywords" value="${escapeHtml(keywords)}" placeholder="coffee, pickup, rewards" />
+        </label>
+        <label class="field">
+          <span>Support URL</span>
+          <input name="supportUrl" type="url" value="${escapeHtml(identity?.supportUrl ?? "")}" required />
+        </label>
+        <label class="field">
+          <span>Privacy policy URL</span>
+          <input name="privacyPolicyUrl" type="url" value="${escapeHtml(identity?.privacyPolicyUrl ?? "")}" required />
+        </label>
+        <label class="field">
+          <span>Marketing URL</span>
+          <input name="marketingUrl" type="url" value="${escapeHtml(identity?.marketingUrl ?? "")}" />
+        </label>
+        <label class="field">
+          <span>Asset mode</span>
+          <select name="assetMode">
+            <option value="placeholder" ${assetMode === "placeholder" ? "selected" : ""}>Use Nomly placeholder assets</option>
+            <option value="provided" ${assetMode === "provided" ? "selected" : ""}>Use provided brand assets</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Icon asset URL</span>
+          <input name="iconAssetUrl" type="url" value="${escapeHtml(identity?.iconAssetUrl ?? "")}" />
+        </label>
+        <label class="field">
+          <span>Splash asset URL</span>
+          <input name="splashAssetUrl" type="url" value="${escapeHtml(identity?.splashAssetUrl ?? "")}" />
+        </label>
+        <label class="field">
+          <span>Screenshot URLs</span>
+          <textarea name="screenshotAssetUrls" rows="3">${escapeHtml(screenshots)}</textarea>
+        </label>
+      </div>
+      <div class="dash-wizard-actions">
+        <button class="button button--secondary" type="button" data-action="onboarding-wizard-prev" ${state.updatingOnboarding ? "disabled" : ""}>Back</button>
+        <button class="button button--primary" type="submit" ${state.updatingOnboarding ? "disabled" : ""}>
+          ${state.updatingOnboarding ? "Saving..." : "Save and continue"}
+        </button>
+      </div>
+    </form>
+  `;
+}
+
 function renderWizardFinish() {
   const summary = state.onboardingSummary;
   const remaining = remainingClientSteps();
@@ -396,6 +494,8 @@ function renderWizardBody() {
     case 3:
       return renderWizardPayments();
     case 4:
+      return renderWizardAppIdentity();
+    case 5:
       return renderWizardFinish();
     case 1:
     default:
