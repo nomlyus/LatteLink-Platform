@@ -41,6 +41,19 @@ const orderJson = {
   ]
 };
 
+const checkoutQuoteJson = {
+  quoteId: "22222222-2222-4222-8222-222222222222",
+  locationId,
+  items: orderJson.items,
+  subtotal: orderJson.total,
+  discount: { currency: "USD", amountCents: 0 },
+  discounts: [],
+  tax: { currency: "USD", amountCents: 0 },
+  total: orderJson.total,
+  pointsToRedeem: 0,
+  quoteHash: "checkout-quote-hash"
+};
+
 const baseConfig: PaymentReconcilerConfig = {
   enabled: true,
   databaseUrl: "postgres://example",
@@ -91,6 +104,7 @@ function buildRuntime(overrides: Partial<PaymentReconcilerRuntime> = {}): Paymen
       orderStatus: "PAID"
     })),
     cancelPendingOrder: vi.fn(async () => undefined),
+    expireCheckoutDraft: vi.fn(async () => undefined),
     logger: {
       info: vi.fn(),
       warn: vi.fn(),
@@ -186,6 +200,26 @@ describe("payment reconciler worker", () => {
       orderId,
       reason: "Payment failed - auto-reconciled from Stripe status requires_payment_method"
     });
+  });
+
+  it("expires checkout drafts when their Stripe PaymentIntent fails", async () => {
+    const runtime = buildRuntime({
+      listStalePendingPaymentIntents: vi.fn(async () => [buildCandidate({ referenceType: "CHECKOUT", orderJson: checkoutQuoteJson })]),
+      retrievePaymentIntent: vi.fn(async () => buildPaymentIntent({
+        status: "requires_payment_method",
+        metadata: { checkoutId: orderId }
+      }))
+    });
+
+    const result = await processStalePaymentsBatch(baseConfig, runtime);
+
+    expect(result).toMatchObject({ canceled: 1, skipped: 0, failed: 0 });
+    expect(runtime.expireCheckoutDraft).toHaveBeenCalledWith({
+      ordersBaseUrl: baseConfig.ordersBaseUrl,
+      internalApiToken: baseConfig.ordersInternalApiToken,
+      checkoutId: orderId
+    });
+    expect(runtime.cancelPendingOrder).not.toHaveBeenCalled();
   });
 
   it("skips Stripe PaymentIntents that are still processing", async () => {

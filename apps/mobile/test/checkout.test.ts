@@ -9,7 +9,7 @@ import {
   resolveInlineCheckoutErrorMessage,
   shouldShowCheckoutFailureScreen,
   toQuoteItems,
-  type CheckoutOrderSnapshot
+  type CheckoutDraftSnapshot
 } from "../src/orders/checkout";
 
 const espressoGroups = normalizeCustomizationGroups([
@@ -136,15 +136,18 @@ describe("checkout helpers", () => {
   });
 
   it("keeps retryable pay failures on the failure screen", () => {
-    const retryOrder: CheckoutOrderSnapshot = {
-      id: "123e4567-e89b-12d3-a456-426614174000",
-      pickupCode: "ABC123",
-      status: "PENDING_PAYMENT",
+    const retryOrder: CheckoutDraftSnapshot = {
+      checkoutId: "123e4567-e89b-12d3-a456-426614174000",
+      quoteId: "5ec083a1-0f31-4d04-a525-7808a0d7624b",
+      quoteHash: "quote-hash-123",
+      locationId: "flagship-01",
+      status: "OPEN",
       items: [],
       total: {
         currency: "USD",
         amountCents: 575
       },
+      expiresAt: "2030-03-10T00:00:00.000Z",
       quoteItems: []
     };
     const error = new CheckoutSubmissionError("Payment timed out", "pay", retryOrder);
@@ -153,7 +156,7 @@ describe("checkout helpers", () => {
     expect(resolveInlineCheckoutErrorMessage(error)).toBe("Payment timed out");
   });
 
-  it("prepares a Stripe payment session after quoting and creating an order", async () => {
+  it("prepares a Stripe payment session after quoting and creating a checkout draft", async () => {
     const items = [
       createCartItem({
         menuItemId: "latte",
@@ -183,11 +186,12 @@ describe("checkout helpers", () => {
         pointsToRedeem: 0,
         quoteHash: "quote-hash-123"
       }),
-      createOrder: vi.fn().mockResolvedValue({
-        id: "123e4567-e89b-12d3-a456-426614174000",
+      createCheckoutDraft: vi.fn().mockResolvedValue({
+        checkoutId: "123e4567-e89b-12d3-a456-426614174000",
+        quoteId: "5ec083a1-0f31-4d04-a525-7808a0d7624b",
+        quoteHash: "quote-hash-123",
         locationId: "flagship-01",
-        status: "PENDING_PAYMENT",
-        pickupCode: "ABC123",
+        status: "OPEN",
         items: [
           {
             itemId: "latte",
@@ -210,10 +214,10 @@ describe("checkout helpers", () => {
           }
         ],
         total: { currency: "USD", amountCents: 610 },
-        timeline: []
+        expiresAt: "2030-03-10T00:00:00.000Z"
       }),
       createStripeMobilePaymentSession: vi.fn().mockResolvedValue({
-        orderId: "123e4567-e89b-12d3-a456-426614174000",
+        checkoutId: "123e4567-e89b-12d3-a456-426614174000",
         paymentIntentId: "pi_123",
         paymentIntentClientSecret: "pi_123_secret_456",
         publishableKey: "pk_test_123",
@@ -236,11 +240,11 @@ describe("checkout helpers", () => {
     );
 
     expect(checkoutApi.quoteOrder).toHaveBeenCalledTimes(1);
-    expect(checkoutApi.createOrder).toHaveBeenCalledTimes(1);
+    expect(checkoutApi.createCheckoutDraft).toHaveBeenCalledTimes(1);
     expect(checkoutApi.createStripeMobilePaymentSession).toHaveBeenCalledWith({
-      orderId: "123e4567-e89b-12d3-a456-426614174000"
+      checkoutId: "123e4567-e89b-12d3-a456-426614174000"
     });
-    expect(preparedCheckout.order.pickupCode).toBe("ABC123");
+    expect(preparedCheckout.checkout.status).toBe("OPEN");
     expect(preparedCheckout.paymentSession.stripeAccountId).toBe("acct_123");
   });
 
@@ -288,17 +292,18 @@ describe("checkout helpers", () => {
         pointsToRedeem: 0,
         quoteHash: "quote-hash-discount"
       }),
-      createOrder: vi.fn().mockResolvedValue({
-        id: "123e4567-e89b-12d3-a456-426614174001",
+      createCheckoutDraft: vi.fn().mockResolvedValue({
+        checkoutId: "123e4567-e89b-12d3-a456-426614174001",
+        quoteId: "5ec083a1-0f31-4d04-a525-7808a0d7624c",
+        quoteHash: "quote-hash-discount",
         locationId: "flagship-01",
-        status: "PENDING_PAYMENT",
-        pickupCode: "DEF456",
+        status: "OPEN",
         items: [],
         total: { currency: "USD", amountCents: 504 },
-        timeline: []
+        expiresAt: "2030-03-10T00:00:00.000Z"
       }),
       createStripeMobilePaymentSession: vi.fn().mockResolvedValue({
-        orderId: "123e4567-e89b-12d3-a456-426614174001",
+        checkoutId: "123e4567-e89b-12d3-a456-426614174001",
         paymentIntentId: "pi_discount",
         paymentIntentClientSecret: "pi_discount_secret",
         publishableKey: "pk_test_123",
@@ -329,7 +334,7 @@ describe("checkout helpers", () => {
     });
   });
 
-  it("reuses an existing pending order when retrying Stripe checkout", async () => {
+  it("reuses an existing open checkout when retrying Stripe checkout", async () => {
     const items = [
       createCartItem({
         menuItemId: "latte",
@@ -346,22 +351,25 @@ describe("checkout helpers", () => {
         quantity: 1
       })
     ];
-    const existingOrder: CheckoutOrderSnapshot = {
-      id: "123e4567-e89b-12d3-a456-426614174000",
-      pickupCode: "ABC123",
-      status: "PENDING_PAYMENT",
+    const existingCheckout: CheckoutDraftSnapshot = {
+      checkoutId: "123e4567-e89b-12d3-a456-426614174000",
+      quoteId: "5ec083a1-0f31-4d04-a525-7808a0d7624b",
+      quoteHash: "quote-hash-123",
+      locationId: "flagship-01",
+      status: "OPEN",
       items: [],
       total: {
         currency: "USD",
         amountCents: 575
       },
+      expiresAt: "2030-03-10T00:00:00.000Z",
       quoteItems: []
     };
     const checkoutApi = {
       quoteOrder: vi.fn(),
-      createOrder: vi.fn(),
+      createCheckoutDraft: vi.fn(),
       createStripeMobilePaymentSession: vi.fn().mockResolvedValue({
-        orderId: existingOrder.id,
+        checkoutId: existingCheckout.checkoutId,
         paymentIntentId: "pi_retry_123",
         paymentIntentClientSecret: "pi_retry_123_secret_456",
         publishableKey: "pk_test_123",
@@ -379,8 +387,8 @@ describe("checkout helpers", () => {
       {
         locationId: "flagship-01",
         items,
-        existingOrder: {
-          ...existingOrder,
+        existingCheckout: {
+          ...existingCheckout,
           quoteItems: toQuoteItems(items)
         }
       },
@@ -388,10 +396,10 @@ describe("checkout helpers", () => {
     );
 
     expect(checkoutApi.quoteOrder).not.toHaveBeenCalled();
-    expect(checkoutApi.createOrder).not.toHaveBeenCalled();
+    expect(checkoutApi.createCheckoutDraft).not.toHaveBeenCalled();
     expect(checkoutApi.createStripeMobilePaymentSession).toHaveBeenCalledWith({
-      orderId: existingOrder.id
+      checkoutId: existingCheckout.checkoutId
     });
-    expect(preparedCheckout.order.id).toBe(existingOrder.id);
+    expect(preparedCheckout.checkout.checkoutId).toBe(existingCheckout.checkoutId);
   });
 });

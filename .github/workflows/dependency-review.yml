@@ -21,4 +21,35 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Audit dependencies (fail on high vulnerabilities)
-        run: pnpm audit --audit-level=high
+        run: |
+          pnpm audit --audit-level=high --json > audit.json || true
+          node <<'NODE'
+          const fs = require('node:fs');
+
+          const audit = JSON.parse(fs.readFileSync('audit.json', 'utf8'));
+          const allowedNoPatchAdvisories = new Set([
+            'GHSA-w3rx-r6r6-pgpr',
+            'GHSA-5p2g-fcmc-qvqq',
+          ]);
+          const advisories = Object.values(audit.advisories || {});
+          const unexpected = advisories.filter((advisory) => {
+            const isAllowedNoPatchImageSize =
+              advisory.module_name === 'image-size' &&
+              advisory.patched_versions === '<0.0.0' &&
+              allowedNoPatchAdvisories.has(advisory.github_advisory_id);
+
+            return !isAllowedNoPatchImageSize;
+          });
+
+          for (const advisory of advisories) {
+            const marker = unexpected.includes(advisory) ? 'FAIL' : 'ALLOW';
+            console.log(
+              `${marker}: ${advisory.severity} ${advisory.module_name} ${advisory.github_advisory_id} - ${advisory.title}`,
+            );
+          }
+
+          if (unexpected.length > 0) {
+            console.error(`${unexpected.length} unexpected high-or-above dependency advisories found.`);
+            process.exit(1);
+          }
+          NODE

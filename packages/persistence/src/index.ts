@@ -68,6 +68,18 @@ export interface PaymentsStripePaymentIntentTable {
   updated_at: Generated<string>;
 }
 
+export interface OrderCheckoutDraftTable {
+  checkout_id: string;
+  user_id: string;
+  quote_id: string;
+  quote_hash: string;
+  status: "OPEN" | "CONVERTED" | "EXPIRED";
+  order_id: string | null;
+  expires_at: string;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
 export interface PaymentsCloverConnectionTable {
   merchant_id: string;
   location_id: string | null;
@@ -494,6 +506,7 @@ export interface PersistenceDatabase {
   loyalty_ledger_entries: LoyaltyLedgerEntryTable;
   loyalty_idempotency_keys: LoyaltyIdempotencyKeyTable;
   orders_quotes: OrdersQuoteTable;
+  order_checkout_drafts: OrderCheckoutDraftTable;
   orders: OrdersTable;
   orders_create_idempotency: OrdersCreateIdempotencyTable;
   orders_payment_idempotency: OrdersPaymentIdempotencyTable;

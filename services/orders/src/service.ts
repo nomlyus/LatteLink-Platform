@@ -10,6 +10,11 @@ import {
   type StoreConfigResponse
 } from "@lattelink/contracts-catalog";
 import {
+  checkoutDraftSchema,
+  checkoutPaymentConfirmationResponseSchema,
+  checkoutPaymentConfirmationSchema,
+  checkoutPaymentContextSchema,
+  createCheckoutDraftRequestSchema,
   createDiscountCodeRequestSchema,
   createOrderRequestSchema,
   discountCodeListResponseSchema,
@@ -507,6 +512,10 @@ async function sendOrderStateNotification(params: {
     }
   }
 
+  if (payload.status === "CANCELED") {
+    return;
+  }
+
   const headers: Record<string, string> = {
     "content-type": "application/json",
     "x-request-id": requestId
@@ -984,6 +993,221 @@ function createOrderFromQuote(quote: OrderQuote): Order {
       })
     ]
   });
+}
+
+function createPaidOrderFromCheckout(quote: OrderQuote, checkoutId: string, occurredAt: string): Order {
+  return orderSchema.parse({
+    id: checkoutId,
+    locationId: quote.locationId,
+    status: "PAID",
+    items: quote.items,
+    total: quote.total,
+    pickupCode: buildPickupCode(checkoutId),
+    timeline: [
+      createOrderTimelineEntry({
+        status: "PAID",
+        occurredAt,
+        note: "Payment confirmed",
+        source: "webhook"
+      })
+    ]
+  });
+}
+
+export async function createCheckoutDraft(params: {
+  input: z.output<typeof createCheckoutDraftRequestSchema>;
+  requestUserContext?: RequestUserContext;
+  requestId: string;
+  deps: OrderServiceDeps;
+}) {
+  const { input, requestUserContext, deps } = params;
+  const quote = await deps.repository.getQuote(input.quoteId);
+  if (!quote) {
+    return { error: buildServiceError({ statusCode: 404, code: "QUOTE_NOT_FOUND", message: "Quote not found" }) };
+  }
+  if (quote.quoteHash !== input.quoteHash) {
+    return { error: buildServiceError({ statusCode: 409, code: "QUOTE_HASH_MISMATCH", message: "Quote hash does not match current quote" }) };
+  }
+  const userId = resolveRequestUserId(requestUserContext);
+  if (isServiceError(userId)) return { error: userId };
+
+  const existing = await deps.repository.getCheckoutDraftForQuote({ quoteId: input.quoteId, quoteHash: input.quoteHash, userId });
+  if (existing && existing.status === "OPEN" && Date.parse(existing.expiresAt) > Date.now()) {
+    return { checkout: checkoutDraftSchema.parse(existing) };
+  }
+
+  const activeOrder = await findActiveOrderForUser({ userId, requestId: params.requestId, deps });
+  if (activeOrder && activeOrder.status !== "PENDING_PAYMENT") {
+    return { error: buildActiveOrderExistsError(activeOrder) };
+  }
+
+  const availability = await ensureStoreIsOpen(deps, quote.locationId);
+  if ("error" in availability) return availability;
+  const discountError = await validateAppliedDiscountForOrder({ quote, userId, repository: deps.repository });
+  if (discountError) return { error: discountError };
+
+  for (const stale of await deps.repository.listOpenCheckoutDraftsByUser(userId)) {
+    await deps.repository.expireCheckoutDraft(stale.checkoutId);
+    await deps.repository.releaseDiscountForOrder(stale.checkoutId);
+  }
+
+  const checkoutId = randomUUID();
+  const persisted = await deps.repository.createCheckoutDraft({
+    ...checkoutDraftSchema.parse({
+      checkoutId,
+      quoteId: quote.quoteId,
+      quoteHash: quote.quoteHash,
+      locationId: quote.locationId,
+      status: "OPEN",
+      items: quote.items,
+      total: quote.total,
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString()
+    }),
+    userId
+  });
+
+  const reserved = await reserveAppliedDiscountForOrder({
+    quote,
+    order: createPaidOrderFromCheckout(quote, persisted.checkoutId, new Date().toISOString()),
+    userId,
+    repository: deps.repository
+  });
+  if (!reserved) {
+    await deps.repository.expireCheckoutDraft(persisted.checkoutId);
+    return { error: buildServiceError({ statusCode: 409, code: "DISCOUNT_CODE_UNAVAILABLE", message: "That discount code is no longer available. Please review your cart and try again." }) };
+  }
+
+  return { checkout: checkoutDraftSchema.parse(persisted) };
+}
+
+export async function getCheckoutPaymentContext(params: {
+  checkoutId: string;
+  requestUserId?: string;
+  deps: OrderServiceDeps;
+}) {
+  const draft = await params.deps.repository.getCheckoutDraft(params.checkoutId);
+  if (!draft || (params.requestUserId && draft.userId !== params.requestUserId)) {
+    return { error: buildServiceError({ statusCode: 404, code: "CHECKOUT_NOT_FOUND", message: "Checkout not found" }) };
+  }
+  if (draft.status === "OPEN" && Date.parse(draft.expiresAt) <= Date.now()) {
+    await params.deps.repository.expireCheckoutDraft(draft.checkoutId);
+    await params.deps.repository.releaseDiscountForOrder(draft.checkoutId);
+    return { error: buildServiceError({ statusCode: 410, code: "CHECKOUT_EXPIRED", message: "Checkout expired. Please try again." }) };
+  }
+  return {
+    context: checkoutPaymentContextSchema.parse({
+      checkoutId: draft.checkoutId,
+      locationId: draft.locationId,
+      status: draft.status,
+      total: draft.total,
+      expiresAt: draft.expiresAt
+    })
+  };
+}
+
+export async function confirmCheckoutPayment(params: {
+  input: z.output<typeof checkoutPaymentConfirmationSchema>;
+  requestId: string;
+  deps: OrderServiceDeps;
+}) {
+  const { input, requestId, deps } = params;
+  const draft = await deps.repository.getCheckoutDraft(input.checkoutId);
+  if (!draft) {
+    return { error: buildServiceError({ statusCode: 404, code: "CHECKOUT_NOT_FOUND", message: "Checkout not found" }) };
+  }
+  if (input.amountCents !== draft.total.amountCents || input.currency !== draft.total.currency) {
+    return { error: buildServiceError({ statusCode: 409, code: "CHECKOUT_PAYMENT_MISMATCH", message: "Payment does not match checkout total" }) };
+  }
+  const existingOrder = await deps.repository.getOrder(input.checkoutId);
+  if (existingOrder) {
+    await recordSuccessfulCheckoutPayment({ order: existingOrder, input, repository: deps.repository });
+    return { result: checkoutPaymentConfirmationResponseSchema.parse({ accepted: true, applied: false, order: existingOrder }) };
+  }
+  const quote = await deps.repository.getQuote(draft.quoteId);
+  if (!quote) {
+    return { error: buildServiceError({ statusCode: 409, code: "CHECKOUT_CONTEXT_MISSING", message: "Checkout quote context is missing" }) };
+  }
+
+  if (quote.pointsToRedeem > 0) {
+    const redeemResult = await applyLoyaltyMutation({
+      requestId,
+      deps,
+      mutation: loyaltyMutationRequestSchema.parse({
+        type: "REDEEM",
+        userId: draft.userId,
+        locationId: draft.locationId,
+        orderId: draft.checkoutId,
+        amountCents: quote.pointsToRedeem,
+        idempotencyKey: toLoyaltyIdempotencyKey(draft.checkoutId, "redeem")
+      }),
+      failureCode: "LOYALTY_REDEEM_FAILED",
+      failureMessage: "Loyalty redeem mutation failed"
+    });
+    if (isServiceError(redeemResult)) return { error: redeemResult };
+  }
+
+  const earnResult = await applyLoyaltyMutation({
+    requestId,
+    deps,
+    mutation: loyaltyMutationRequestSchema.parse({
+      type: "EARN",
+      userId: draft.userId,
+      locationId: draft.locationId,
+      orderId: draft.checkoutId,
+      amountCents: draft.total.amountCents,
+      idempotencyKey: toLoyaltyIdempotencyKey(draft.checkoutId, "earn")
+    }),
+    failureCode: "LOYALTY_EARN_FAILED",
+    failureMessage: "Loyalty earn mutation failed"
+  });
+  if (isServiceError(earnResult)) return { error: earnResult };
+
+  await deps.repository.redeemDiscountForOrder(draft.checkoutId);
+  const paidOrder = createPaidOrderFromCheckout(quote, draft.checkoutId, input.occurredAt);
+  const promotion = await deps.repository.promoteCheckoutDraft({
+    checkoutId: draft.checkoutId,
+    order: paidOrder,
+    quoteId: draft.quoteId,
+    userId: draft.userId
+  });
+  await recordSuccessfulCheckoutPayment({ order: promotion.order, input, repository: deps.repository });
+  if (promotion.created) {
+    await sendOrderStateNotification({ requestId, deps, userId: draft.userId, order: promotion.order });
+  }
+  return {
+    result: checkoutPaymentConfirmationResponseSchema.parse({ accepted: true, applied: promotion.created, order: promotion.order })
+  };
+}
+
+async function recordSuccessfulCheckoutPayment(params: {
+  order: Order;
+  input: z.output<typeof checkoutPaymentConfirmationSchema>;
+  repository: OrdersRepository;
+}) {
+  await params.repository.setPaymentId(params.order.id, params.input.paymentId);
+  await params.repository.setSuccessfulCharge(params.order.id, {
+    paymentId: params.input.paymentId,
+    provider: "STRIPE",
+    orderId: params.order.id,
+    status: "SUCCEEDED",
+    approved: true,
+    amountCents: params.input.amountCents,
+    currency: params.input.currency,
+    occurredAt: params.input.occurredAt
+  });
+}
+
+export async function expireCheckoutDraft(params: { checkoutId: string; deps: OrderServiceDeps }) {
+  const draft = await params.deps.repository.getCheckoutDraft(params.checkoutId);
+  if (!draft) {
+    return { error: buildServiceError({ statusCode: 404, code: "CHECKOUT_NOT_FOUND", message: "Checkout not found" }) };
+  }
+  if (draft.status === "OPEN") {
+    await params.deps.repository.expireCheckoutDraft(draft.checkoutId);
+    await params.deps.repository.releaseDiscountForOrder(draft.checkoutId);
+    return { expired: true };
+  }
+  return { expired: false };
 }
 
 async function validateAppliedDiscountForOrder(params: {

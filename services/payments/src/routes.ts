@@ -23,6 +23,9 @@ import {
   stripeConnectStatusRefreshResponseSchema
 } from "@lattelink/contracts-catalog";
 import {
+  checkoutPaymentConfirmationResponseSchema,
+  checkoutPaymentConfirmationSchema,
+  checkoutPaymentContextSchema,
   orderPaymentContextSchema,
   orderSchema,
   ordersPaymentReconciliationResultSchema,
@@ -1641,6 +1644,34 @@ async function dispatchOrderReconciliation(params: {
   };
 }
 
+async function dispatchCheckoutConfirmation(params: {
+  ordersBaseUrl: string;
+  internalToken?: string;
+  requestId: string;
+  payload: z.output<typeof checkoutPaymentConfirmationSchema>;
+}) {
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    "x-request-id": params.requestId
+  };
+  if (params.internalToken) headers["x-internal-token"] = params.internalToken;
+  try {
+    const upstream = await fetch(`${params.ordersBaseUrl}/v1/orders/internal/checkouts/confirm-payment`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(params.payload)
+    });
+    const body = parseJsonSafely(await upstream.text());
+    if (!upstream.ok) return { ok: false as const, status: upstream.status, body };
+    const parsed = checkoutPaymentConfirmationResponseSchema.safeParse(body);
+    return parsed.success
+      ? { ok: true as const, response: parsed.data }
+      : { ok: false as const, status: upstream.status, body };
+  } catch (error) {
+    return { ok: false as const, error: error instanceof Error ? error.message : "checkout confirmation request failed" };
+  }
+}
+
 async function fetchOrderPaymentContext(params: {
   ordersBaseUrl: string;
   internalToken?: string;
@@ -1651,48 +1682,48 @@ async function fetchOrderPaymentContext(params: {
   | { ok: true; response: z.output<typeof orderPaymentContextSchema> }
   | { ok: false; status?: number; body?: unknown }
 > {
-  const headers: Record<string, string> = {
-    "x-request-id": params.requestId
-  };
-  if (params.internalToken) {
-    headers["x-internal-token"] = params.internalToken;
-  }
-  if (params.userId) {
-    headers["x-user-id"] = params.userId;
-  }
-
-  let upstream: Response;
+  const headers: Record<string, string> = { "x-request-id": params.requestId };
+  if (params.internalToken) headers["x-internal-token"] = params.internalToken;
+  if (params.userId) headers["x-user-id"] = params.userId;
   try {
-    upstream = await fetch(`${params.ordersBaseUrl}/v1/orders/internal/${params.orderId}/payment-context`, {
+    const upstream = await fetch(`${params.ordersBaseUrl}/v1/orders/internal/${params.orderId}/payment-context`, {
       method: "GET",
       headers
     });
+    const body = parseJsonSafely(await upstream.text());
+    if (!upstream.ok) return { ok: false, status: upstream.status, body };
+    const parsed = orderPaymentContextSchema.safeParse(body);
+    return parsed.success ? { ok: true, response: parsed.data } : { ok: false, status: upstream.status, body };
   } catch {
     return { ok: false };
   }
+}
 
-  const body = parseJsonSafely(await upstream.text());
-  if (!upstream.ok) {
-    return {
-      ok: false,
-      status: upstream.status,
-      body
-    };
+async function fetchCheckoutPaymentContext(params: {
+  ordersBaseUrl: string;
+  internalToken?: string;
+  requestId: string;
+  checkoutId: string;
+  userId?: string;
+}): Promise<
+  | { ok: true; response: z.output<typeof checkoutPaymentContextSchema> }
+  | { ok: false; status?: number; body?: unknown }
+> {
+  const headers: Record<string, string> = { "x-request-id": params.requestId };
+  if (params.internalToken) headers["x-internal-token"] = params.internalToken;
+  if (params.userId) headers["x-user-id"] = params.userId;
+  try {
+    const upstream = await fetch(
+      `${params.ordersBaseUrl}/v1/orders/internal/checkouts/${params.checkoutId}/payment-context`,
+      { method: "GET", headers }
+    );
+    const body = parseJsonSafely(await upstream.text());
+    if (!upstream.ok) return { ok: false, status: upstream.status, body };
+    const parsed = checkoutPaymentContextSchema.safeParse(body);
+    return parsed.success ? { ok: true, response: parsed.data } : { ok: false, status: upstream.status, body };
+  } catch {
+    return { ok: false };
   }
-
-  const parsed = orderPaymentContextSchema.safeParse(body);
-  if (!parsed.success) {
-    return {
-      ok: false,
-      status: upstream.status,
-      body
-    };
-  }
-
-  return {
-    ok: true,
-    response: parsed.data
-  };
 }
 
 async function fetchInternalLocationSummary(params: {
@@ -1836,6 +1867,11 @@ function resolveStripeMetadataOrderId(metadata: Stripe.Metadata | null | undefin
   return parsedOrderId.success ? parsedOrderId.data : undefined;
 }
 
+function resolveStripeMetadataCheckoutId(metadata: Stripe.Metadata | null | undefined) {
+  const parsed = z.string().uuid().safeParse(metadata?.checkoutId);
+  return parsed.success ? parsed.data : undefined;
+}
+
 function resolveStripeChargePaymentId(charge: Stripe.Charge) {
   if (typeof charge.payment_intent === "string" && charge.payment_intent.length > 0) {
     return charge.payment_intent;
@@ -1857,6 +1893,7 @@ function resolveStripeRefundId(charge: Stripe.Charge) {
 function resolveStripeOrderReconciliation(event: Stripe.Event): OrderPaymentReconciliation | undefined {
   if (event.type === "payment_intent.succeeded") {
     const intent = event.data.object as Stripe.PaymentIntent;
+    if (resolveStripeMetadataCheckoutId(intent.metadata)) return undefined;
     const orderId = resolveStripeMetadataOrderId(intent.metadata);
     if (!orderId) {
       return undefined;
@@ -1873,6 +1910,7 @@ function resolveStripeOrderReconciliation(event: Stripe.Event): OrderPaymentReco
 
   if (event.type === "payment_intent.payment_failed") {
     const intent = event.data.object as Stripe.PaymentIntent;
+    if (resolveStripeMetadataCheckoutId(intent.metadata)) return undefined;
     const orderId = resolveStripeMetadataOrderId(intent.metadata);
     if (!orderId) {
       return undefined;
@@ -1921,6 +1959,22 @@ function resolveStripeOrderReconciliation(event: Stripe.Event): OrderPaymentReco
   }
 
   return undefined;
+}
+
+function resolveStripeCheckoutConfirmation(event: Stripe.Event) {
+  if (event.type !== "payment_intent.succeeded") return undefined;
+  const intent = event.data.object as Stripe.PaymentIntent;
+  const checkoutId = resolveStripeMetadataCheckoutId(intent.metadata);
+  const currency = normalizeStripeCurrency(intent.currency);
+  if (!checkoutId || !currency) return undefined;
+  return checkoutPaymentConfirmationSchema.parse({
+    eventId: event.id,
+    checkoutId,
+    paymentId: intent.id,
+    occurredAt: toStripeWebhookOccurredAt(event.created),
+    amountCents: intent.amount_received > 0 ? intent.amount_received : intent.amount,
+    currency
+  });
 }
 
 function buildStripePaymentIntentSucceededReconciliation(params: {
@@ -2151,37 +2205,38 @@ export async function registerRoutes(app: FastifyInstance) {
     const input = stripeMobilePaymentSessionRequestSchema.parse(request.body);
     const parsedUserHeaders = userHeadersSchema.safeParse(request.headers);
     const userId = parsedUserHeaders.success ? parsedUserHeaders.data["x-user-id"] : undefined;
-    const orderPaymentContextResult = await fetchOrderPaymentContext({
-      ordersBaseUrl,
-      internalToken: ordersInternalToken,
-      requestId: request.id,
-      orderId: input.orderId,
-      userId
-    });
+    const isLegacyOrder = "orderId" in input;
+    const isCheckout = !isLegacyOrder;
+    const paymentContextResult = isLegacyOrder
+      ? await fetchOrderPaymentContext({ ordersBaseUrl, internalToken: ordersInternalToken, requestId: request.id, orderId: z.string().uuid().parse(input.orderId), userId })
+      : await fetchCheckoutPaymentContext({ ordersBaseUrl, internalToken: ordersInternalToken, requestId: request.id, checkoutId: input.checkoutId, userId });
 
-    if (!orderPaymentContextResult.ok) {
-      const upstreamError = serviceErrorSchema.safeParse(orderPaymentContextResult.body);
-      return reply.status(orderPaymentContextResult.status ?? 502).send(
+    if (!paymentContextResult.ok) {
+      const upstreamError = serviceErrorSchema.safeParse(paymentContextResult.body);
+      return reply.status(paymentContextResult.status ?? 502).send(
         upstreamError.success
           ? upstreamError.data
           : serviceErrorSchema.parse({
-              code: "ORDERS_PAYMENT_CONTEXT_UNAVAILABLE",
-              message: "Unable to load order payment context",
+              code: isCheckout ? "CHECKOUT_CONTEXT_UNAVAILABLE" : "ORDERS_PAYMENT_CONTEXT_UNAVAILABLE",
+              message: isCheckout ? "Unable to load checkout payment context" : "Unable to load order payment context",
               requestId: request.id
             })
       );
     }
 
-    const orderPaymentContext = orderPaymentContextResult.response;
-    if (orderPaymentContext.status !== "PENDING_PAYMENT") {
+    const checkoutContext = "checkoutId" in paymentContextResult.response
+      ? { ...paymentContextResult.response, referenceId: paymentContextResult.response.checkoutId }
+      : { ...paymentContextResult.response, referenceId: paymentContextResult.response.orderId };
+    const expectedStatus = isCheckout ? "OPEN" : "PENDING_PAYMENT";
+    if (checkoutContext.status !== expectedStatus) {
       return reply.status(409).send(
         serviceErrorSchema.parse({
-          code: "ORDER_NOT_PENDING_PAYMENT",
-          message: `Order cannot create a Stripe payment session from status ${orderPaymentContext.status}`,
+          code: isCheckout ? "CHECKOUT_NOT_OPEN" : "ORDER_NOT_PENDING_PAYMENT",
+          message: `${isCheckout ? "Checkout" : "Order"} cannot create a Stripe payment session from status ${checkoutContext.status}`,
           requestId: request.id,
           details: {
-            orderId: orderPaymentContext.orderId,
-            status: orderPaymentContext.status
+            referenceId: checkoutContext.referenceId,
+            status: checkoutContext.status
           }
         })
       );
@@ -2191,7 +2246,7 @@ export async function registerRoutes(app: FastifyInstance) {
       catalogBaseUrl,
       gatewayToken: gatewayInternalToken,
       requestId: request.id,
-      locationId: orderPaymentContext.locationId
+      locationId: checkoutContext.locationId
     });
 
     if (!locationSummaryResult.ok) {
@@ -2234,31 +2289,32 @@ export async function registerRoutes(app: FastifyInstance) {
     try {
       const paymentIntent = await stripeClient.paymentIntents.create(
         {
-          amount: orderPaymentContext.total.amountCents,
-          currency: orderPaymentContext.total.currency.toLowerCase(),
+          amount: checkoutContext.total.amountCents,
+          currency: checkoutContext.total.currency.toLowerCase(),
           automatic_payment_methods: {
             enabled: true
           },
           metadata: {
-            orderId: orderPaymentContext.orderId,
-            locationId: orderPaymentContext.locationId,
+            ...(isCheckout ? { checkoutId: checkoutContext.referenceId } : {}),
+            orderId: checkoutContext.referenceId,
+            locationId: checkoutContext.locationId,
             ...(userId ? { userId } : {})
           },
-          description: `${resolveStripeMerchantDisplayName(locationSummary)} mobile order ${orderPaymentContext.orderId}`
+          description: `${resolveStripeMerchantDisplayName(locationSummary)} mobile ${isCheckout ? "checkout" : "order"} ${checkoutContext.referenceId}`
         },
         {
           stripeAccount: paymentProfile.stripeAccountId,
-          idempotencyKey: `stripe-mobile-session:${orderPaymentContext.orderId}`
+          idempotencyKey: `${isCheckout ? "stripe-mobile-checkout" : "stripe-mobile-session"}:${checkoutContext.referenceId}`
         }
       );
 
       await repository.saveStripePaymentIntent({
         paymentIntentId: paymentIntent.id,
-        orderId: orderPaymentContext.orderId,
-        locationId: orderPaymentContext.locationId,
+        orderId: checkoutContext.referenceId,
+        locationId: checkoutContext.locationId,
         stripeAccountId: paymentProfile.stripeAccountId,
         amountCents: paymentIntent.amount,
-        currency: orderPaymentContext.total.currency,
+        currency: checkoutContext.total.currency,
         status: paymentIntent.status
       });
 
@@ -2270,13 +2326,13 @@ export async function registerRoutes(app: FastifyInstance) {
           requestId: request.id,
           tags: {
             provider: "stripe",
-            orderId: orderPaymentContext.orderId,
-            locationId: orderPaymentContext.locationId,
+            referenceId: checkoutContext.referenceId,
+            locationId: checkoutContext.locationId,
             paymentIntentId: paymentIntent.id
           },
           context: {
-            orderId: orderPaymentContext.orderId,
-            locationId: orderPaymentContext.locationId,
+            referenceId: checkoutContext.referenceId,
+            locationId: checkoutContext.locationId,
             paymentIntentId: paymentIntent.id,
             stripeAccountId: paymentProfile.stripeAccountId
           },
@@ -2285,7 +2341,7 @@ export async function registerRoutes(app: FastifyInstance) {
         request.log.error(
           {
             requestId: request.id,
-            orderId: orderPaymentContext.orderId,
+            referenceId: checkoutContext.referenceId,
             paymentIntentId: paymentIntent.id,
             stripeAccountId: paymentProfile.stripeAccountId
           },
@@ -2301,15 +2357,15 @@ export async function registerRoutes(app: FastifyInstance) {
       }
 
       return stripeMobilePaymentSessionResponseSchema.parse({
-        orderId: orderPaymentContext.orderId,
+        ...(isCheckout ? { checkoutId: checkoutContext.referenceId } : { orderId: checkoutContext.referenceId }),
         paymentIntentId: paymentIntent.id,
         paymentIntentClientSecret: paymentIntent.client_secret,
         publishableKey: stripePublishableKey,
         stripeAccountId: paymentProfile.stripeAccountId,
         merchantDisplayName: resolveStripeMerchantDisplayName(locationSummary),
         merchantCountryCode: "US",
-        amountCents: orderPaymentContext.total.amountCents,
-        currency: orderPaymentContext.total.currency,
+        amountCents: checkoutContext.total.amountCents,
+        currency: checkoutContext.total.currency,
         applePayEnabled: paymentProfile.applePayEnabled,
         cardEnabled: paymentProfile.cardEnabled
       });
@@ -2321,12 +2377,12 @@ export async function registerRoutes(app: FastifyInstance) {
         requestId: request.id,
         tags: {
           provider: "stripe",
-          orderId: orderPaymentContext.orderId,
-          locationId: orderPaymentContext.locationId
+          referenceId: checkoutContext.referenceId,
+          locationId: checkoutContext.locationId
         },
         context: {
-          orderId: orderPaymentContext.orderId,
-          locationId: orderPaymentContext.locationId,
+          referenceId: checkoutContext.referenceId,
+          locationId: checkoutContext.locationId,
           stripeAccountId: paymentProfile.stripeAccountId
         },
         fingerprint: ["payments", "stripe-mobile-session-create-failed"]
@@ -2335,8 +2391,8 @@ export async function registerRoutes(app: FastifyInstance) {
         {
           error,
           requestId: request.id,
-          orderId: orderPaymentContext.orderId,
-          locationId: orderPaymentContext.locationId,
+          referenceId: checkoutContext.referenceId,
+          locationId: checkoutContext.locationId,
           stripeAccountId: paymentProfile.stripeAccountId
         },
         "Stripe mobile payment session creation failed"
@@ -2361,37 +2417,38 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     const input = stripeMobilePaymentFinalizeRequestSchema.parse(request.body);
+    const paymentIntentId = input.paymentIntentId;
     const parsedUserHeaders = userHeadersSchema.safeParse(request.headers);
     const userId = parsedUserHeaders.success ? parsedUserHeaders.data["x-user-id"] : undefined;
-    const orderPaymentContextResult = await fetchOrderPaymentContext({
-      ordersBaseUrl,
-      internalToken: ordersInternalToken,
-      requestId: request.id,
-      orderId: input.orderId,
-      userId
-    });
+    const isLegacyOrder = "orderId" in input;
+    const isCheckout = !isLegacyOrder;
+    const paymentContextResult = isLegacyOrder
+      ? await fetchOrderPaymentContext({ ordersBaseUrl, internalToken: ordersInternalToken, requestId: request.id, orderId: z.string().uuid().parse(input.orderId), userId })
+      : await fetchCheckoutPaymentContext({ ordersBaseUrl, internalToken: ordersInternalToken, requestId: request.id, checkoutId: input.checkoutId, userId });
 
-    if (!orderPaymentContextResult.ok) {
-      const upstreamError = serviceErrorSchema.safeParse(orderPaymentContextResult.body);
-      return reply.status(orderPaymentContextResult.status ?? 502).send(
+    if (!paymentContextResult.ok) {
+      const upstreamError = serviceErrorSchema.safeParse(paymentContextResult.body);
+      return reply.status(paymentContextResult.status ?? 502).send(
         upstreamError.success
           ? upstreamError.data
           : serviceErrorSchema.parse({
-              code: "ORDERS_PAYMENT_CONTEXT_UNAVAILABLE",
-              message: "Unable to load order payment context",
+              code: isCheckout ? "CHECKOUT_CONTEXT_UNAVAILABLE" : "ORDERS_PAYMENT_CONTEXT_UNAVAILABLE",
+              message: isCheckout ? "Unable to load checkout payment context" : "Unable to load order payment context",
               requestId: request.id
             })
       );
     }
 
-    const orderPaymentContext = orderPaymentContextResult.response;
-    if (orderPaymentContext.status !== "PENDING_PAYMENT") {
+    const checkoutContext = "checkoutId" in paymentContextResult.response
+      ? { ...paymentContextResult.response, referenceId: paymentContextResult.response.checkoutId }
+      : { ...paymentContextResult.response, referenceId: paymentContextResult.response.orderId };
+    if (!isCheckout && checkoutContext.status !== "PENDING_PAYMENT") {
       return stripeMobilePaymentFinalizeResponseSchema.parse({
-        orderId: input.orderId,
-        paymentIntentId: input.paymentIntentId,
+        orderId: checkoutContext.referenceId,
+        paymentIntentId,
         accepted: true,
         applied: false,
-        orderStatus: orderPaymentContext.status,
+        orderStatus: checkoutContext.status,
         note: "Order is already settled for payment finalization"
       });
     }
@@ -2400,7 +2457,7 @@ export async function registerRoutes(app: FastifyInstance) {
       catalogBaseUrl,
       gatewayToken: gatewayInternalToken,
       requestId: request.id,
-      locationId: orderPaymentContext.locationId
+      locationId: checkoutContext.locationId
     });
 
     if (!locationSummaryResult.ok) {
@@ -2424,7 +2481,7 @@ export async function registerRoutes(app: FastifyInstance) {
           message: "Location does not have a Stripe account configured",
           requestId: request.id,
           details: {
-            locationId: orderPaymentContext.locationId
+            locationId: checkoutContext.locationId
           }
         })
       );
@@ -2447,11 +2504,11 @@ export async function registerRoutes(app: FastifyInstance) {
         requestId: request.id,
         tags: {
           provider: "stripe",
-          orderId: input.orderId,
+          referenceId: checkoutContext.referenceId,
           paymentIntentId: input.paymentIntentId
         },
         context: {
-          orderId: input.orderId,
+          referenceId: checkoutContext.referenceId,
           paymentIntentId: input.paymentIntentId,
           stripeAccountId: paymentProfile.stripeAccountId
         },
@@ -2461,7 +2518,7 @@ export async function registerRoutes(app: FastifyInstance) {
         {
           error,
           requestId: request.id,
-          orderId: input.orderId,
+          referenceId: checkoutContext.referenceId,
           paymentIntentId: input.paymentIntentId,
           stripeAccountId: paymentProfile.stripeAccountId
         },
@@ -2476,8 +2533,10 @@ export async function registerRoutes(app: FastifyInstance) {
       );
     }
 
-    const metadataOrderId = resolveStripeMetadataOrderId(paymentIntent.metadata);
-    if (metadataOrderId !== input.orderId) {
+    const metadataReferenceId = isCheckout
+      ? resolveStripeMetadataCheckoutId(paymentIntent.metadata)
+      : resolveStripeMetadataOrderId(paymentIntent.metadata);
+    if (metadataReferenceId !== checkoutContext.referenceId) {
       captureOperationalError({
         service: "payments",
         event: "stripe.payment_intent.order_mismatch",
@@ -2485,12 +2544,12 @@ export async function registerRoutes(app: FastifyInstance) {
         requestId: request.id,
         tags: {
           provider: "stripe",
-          orderId: input.orderId,
+          referenceId: checkoutContext.referenceId,
           paymentIntentId: paymentIntent.id
         },
         context: {
-          expectedOrderId: input.orderId,
-          metadataOrderId,
+          expectedReferenceId: checkoutContext.referenceId,
+          metadataReferenceId,
           paymentIntentId: paymentIntent.id,
           stripeAccountId: paymentProfile.stripeAccountId
         },
@@ -2502,7 +2561,7 @@ export async function registerRoutes(app: FastifyInstance) {
           message: "Stripe payment does not match this order",
           requestId: request.id,
           details: {
-            orderId: input.orderId,
+            referenceId: checkoutContext.referenceId,
             paymentIntentId: paymentIntent.id
           }
         })
@@ -2511,7 +2570,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
     const normalizedCurrency = normalizeStripeCurrency(paymentIntent.currency);
     const verifiedAmountCents = paymentIntent.amount_received > 0 ? paymentIntent.amount_received : paymentIntent.amount;
-    if (normalizedCurrency !== orderPaymentContext.total.currency || verifiedAmountCents !== orderPaymentContext.total.amountCents) {
+    if (normalizedCurrency !== checkoutContext.total.currency || verifiedAmountCents !== checkoutContext.total.amountCents) {
       captureOperationalError({
         service: "payments",
         event: "stripe.payment_intent.amount_mismatch",
@@ -2519,15 +2578,15 @@ export async function registerRoutes(app: FastifyInstance) {
         requestId: request.id,
         tags: {
           provider: "stripe",
-          orderId: input.orderId,
+          referenceId: checkoutContext.referenceId,
           paymentIntentId: paymentIntent.id
         },
         context: {
-          orderId: input.orderId,
+          referenceId: checkoutContext.referenceId,
           paymentIntentId: paymentIntent.id,
-          expectedAmountCents: orderPaymentContext.total.amountCents,
+          expectedAmountCents: checkoutContext.total.amountCents,
           actualAmountCents: verifiedAmountCents,
-          expectedCurrency: orderPaymentContext.total.currency,
+          expectedCurrency: checkoutContext.total.currency,
           actualCurrency: normalizedCurrency
         },
         fingerprint: ["payments", "stripe-payment-intent-amount-mismatch"]
@@ -2538,11 +2597,11 @@ export async function registerRoutes(app: FastifyInstance) {
           message: "Stripe payment amount does not match this order",
           requestId: request.id,
           details: {
-            orderId: input.orderId,
+            referenceId: checkoutContext.referenceId,
             paymentIntentId: paymentIntent.id,
-            expectedAmountCents: orderPaymentContext.total.amountCents,
+            expectedAmountCents: checkoutContext.total.amountCents,
             actualAmountCents: verifiedAmountCents,
-            expectedCurrency: orderPaymentContext.total.currency,
+            expectedCurrency: checkoutContext.total.currency,
             actualCurrency: normalizedCurrency
           }
         })
@@ -2556,7 +2615,7 @@ export async function registerRoutes(app: FastifyInstance) {
           message: "Stripe payment has not succeeded yet",
           requestId: request.id,
           details: {
-            orderId: input.orderId,
+            referenceId: checkoutContext.referenceId,
             paymentIntentId: paymentIntent.id,
             stripeStatus: paymentIntent.status
           }
@@ -2564,16 +2623,29 @@ export async function registerRoutes(app: FastifyInstance) {
       );
     }
 
-    const dispatchResult = await dispatchOrderReconciliation({
-      ordersBaseUrl,
-      internalToken: ordersInternalToken,
-      requestId: request.id,
-      payload: buildStripePaymentIntentSucceededReconciliation({
-        orderId: input.orderId,
-        paymentIntent,
-        message: "Stripe mobile payment finalized"
-      })
-    });
+    const dispatchResult = isCheckout
+      ? await dispatchCheckoutConfirmation({
+          ordersBaseUrl,
+          internalToken: ordersInternalToken,
+          requestId: request.id,
+          payload: checkoutPaymentConfirmationSchema.parse({
+            checkoutId: checkoutContext.referenceId,
+            paymentId: paymentIntent.id,
+            occurredAt: new Date().toISOString(),
+            amountCents: verifiedAmountCents,
+            currency: normalizedCurrency
+          })
+        })
+      : await dispatchOrderReconciliation({
+          ordersBaseUrl,
+          internalToken: ordersInternalToken,
+          requestId: request.id,
+          payload: buildStripePaymentIntentSucceededReconciliation({
+            orderId: checkoutContext.referenceId,
+            paymentIntent,
+            message: "Stripe mobile payment finalized"
+          })
+        });
 
     if (!dispatchResult.ok) {
       captureOperationalError({
@@ -2584,11 +2656,11 @@ export async function registerRoutes(app: FastifyInstance) {
         tags: {
           provider: "stripe",
           source: "mobile-finalize",
-          orderId: input.orderId,
+          referenceId: checkoutContext.referenceId,
           paymentIntentId: input.paymentIntentId
         },
         context: {
-          orderId: input.orderId,
+          referenceId: checkoutContext.referenceId,
           paymentIntentId: input.paymentIntentId,
           dispatchResult
         },
@@ -2597,7 +2669,7 @@ export async function registerRoutes(app: FastifyInstance) {
       request.log.error(
         {
           requestId: request.id,
-          orderId: input.orderId,
+          referenceId: checkoutContext.referenceId,
           paymentIntentId: input.paymentIntentId,
           dispatchResult
         },
@@ -2612,14 +2684,26 @@ export async function registerRoutes(app: FastifyInstance) {
       );
     }
 
-    return stripeMobilePaymentFinalizeResponseSchema.parse({
-      orderId: input.orderId,
-      paymentIntentId: paymentIntent.id,
-      accepted: true,
-      applied: dispatchResult.response.applied,
-      orderStatus: dispatchResult.response.orderStatus ?? orderPaymentContext.status,
-      note: dispatchResult.response.note
-    });
+    return stripeMobilePaymentFinalizeResponseSchema.parse(
+      isCheckout
+        ? {
+            checkoutId: checkoutContext.referenceId,
+            paymentIntentId: paymentIntent.id,
+            accepted: true,
+            applied: dispatchResult.response.applied,
+            order: "order" in dispatchResult.response ? dispatchResult.response.order : undefined
+          }
+        : {
+            orderId: checkoutContext.referenceId,
+            paymentIntentId: paymentIntent.id,
+            accepted: true,
+            applied: dispatchResult.response.applied,
+            orderStatus: "orderStatus" in dispatchResult.response
+              ? (dispatchResult.response.orderStatus ?? checkoutContext.status)
+              : checkoutContext.status,
+            note: "note" in dispatchResult.response ? dispatchResult.response.note : undefined
+          }
+    );
   });
 
   // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
@@ -3443,8 +3527,25 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     const stripeAccount = typeof event.account === "string" ? event.account : undefined;
+    const checkoutConfirmation = resolveStripeCheckoutConfirmation(event);
     const reconciliationPayload = resolveStripeOrderReconciliation(event);
     let reconciliationApplied: boolean | undefined;
+
+    if (checkoutConfirmation) {
+      const dispatchResult = await dispatchCheckoutConfirmation({
+        ordersBaseUrl,
+        internalToken: ordersInternalToken,
+        requestId: request.id,
+        payload: checkoutConfirmation
+      });
+      if (!dispatchResult.ok) {
+        request.log.error({ requestId: request.id, eventId: event.id, dispatchResult }, "failed to confirm Stripe checkout");
+        return reply.status(502).send(
+          serviceErrorSchema.parse({ code: "CHECKOUT_CONFIRMATION_FAILED", message: "Checkout confirmation failed", requestId: request.id })
+        );
+      }
+      reconciliationApplied = dispatchResult.response.applied;
+    }
 
     if (reconciliationPayload) {
       const dispatchResult = await dispatchOrderReconciliation({

@@ -200,7 +200,11 @@ function resolveExpoPushApiUrl() {
   return trimToUndefined(process.env.EXPO_PUSH_API_URL) ?? "https://exp.host/--/api/v2/push/send";
 }
 
-function getOrderStatusPushCopy(entry: OutboxEntry) {
+export function shouldSuppressOrderPushStatus(status: OutboxEntry["payload"]["status"]) {
+  return status === "PENDING_PAYMENT" || status === "CANCELED";
+}
+
+export function getOrderStatusPushCopy(entry: OutboxEntry) {
   const { payload } = entry;
   switch (payload.status) {
     case "PENDING_PAYMENT":
@@ -211,22 +215,22 @@ function getOrderStatusPushCopy(entry: OutboxEntry) {
     case "PAID":
       return {
         title: "Order confirmed",
-        body: `Order ${payload.pickupCode} is confirmed and queued for prep.`
+        body: `We've received order ${payload.pickupCode}. We'll let you know when it's ready.`
       };
     case "IN_PREP":
       return {
-        title: "Order in prep",
-        body: `Order ${payload.pickupCode} is being prepared now.`
+        title: "Your order is being prepared",
+        body: `We're preparing order ${payload.pickupCode}.`
       };
     case "READY":
       return {
-        title: "Order ready for pickup",
-        body: `Order ${payload.pickupCode} is ready at the counter.`
+        title: "Your order is ready",
+        body: `Order ${payload.pickupCode} is ready for pickup.`
       };
     case "COMPLETED":
       return {
-        title: "Order completed",
-        body: `Order ${payload.pickupCode} has been marked completed.`
+        title: "Thanks for your order",
+        body: `Order ${payload.pickupCode} has been picked up. We hope to see you again soon.`
       };
     case "CANCELED":
       return {
@@ -338,8 +342,8 @@ export async function registerRoutes(app: FastifyInstance) {
         app.log.warn({ event, errors: notificationPayload.error.flatten() }, "event-bus order event failed schema validation");
         return;
       }
-      // PENDING_PAYMENT is an unconfirmed checkout state — suppress push notifications.
-      if (notificationPayload.data.status === "PENDING_PAYMENT") {
+      // Unconfirmed and canceled states are not customer-facing push events.
+      if (shouldSuppressOrderPushStatus(notificationPayload.data.status)) {
         return;
       }
       const dispatchKey = `${event.userId}:${event.order.id}:${notificationPayload.data.status}`;
@@ -434,9 +438,9 @@ export async function registerRoutes(app: FastifyInstance) {
 
       const input = orderStateNotificationSchema.parse(request.body);
 
-      // PENDING_PAYMENT is an unconfirmed checkout state — never push-notify for it.
-      // The first customer-facing notification must be PAID ("Order confirmed").
-      if (input.status === "PENDING_PAYMENT") {
+      // The first customer-facing notification is PAID. Cancellation is reflected
+      // in order history without sending a push notification.
+      if (shouldSuppressOrderPushStatus(input.status)) {
         return orderStateDispatchResponseSchema.parse({
           accepted: true,
           enqueued: 0,
@@ -501,6 +505,11 @@ export async function registerRoutes(app: FastifyInstance) {
 
       for (const entry of entries) {
         try {
+          if (shouldSuppressOrderPushStatus(entry.payload.status)) {
+            await repository.markOutboxDispatched(entry.id);
+            continue;
+          }
+
           if (notificationProviderMode === "expo") {
             await dispatchExpoPushNotification(entry);
           } else {

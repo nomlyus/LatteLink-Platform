@@ -17,13 +17,13 @@
   "dependencies": {
     "@lattelink/contracts-catalog": "workspace:*",
     "@lattelink/contracts-core": "workspace:*",
-    "zod": "^3.24.2"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@lattelink/config-eslint": "workspace:*",
     "@lattelink/config-typescript": "workspace:*",
-    "eslint": "^9.21.0",
-    "typescript": "^5.8.2",
-    "vitest": "^4.1.8"
+    "eslint": "^9.39.5",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
   }
 }

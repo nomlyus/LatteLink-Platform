@@ -1839,12 +1839,12 @@ let previousFreeClientDashboardDomain: string | undefined;
 
       if (url.endsWith("/v1/payments/stripe/mobile-session") && method === "POST") {
         const headers = new Headers((init?.headers ?? {}) as HeadersInit);
-        const body = JSON.parse(String(init?.body ?? "{}")) as { orderId?: string };
+        const body = JSON.parse(String(init?.body ?? "{}")) as { checkoutId?: string };
         expect(headers.get("x-gateway-token")).toBe("gateway-test-token");
         expect(headers.get("x-user-id")).toBe("123e4567-e89b-12d3-a456-426614174000");
         return new Response(
           JSON.stringify({
-            orderId: body.orderId ?? "123e4567-e89b-12d3-a456-426614174112",
+            checkoutId: body.checkoutId ?? "123e4567-e89b-12d3-a456-426614174112",
             paymentIntentId: "pi_3QxExample123",
             paymentIntentClientSecret: "pi_3QxExample123_secret_abc",
             publishableKey: "pk_test_payments",
@@ -4225,19 +4225,19 @@ let previousFreeClientDashboardDomain: string | undefined;
 
   it("forwards Stripe mobile payment session creation through the gateway", async () => {
     const app = await buildApp();
-    const orderId = "123e4567-e89b-12d3-a456-426614174112";
+    const checkoutId = "123e4567-e89b-12d3-a456-426614174112";
     const response = await app.inject({
       method: "POST",
       url: "/v1/payments/stripe/mobile-session",
       headers: authHeader,
       payload: {
-        orderId
+        checkoutId
       }
     });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
-      orderId,
+      checkoutId,
       paymentIntentId: "pi_3QxExample123",
       paymentIntentClientSecret: "pi_3QxExample123_secret_abc",
       stripeAccountId: "acct_123456789"

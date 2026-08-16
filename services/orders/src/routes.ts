@@ -3,6 +3,11 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { createEventBusPublisher } from "@lattelink/event-bus";
 import { captureOperationalError } from "@lattelink/observability";
 import {
+  checkoutDraftSchema,
+  checkoutPaymentConfirmationResponseSchema,
+  checkoutPaymentConfirmationSchema,
+  checkoutPaymentContextSchema,
+  createCheckoutDraftRequestSchema,
   createDiscountCodeRequestSchema,
   createOrderRequestSchema,
   discountCodeListResponseSchema,
@@ -22,10 +27,14 @@ import { createOrdersRepository, type OrdersRepository } from "./repository.js";
 import {
   advanceOrderStatus,
   cancelOrder,
+  confirmCheckoutPayment,
+  createCheckoutDraft,
   createDiscountCode,
   createOrder,
   createQuote,
+  expireCheckoutDraft,
   getOrderForRead,
+  getCheckoutPaymentContext,
   listDiscountCodeRedemptions,
   listDiscountCodes,
   listOrdersForRead,
@@ -45,6 +54,8 @@ const payloadSchema = z.object({
 const orderIdParamsSchema = z.object({
   orderId: z.string().uuid()
 });
+
+const checkoutIdParamsSchema = z.object({ checkoutId: z.string().uuid() });
 
 const orderStatusUpdateRequestSchema = z.object({
   status: z.enum(["IN_PREP", "READY", "COMPLETED"]),
@@ -761,6 +772,65 @@ export async function registerRoutes(app: FastifyInstance) {
       });
 
       return discountCodeRedemptionsResponseSchema.parse(result);
+    }
+  );
+
+  app.post(
+    "/v1/orders/checkouts",
+    { preHandler: app.rateLimit(ordersWriteRateLimit) },
+    async (request, reply) => {
+      if (!authorizeGatewayRequest(request, reply, gatewayApiToken, { allowUnauthenticated: allowUnauthenticatedGatewayAccess })) return;
+      const result = await createCheckoutDraft({
+        input: createCheckoutDraftRequestSchema.parse(request.body),
+        requestUserContext: parseRequestUserContext(request),
+        requestId: request.id,
+        deps: getServiceDeps(request)
+      });
+      if ("error" in result) return sendServiceError(reply, request, result.error);
+      return checkoutDraftSchema.parse(result.checkout);
+    }
+  );
+
+  app.get(
+    "/v1/orders/internal/checkouts/:checkoutId/payment-context",
+    { preHandler: app.rateLimit(ordersReadRateLimit) },
+    async (request, reply) => {
+      if (!authorizeInternalRequest(request, reply, internalApiToken, { allowUnauthenticated: allowUnauthenticatedInternalAccess })) return;
+      const { checkoutId } = checkoutIdParamsSchema.parse(request.params);
+      const result = await getCheckoutPaymentContext({
+        checkoutId,
+        requestUserId: parseRequestUserContext(request).userId,
+        deps: getServiceDeps(request)
+      });
+      if ("error" in result && result.error) return sendServiceError(reply, request, result.error);
+      return checkoutPaymentContextSchema.parse(result.context);
+    }
+  );
+
+  app.post(
+    "/v1/orders/internal/checkouts/:checkoutId/expire",
+    { preHandler: app.rateLimit(ordersWriteRateLimit) },
+    async (request, reply) => {
+      if (!authorizeInternalRequest(request, reply, internalApiToken, { allowUnauthenticated: allowUnauthenticatedInternalAccess })) return;
+      const { checkoutId } = checkoutIdParamsSchema.parse(request.params);
+      const result = await expireCheckoutDraft({ checkoutId, deps: getServiceDeps(request) });
+      if ("error" in result && result.error) return sendServiceError(reply, request, result.error);
+      return result;
+    }
+  );
+
+  app.post(
+    "/v1/orders/internal/checkouts/confirm-payment",
+    { preHandler: app.rateLimit(ordersWriteRateLimit) },
+    async (request, reply) => {
+      if (!authorizeInternalRequest(request, reply, internalApiToken, { allowUnauthenticated: allowUnauthenticatedInternalAccess })) return;
+      const result = await confirmCheckoutPayment({
+        input: checkoutPaymentConfirmationSchema.parse(request.body),
+        requestId: request.id,
+        deps: getServiceDeps(request)
+      });
+      if ("error" in result && result.error) return sendServiceError(reply, request, result.error);
+      return checkoutPaymentConfirmationResponseSchema.parse(result.result);
     }
   );
 

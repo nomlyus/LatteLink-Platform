@@ -11,15 +11,15 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@sentry/node": "^10.53.1",
-    "fastify": "^5.8.4"
+    "@sentry/node": "^10.70.0",
+    "fastify": "5.8.5"
   },
   "devDependencies": {
     "@lattelink/config-eslint": "workspace:*",
     "@lattelink/config-typescript": "workspace:*",
-    "@types/node": "^22.13.8",
-    "eslint": "^9.21.0",
-    "typescript": "^5.8.2",
-    "vitest": "^4.1.8"
+    "@types/node": "^22.20.1",
+    "eslint": "^9.39.5",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
   }
 }

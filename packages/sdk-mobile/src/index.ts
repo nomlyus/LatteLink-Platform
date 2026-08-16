@@ -18,6 +18,8 @@ import {
 } from "@lattelink/contracts-catalog";
 import { authSessionSchema } from "@lattelink/contracts-core";
 import {
+  checkoutDraftSchema,
+  createCheckoutDraftRequestSchema,
   createOrderRequestSchema,
   orderQuoteSchema,
   orderSchema,
@@ -204,6 +206,14 @@ export class GazelleApiClient {
     createOrderRequestSchema.parse(input);
     const data = await this.post<unknown>("/orders", input);
     return orderSchema.parse(data);
+  }
+
+  async createCheckoutDraft(
+    input: z.input<typeof createCheckoutDraftRequestSchema>
+  ): Promise<z.output<typeof checkoutDraftSchema>> {
+    createCheckoutDraftRequestSchema.parse(input);
+    const data = await this.post<unknown>("/orders/checkouts", input);
+    return checkoutDraftSchema.parse(data);
   }
 
   async createStripeMobilePaymentSession(

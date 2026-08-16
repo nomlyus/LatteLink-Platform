@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
+import { getOrderStatusPushCopy, shouldSuppressOrderPushStatus } from "../src/routes.js";
+import type { OutboxEntry } from "../src/repository.js";
 
 const notificationsGatewayToken = "notifications-gateway-token";
 const notificationsInternalToken = "notifications-internal-token";
@@ -104,7 +106,7 @@ describe("notifications service", () => {
     await app.close();
   });
 
-  it("deduplicates repeated order-state notifications by user/order/status", async () => {
+  it("suppresses canceled order notifications", async () => {
     const app = await buildApp();
     const payload = {
       userId: "123e4567-e89b-12d3-a456-426614174920",
@@ -139,7 +141,7 @@ describe("notifications service", () => {
     expect(secondDispatch.json()).toEqual({
       accepted: true,
       enqueued: 0,
-      deduplicated: true
+      deduplicated: false
     });
 
     const processOutbox = await app.inject({
@@ -159,6 +161,33 @@ describe("notifications service", () => {
     });
 
     await app.close();
+  });
+
+  it("suppresses unconfirmed and canceled statuses at every dispatch boundary", () => {
+    expect(shouldSuppressOrderPushStatus("PENDING_PAYMENT")).toBe(true);
+    expect(shouldSuppressOrderPushStatus("CANCELED")).toBe(true);
+    expect(shouldSuppressOrderPushStatus("PAID")).toBe(false);
+  });
+
+  it.each([
+    ["PAID", "Order confirmed", "We've received order TEST12. We'll let you know when it's ready."],
+    ["IN_PREP", "Your order is being prepared", "We're preparing order TEST12."],
+    ["READY", "Your order is ready", "Order TEST12 is ready for pickup."],
+    ["COMPLETED", "Thanks for your order", "Order TEST12 has been picked up. We hope to see you again soon."]
+  ] as const)("uses customer-facing copy for %s notifications", (status, title, body) => {
+    const entry = {
+      payload: {
+        userId: "123e4567-e89b-12d3-a456-426614174920",
+        orderId: "123e4567-e89b-12d3-a456-426614174921",
+        status,
+        pickupCode: "TEST12",
+        locationId: "flagship-01",
+        occurredAt: "2026-03-10T17:41:00.000Z",
+        note: "Internal operator note that must not be shown"
+      }
+    } as OutboxEntry;
+
+    expect(getOrderStatusPushCopy(entry)).toEqual({ title, body });
   });
 
   it("retries and eventually fails outbox entries for failing push tokens", async () => {

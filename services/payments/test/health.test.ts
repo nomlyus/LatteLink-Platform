@@ -135,10 +135,10 @@ describe("payments service", () => {
     await app.close();
   });
 
-  it("creates a Stripe mobile payment session from trusted order and catalog context", async () => {
+  it("creates a Stripe mobile payment session from trusted checkout and catalog context", async () => {
     const fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal("fetch", fetchMock);
-    const orderId = "123e4567-e89b-12d3-a456-426614174777";
+    const checkoutId = "123e4567-e89b-12d3-a456-426614174777";
     const stripeCreateSpy = vi.spyOn(Object.getPrototypeOf(stripe.paymentIntents), "create").mockResolvedValue({
       id: "pi_3QxExample123",
       client_secret: "pi_3QxExample123_secret_abc"
@@ -148,14 +148,15 @@ describe("payments service", () => {
       const url = typeof input === "string" ? input : input.toString();
       const headers = new Headers(init?.headers);
 
-      if (url === `http://127.0.0.1:3001/v1/orders/internal/${orderId}/payment-context`) {
+      if (url === `http://127.0.0.1:3001/v1/orders/internal/checkouts/${checkoutId}/payment-context`) {
         expect(headers.get("x-internal-token")).toBe(internalPaymentsToken);
         expect(headers.get("x-user-id")).toBe("123e4567-e89b-12d3-a456-426614174000");
         return new Response(
           JSON.stringify({
-            orderId,
+            checkoutId,
             locationId: "flagship-01",
-            status: "PENDING_PAYMENT",
+            status: "OPEN",
+            expiresAt: "2030-03-10T00:30:00.000Z",
             total: {
               currency: "USD",
               amountCents: 1295
@@ -229,13 +230,13 @@ describe("payments service", () => {
         "x-user-id": "123e4567-e89b-12d3-a456-426614174000"
       },
       payload: {
-        orderId
+        checkoutId
       }
     });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
-      orderId,
+      checkoutId,
       paymentIntentId: "pi_3QxExample123",
       paymentIntentClientSecret: "pi_3QxExample123_secret_abc",
       publishableKey: "pk_test_payments",
@@ -253,14 +254,14 @@ describe("payments service", () => {
         amount: 1295,
         currency: "usd",
         metadata: expect.objectContaining({
-          orderId,
+          checkoutId,
           locationId: "flagship-01",
           userId: "123e4567-e89b-12d3-a456-426614174000"
         })
       }),
       expect.objectContaining({
         stripeAccount: "acct_123456789",
-        idempotencyKey: `stripe-mobile-session:${orderId}`
+        idempotencyKey: `stripe-mobile-checkout:${checkoutId}`
       })
     );
 
@@ -268,10 +269,10 @@ describe("payments service", () => {
     await app.close();
   });
 
-  it("finalizes a Stripe mobile payment by verifying the PaymentIntent before reconciling the order", async () => {
+  it("finalizes a Stripe mobile payment by promoting the checkout after verification", async () => {
     const fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal("fetch", fetchMock);
-    const orderId = "123e4567-e89b-12d3-a456-426614174402";
+    const checkoutId = "123e4567-e89b-12d3-a456-426614174402";
     const stripeRetrieveSpy = vi.spyOn(Object.getPrototypeOf(stripe.paymentIntents), "retrieve").mockResolvedValue({
       id: "pi_finalize_123",
       object: "payment_intent",
@@ -279,7 +280,7 @@ describe("payments service", () => {
       amount_received: 1295,
       currency: "usd",
       metadata: {
-        orderId
+        checkoutId
       },
       status: "succeeded"
     } as unknown as Stripe.PaymentIntent);
@@ -288,14 +289,15 @@ describe("payments service", () => {
       const url = typeof input === "string" ? input : input.toString();
       const headers = new Headers(init?.headers);
 
-      if (url === `http://127.0.0.1:3001/v1/orders/internal/${orderId}/payment-context`) {
+      if (url === `http://127.0.0.1:3001/v1/orders/internal/checkouts/${checkoutId}/payment-context`) {
         expect(headers.get("x-internal-token")).toBe(internalPaymentsToken);
         expect(headers.get("x-user-id")).toBe("123e4567-e89b-12d3-a456-426614174000");
         return new Response(
           JSON.stringify({
-            orderId,
+            checkoutId,
             locationId: "flagship-01",
-            status: "PENDING_PAYMENT",
+            status: "OPEN",
+            expiresAt: "2030-03-10T00:30:00.000Z",
             total: {
               currency: "USD",
               amountCents: 1295
@@ -357,14 +359,11 @@ describe("payments service", () => {
         );
       }
 
-      if (url === "http://127.0.0.1:3001/v1/orders/internal/payments/reconcile") {
+      if (url === "http://127.0.0.1:3001/v1/orders/internal/checkouts/confirm-payment") {
         expect(headers.get("x-internal-token")).toBe(internalPaymentsToken);
         expect(JSON.parse(String(init?.body ?? "{}"))).toMatchObject({
-          provider: "STRIPE",
-          kind: "CHARGE",
-          orderId,
+          checkoutId,
           paymentId: "pi_finalize_123",
-          status: "SUCCEEDED",
           amountCents: 1295,
           currency: "USD"
         });
@@ -372,7 +371,15 @@ describe("payments service", () => {
           JSON.stringify({
             accepted: true,
             applied: true,
-            orderStatus: "PAID"
+            order: {
+              id: checkoutId,
+              locationId: "flagship-01",
+              status: "PAID",
+              items: [],
+              total: { currency: "USD", amountCents: 1295 },
+              pickupCode: "ABC123",
+              timeline: [{ status: "PAID", occurredAt: "2026-03-10T00:00:00.000Z" }]
+            }
           }),
           { status: 200, headers: { "content-type": "application/json" } }
         );
@@ -390,18 +397,18 @@ describe("payments service", () => {
         "x-user-id": "123e4567-e89b-12d3-a456-426614174000"
       },
       payload: {
-        orderId,
+        checkoutId,
         paymentIntentId: "pi_finalize_123"
       }
     });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
-      orderId,
+      checkoutId,
       paymentIntentId: "pi_finalize_123",
       accepted: true,
       applied: true,
-      orderStatus: "PAID"
+      order: expect.objectContaining({ id: checkoutId, status: "PAID" })
     });
     expect(stripeRetrieveSpy).toHaveBeenCalledWith(
       "pi_finalize_123",
