@@ -1,5 +1,6 @@
 import {
   acceptOperatorInvite,
+  createMerchantLaunch,
   exchangeOperatorGoogleCode,
   fetchOperatorAuthProviders,
   lookupOperatorInvite,
@@ -152,6 +153,60 @@ export async function handlePasswordSignIn(form: HTMLFormElement) {
     setError(error instanceof Error ? error.message : "Unable to sign in.");
   } finally {
     state.signingIn = false;
+    render();
+  }
+}
+
+export async function handleMerchantLaunchSubmit(form: HTMLFormElement) {
+  const formData = new FormData(form);
+  const apiBaseUrl = String(formData.get("apiBaseUrl") ?? resolveDefaultApiBaseUrl());
+  const businessName = String(formData.get("businessName") ?? "").trim();
+  const locationName = String(formData.get("locationName") ?? "").trim();
+  const marketLabel = String(formData.get("marketLabel") ?? "").trim();
+  const ownerName = String(formData.get("ownerName") ?? "").trim();
+  const ownerEmail = String(formData.get("ownerEmail") ?? "").trim();
+
+  if (!businessName || !locationName || !marketLabel || !ownerName || !ownerEmail) {
+    setError("Complete the business and owner details to create the workspace.");
+    render();
+    return;
+  }
+
+  try {
+    state.launchRequest = {
+      submitting: true,
+      submitted: false,
+      ownerEmail
+    };
+    state.authApiBaseUrl = apiBaseUrl;
+    state.authEmail = ownerEmail;
+    persistApiBaseUrl(apiBaseUrl);
+    setError(null);
+    render();
+
+    const result = await createMerchantLaunch({
+      apiBaseUrl,
+      businessName,
+      locationName,
+      marketLabel,
+      ownerName,
+      ownerEmail
+    });
+
+    state.launchRequest = {
+      submitting: false,
+      submitted: true,
+      ownerEmail: result.ownerEmail
+    };
+    setError(null);
+  } catch (error) {
+    state.launchRequest = {
+      submitting: false,
+      submitted: false,
+      ownerEmail
+    };
+    setError(error instanceof Error ? error.message : "Unable to create the launch workspace.");
+  } finally {
     render();
   }
 }

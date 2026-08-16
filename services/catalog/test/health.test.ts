@@ -1238,6 +1238,26 @@ describe("catalog service", () => {
       status: "not_started"
     });
 
+    const duplicateCreateResponse = await app.inject({
+      method: "POST",
+      url: "/v1/catalog/internal/clients",
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        clientName: "Wizard Coffee Duplicate",
+        locationName: "Wizard Duplicate",
+        marketLabel: "Ann Arbor, MI",
+        ownerEmail: "OWNER@WIZARD.EXAMPLE",
+        storeName: "Wizard Coffee Duplicate"
+      }
+    });
+    expect(duplicateCreateResponse.statusCode).toBe(200);
+    expect(adminClientCreateResponseSchema.parse(duplicateCreateResponse.json())).toMatchObject({
+      tenantId: created.tenantId,
+      locationId: created.locationId
+    });
+
     const listResponse = await app.inject({
       method: "GET",
       url: "/v1/catalog/internal/clients",
@@ -1246,7 +1266,9 @@ describe("catalog service", () => {
       }
     });
     expect(listResponse.statusCode).toBe(200);
-    expect(internalClientListResponseSchema.parse(listResponse.json()).clients).toEqual(
+    const clientList = internalClientListResponseSchema.parse(listResponse.json()).clients;
+    expect(clientList.filter((client) => client.tenantId === created.tenantId)).toHaveLength(1);
+    expect(clientList).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           tenantId: created.tenantId,
@@ -1275,6 +1297,38 @@ describe("catalog service", () => {
         locationId: created.locationId,
         status: "draft"
       }
+    });
+
+    const ownerInviteUpdateResponse = await app.inject({
+      method: "PATCH",
+      url: `/v1/catalog/internal/locations/${created.locationId}/owner-onboarding`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        ownerInvited: true
+      }
+    });
+    expect(ownerInviteUpdateResponse.statusCode).toBe(200);
+    expect(onboardingSummarySchema.parse(ownerInviteUpdateResponse.json())).toMatchObject({
+      status: "invited",
+      checklist: expect.arrayContaining([expect.objectContaining({ id: "owner_invited", passed: true })])
+    });
+
+    const ownerActivationUpdateResponse = await app.inject({
+      method: "PATCH",
+      url: `/v1/catalog/internal/locations/${created.locationId}/owner-onboarding`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        ownerActivated: true
+      }
+    });
+    expect(ownerActivationUpdateResponse.statusCode).toBe(200);
+    expect(onboardingSummarySchema.parse(ownerActivationUpdateResponse.json())).toMatchObject({
+      status: "in_progress",
+      checklist: expect.arrayContaining([expect.objectContaining({ id: "owner_activated", passed: true })])
     });
 
     const onboardingUpdateResponse = await app.inject({

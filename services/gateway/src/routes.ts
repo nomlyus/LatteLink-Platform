@@ -68,8 +68,11 @@ import {
   internalLocationPaymentProfileUpdateSchema,
   internalLocationParamsSchema,
   internalLocationSummarySchema,
+  internalOwnerOnboardingUpdateSchema,
   launchApprovalRequestSchema,
   launchReadinessResponseSchema,
+  merchantLaunchRequestSchema,
+  merchantLaunchResponseSchema,
   mobileExperienceDocumentSchema,
   mobileExperienceDraftResponseSchema,
   mobileExperiencePublishRequestSchema,
@@ -932,7 +935,7 @@ async function proxyUpstream<TResponse>(params: {
   forwardCacheControl?: boolean;
   timeoutMs?: number;
   responseSchema: z.ZodType<TResponse>;
-  onSuccess?: (response: TResponse) => void;
+  onSuccess?: (response: TResponse) => void | Promise<void>;
 }) {
   const {
     request,
@@ -1121,7 +1124,7 @@ async function proxyUpstream<TResponse>(params: {
     reply.header("cache-control", cacheControl);
   }
 
-  onSuccess?.(parsedResponse.data);
+  await onSuccess?.(parsedResponse.data);
   return reply.status(upstreamResponse.status).send(parsedResponse.data);
 }
 
@@ -1714,6 +1717,10 @@ export async function registerRoutes(app: FastifyInstance) {
     max: toPositiveInteger(process.env.GATEWAY_RATE_LIMIT_AUTH_READ_MAX, 120),
     timeWindow: rateLimitWindowMs,
     keyGenerator: userScopedRateLimitKey
+  };
+  const merchantLaunchRateLimit = {
+    max: toPositiveInteger(process.env.GATEWAY_RATE_LIMIT_MERCHANT_LAUNCH_MAX, 6),
+    timeWindow: rateLimitWindowMs
   };
   const catalogReadRateLimit = {
     max: toPositiveInteger(process.env.GATEWAY_RATE_LIMIT_CATALOG_READ_MAX, 180),
@@ -2507,7 +2514,32 @@ export async function registerRoutes(app: FastifyInstance) {
         method: "POST",
         path: `/v1/operator/invites/${encodeURIComponent(token)}/accept`,
         body: input,
-        responseSchema: operatorInviteAcceptResponseSchema
+        responseSchema: operatorInviteAcceptResponseSchema,
+        onSuccess: async (response) => {
+          try {
+            await fetch(`${catalogBaseUrl}/v1/catalog/internal/locations/${response.invite.locationId}/owner-onboarding`, {
+              method: "PATCH",
+              headers: {
+                "x-request-id": request.id,
+                "x-gateway-token": gatewayInternalApiToken ?? "",
+                "content-type": "application/json"
+              },
+              body: JSON.stringify(internalOwnerOnboardingUpdateSchema.parse({ ownerActivated: true }))
+            });
+          } catch (error) {
+            request.log.warn(
+              {
+                error,
+                service: "gateway",
+                event: "owner.activation_onboarding_sync_failed",
+                timestamp: new Date().toISOString(),
+                requestId: request.id,
+                locationId: response.invite.locationId
+              },
+              "owner activation onboarding sync failed"
+            );
+          }
+        }
       });
     }
   );
@@ -2788,6 +2820,114 @@ export async function registerRoutes(app: FastifyInstance) {
       forwardCacheControl: true,
       responseSchema: homeNewsCardsResponseSchema
     })
+  );
+
+  app.post(
+    "/v1/merchant/launch",
+    {
+      preHandler: app.rateLimit(merchantLaunchRateLimit)
+    },
+    async (request, reply) => {
+      const input = merchantLaunchRequestSchema.parse(request.body);
+      const internalHeaders = {
+        "x-request-id": request.id,
+        "x-gateway-token": gatewayInternalApiToken ?? "",
+        "content-type": "application/json"
+      };
+
+      const requestInternal = async <TSchema extends z.ZodTypeAny>(params: {
+        baseUrl: string;
+        path: string;
+        method: "POST" | "PATCH";
+        body: unknown;
+        schema: TSchema;
+        serviceLabel: string;
+      }): Promise<z.output<TSchema>> => {
+        const response = await fetch(`${params.baseUrl}${params.path}`, {
+          method: params.method,
+          headers: internalHeaders,
+          body: JSON.stringify(params.body)
+        });
+        const body = parseJsonSafely(await response.text());
+        if (!response.ok) {
+          throw new UpstreamHttpError(params.serviceLabel, response.status, body);
+        }
+        return params.schema.parse(body);
+      };
+
+      try {
+        const created = await requestInternal({
+          baseUrl: catalogBaseUrl,
+          path: "/v1/catalog/internal/clients",
+          method: "POST",
+          body: adminClientCreateRequestSchema.parse({
+            clientName: input.businessName,
+            locationName: input.locationName,
+            marketLabel: input.marketLabel,
+            ownerEmail: input.ownerEmail,
+            ownerName: input.ownerName,
+            storeName: input.storeName ?? input.businessName
+          }),
+          schema: adminClientCreateResponseSchema,
+          serviceLabel: "Catalog"
+        });
+
+        await requestInternal({
+          baseUrl: identityBaseUrl,
+          path: `/v1/identity/internal/locations/${created.locationId}/owner/invite`,
+          method: "POST",
+          body: internalOwnerInviteRequestSchema.parse({
+            displayName: input.ownerName,
+            email: input.ownerEmail
+          }),
+          schema: internalOwnerInviteResponseSchema,
+          serviceLabel: "Identity"
+        });
+
+        const onboarding = await requestInternal({
+          baseUrl: catalogBaseUrl,
+          path: `/v1/catalog/internal/locations/${created.locationId}/owner-onboarding`,
+          method: "PATCH",
+          body: internalOwnerOnboardingUpdateSchema.parse({ ownerInvited: true }),
+          schema: onboardingSummarySchema,
+          serviceLabel: "Catalog"
+        });
+
+        return merchantLaunchResponseSchema.parse({
+          tenantId: created.tenantId,
+          locationId: created.locationId,
+          ownerEmail: input.ownerEmail,
+          inviteSent: true,
+          onboarding
+        });
+      } catch (error) {
+        if (error instanceof UpstreamHttpError) {
+          const details = toErrorDetails(error.body);
+          request.log.warn(
+            {
+              service: "gateway",
+              event: "merchant.launch.upstream_failed",
+              timestamp: new Date().toISOString(),
+              requestId: request.id,
+              upstream: error.serviceLabel,
+              statusCode: error.statusCode,
+              details
+            },
+            "merchant launch request failed"
+          );
+          return reply.status(error.statusCode).send(
+            apiErrorSchema.parse({
+              code: "MERCHANT_LAUNCH_FAILED",
+              message: `${error.serviceLabel} could not complete merchant launch setup.`,
+              requestId: request.id,
+              details
+            })
+          );
+        }
+
+        throw error;
+      }
+    }
   );
 
   // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.

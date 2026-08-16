@@ -414,6 +414,52 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
+      if (url.endsWith("/v1/identity/internal/locations/northside-01/owner/invite") && method === "POST") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as {
+          displayName?: string;
+          email?: string;
+        };
+
+        return new Response(
+          JSON.stringify({
+            operator: {
+              operatorUserId: "123e4567-e89b-12d3-a456-426614174995",
+              displayName: body.displayName ?? "Pilot Owner",
+              email: body.email ?? "owner@northside.com",
+              role: "owner",
+              locationId: "northside-01",
+              locationIds: ["northside-01"],
+              active: false,
+              capabilities: [
+                "orders:read",
+                "orders:write",
+                "menu:read",
+                "menu:write",
+                "menu:visibility",
+                "store:read",
+                "store:write",
+                "team:read",
+                "team:write"
+              ],
+              createdAt: "2026-05-06T12:00:00.000Z",
+              updatedAt: "2026-05-06T12:00:00.000Z"
+            },
+            invite: {
+              inviteId: "323e4567-e89b-12d3-a456-426614174995",
+              locationId: "northside-01",
+              operatorUserId: "123e4567-e89b-12d3-a456-426614174995",
+              email: body.email ?? "owner@northside.com",
+              status: "pending",
+              expiresAt: "2026-05-13T12:00:00.000Z",
+              createdAt: "2026-05-06T12:00:00.000Z",
+              updatedAt: "2026-05-06T12:00:00.000Z"
+            },
+            action: "created"
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
       if (url.includes("/v1/operator/auth/google/start") && method === "GET") {
         return new Response(
           JSON.stringify({
@@ -1911,6 +1957,25 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
+      const internalLocationOwnerOnboardingMatch = url.match(/\/v1\/catalog\/internal\/locations\/([^/]+)\/owner-onboarding$/);
+      if (internalLocationOwnerOnboardingMatch && method === "PATCH") {
+        const locationId = internalLocationOwnerOnboardingMatch[1];
+        const body = JSON.parse(String(init?.body ?? "{}")) as {
+          ownerInvited?: boolean;
+          ownerActivated?: boolean;
+        };
+
+        return new Response(
+          JSON.stringify(
+            buildOnboardingPayload({
+              locationId,
+              status: body.ownerActivated ? "in_progress" : body.ownerInvited ? "invited" : "draft"
+            })
+          ),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
       const internalLocationMobileReleaseMatch = url.match(/\/v1\/catalog\/internal\/locations\/([^/]+)\/mobile-release$/);
       if (internalLocationMobileReleaseMatch && method === "PATCH") {
         const locationId = internalLocationMobileReleaseMatch[1];
@@ -2824,6 +2889,17 @@ let previousFreeClientDashboardDomain: string | undefined;
     if (acceptCall) {
       expect(JSON.parse(String(acceptCall[1]?.body ?? "{}"))).toEqual({
         password: "AcceptedPassword123!"
+      });
+    }
+
+    const activationSyncCall = fetchMock.mock.calls.find(([input]) => {
+      const url = typeof input === "string" ? input : input.url;
+      return url === "http://catalog.internal/v1/catalog/internal/locations/northside-01/owner-onboarding";
+    });
+    expect(activationSyncCall).toBeDefined();
+    if (activationSyncCall) {
+      expect(JSON.parse(String(activationSyncCall[1]?.body ?? "{}"))).toEqual({
+        ownerActivated: true
       });
     }
 
@@ -4649,6 +4725,69 @@ let previousFreeClientDashboardDomain: string | undefined;
       expect(upstreamHeaders.get("x-gateway-token")).toBe("gateway-test-token");
       expect(upstreamHeaders.get("x-user-id")).toBe("223e4567-e89b-12d3-a456-426614174999");
     }
+
+    await app.close();
+  });
+
+  it("creates merchant launch shells and sends owner invites from the public launch endpoint", async () => {
+    const app = await buildApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/merchant/launch",
+      payload: {
+        businessName: "Northside Coffee",
+        locationName: "Northside Flagship",
+        marketLabel: "Detroit, MI",
+        ownerName: "Pilot Owner",
+        ownerEmail: "owner@northside.com"
+      }
+    });
+
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json()).toMatchObject({
+      tenantId: "tenant-northside",
+      locationId: "northside-01",
+      ownerEmail: "owner@northside.com",
+      inviteSent: true,
+      onboarding: {
+        status: "invited"
+      }
+    });
+
+    const createCall = fetchMock.mock.calls.find(([input]) => {
+      const url = typeof input === "string" ? input : input.url;
+      return url === "http://catalog.internal/v1/catalog/internal/clients";
+    });
+    expect(createCall).toBeDefined();
+    if (createCall) {
+      expect(JSON.parse(String(createCall[1]?.body ?? "{}"))).toMatchObject({
+        clientName: "Northside Coffee",
+        ownerEmail: "owner@northside.com",
+        ownerName: "Pilot Owner"
+      });
+    }
+
+    const inviteCall = fetchMock.mock.calls.find(([input]) => {
+      const url = typeof input === "string" ? input : input.url;
+      return url === "http://identity.internal/v1/identity/internal/locations/northside-01/owner/invite";
+    });
+    expect(inviteCall).toBeDefined();
+    if (inviteCall) {
+      expect(JSON.parse(String(inviteCall[1]?.body ?? "{}"))).toEqual({
+        displayName: "Pilot Owner",
+        email: "owner@northside.com"
+      });
+    }
+
+    const invitedSyncCall = fetchMock.mock.calls.find(([input, init]) => {
+      const url = typeof input === "string" ? input : input.url;
+      return (
+        url === "http://catalog.internal/v1/catalog/internal/locations/northside-01/owner-onboarding" &&
+        JSON.parse(String(init?.body ?? "{}")).ownerInvited === true
+      );
+    });
+    expect(invitedSyncCall).toBeDefined();
 
     await app.close();
   });

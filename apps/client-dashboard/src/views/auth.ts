@@ -111,6 +111,7 @@ export function renderAuthScreen() {
   }
 
   const launchEntry = state.launchEntryIntent;
+  const launchRequest = state.launchRequest;
   const googleSsoConfigured = isGoogleSignInConfigured();
   const googleButtonHint =
     state.authProviders === null
@@ -131,6 +132,56 @@ export function renderAuthScreen() {
           </div>
 
           ${renderBanner()}
+
+          ${
+            launchEntry
+              ? `
+          <form class="auth-stack launch-request" data-form="merchant-launch">
+            <div class="auth-subsection">
+              <span>New merchant</span>
+              <strong>${launchRequest.submitted ? "Check your email." : "Create your app workspace"}</strong>
+              <small>${
+                launchRequest.submitted
+                  ? `We sent the owner setup link to ${escapeHtml(launchRequest.ownerEmail ?? "your email")}.`
+                  : "Nomly will create your draft workspace and send the owner setup link."
+              }</small>
+            </div>
+            ${
+              launchRequest.submitted
+                ? ""
+                : `
+            <label class="field">
+              <span>Business name</span>
+              <input name="businessName" type="text" autocomplete="organization" placeholder="Rawaq Coffee" required />
+            </label>
+            <label class="field">
+              <span>Location name</span>
+              <input name="locationName" type="text" placeholder="Flagship" required />
+            </label>
+            <label class="field">
+              <span>Market</span>
+              <input name="marketLabel" type="text" placeholder="Detroit, MI" required />
+            </label>
+            <label class="field">
+              <span>Owner name</span>
+              <input name="ownerName" type="text" autocomplete="name" placeholder="Store owner" required />
+            </label>
+            <label class="field">
+              <span>Owner email</span>
+              <input name="ownerEmail" type="email" autocomplete="email" placeholder="owner@store.com" required />
+            </label>
+            ${renderApiBaseUrlField()}
+            <button class="button button--primary" type="submit" ${launchRequest.submitting ? "disabled" : ""}>
+              ${launchRequest.submitting ? '<span class="spinner"></span>' : "Create workspace"}
+            </button>
+            `
+            }
+          </form>
+
+          <div class="auth-divider"><span>or sign in</span></div>
+          `
+              : ""
+          }
 
           <form class="auth-stack" data-form="auth-sign-in">
             <label class="field">

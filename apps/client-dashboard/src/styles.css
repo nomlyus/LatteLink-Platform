@@ -609,6 +609,27 @@ label.field > span {
   height: 40px;
 }
 
+.auth-subsection {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+}
+
+.auth-subsection span,
+.auth-subsection small {
+  color: var(--color-text-3);
+  font-size: 12px;
+}
+
+.auth-subsection strong {
+  color: var(--color-text);
+  font-size: 15px;
+}
+
 .auth-loading,
 .invite-summary {
   display: flex;

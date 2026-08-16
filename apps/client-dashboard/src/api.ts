@@ -27,6 +27,8 @@ import {
   mobileExperienceRollbackRequestSchema,
   mobileExperienceSaveDraftRequestSchema,
   mobileExperienceVersionsResponseSchema,
+  merchantLaunchRequestSchema,
+  merchantLaunchResponseSchema,
   onboardingSummarySchema,
   operatorOnboardingUpdateSchema,
   stripeConnectDashboardLinkRequestSchema,
@@ -69,6 +71,7 @@ export type OperatorSession = z.output<typeof storedOperatorSessionSchema>;
 export type OperatorAuthProviders = z.output<typeof operatorAuthProvidersSchema>;
 export type OperatorInviteLookup = z.output<typeof operatorInviteLookupResponseSchema>;
 export type OperatorInviteAcceptResponse = z.output<typeof operatorInviteAcceptResponseSchema>;
+export type MerchantLaunchResponse = z.output<typeof merchantLaunchResponseSchema>;
 export type OperatorOnboardingSummary = z.output<typeof onboardingSummarySchema>;
 export type DashboardLocation = {
   locationId: string;
@@ -408,6 +411,31 @@ export function acceptOperatorInvite(params: { apiBaseUrl: string; token: string
       password: params.password
     }),
     schema: operatorInviteAcceptResponseSchema
+  });
+}
+
+export function createMerchantLaunch(params: {
+  apiBaseUrl: string;
+  businessName: string;
+  locationName: string;
+  marketLabel: string;
+  ownerName: string;
+  ownerEmail: string;
+  storeName?: string;
+}) {
+  return requestJson({
+    apiBaseUrl: params.apiBaseUrl,
+    path: "/merchant/launch",
+    method: "POST",
+    body: merchantLaunchRequestSchema.parse({
+      businessName: params.businessName,
+      locationName: params.locationName,
+      marketLabel: params.marketLabel,
+      ownerName: params.ownerName,
+      ownerEmail: params.ownerEmail,
+      storeName: params.storeName
+    }),
+    schema: merchantLaunchResponseSchema
   });
 }
 

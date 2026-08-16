@@ -20,6 +20,7 @@ import {
   internalLocationPaymentProfileUpdateSchema,
   internalLocationParamsSchema,
   internalLocationSummarySchema,
+  internalOwnerOnboardingUpdateSchema,
   launchApprovalRequestSchema,
   mobileExperienceDocumentSchema,
   mobileExperienceDraftResponseSchema,
@@ -869,7 +870,23 @@ export async function registerRoutes(app: FastifyInstance) {
     },
     async (request) => {
       const input = adminClientCreateRequestSchema.parse(request.body);
-      return adminClientCreateResponseSchema.parse(await repository.createInternalClient(input));
+      const created = adminClientCreateResponseSchema.parse(await repository.createInternalClient(input));
+      await recordAuditLog(request, repository, {
+        locationId: created.locationId,
+        actorId: getActorId(request),
+        actorType: "system",
+        action: "merchant_signup.bootstrap_requested",
+        targetId: created.tenantId,
+        targetType: "catalog_client",
+        payload: {
+          clientName: input.clientName,
+          locationName: input.locationName,
+          marketLabel: input.marketLabel,
+          ownerEmail: input.ownerEmail.trim().toLowerCase()
+        }
+      });
+
+      return created;
     }
   );
 
@@ -1008,6 +1025,40 @@ export async function registerRoutes(app: FastifyInstance) {
       const { locationId } = internalLocationParamsSchema.parse(request.params);
       const input = operatorOnboardingUpdateSchema.parse(request.body);
       const onboarding = await repository.updateInternalLocationOnboarding(locationId, input);
+      if (!onboarding) {
+        return reply.status(404).send(
+          serviceErrorSchema.parse({
+            code: "ONBOARDING_NOT_FOUND",
+            message: "Onboarding state not found",
+            requestId: request.id,
+            details: { locationId }
+          })
+        );
+      }
+
+      await recordAuditLog(request, repository, {
+        locationId,
+        actorId: getActorId(request),
+        actorType: "system",
+        action: "merchant_signup.owner_onboarding_updated",
+        targetId: locationId,
+        targetType: "onboarding_progress",
+        payload: input
+      });
+
+      return onboardingSummarySchema.parse(onboarding);
+    }
+  );
+
+  app.patch(
+    "/v1/catalog/internal/locations/:locationId/owner-onboarding",
+    {
+      preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess]
+    },
+    async (request, reply) => {
+      const { locationId } = internalLocationParamsSchema.parse(request.params);
+      const input = internalOwnerOnboardingUpdateSchema.parse(request.body);
+      const onboarding = await repository.updateInternalLocationOwnerOnboarding(locationId, input);
       if (!onboarding) {
         return reply.status(404).send(
           serviceErrorSchema.parse({

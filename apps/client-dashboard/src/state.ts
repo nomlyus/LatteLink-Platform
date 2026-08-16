@@ -41,6 +41,11 @@ export type AppState = {
   } | null;
   onboardingSummary: OperatorOnboardingSummary | null;
   launchEntryIntent: boolean;
+  launchRequest: {
+    submitting: boolean;
+    submitted: boolean;
+    ownerEmail: string | null;
+  };
   onboardingAutoOpened: boolean;
   onboardingWizardOpen: boolean;
   onboardingWizardStep: 1 | 2 | 3 | 4;
@@ -129,6 +134,11 @@ export const state: AppState = {
   ownerInvite: null,
   onboardingSummary: null,
   launchEntryIntent: false,
+  launchRequest: {
+    submitting: false,
+    submitted: false,
+    ownerEmail: null
+  },
   onboardingAutoOpened: false,
   onboardingWizardOpen: false,
   onboardingWizardStep: 1,

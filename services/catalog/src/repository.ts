@@ -9,6 +9,7 @@ import {
   homeNewsCardSchema,
   homeNewsCardsResponseSchema,
   internalLocationPaymentProfileUpdateSchema,
+  internalOwnerOnboardingUpdateSchema,
   internalLocationBootstrapSchema,
   internalClientDetailSchema,
   internalClientListResponseSchema,
@@ -38,6 +39,7 @@ import {
   type InternalLocationCapabilitiesUpdate,
   type InternalLocationPaymentProfileUpdate,
   type InternalLocationSummary,
+  type InternalOwnerOnboardingUpdate,
   type LaunchApprovalRequest,
   type MobileExperienceDocument,
   type MobileExperienceDraftResponse,
@@ -348,6 +350,10 @@ type CatalogRepository = {
   updateInternalLocationOnboarding(
     locationId: string,
     input: OperatorOnboardingUpdate
+  ): Promise<OnboardingSummary | undefined>;
+  updateInternalLocationOwnerOnboarding(
+    locationId: string,
+    input: InternalOwnerOnboardingUpdate
   ): Promise<OnboardingSummary | undefined>;
   approveInternalLocationLaunch(locationId: string, input: LaunchApprovalRequest): Promise<OnboardingSummary | undefined>;
   updateInternalLocationMobileRelease(
@@ -671,6 +677,7 @@ type ClientRecord = {
   tenantId: string;
   brandId: string;
   clientName: string;
+  ownerEmail?: string;
   status: OnboardingStatus;
   createdAt?: string;
   updatedAt?: string;
@@ -960,6 +967,20 @@ function createInMemoryRepository(): CatalogRepository {
     backend: "memory",
     async createInternalClient(rawInput) {
       const input = adminClientCreateRequestSchema.parse(rawInput);
+      const ownerEmail = input.ownerEmail.trim().toLowerCase();
+      for (const client of clientsByTenant.values()) {
+        if (client.ownerEmail === ownerEmail) {
+          const location = Array.from(clientLocationsByLocation.values())
+            .filter((candidate) => candidate.tenantId === client.tenantId)
+            .sort((left, right) => Number(right.primaryLocation) - Number(left.primaryLocation))[0];
+          if (location) {
+            const onboarding = await buildMemoryOnboarding(location.locationId);
+            if (onboarding) {
+              return { tenantId: client.tenantId, locationId: location.locationId, onboarding };
+            }
+          }
+        }
+      }
       let tenantId = generateInternalId("ten");
       while (clientsByTenant.has(tenantId)) {
         tenantId = generateInternalId("ten");
@@ -986,6 +1007,7 @@ function createInMemoryRepository(): CatalogRepository {
         tenantId,
         brandId,
         clientName: input.clientName,
+        ownerEmail,
         status: "draft",
         createdAt: now,
         updatedAt: now
@@ -1282,6 +1304,30 @@ function createInMemoryRepository(): CatalogRepository {
         clientsByTenant.set(next.tenantId, {
           ...client,
           status: deriveOnboardingStatus(next, input.readyForReview ?? false),
+          updatedAt: now
+        });
+      }
+      return buildMemoryOnboarding(locationId);
+    },
+    async updateInternalLocationOwnerOnboarding(locationId, rawInput) {
+      const input = internalOwnerOnboardingUpdateSchema.parse(rawInput);
+      const existing = onboardingProgressByLocation.get(locationId);
+      if (!existing) {
+        return undefined;
+      }
+      const now = new Date().toISOString();
+      const next: OnboardingProgressRecord = {
+        ...existing,
+        ownerInvited: input.ownerInvited ?? existing.ownerInvited,
+        ownerActivated: input.ownerActivated ?? existing.ownerActivated,
+        updatedAt: now
+      };
+      onboardingProgressByLocation.set(locationId, next);
+      const client = clientsByTenant.get(next.tenantId);
+      if (client) {
+        clientsByTenant.set(next.tenantId, {
+          ...client,
+          status: deriveOnboardingStatus(next, false),
           updatedAt: now
         });
       }
@@ -1910,6 +1956,7 @@ function toClientRecord(row: {
   tenant_id: string;
   brand_id: string;
   client_name: string;
+  owner_email?: string | null;
   status: OnboardingStatus;
   created_at?: CatalogTimestamp;
   updated_at?: CatalogTimestamp;
@@ -1918,6 +1965,7 @@ function toClientRecord(row: {
     tenantId: row.tenant_id,
     brandId: row.brand_id,
     clientName: row.client_name,
+    ownerEmail: row.owner_email ?? undefined,
     status: row.status,
     createdAt: serializeCatalogTimestamp(row.created_at),
     updatedAt: serializeCatalogTimestamp(row.updated_at)
@@ -2069,6 +2117,31 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
     backend: "postgres",
     async createInternalClient(rawInput) {
       const input = adminClientCreateRequestSchema.parse(rawInput);
+      const ownerEmail = input.ownerEmail.trim().toLowerCase();
+      const existingClientRow = await db
+        .selectFrom("catalog_clients")
+        .selectAll()
+        .where(sql<boolean>`lower(owner_email) = ${ownerEmail}`)
+        .executeTakeFirst();
+      if (existingClientRow) {
+        const existingLocationRow = await db
+          .selectFrom("catalog_client_locations")
+          .selectAll()
+          .where("tenant_id", "=", existingClientRow.tenant_id)
+          .orderBy("primary_location", "desc")
+          .orderBy("created_at", "asc")
+          .executeTakeFirst();
+        if (existingLocationRow) {
+          const onboarding = await buildPostgresOnboarding(existingLocationRow.location_id);
+          if (onboarding) {
+            return {
+              tenantId: existingClientRow.tenant_id,
+              locationId: existingLocationRow.location_id,
+              onboarding
+            };
+          }
+        }
+      }
       let tenantId = generateInternalId("ten");
       while (await db.selectFrom("catalog_clients").select("tenant_id").where("tenant_id", "=", tenantId).executeTakeFirst()) {
         tenantId = generateInternalId("ten");
@@ -2099,6 +2172,7 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
             tenant_id: tenantId,
             brand_id: brandId,
             client_name: input.clientName,
+            owner_email: ownerEmail,
             status: "draft"
           })
           .execute();
@@ -2146,7 +2220,15 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         onboarding:
           onboarding ??
           buildOnboardingSummary({
-            client: { tenantId, brandId, clientName: input.clientName, status: "draft", createdAt: now, updatedAt: now },
+            client: {
+              tenantId,
+              brandId,
+              clientName: input.clientName,
+              ownerEmail,
+              status: "draft",
+              createdAt: now,
+              updatedAt: now
+            },
             location: {
               tenantId,
               brandId,
@@ -2588,6 +2670,46 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
           submitted_for_review_at: input.readyForReview ? existing.submitted_for_review_at ?? now : existing.submitted_for_review_at,
           blocked_reason: blockedReason,
           notes: input.notes ?? existing.notes,
+          updated_at: now
+        })
+        .where("location_id", "=", locationId)
+        .execute();
+      await db
+        .updateTable("catalog_clients")
+        .set({ status, updated_at: now })
+        .where("tenant_id", "=", existing.tenant_id)
+        .execute();
+      return buildPostgresOnboarding(locationId);
+    },
+    async updateInternalLocationOwnerOnboarding(locationId, rawInput) {
+      const input = internalOwnerOnboardingUpdateSchema.parse(rawInput);
+      const existing = await db
+        .selectFrom("catalog_onboarding_progress")
+        .selectAll()
+        .where("location_id", "=", locationId)
+        .executeTakeFirst();
+      if (!existing) {
+        return undefined;
+      }
+      const now = new Date().toISOString();
+      const ownerInvited = input.ownerInvited ?? existing.owner_invited;
+      const ownerActivated = input.ownerActivated ?? existing.owner_activated;
+      const status =
+        existing.blocked_reason
+          ? "blocked"
+          : ownerActivated
+            ? existing.status === "draft" || existing.status === "invited"
+              ? "in_progress"
+              : existing.status
+            : ownerInvited
+              ? "invited"
+              : existing.status;
+      await db
+        .updateTable("catalog_onboarding_progress")
+        .set({
+          owner_invited: ownerInvited,
+          owner_activated: ownerActivated,
+          status,
           updated_at: now
         })
         .where("location_id", "=", locationId)

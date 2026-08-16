@@ -405,6 +405,7 @@ export interface CatalogClientTable {
   tenant_id: string;
   brand_id: string;
   client_name: string;
+  owner_email: string | null;
   status: "draft" | "invited" | "in_progress" | "ready_for_review" | "approved" | "live" | "blocked";
   created_at: Generated<string>;
   updated_at: Generated<string>;

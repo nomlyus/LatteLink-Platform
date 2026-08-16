@@ -832,6 +832,34 @@ export const operatorOnboardingUpdateSchema = z.object({
   notes: z.string().trim().min(1).optional()
 });
 
+export const internalOwnerOnboardingUpdateSchema = z
+  .object({
+    ownerInvited: z.boolean().optional(),
+    ownerActivated: z.boolean().optional()
+  })
+  .refine((value) => value.ownerInvited !== undefined || value.ownerActivated !== undefined, {
+    message: "At least one owner onboarding field must be provided"
+  });
+
+export const merchantLaunchRequestSchema = z
+  .object({
+    businessName: z.string().trim().min(1).max(120),
+    locationName: z.string().trim().min(1).max(120),
+    marketLabel: z.string().trim().min(1).max(120),
+    ownerName: z.string().trim().min(1).max(120),
+    ownerEmail: z.string().trim().email(),
+    storeName: z.string().trim().min(1).max(120).optional()
+  })
+  .strict();
+
+export const merchantLaunchResponseSchema = z.object({
+  tenantId: z.string().trim().min(1),
+  locationId: z.string().trim().min(1),
+  ownerEmail: z.string().trim().email(),
+  inviteSent: z.boolean(),
+  onboarding: onboardingSummarySchema
+});
+
 export const launchApprovalRequestSchema = z.object({
   approved: z.boolean(),
   live: z.boolean().optional(),
@@ -1118,6 +1146,9 @@ export type InternalClientDetail = z.output<typeof internalClientDetailSchema>;
 export type InternalClientListResponse = z.output<typeof internalClientListResponseSchema>;
 export type OnboardingSummary = z.output<typeof onboardingSummarySchema>;
 export type OperatorOnboardingUpdate = z.output<typeof operatorOnboardingUpdateSchema>;
+export type InternalOwnerOnboardingUpdate = z.output<typeof internalOwnerOnboardingUpdateSchema>;
+export type MerchantLaunchRequest = z.output<typeof merchantLaunchRequestSchema>;
+export type MerchantLaunchResponse = z.output<typeof merchantLaunchResponseSchema>;
 export type LaunchApprovalRequest = z.output<typeof launchApprovalRequestSchema>;
 export type StripeConnectOnboardingLinkRequest = z.output<typeof stripeConnectOnboardingLinkRequestSchema>;
 export type StripeConnectDashboardLinkRequest = z.output<typeof stripeConnectDashboardLinkRequestSchema>;

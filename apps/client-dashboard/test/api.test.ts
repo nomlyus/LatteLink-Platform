@@ -3,6 +3,7 @@ import {
   ApiRequestError,
   buildOperatorHeaders,
   acceptOperatorInvite,
+  createMerchantLaunch,
   createOperatorStripeDashboardLink,
   createOperatorStripeOnboardingLink,
   deleteOperatorStaffUser,
@@ -88,6 +89,61 @@ describe("client dashboard api helpers", () => {
       "https://api.nomly.us/v1/operator/auth/sign-in",
       expect.objectContaining({
         method: "POST"
+      })
+    );
+  });
+
+  it("creates merchant launch workspaces through the gateway", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          tenantId: "ten_rawaq",
+          locationId: "loc_rawaq",
+          ownerEmail: "owner@rawaq.example",
+          inviteSent: true,
+          onboarding: {
+            tenantId: "ten_rawaq",
+            brandId: "brd_rawaq",
+            brandName: "Rawaq Coffee",
+            locationId: "loc_rawaq",
+            locationName: "Flagship",
+            marketLabel: "Detroit, MI",
+            status: "invited",
+            readyForReview: false,
+            checklist: [],
+            updatedAt: "2026-08-16T12:00:00.000Z"
+          }
+        }),
+        { status: 200 }
+      )
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await createMerchantLaunch({
+      apiBaseUrl: "https://api.nomly.us",
+      businessName: "Rawaq Coffee",
+      locationName: "Flagship",
+      marketLabel: "Detroit, MI",
+      ownerName: "Rawaq Owner",
+      ownerEmail: "owner@rawaq.example"
+    });
+
+    expect(result).toMatchObject({
+      tenantId: "ten_rawaq",
+      locationId: "loc_rawaq",
+      inviteSent: true
+    });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://api.nomly.us/v1/merchant/launch",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          businessName: "Rawaq Coffee",
+          locationName: "Flagship",
+          marketLabel: "Detroit, MI",
+          ownerName: "Rawaq Owner",
+          ownerEmail: "owner@rawaq.example"
+        })
       })
     );
   });

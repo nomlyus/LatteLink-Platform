@@ -28,6 +28,7 @@ import { loadDashboard, signOut } from "./lifecycle.js";
 import { getAvailableDashboardSections } from "./sections.js";
 import {
   handleGoogleSignInStart,
+  handleMerchantLaunchSubmit,
   handleOwnerInviteAccept,
   handlePasswordSignIn,
   showSignInScreen
@@ -95,6 +96,9 @@ export function registerEvents() {
     switch (formType) {
       case "auth-sign-in":
         void handlePasswordSignIn(target);
+        return;
+      case "merchant-launch":
+        void handleMerchantLaunchSubmit(target);
         return;
       case "owner-invite-accept":
         void handleOwnerInviteAccept(target);
