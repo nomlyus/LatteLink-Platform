@@ -422,6 +422,127 @@ describe("payments service", () => {
     await app.close();
   });
 
+  it("does not promote checkout drafts when Stripe mobile payment is canceled", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetchMock);
+    const checkoutId = "123e4567-e89b-12d3-a456-426614174403";
+    const stripeRetrieveSpy = vi.spyOn(Object.getPrototypeOf(stripe.paymentIntents), "retrieve").mockResolvedValue({
+      id: "pi_canceled_123",
+      object: "payment_intent",
+      amount: 1295,
+      amount_received: 0,
+      currency: "usd",
+      metadata: {
+        checkoutId
+      },
+      status: "canceled"
+    } as unknown as Stripe.PaymentIntent);
+
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const headers = new Headers(init?.headers);
+
+      if (url === `http://127.0.0.1:3001/v1/orders/internal/checkouts/${checkoutId}/payment-context`) {
+        expect(headers.get("x-internal-token")).toBe(internalPaymentsToken);
+        return new Response(
+          JSON.stringify({
+            checkoutId,
+            locationId: "flagship-01",
+            status: "OPEN",
+            expiresAt: "2030-03-10T00:30:00.000Z",
+            total: {
+              currency: "USD",
+              amountCents: 1295
+            }
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      if (url === "http://127.0.0.1:3002/v1/catalog/internal/locations/flagship-01") {
+        expect(headers.get("x-gateway-token")).toBe("gateway-payments-token");
+        return new Response(
+          JSON.stringify({
+            brandId: "gazelle",
+            brandName: "Gazelle Coffee",
+            locationId: "flagship-01",
+            locationName: "Flagship",
+            marketLabel: "Detroit, MI",
+            storeName: "Gazelle Flagship",
+            hours: "Daily · 7:00 AM - 6:00 PM",
+            pickupInstructions: "Pickup at the espresso counter.",
+            taxRateBasisPoints: 600,
+            capabilities: {
+              menu: { source: "platform_managed" },
+              operations: {
+                fulfillmentMode: "staff",
+                liveOrderTrackingEnabled: true,
+                dashboardEnabled: true
+              },
+              loyalty: { visible: true }
+            },
+            paymentProfile: {
+              locationId: "flagship-01",
+              stripeAccountId: "acct_123456789",
+              stripeAccountType: "express",
+              stripeOnboardingStatus: "completed",
+              stripeDetailsSubmitted: true,
+              stripeChargesEnabled: true,
+              stripePayoutsEnabled: true,
+              stripeDashboardEnabled: true,
+              country: "US",
+              currency: "USD",
+              cardEnabled: true,
+              applePayEnabled: true,
+              refundsEnabled: true,
+              cloverPosEnabled: true
+            },
+            paymentReadiness: {
+              ready: true,
+              onboardingState: "completed",
+              missingRequiredFields: []
+            }
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      throw new Error(`unexpected Stripe canceled finalize URL: ${url}`);
+    });
+
+    const app = await buildApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/payments/stripe/mobile-session/finalize",
+      headers: {
+        "x-gateway-token": "gateway-payments-token",
+        "x-user-id": "123e4567-e89b-12d3-a456-426614174000"
+      },
+      payload: {
+        checkoutId,
+        paymentIntentId: "pi_canceled_123"
+      }
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({
+      code: "STRIPE_PAYMENT_NOT_SUCCEEDED",
+      details: {
+        referenceId: checkoutId,
+        paymentIntentId: "pi_canceled_123",
+        stripeStatus: "canceled"
+      }
+    });
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        (typeof input === "string" ? input : input.toString()).includes("/v1/orders/internal/checkouts/confirm-payment")
+      )
+    ).toBe(false);
+
+    stripeRetrieveSpy.mockRestore();
+    await app.close();
+  });
+
   it("creates and persists a Stripe Connect account before returning an onboarding link", async () => {
     const fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal("fetch", fetchMock);

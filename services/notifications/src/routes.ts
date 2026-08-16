@@ -235,12 +235,12 @@ export function getOrderStatusPushCopy(entry: OutboxEntry) {
     case "CANCELED":
       return {
         title: "Order canceled",
-        body: payload.note?.trim() || `Order ${payload.pickupCode} was canceled.`
+        body: `Order ${payload.pickupCode} was canceled.`
       };
     default:
       return {
         title: "Order updated",
-        body: payload.note?.trim() || `Order ${payload.pickupCode} has a new update.`
+        body: `Order ${payload.pickupCode} has a new update.`
       };
   }
 }
@@ -274,8 +274,7 @@ async function dispatchExpoPushNotification(entry: OutboxEntry) {
           pickupCode: entry.payload.pickupCode,
           locationId: entry.payload.locationId,
           status: entry.payload.status,
-          occurredAt: entry.payload.occurredAt,
-          ...(entry.payload.note ? { note: entry.payload.note } : {})
+          occurredAt: entry.payload.occurredAt
         }
       }
     ])

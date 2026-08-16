@@ -18,6 +18,7 @@ import {
   createInternalClient,
   createStripeDashboardLink,
   createStripeOnboardingLink,
+  expireSupportCheckout,
   getInternalLocationOnboarding,
   getInternalLocationReadiness,
   refreshStripeStatus,
@@ -228,6 +229,30 @@ export async function refreshStripeStatusAction(formData: FormData) {
   }
 
   redirect(`/clients/${locationId}/payments?stripeStatusRefresh=1`);
+}
+
+export async function expireSupportCheckoutAction(formData: FormData) {
+  const checkoutId = readString(formData, "checkoutId");
+  const query = readString(formData, "query");
+  const locationId = readOptionalString(formData, "locationId");
+  const params = new URLSearchParams();
+  if (query) params.set("query", query);
+  if (locationId) params.set("locationId", locationId);
+
+  if (!checkoutId) {
+    params.set("error", "Checkout ID is required.");
+    redirect(`/support?${params.toString()}`);
+  }
+
+  try {
+    await requireAdminCapability("clients:write");
+    const result = await expireSupportCheckout(checkoutId);
+    params.set(result.expired ? "checkoutExpired" : "checkoutUnchanged", checkoutId);
+  } catch (error) {
+    params.set("error", toRedirectError(error));
+  }
+
+  redirect(`/support?${params.toString()}`);
 }
 
 export async function updateMobileReleaseAction(formData: FormData) {

@@ -72,6 +72,34 @@ export type SupportOrderLookupResponse = {
   results: SupportOrderLookupResult[];
 };
 
+export type SupportCheckoutLookupResult = {
+  checkout: {
+    checkoutId: string;
+    quoteId: string;
+    quoteHash: string;
+    locationId: string;
+    status: string;
+    items: unknown[];
+    total: {
+      currency: string;
+      amountCents: number;
+    };
+    expiresAt: string;
+    orderId?: string;
+  };
+  userId?: string;
+  paymentStatus?: string;
+  paymentProvider?: string;
+  paymentIntentId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  auditLog: SupportAuditLogEntry[];
+};
+
+export type SupportCheckoutLookupResponse = {
+  results: SupportCheckoutLookupResult[];
+};
+
 type InternalApiErrorBody = {
   code?: string;
   message?: string;
@@ -174,6 +202,25 @@ export async function lookupSupportOrders(input: { query: string; locationId?: s
   }
 
   return requestInternalApi<SupportOrderLookupResponse>(`/v1/internal/support/orders?${params.toString()}`);
+}
+
+export async function lookupSupportCheckouts(input: { query: string; locationId?: string; limit?: number }) {
+  const params = new URLSearchParams({
+    query: input.query,
+    limit: String(input.limit ?? 25)
+  });
+  if (input.locationId) {
+    params.set("locationId", input.locationId);
+  }
+
+  return requestInternalApi<SupportCheckoutLookupResponse>(`/v1/internal/support/checkouts?${params.toString()}`);
+}
+
+export async function expireSupportCheckout(checkoutId: string) {
+  return requestInternalApi<{ expired: boolean }>(`/v1/internal/support/checkouts/${checkoutId}/expire`, {
+    method: "POST",
+    body: JSON.stringify({})
+  });
 }
 
 export async function getInternalLocationOwner(locationId: string) {

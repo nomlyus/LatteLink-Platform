@@ -150,6 +150,21 @@ const supportOrderLookupResponseSchema = z.object({
   results: z.array(supportOrderLookupResultSchema)
 });
 
+const supportCheckoutLookupResultSchema = z.object({
+  checkout: checkoutDraftSchema,
+  userId: z.string().optional(),
+  paymentStatus: z.string().optional(),
+  paymentProvider: z.string().optional(),
+  paymentIntentId: z.string().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  auditLog: z.array(supportAuditLogEntrySchema)
+});
+
+const supportCheckoutLookupResponseSchema = z.object({
+  results: z.array(supportCheckoutLookupResultSchema)
+});
+
 const defaultRateLimitWindowMs = 60_000;
 const defaultOrdersReadRateLimitMax = 240;
 const defaultOrdersWriteRateLimitMax = 120;
@@ -581,6 +596,22 @@ export async function registerRoutes(app: FastifyInstance) {
   );
 
   app.get(
+    "/v1/orders/internal/support/checkouts",
+    {
+      preHandler: app.rateLimit(ordersInternalReconcileRateLimit)
+    },
+    async (request, reply) => {
+      if (!authorizeInternalRequest(request, reply, internalApiToken, { allowUnauthenticated: allowUnauthenticatedInternalAccess })) {
+        return;
+      }
+
+      const input = supportLookupQuerySchema.parse(request.query);
+      const results = await repository.lookupSupportCheckoutDrafts(input);
+      return supportCheckoutLookupResponseSchema.parse({ results });
+    }
+  );
+
+  app.get(
     "/v1/orders/internal/:orderId/payment-context",
     {
       preHandler: app.rateLimit(ordersInternalReconcileRateLimit)
@@ -813,8 +844,24 @@ export async function registerRoutes(app: FastifyInstance) {
     async (request, reply) => {
       if (!authorizeInternalRequest(request, reply, internalApiToken, { allowUnauthenticated: allowUnauthenticatedInternalAccess })) return;
       const { checkoutId } = checkoutIdParamsSchema.parse(request.params);
+      const draft = await repository.getCheckoutDraft(checkoutId);
       const result = await expireCheckoutDraft({ checkoutId, deps: getServiceDeps(request) });
       if ("error" in result && result.error) return sendServiceError(reply, request, result.error);
+      if (result.expired && draft) {
+        await recordAuditLog(request, repository, {
+          locationId: draft.locationId,
+          actorId: parseRequestUserContext(request).userId ?? "internal",
+          actorType: "internal_admin",
+          action: "checkout.expired",
+          targetId: checkoutId,
+          targetType: "checkout",
+          payload: {
+            source: "support_recovery",
+            previousStatus: draft.status,
+            expiresAt: draft.expiresAt
+          }
+        });
+      }
       return result;
     }
   );

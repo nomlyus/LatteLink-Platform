@@ -181,6 +181,41 @@ describe("payment reconciler worker", () => {
     expect(runtime.cancelPendingOrder).not.toHaveBeenCalled();
   });
 
+  it("recovers succeeded checkout PaymentIntents by promoting the checkout", async () => {
+    const runtime = buildRuntime({
+      listStalePendingPaymentIntents: vi.fn(async () => [buildCandidate({ referenceType: "CHECKOUT", orderJson: checkoutQuoteJson })]),
+      retrievePaymentIntent: vi.fn(async () =>
+        buildPaymentIntent({
+          metadata: {
+            checkoutId: orderId
+          }
+        })
+      )
+    });
+
+    const result = await processStalePaymentsBatch(baseConfig, runtime);
+
+    expect(result).toMatchObject({
+      recovered: 1,
+      canceled: 0,
+      skipped: 0,
+      failed: 0
+    });
+    expect(runtime.reconcileSucceededPayment).toHaveBeenCalledWith({
+      ordersBaseUrl: baseConfig.ordersBaseUrl,
+      internalApiToken: baseConfig.ordersInternalApiToken,
+      orderId,
+      paymentIntent: expect.objectContaining({
+        id: paymentIntentId,
+        metadata: {
+          checkoutId: orderId
+        }
+      }),
+      referenceType: "CHECKOUT"
+    });
+    expect(runtime.expireCheckoutDraft).not.toHaveBeenCalled();
+  });
+
   it("cancels failed or canceled Stripe PaymentIntents", async () => {
     const runtime = buildRuntime({
       retrievePaymentIntent: vi.fn(async () => buildPaymentIntent({ status: "requires_payment_method" }))

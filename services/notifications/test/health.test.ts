@@ -190,6 +190,62 @@ describe("notifications service", () => {
     expect(getOrderStatusPushCopy(entry)).toEqual({ title, body });
   });
 
+  it("does not send internal order notes in Expo push payloads", async () => {
+    vi.stubEnv("NOTIFICATIONS_PROVIDER_MODE", "expo");
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ status: "ok", id: "expo-receipt-1" }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const app = await buildApp();
+    const userId = "123e4567-e89b-12d3-a456-426614174950";
+
+    await app.inject({
+      method: "PUT",
+      url: "/v1/devices/push-token",
+      headers: gatewayHeaders({
+        "x-user-id": userId
+      }),
+      payload: {
+        deviceId: "ios-expo",
+        platform: "ios",
+        expoPushToken: "ExponentPushToken[expo-token]"
+      }
+    });
+    await app.inject({
+      method: "POST",
+      url: "/v1/notifications/internal/order-state",
+      headers: internalHeaders(),
+      payload: {
+        userId,
+        orderId: "123e4567-e89b-12d3-a456-426614174951",
+        status: "PAID",
+        pickupCode: "SAFE12",
+        locationId: "flagship-01",
+        occurredAt: "2026-03-10T17:41:00.000Z",
+        note: "Internal operator note that must not be sent to the device"
+      }
+    });
+
+    const processOutbox = await app.inject({
+      method: "POST",
+      url: "/v1/notifications/internal/outbox/process",
+      headers: internalHeaders(),
+      payload: {
+        batchSize: 10
+      }
+    });
+
+    expect(processOutbox.statusCode).toBe(200);
+    const expoBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body ?? "[]")) as Array<{
+      data: Record<string, unknown>;
+    }>;
+    expect(expoBody[0]?.data).not.toHaveProperty("note");
+    await app.close();
+  });
+
   it("retries and eventually fails outbox entries for failing push tokens", async () => {
     const app = await buildApp();
     const userId = "123e4567-e89b-12d3-a456-426614174930";

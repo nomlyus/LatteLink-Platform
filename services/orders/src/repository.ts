@@ -150,6 +150,17 @@ export type SupportOrderLookupResult = {
   auditLog: SupportAuditLogEntry[];
 };
 
+export type SupportCheckoutLookupResult = {
+  checkout: CheckoutDraft;
+  userId: string;
+  paymentStatus?: string;
+  paymentProvider?: string;
+  paymentIntentId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  auditLog: SupportAuditLogEntry[];
+};
+
 const defaultTaxRateBasisPoints = 600;
 
 function trimToUndefined(value: string | null | undefined) {
@@ -295,6 +306,7 @@ export type OrdersRepository = {
   updateOrder(orderId: string, order: Order): Promise<Order>;
   writeAuditLog(entry: AuditLogEntry): Promise<void>;
   lookupSupportOrders(input: { query: string; locationId?: string; limit?: number }): Promise<SupportOrderLookupResult[]>;
+  lookupSupportCheckoutDrafts(input: { query: string; locationId?: string; limit?: number }): Promise<SupportCheckoutLookupResult[]>;
   listDiscountCodes(locationId: string): Promise<DiscountCode[]>;
   getDiscountCode(locationId: string, code: string): Promise<DiscountCode | undefined>;
   getDiscountCodeById(locationId: string, discountCodeId: string): Promise<DiscountCode | undefined>;
@@ -705,6 +717,30 @@ function createInMemoryRepository(): OrdersRepository {
         successfulCharge: record.successfulCharge,
         successfulRefund: record.successfulRefund,
         auditLog: auditLog.filter((entry) => entry.targetType === "order" && entry.targetId === record.order.id)
+      }));
+    },
+    async lookupSupportCheckoutDrafts(input) {
+      const query = input.query.trim().toLowerCase();
+      const matches = [...checkoutDraftsById.values()]
+        .filter((draft) => {
+          if (input.locationId && draft.locationId !== input.locationId) {
+            return false;
+          }
+
+          return (
+            textMatchesSupportQuery(draft.checkoutId, query) ||
+            textMatchesSupportQuery(draft.quoteId, query) ||
+            textMatchesSupportQuery(draft.orderId, query) ||
+            textMatchesSupportQuery(draft.userId, query) ||
+            textMatchesSupportQuery(draft.status, query)
+          );
+        })
+        .slice(0, input.limit ?? 25);
+
+      return matches.map((checkout) => ({
+        checkout,
+        userId: checkout.userId,
+        auditLog: auditLog.filter((entry) => entry.targetType === "checkout" && entry.targetId === checkout.checkoutId)
       }));
     },
     async listDiscountCodes(locationId) {
@@ -1457,6 +1493,91 @@ async function createPostgresRepository(
           createdAt: row.created_at ? parseIsoDate(row.created_at) : undefined,
           updatedAt: row.updated_at ? parseIsoDate(row.updated_at) : undefined,
           auditLog: auditByOrderId.get(order.id) ?? []
+        };
+      });
+    },
+    async lookupSupportCheckoutDrafts(input) {
+      const query = input.query.trim();
+      if (!query) {
+        return [];
+      }
+
+      const normalizedQuery = query.toLowerCase();
+      const likeQuery = `%${normalizedQuery}%`;
+      const limit = Math.min(Math.max(input.limit ?? 25, 1), 50);
+      let rowsQuery = db
+        .selectFrom("order_checkout_drafts")
+        .innerJoin("orders_quotes", "orders_quotes.quote_id", "order_checkout_drafts.quote_id")
+        .leftJoin("payments_stripe_payment_intents", (join) =>
+          join.on(sql<string>`payments_stripe_payment_intents.order_id`, "=", sql<string>`order_checkout_drafts.checkout_id::text`)
+        )
+        .select([
+          "order_checkout_drafts.checkout_id as checkout_id",
+          "order_checkout_drafts.user_id as user_id",
+          "order_checkout_drafts.quote_id as quote_id",
+          "order_checkout_drafts.quote_hash as quote_hash",
+          "order_checkout_drafts.status as status",
+          "order_checkout_drafts.order_id as order_id",
+          "order_checkout_drafts.expires_at as expires_at",
+          "order_checkout_drafts.created_at as created_at",
+          "order_checkout_drafts.updated_at as updated_at",
+          "orders_quotes.quote_json as quote_json",
+          "payments_stripe_payment_intents.payment_intent_id as payment_intent_id",
+          "payments_stripe_payment_intents.status as stripe_payment_status"
+        ])
+        .where((eb) =>
+          eb.or([
+            eb(sql<string>`order_checkout_drafts.checkout_id::text`, "ilike", likeQuery),
+            eb(sql<string>`order_checkout_drafts.quote_id::text`, "ilike", likeQuery),
+            eb(sql<string>`order_checkout_drafts.user_id::text`, "ilike", likeQuery),
+            eb(sql<string>`COALESCE(order_checkout_drafts.order_id::text, '')`, "ilike", likeQuery),
+            eb(sql<string>`order_checkout_drafts.status::text`, "ilike", likeQuery),
+            eb(sql<string>`COALESCE(payments_stripe_payment_intents.payment_intent_id, '')`, "ilike", likeQuery)
+          ])
+        )
+        .orderBy("order_checkout_drafts.created_at", "desc")
+        .limit(limit);
+
+      if (input.locationId) {
+        rowsQuery = rowsQuery.where(sql`orders_quotes.quote_json->>'locationId'`, "=", input.locationId);
+      }
+
+      const rows = await rowsQuery.execute();
+      const checkoutIds = rows.map((row) => row.checkout_id);
+      const auditRows =
+        checkoutIds.length === 0
+          ? []
+          : await db
+              .selectFrom("audit_log")
+              .selectAll()
+              .where("target_type", "=", "checkout")
+              .where("target_id", "in", checkoutIds)
+              .orderBy("occurred_at", "desc")
+              .limit(250)
+              .execute();
+      const auditByCheckoutId = new Map<string, SupportAuditLogEntry[]>();
+      for (const row of auditRows) {
+        const auditEntry = toSupportAuditLogEntry(row);
+        const entries = auditByCheckoutId.get(auditEntry.targetId ?? "") ?? [];
+        entries.push(auditEntry);
+        if (auditEntry.targetId) {
+          auditByCheckoutId.set(auditEntry.targetId, entries);
+        }
+      }
+
+      return rows.map((row) => {
+        const quote = orderQuoteSchema.parse(row.quote_json);
+        const checkout = toCheckoutDraft(row as PersistedCheckoutDraftRow, quote);
+
+        return {
+          checkout,
+          userId: row.user_id,
+          paymentProvider: row.payment_intent_id ? "STRIPE" : undefined,
+          paymentStatus: row.stripe_payment_status ?? undefined,
+          paymentIntentId: row.payment_intent_id ?? undefined,
+          createdAt: row.created_at ? parseIsoDate(row.created_at) : undefined,
+          updatedAt: row.updated_at ? parseIsoDate(row.updated_at) : undefined,
+          auditLog: auditByCheckoutId.get(checkout.checkoutId) ?? []
         };
       });
     },

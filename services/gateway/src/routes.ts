@@ -218,6 +218,23 @@ const supportOrderLookupResponseSchema = z.object({
     })
   )
 });
+const supportCheckoutLookupResponseSchema = z.object({
+  results: z.array(
+    z.object({
+      checkout: checkoutDraftSchema,
+      userId: z.string().optional(),
+      paymentStatus: z.string().optional(),
+      paymentProvider: z.string().optional(),
+      paymentIntentId: z.string().optional(),
+      createdAt: z.string().datetime().optional(),
+      updatedAt: z.string().datetime().optional(),
+      auditLog: z.array(supportAuditLogEntrySchema)
+    })
+  )
+});
+const supportCheckoutExpireResponseSchema = z.object({
+  expired: z.boolean()
+});
 const defaultRateLimitWindowMs = 60_000;
 const defaultUpstreamTimeoutMs = 5_000;
 const defaultOrderStreamPollIntervalMs = 2_000;
@@ -4662,6 +4679,62 @@ export async function registerRoutes(app: FastifyInstance) {
         },
         forwardUserIdHeader: false,
         responseSchema: supportOrderLookupResponseSchema
+      });
+    }
+  );
+
+  app.get(
+    "/v1/internal/support/checkouts",
+    {
+      preHandler: [app.rateLimit(authReadRateLimit), requireInternalAdminCapability("clients:read")]
+    },
+    async (request, reply) => {
+      const input = supportOrderLookupQuerySchema.parse(request.query);
+      const query = new URLSearchParams({
+        query: input.query,
+        limit: String(input.limit)
+      });
+      if (input.locationId) {
+        query.set("locationId", input.locationId);
+      }
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: ordersBaseUrl,
+        serviceLabel: "Orders",
+        method: "GET",
+        path: `/v1/orders/internal/support/checkouts?${query.toString()}`,
+        additionalHeaders: {
+          "x-internal-token": ordersInternalApiToken
+        },
+        forwardUserIdHeader: false,
+        responseSchema: supportCheckoutLookupResponseSchema
+      });
+    }
+  );
+
+  app.post(
+    "/v1/internal/support/checkouts/:checkoutId/expire",
+    {
+      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+    },
+    async (request, reply) => {
+      const { checkoutId } = z.object({ checkoutId: z.string().uuid() }).parse(request.params);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: ordersBaseUrl,
+        serviceLabel: "Orders",
+        method: "POST",
+        path: `/v1/orders/internal/checkouts/${checkoutId}/expire`,
+        additionalHeaders: {
+          "x-internal-token": ordersInternalApiToken,
+          ...internalAdminActorHeader(request)
+        },
+        forwardUserIdHeader: false,
+        responseSchema: supportCheckoutExpireResponseSchema
       });
     }
   );

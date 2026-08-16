@@ -503,6 +503,80 @@ describe("orders service", () => {
     await app.close();
   });
 
+  it("shows checkout attempts in support lookup and audits manual expiry", async () => {
+    const app = await buildApp();
+    const userId = "123e4567-e89b-12d3-a456-426614174882";
+    const quoteResponse = await app.inject({
+      method: "POST",
+      url: "/v1/orders/quote",
+      payload: { ...sampleQuotePayload, pointsToRedeem: 0 }
+    });
+    const quote = orderQuoteSchema.parse(quoteResponse.json());
+    const draftResponse = await app.inject({
+      method: "POST",
+      url: "/v1/orders/checkouts",
+      headers: customerHeaders(userId),
+      payload: { quoteId: quote.quoteId, quoteHash: quote.quoteHash }
+    });
+    const checkout = checkoutDraftSchema.parse(draftResponse.json());
+
+    const lookupBefore = await app.inject({
+      method: "GET",
+      url: `/v1/orders/internal/support/checkouts?query=${checkout.checkoutId}`,
+      headers: { "x-internal-token": "orders-internal-token" }
+    });
+    expect(lookupBefore.statusCode).toBe(200);
+    expect(lookupBefore.json()).toMatchObject({
+      results: [
+        {
+          checkout: {
+            checkoutId: checkout.checkoutId,
+            status: "OPEN"
+          },
+          userId,
+          auditLog: []
+        }
+      ]
+    });
+
+    const expirationResponse = await app.inject({
+      method: "POST",
+      url: `/v1/orders/internal/checkouts/${checkout.checkoutId}/expire`,
+      headers: {
+        "x-internal-token": "orders-internal-token",
+        "x-user-id": "123e4567-e89b-12d3-a456-426614174883"
+      }
+    });
+    expect(expirationResponse.statusCode).toBe(200);
+    expect(expirationResponse.json()).toEqual({ expired: true });
+
+    const lookupAfter = await app.inject({
+      method: "GET",
+      url: `/v1/orders/internal/support/checkouts?query=${checkout.checkoutId}`,
+      headers: { "x-internal-token": "orders-internal-token" }
+    });
+    expect(lookupAfter.statusCode).toBe(200);
+    expect(lookupAfter.json()).toMatchObject({
+      results: [
+        {
+          checkout: {
+            checkoutId: checkout.checkoutId,
+            status: "EXPIRED"
+          },
+          auditLog: [
+            expect.objectContaining({
+              action: "checkout.expired",
+              actorType: "internal_admin",
+              targetId: checkout.checkoutId,
+              targetType: "checkout"
+            })
+          ]
+        }
+      ]
+    });
+    await app.close();
+  });
+
   it("rejects order creation when x-user-id is missing", async () => {
     const app = await buildApp();
 

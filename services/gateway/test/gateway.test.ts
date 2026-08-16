@@ -1154,6 +1154,43 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
+      if (url.includes("/v1/orders/internal/support/checkouts") && method === "GET") {
+        const supportUrl = new URL(url);
+        const query = supportUrl.searchParams.get("query") ?? "123e4567-e89b-12d3-a456-426614174114";
+        return new Response(
+          JSON.stringify({
+            results: [
+              {
+                checkout: {
+                  checkoutId: query,
+                  quoteId: "123e4567-e89b-12d3-a456-426614174115",
+                  quoteHash: "quote-hash",
+                  locationId: supportUrl.searchParams.get("locationId") ?? "flagship-01",
+                  status: "OPEN",
+                  items: [],
+                  total: { currency: "USD", amountCents: 530 },
+                  expiresAt: "2030-03-10T00:30:00.000Z"
+                },
+                userId: "123e4567-e89b-12d3-a456-426614174000",
+                paymentProvider: "STRIPE",
+                paymentStatus: "requires_payment_method",
+                paymentIntentId: "pi_support_checkout_1",
+                auditLog: []
+              }
+            ]
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      const expireCheckoutMatch = url.match(/\/v1\/orders\/internal\/checkouts\/([0-9a-f-]{36})\/expire$/);
+      if (expireCheckoutMatch && method === "POST") {
+        return new Response(JSON.stringify({ expired: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+
       const getOrderMatch = url.match(/\/v1\/orders\/([0-9a-f-]{36})$/);
       if (getOrderMatch && method === "GET") {
         const orderId = getOrderMatch[1];
@@ -3870,6 +3907,62 @@ let previousFreeClientDashboardDomain: string | undefined;
       expect(supportLookupUrl.searchParams.get("locationId")).toBe("northside-01");
       expect(new Headers(init?.headers).get("x-internal-token")).toBe("orders-internal-token");
     }
+
+    const supportCheckoutResponse = await app.inject({
+      method: "GET",
+      url: "/v1/internal/support/checkouts?query=123e4567-e89b-12d3-a456-426614174114&locationId=northside-01",
+      headers: readonlyInternalAdminHeaders
+    });
+    expect(supportCheckoutResponse.statusCode, supportCheckoutResponse.body).toBe(200);
+    expect(supportCheckoutResponse.json()).toMatchObject({
+      results: [
+        {
+          checkout: {
+            checkoutId: "123e4567-e89b-12d3-a456-426614174114",
+            locationId: "northside-01",
+            status: "OPEN"
+          },
+          paymentIntentId: "pi_support_checkout_1",
+          paymentStatus: "requires_payment_method"
+        }
+      ]
+    });
+    const supportCheckoutLookupCall = fetchMock.mock.calls.find(([input]) =>
+      (typeof input === "string" ? input : input.url).includes("/v1/orders/internal/support/checkouts")
+    );
+    expect(supportCheckoutLookupCall).toBeDefined();
+    if (supportCheckoutLookupCall) {
+      const [input, init] = supportCheckoutLookupCall;
+      const supportCheckoutLookupUrl = new URL(typeof input === "string" ? input : input.url);
+      expect(supportCheckoutLookupUrl.searchParams.get("locationId")).toBe("northside-01");
+      expect(new Headers(init?.headers).get("x-internal-token")).toBe("orders-internal-token");
+    }
+
+    const supportCheckoutExpireResponse = await app.inject({
+      method: "POST",
+      url: "/v1/internal/support/checkouts/123e4567-e89b-12d3-a456-426614174114/expire",
+      headers: ownerInternalAdminHeaders
+    });
+    expect(supportCheckoutExpireResponse.statusCode, supportCheckoutExpireResponse.body).toBe(200);
+    expect(supportCheckoutExpireResponse.json()).toEqual({ expired: true });
+    const supportCheckoutExpireCall = fetchMock.mock.calls.find(([input]) =>
+      (typeof input === "string" ? input : input.url).endsWith(
+        "/v1/orders/internal/checkouts/123e4567-e89b-12d3-a456-426614174114/expire"
+      )
+    );
+    expect(supportCheckoutExpireCall).toBeDefined();
+    if (supportCheckoutExpireCall) {
+      const headers = new Headers(supportCheckoutExpireCall[1]?.headers);
+      expect(headers.get("x-internal-token")).toBe("orders-internal-token");
+      expect(headers.get("x-user-id")).toBe("223e4567-e89b-12d3-a456-426614174999");
+    }
+
+    const readonlyExpireResponse = await app.inject({
+      method: "POST",
+      url: "/v1/internal/support/checkouts/123e4567-e89b-12d3-a456-426614174114/expire",
+      headers: readonlyInternalAdminHeaders
+    });
+    expect(readonlyExpireResponse.statusCode).toBe(403);
 
     const paymentProfileResponse = await app.inject({
       method: "GET",
