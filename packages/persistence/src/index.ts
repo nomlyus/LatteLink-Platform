@@ -461,6 +461,10 @@ export interface CatalogMobileReleaseProfileTable {
   app_store_url: string | null;
   test_flight_url: string | null;
   build_number: string | null;
+  build_profile: string | null;
+  source_commit_sha: string | null;
+  config_hash: string | null;
+  app_store_review_notes: string | null;
   submitted_at: string | null;
   approved_at: string | null;
   live_at: string | null;

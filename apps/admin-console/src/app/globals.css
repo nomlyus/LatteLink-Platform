@@ -410,6 +410,7 @@ select {
 
 .field input,
 .field select,
+.field textarea,
 .search-field input {
   width: 100%;
   padding: 12px 14px;
@@ -417,13 +418,19 @@ select {
   border: 1px solid var(--panel-border);
   background: white;
   color: var(--text);
+  font: inherit;
 }
 
 .field input:focus,
 .field select:focus,
+.field textarea:focus,
 .search-field input:focus {
   outline: 2px solid color-mix(in srgb, var(--accent) 25%, transparent);
   border-color: var(--accent);
+}
+
+.field textarea {
+  resize: vertical;
 }
 
 .toggle-field {

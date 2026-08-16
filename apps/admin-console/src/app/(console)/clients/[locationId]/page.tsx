@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import Link from "next/link";
 import type {
   AppIdentityProfile,
@@ -7,7 +8,12 @@ import type {
   OnboardingSummary
 } from "@lattelink/contracts-catalog";
 import { notFound } from "next/navigation";
-import { approveLaunchAction, updateAppIdentityAction, updateMobileReleaseAction } from "@/app/actions";
+import {
+  approveLaunchAction,
+  prepareMobileReleaseBuildAction,
+  updateAppIdentityAction,
+  updateMobileReleaseAction
+} from "@/app/actions";
 import { LaunchReadinessChecklist } from "@/components/LaunchReadinessChecklist";
 import {
   getInternalLocation,
@@ -57,6 +63,39 @@ function renderTimelineDate(label: string, value: string | undefined) {
       <dd>{new Date(value).toLocaleString()}</dd>
     </div>
   );
+}
+
+function readCurrentSourceCommitSha() {
+  const value = process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.GITHUB_SHA ?? "";
+  return /^[a-f0-9]{40}$/i.test(value) ? value : "";
+}
+
+function buildDefaultBuildProfile(identity: AppIdentityProfile | undefined) {
+  const bundleIdentifier = identity?.bundleIdentifier;
+  if (!bundleIdentifier) return "merchant-ios-production";
+  return `ios-${bundleIdentifier.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase()}`;
+}
+
+function buildMobileReleaseConfigHash(locationId: string, identity: AppIdentityProfile | undefined) {
+  if (!identity?.readiness.ready) return "";
+  const payload = {
+    locationId,
+    appName: identity.appName,
+    displayName: identity.displayName,
+    bundleIdentifier: identity.bundleIdentifier,
+    sku: identity.sku,
+    primaryCategory: identity.primaryCategory,
+    subtitle: identity.subtitle,
+    supportUrl: identity.supportUrl,
+    privacyPolicyUrl: identity.privacyPolicyUrl,
+    marketingUrl: identity.marketingUrl,
+    iconAssetUrl: identity.iconAssetUrl,
+    splashAssetUrl: identity.splashAssetUrl,
+    screenshotAssetUrls: identity.screenshotAssetUrls,
+    targetLocationIds: identity.targetLocationIds,
+    assetMode: identity.assetMode
+  };
+  return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }
 
 function collectLaunchBlockers(onboarding: OnboardingSummary, readiness: LaunchReadinessResponse) {
@@ -141,9 +180,24 @@ function LaunchApprovalPanel({ locationId, onboarding, readiness }: {
   );
 }
 
-function MobileReleaseStatusPanel({ locationId, release }: { locationId: string; release?: MobileReleaseProfile }) {
+function MobileReleaseStatusPanel({
+  locationId,
+  release,
+  identity
+}: {
+  locationId: string;
+  release?: MobileReleaseProfile;
+  identity?: AppIdentityProfile;
+}) {
   const status = release?.status ?? "not_started";
   const statusLabel = mobileReleaseStatusLabel(status, release?.statusLabel);
+  const identityReady = identity?.readiness.ready === true;
+  const sourceCommitSha = release?.sourceCommitSha ?? readCurrentSourceCommitSha();
+  const configHash = release?.configHash ?? buildMobileReleaseConfigHash(locationId, identity);
+  const buildProfile = release?.buildProfile ?? buildDefaultBuildProfile(identity);
+  const defaultReviewNotes =
+    release?.appStoreReviewNotes ??
+    `Merchant app build prepared for ${identity?.appName ?? locationId}. Backend content and layout updates are delivered through Nomly without requiring a native binary rebuild.`;
 
   return (
     <section className="panel">
@@ -161,6 +215,18 @@ function MobileReleaseStatusPanel({ locationId, release }: { locationId: string;
         <div>
           <dt>Build</dt>
           <dd>{release?.buildNumber ?? "Not assigned"}</dd>
+        </div>
+        <div>
+          <dt>Build profile</dt>
+          <dd>{release?.buildProfile ?? "Not prepared"}</dd>
+        </div>
+        <div>
+          <dt>Source commit</dt>
+          <dd>{release?.sourceCommitSha ? <code>{release.sourceCommitSha.slice(0, 12)}</code> : "Not recorded"}</dd>
+        </div>
+        <div>
+          <dt>Config hash</dt>
+          <dd>{release?.configHash ? <code>{release.configHash.slice(0, 16)}</code> : "Not recorded"}</dd>
         </div>
         {renderTimelineDate("Submitted", release?.submittedAt)}
         {renderTimelineDate("Approved", release?.approvedAt)}
@@ -180,6 +246,45 @@ function MobileReleaseStatusPanel({ locationId, release }: { locationId: string;
           </div>
         ) : null}
       </dl>
+
+      {identityReady ? (
+        <form action={prepareMobileReleaseBuildAction} className="callout build-prep-panel">
+          <input type="hidden" name="locationId" value={locationId} />
+          <input type="hidden" name="buildProfile" value={buildProfile} />
+          <input type="hidden" name="configHash" value={configHash} />
+          <input type="hidden" name="appStoreReviewNotes" value={defaultReviewNotes} />
+          <div>
+            <strong>Prepare merchant build</strong>
+            <p>
+              Records the current identity profile as the native build input. Layout and content publishes remain server-driven and should not require a new binary.
+            </p>
+          </div>
+          <label className="field">
+            <span>Source commit SHA</span>
+            <input
+              name="sourceCommitSha"
+              defaultValue={sourceCommitSha}
+              placeholder="40-character git commit SHA"
+              pattern="[A-Fa-f0-9]{40}"
+              required
+            />
+          </label>
+          <label className="field field-wide">
+            <span>Internal handoff note</span>
+            <input name="notes" defaultValue={release?.notes ?? `Prepared build config ${configHash.slice(0, 12)}.`} />
+          </label>
+          <div className="form-actions">
+            <button type="submit" className="primary-button" disabled={!configHash}>
+              Prepare Build
+            </button>
+          </div>
+        </form>
+      ) : (
+        <div className="callout is-warning">
+          <strong>Build preparation is blocked.</strong>
+          <p>Complete the app identity profile before recording a native build configuration.</p>
+        </div>
+      )}
 
       <form action={updateMobileReleaseAction} className="stack-form release-form">
         <input type="hidden" name="locationId" value={locationId} />
@@ -204,6 +309,18 @@ function MobileReleaseStatusPanel({ locationId, release }: { locationId: string;
             <input name="buildNumber" defaultValue={release?.buildNumber ?? ""} />
           </label>
           <label className="field">
+            <span>Build profile</span>
+            <input name="buildProfile" defaultValue={release?.buildProfile ?? ""} />
+          </label>
+          <label className="field field-wide">
+            <span>Source commit SHA</span>
+            <input name="sourceCommitSha" defaultValue={release?.sourceCommitSha ?? ""} pattern="[A-Fa-f0-9]{40}" />
+          </label>
+          <label className="field field-wide">
+            <span>Config hash</span>
+            <input name="configHash" defaultValue={release?.configHash ?? ""} />
+          </label>
+          <label className="field">
             <span>Submitted at</span>
             <input name="submittedAt" type="datetime-local" defaultValue={toDateTimeLocal(release?.submittedAt)} />
           </label>
@@ -226,6 +343,10 @@ function MobileReleaseStatusPanel({ locationId, release }: { locationId: string;
           <label className="field field-wide">
             <span>Blocked reason</span>
             <input name="blockedReason" defaultValue={release?.blockedReason ?? ""} />
+          </label>
+          <label className="field field-wide">
+            <span>App Store review notes</span>
+            <textarea name="appStoreReviewNotes" rows={4} defaultValue={release?.appStoreReviewNotes ?? ""} />
           </label>
           <label className="field field-wide">
             <span>Internal notes</span>
@@ -372,6 +493,7 @@ export default async function ClientDetailPage({ params, searchParams }: ClientD
   const created = typeof query.created === "string" ? query.created : undefined;
   const invited = typeof query.invited === "string" ? query.invited : undefined;
   const releaseUpdated = typeof query.releaseUpdated === "string" ? query.releaseUpdated : undefined;
+  const releasePrepared = typeof query.releasePrepared === "string" ? query.releasePrepared : undefined;
   const releaseError = typeof query.releaseError === "string" ? query.releaseError : undefined;
   const appIdentityUpdated = typeof query.appIdentityUpdated === "string" ? query.appIdentityUpdated : undefined;
   const appIdentityError = typeof query.appIdentityError === "string" ? query.appIdentityError : undefined;
@@ -418,6 +540,7 @@ export default async function ClientDetailPage({ params, searchParams }: ClientD
 
         {created ? <p className="inline-message inline-message-success">Client shell created.</p> : null}
         {invited ? <p className="inline-message inline-message-success">Owner invite sent.</p> : null}
+        {releasePrepared ? <p className="inline-message inline-message-success">Mobile build configuration prepared.</p> : null}
         {releaseUpdated ? <p className="inline-message inline-message-success">Mobile release status updated.</p> : null}
         {releaseError ? <p className="inline-message inline-message-error">{releaseError}</p> : null}
         {appIdentityUpdated ? <p className="inline-message inline-message-success">App identity updated.</p> : null}
@@ -588,7 +711,11 @@ export default async function ClientDetailPage({ params, searchParams }: ClientD
 
         <AppIdentityPanel locationId={locationId} identity={onboarding.appIdentity} />
 
-        <MobileReleaseStatusPanel locationId={locationId} release={onboarding.mobileRelease} />
+        <MobileReleaseStatusPanel
+          locationId={locationId}
+          release={onboarding.mobileRelease}
+          identity={onboarding.appIdentity}
+        />
       </section>
     );
   } catch (error) {

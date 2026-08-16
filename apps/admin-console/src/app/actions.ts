@@ -328,6 +328,10 @@ export async function updateMobileReleaseAction(formData: FormData) {
         status: readOptionalString(formData, "status"),
         statusLabel: readOptionalString(formData, "statusLabel"),
         buildNumber: readOptionalString(formData, "buildNumber"),
+        buildProfile: readOptionalString(formData, "buildProfile"),
+        sourceCommitSha: readOptionalString(formData, "sourceCommitSha"),
+        configHash: readOptionalString(formData, "configHash"),
+        appStoreReviewNotes: readOptionalString(formData, "appStoreReviewNotes"),
         testFlightUrl: readOptionalString(formData, "testFlightUrl"),
         appStoreUrl: readOptionalString(formData, "appStoreUrl"),
         submittedAt: readOptionalDateTime(formData, "submittedAt"),
@@ -342,6 +346,39 @@ export async function updateMobileReleaseAction(formData: FormData) {
   }
 
   redirect(`/clients/${locationId}?releaseUpdated=1`);
+}
+
+export async function prepareMobileReleaseBuildAction(formData: FormData) {
+  const locationId = readString(formData, "locationId");
+  if (!locationId) {
+    redirect("/clients?error=Location ID is required.");
+  }
+  const sourceCommitSha = readString(formData, "sourceCommitSha");
+  const buildProfile = readString(formData, "buildProfile");
+  const configHash = readString(formData, "configHash");
+
+  try {
+    await requireAdminCapability("clients:write");
+    if (!sourceCommitSha || !buildProfile || !configHash) {
+      throw new Error("Build profile, source commit SHA, and config hash are required before preparing a build.");
+    }
+    await updateInternalLocationMobileRelease(
+      locationId,
+      mobileReleaseProfileUpdateSchema.parse({
+        status: "build_configuring",
+        statusLabel: "Build configuration prepared",
+        buildProfile,
+        sourceCommitSha,
+        configHash,
+        appStoreReviewNotes: readOptionalString(formData, "appStoreReviewNotes"),
+        notes: readOptionalString(formData, "notes")
+      })
+    );
+  } catch (error) {
+    redirect(`/clients/${locationId}?releaseError=${encodeURIComponent(toRedirectError(error))}`);
+  }
+
+  redirect(`/clients/${locationId}?releasePrepared=1`);
 }
 
 export async function updateAppIdentityAction(formData: FormData) {

@@ -2175,6 +2175,10 @@ function toMobileReleaseProfile(row: {
   app_store_url: string | null;
   test_flight_url: string | null;
   build_number: string | null;
+  build_profile: string | null;
+  source_commit_sha: string | null;
+  config_hash: string | null;
+  app_store_review_notes: string | null;
   submitted_at: CatalogTimestamp;
   approved_at: CatalogTimestamp;
   live_at: CatalogTimestamp;
@@ -2189,6 +2193,10 @@ function toMobileReleaseProfile(row: {
     appStoreUrl: row.app_store_url ?? undefined,
     testFlightUrl: row.test_flight_url ?? undefined,
     buildNumber: row.build_number ?? undefined,
+    buildProfile: row.build_profile ?? undefined,
+    sourceCommitSha: row.source_commit_sha ?? undefined,
+    configHash: row.config_hash ?? undefined,
+    appStoreReviewNotes: row.app_store_review_notes ?? undefined,
     submittedAt: serializeCatalogTimestamp(row.submitted_at),
     approvedAt: serializeCatalogTimestamp(row.approved_at),
     liveAt: serializeCatalogTimestamp(row.live_at),
@@ -3151,6 +3159,10 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
           app_store_url: input.appStoreUrl ?? existing.app_store_url,
           test_flight_url: input.testFlightUrl ?? existing.test_flight_url,
           build_number: input.buildNumber ?? existing.build_number,
+          build_profile: input.buildProfile ?? existing.build_profile,
+          source_commit_sha: input.sourceCommitSha ?? existing.source_commit_sha,
+          config_hash: input.configHash ?? existing.config_hash,
+          app_store_review_notes: input.appStoreReviewNotes ?? existing.app_store_review_notes,
           submitted_at: input.submittedAt ?? existing.submitted_at,
           approved_at: input.approvedAt ?? existing.approved_at,
           live_at: input.liveAt ?? existing.live_at,
