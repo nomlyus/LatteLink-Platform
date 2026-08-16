@@ -3,6 +3,7 @@ import type { OperatorSession } from "../src/api";
 import { getAvailableDashboardSections } from "../src/sections";
 import { state } from "../src/state";
 import { renderOnboardingWizard } from "../src/views/onboarding";
+import { renderExperienceSection } from "../src/views/experience";
 import { renderStoreSection } from "../src/views/store";
 import { renderTeamSection } from "../src/views/team";
 
@@ -71,6 +72,10 @@ describe("dashboard sections", () => {
     state.storeConfig = null;
     state.selectedLocationId = null;
     state.teamUsers = [];
+    state.mobileExperience = null;
+    state.mobileExperienceVersions = { locationId: "", versions: [] };
+    state.menuCategories = [];
+    state.newsCards = [];
   });
 
   it("keeps setup out of dashboard navigation and embeds it in owner settings", () => {
@@ -247,5 +252,121 @@ describe("dashboard sections", () => {
     expect(html).toContain("TestFlight");
     expect(html).toContain("Build");
     expect(html).not.toContain("data-action=\"mobile-release\"");
+  });
+
+  it("renders the mobile app builder with section ordering, source, variant, and comparison controls", () => {
+    state.session = {
+      ...ownerSession,
+      operator: {
+        ...ownerSession.operator,
+        capabilities: ["store:read", "store:write"]
+      }
+    };
+    state.selectedLocationId = "northside-01";
+    state.storeConfig = storeConfig;
+    state.menuCategories = [
+      {
+        categoryId: "espresso",
+        title: "Espresso",
+        items: [
+          {
+            itemId: "latte",
+            categoryId: "espresso",
+            categoryTitle: "Espresso",
+            name: "Latte",
+            priceCents: 525,
+            visible: true,
+            sortOrder: 0,
+            customizationGroups: []
+          }
+        ]
+      }
+    ];
+    state.mobileExperience = {
+      locationId: "northside-01",
+      draft: {
+        locationId: "northside-01",
+        versionId: "draft-1",
+        status: "draft",
+        templateId: "editorial_featured",
+        theme: {
+          accentColor: "#2f6b4f"
+        },
+        protectedNavigation: ["home", "menu", "orders", "account"],
+        screens: [
+          {
+            id: "home",
+            sections: [
+              {
+                id: "hero",
+                type: "hero",
+                visible: true,
+                title: "Northside Coffee",
+                subtitle: "Detroit pickup",
+                action: "open_orders",
+                actionLabel: "Start order"
+              },
+              {
+                id: "quick-actions",
+                type: "quick_actions",
+                visible: true,
+                actions: ["open_menu", "open_orders"]
+              },
+              {
+                id: "featured-menu",
+                type: "featured_menu",
+                visible: true,
+                title: "Espresso picks",
+                categoryId: "espresso",
+                itemLimit: 3
+              },
+              {
+                id: "news-cards",
+                type: "news_cards",
+                visible: false,
+                title: "Latest",
+                cardLimit: 4
+              }
+            ]
+          }
+        ]
+      },
+      published: {
+        locationId: "northside-01",
+        versionId: "published-1",
+        status: "published",
+        templateId: "coffee_standard",
+        theme: {},
+        protectedNavigation: ["home", "menu", "orders", "account"],
+        screens: [
+          {
+            id: "home",
+            sections: [
+              {
+                id: "hero",
+                type: "hero",
+                visible: true,
+                title: "Northside Coffee",
+                subtitle: "Detroit pickup",
+                action: "open_menu",
+                actionLabel: "Order now"
+              }
+            ]
+          }
+        ],
+        publishedAt: "2026-05-06T12:00:00.000Z"
+      }
+    };
+
+    const html = renderExperienceSection();
+
+    expect(html).toContain("Visible sections");
+    expect(html).toContain("Template changed");
+    expect(html).toContain("Protected tabs");
+    expect(html).toContain('data-action="move-mobile-experience-section"');
+    expect(html).toContain("Button destination");
+    expect(html).toContain("Content source");
+    expect(html).toContain("Espresso");
+    expect(html).toContain("Start order");
   });
 });

@@ -50,6 +50,7 @@ import { handleStoreSubmit } from "./controllers/store.js";
 import {
   handleMobileExperiencePublish,
   handleMobileExperienceRollback,
+  handleMobileExperienceSectionMove,
   handleMobileExperienceSubmit
 } from "./controllers/experience.js";
 import { handleTeamCreateSubmit, handleTeamUserDelete, handleTeamUserSubmit } from "./controllers/team.js";
@@ -327,6 +328,15 @@ export function registerEvents() {
 
     if (action === "publish-mobile-experience") {
       void handleMobileExperiencePublish();
+      return;
+    }
+
+    if (action === "move-mobile-experience-section") {
+      const sectionType = actionElement.dataset.sectionType;
+      const direction = actionElement.dataset.direction === "down" ? "down" : "up";
+      if (sectionType) {
+        handleMobileExperienceSectionMove(sectionType, direction);
+      }
       return;
     }
 

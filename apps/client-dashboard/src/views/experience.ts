@@ -17,6 +17,12 @@ const sectionLabels: Record<MobileExperienceSection["type"], string> = {
   news_cards: "News cards"
 };
 
+const actionLabels = {
+  open_menu: "Menu",
+  open_orders: "Orders",
+  open_account: "Account"
+} as const;
+
 function getDraft() {
   return state.mobileExperience?.draft ?? null;
 }
@@ -44,28 +50,110 @@ function renderTemplateOptions(draft: MobileExperienceDocument) {
     .join("");
 }
 
-function renderSectionOrderOptions(currentIndex: number) {
-  return [0, 1, 2, 3]
+function renderActionOptions(selected: string | undefined) {
+  return (Object.keys(actionLabels) as Array<keyof typeof actionLabels>)
     .map(
-      (index) => `<option value="${index + 1}" ${index === currentIndex ? "selected" : ""}>${index + 1}</option>`
+      (action) => `<option value="${action}" ${selected === action ? "selected" : ""}>${escapeHtml(actionLabels[action])}</option>`
     )
     .join("");
 }
 
-function renderSectionToggles(sections: MobileExperienceSection[]) {
-  return sections
-    .map(
-      (section) => `
-        <label class="experience-section-toggle">
-          <input type="checkbox" name="sectionVisible:${section.type}" ${section.visible ? "checked" : ""} ${section.type === "hero" ? "disabled checked" : ""} />
-          <span>${escapeHtml(sectionLabels[section.type])}</span>
-          <select name="sectionOrder:${section.type}" aria-label="${escapeHtml(sectionLabels[section.type])} order">
-            ${renderSectionOrderOptions(sections.findIndex((candidate) => candidate.type === section.type))}
-          </select>
-        </label>
+function renderCategoryOptions(selected: string | undefined) {
+  return [
+    `<option value="" ${selected ? "" : "selected"}>All visible items</option>`,
+    ...state.menuCategories.map(
+      (category) => `
+        <option value="${escapeHtml(category.categoryId)}" ${selected === category.categoryId ? "selected" : ""}>
+          ${escapeHtml(category.title)}
+        </option>
       `
     )
+  ].join("");
+}
+
+function renderQuickActionToggle(action: keyof typeof actionLabels, selectedActions: readonly string[]) {
+  return `
+    <label class="experience-chip-toggle">
+      <input type="checkbox" name="quickAction:${action}" ${selectedActions.includes(action) ? "checked" : ""} />
+      <span>${escapeHtml(actionLabels[action])}</span>
+    </label>
+  `;
+}
+
+function renderSectionEditorCards(sections: MobileExperienceSection[]) {
+  return sections
+    .map((section, index) => {
+      const isRequired = section.type === "hero";
+      const selectedQuickActions = section.type === "quick_actions"
+        ? section.actions ?? ["open_menu", "open_orders", "open_account"]
+        : [];
+      const settings =
+        section.type === "hero"
+          ? `
+            <label class="field">
+              <span>Button destination</span>
+              <select name="heroAction">${renderActionOptions(section.action ?? "open_menu")}</select>
+            </label>
+          `
+          : section.type === "quick_actions"
+            ? `
+              <div class="experience-chip-row" aria-label="Quick action buttons">
+                ${renderQuickActionToggle("open_menu", selectedQuickActions)}
+                ${renderQuickActionToggle("open_orders", selectedQuickActions)}
+                ${renderQuickActionToggle("open_account", selectedQuickActions)}
+              </div>
+            `
+            : section.type === "featured_menu"
+              ? `
+                <label class="field">
+                  <span>Content source</span>
+                  <select name="featuredMenuCategoryId">${renderCategoryOptions(section.categoryId)}</select>
+                </label>
+              `
+              : "";
+
+      return `
+        <article class="experience-section-card ${section.visible ? "" : "experience-section-card--disabled"}">
+          <input type="hidden" name="sectionOrder:${section.type}" value="${index + 1}" />
+          <div class="experience-section-card__head">
+            <label class="experience-section-card__toggle">
+              <input type="checkbox" name="sectionVisible:${section.type}" ${section.visible ? "checked" : ""} ${isRequired ? "disabled checked" : ""} />
+              <span>${escapeHtml(isRequired ? "Required" : section.visible ? "Included" : "Removed")}</span>
+            </label>
+            <div>
+              <strong>${escapeHtml(sectionLabels[section.type])}</strong>
+              <p>${escapeHtml(section.visible ? "Shown in the customer home layout." : "Available to add back before publishing.")}</p>
+            </div>
+            <div class="experience-section-card__order" aria-label="${escapeHtml(sectionLabels[section.type])} order controls">
+              <button class="button button--ghost button--sm" type="button" data-action="move-mobile-experience-section" data-section-type="${section.type}" data-direction="up" ${index === 0 ? "disabled" : ""}>Up</button>
+              <button class="button button--ghost button--sm" type="button" data-action="move-mobile-experience-section" data-section-type="${section.type}" data-direction="down" ${index === sections.length - 1 ? "disabled" : ""}>Down</button>
+            </div>
+          </div>
+          ${settings ? `<div class="experience-section-card__settings">${settings}</div>` : ""}
+        </article>
+      `;
+    })
     .join("");
+}
+
+function countVisibleSections(sections: MobileExperienceSection[]) {
+  return sections.filter((section) => section.visible).length;
+}
+
+function compareDraftToPublished(draft: MobileExperienceDocument, published: MobileExperienceDocument | undefined) {
+  if (!published) {
+    return "No published version yet";
+  }
+
+  const draftSections = getHomeSections(draft).filter((section) => section.visible).map((section) => section.type).join(", ");
+  const publishedSections = getHomeSections(published).filter((section) => section.visible).map((section) => section.type).join(", ");
+  if (draft.templateId !== published.templateId) {
+    return "Template changed";
+  }
+  if (draftSections !== publishedSections) {
+    return "Layout changed";
+  }
+  return "No layout changes";
 }
 
 function renderVersionHistory(canWrite: boolean) {
@@ -86,6 +174,7 @@ function renderVersionHistory(canWrite: boolean) {
             <div class="experience-version-row">
               <span>${escapeHtml(label)}</span>
               <span>${escapeHtml(templateLabels[version.templateId])}</span>
+              <small>${getHomeSections(version).filter((section) => section.visible).map((section) => sectionLabels[section.type]).join(" / ")}</small>
               <button
                 class="button button--ghost"
                 type="button"
@@ -120,17 +209,19 @@ function renderPreviewSection(section: MobileExperienceSection) {
   }
 
   if (section.type === "quick_actions") {
+    const actions = section.actions ?? ["open_menu", "open_orders", "open_account"];
     return `
       <div class="experience-phone-actions">
-        <span>Menu</span>
-        <span>Orders</span>
-        <span>Account</span>
+        ${actions.map((action) => `<span>${escapeHtml(actionLabels[action])}</span>`).join("")}
       </div>
     `;
   }
 
   if (section.type === "featured_menu") {
-    const items = state.menuCategories.flatMap((category) => category.items).slice(0, section.itemLimit ?? 4);
+    const sourceItems = section.categoryId
+      ? state.menuCategories.find((category) => category.categoryId === section.categoryId)?.items ?? []
+      : state.menuCategories.flatMap((category) => category.items);
+    const items = sourceItems.slice(0, section.itemLimit ?? 4);
     return `
       <div class="experience-phone-block">
         <strong>${escapeHtml(section.title ?? "Popular today")}</strong>
@@ -183,6 +274,8 @@ export function renderExperienceSection() {
   const publishedLabel = state.mobileExperience?.published?.publishedAt
     ? `Published ${new Date(state.mobileExperience.published.publishedAt).toLocaleString()}`
     : "Not published yet";
+  const visibleSectionCount = countVisibleSections(sections);
+  const compareLabel = compareDraftToPublished(draft, state.mobileExperience?.published);
 
   return `
     <section class="dash-section">
@@ -200,6 +293,11 @@ export function renderExperienceSection() {
             </div>
             <span class="dash-status-badge dash-status-badge--neutral">${escapeHtml(publishedLabel)}</span>
           </div>
+          <div class="experience-builder-summary">
+            <div><span>Visible sections</span><strong>${visibleSectionCount}</strong></div>
+            <div><span>Draft status</span><strong>${escapeHtml(compareLabel)}</strong></div>
+            <div><span>Protected tabs</span><strong>Home / Menu / Orders / Account</strong></div>
+          </div>
           ${
             canWrite
               ? `
@@ -208,8 +306,20 @@ export function renderExperienceSection() {
                     <span>Base template</span>
                     <select name="templateId">${renderTemplateOptions(draft)}</select>
                   </label>
+                  <label class="field">
+                    <span>Accent color</span>
+                    <input name="accentColor" value="${escapeHtml(draft.theme.accentColor ?? "")}" placeholder="#2f6b4f" />
+                  </label>
+                  <label class="field">
+                    <span>Background color</span>
+                    <input name="backgroundColor" value="${escapeHtml(draft.theme.backgroundColor ?? "")}" placeholder="#f6f2ec" />
+                  </label>
+                  <label class="field">
+                    <span>Text color</span>
+                    <input name="foregroundColor" value="${escapeHtml(draft.theme.foregroundColor ?? "")}" placeholder="#161a18" />
+                  </label>
                   <div class="experience-section-controls">
-                    ${renderSectionToggles(sections)}
+                    ${renderSectionEditorCards(sections)}
                   </div>
                   <label class="field">
                     <span>Hero title</span>

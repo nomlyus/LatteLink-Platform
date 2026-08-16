@@ -1,4 +1,5 @@
 import {
+  mobileExperienceActionSchema,
   mobileExperienceSaveDraftRequestSchema,
   type MobileExperienceSection
 } from "@lattelink/contracts-catalog";
@@ -14,6 +15,17 @@ import { setError, state } from "../state.js";
 import { addToast } from "../toast-runtime.js";
 
 const supportedSectionTypes = ["hero", "quick_actions", "featured_menu", "news_cards"] as const;
+type MobileExperienceAction = "open_menu" | "open_orders" | "open_account";
+
+function parseAction(value: FormDataEntryValue | null, fallback: MobileExperienceAction) {
+  const parsed = mobileExperienceActionSchema.safeParse(value);
+  return parsed.success ? parsed.data : fallback;
+}
+
+function parsePositiveInt(value: FormDataEntryValue | null, fallback: number) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
 
 function parseSectionOrder(formData: FormData) {
   const requested = [...supportedSectionTypes].sort((left, right) => {
@@ -41,6 +53,10 @@ function isSectionVisible(formData: FormData, type: string) {
 
 function buildSections(formData: FormData): MobileExperienceSection[] {
   const order = parseSectionOrder(formData);
+  const quickActions = ["open_menu", "open_orders", "open_account"]
+    .filter((action) => formData.get(`quickAction:${action}`) === "on")
+    .map((action) => parseAction(action, "open_menu"));
+
   return order.map((type) => {
     if (type === "hero") {
       return {
@@ -49,7 +65,7 @@ function buildSections(formData: FormData): MobileExperienceSection[] {
         visible: isSectionVisible(formData, type),
         title: String(formData.get("heroTitle") ?? "").trim(),
         subtitle: String(formData.get("heroSubtitle") ?? "").trim(),
-        action: "open_menu",
+        action: parseAction(formData.get("heroAction"), "open_menu"),
         actionLabel: String(formData.get("heroActionLabel") ?? "Order now").trim() || "Order now"
       };
     }
@@ -60,17 +76,19 @@ function buildSections(formData: FormData): MobileExperienceSection[] {
         type: "quick_actions",
         visible: isSectionVisible(formData, type),
         title: "Quick actions",
-        actions: ["open_menu", "open_orders", "open_account"]
+        actions: quickActions.length > 0 ? quickActions : ["open_menu"]
       };
     }
 
     if (type === "featured_menu") {
+      const categoryId = String(formData.get("featuredMenuCategoryId") ?? "").trim();
       return {
         id: "featured-menu",
         type: "featured_menu",
         visible: isSectionVisible(formData, type),
         title: String(formData.get("featuredMenuTitle") ?? "Popular today").trim() || "Popular today",
-        itemLimit: Number.parseInt(String(formData.get("featuredMenuLimit") ?? "4"), 10)
+        ...(categoryId ? { categoryId } : {}),
+        itemLimit: parsePositiveInt(formData.get("featuredMenuLimit"), 4)
       };
     }
 
@@ -79,9 +97,35 @@ function buildSections(formData: FormData): MobileExperienceSection[] {
       type: "news_cards",
       visible: isSectionVisible(formData, type),
       title: String(formData.get("newsCardsTitle") ?? "Latest").trim() || "Latest",
-      cardLimit: Number.parseInt(String(formData.get("newsCardsLimit") ?? "4"), 10)
+      cardLimit: parsePositiveInt(formData.get("newsCardsLimit"), 4)
     };
   });
+}
+
+export function handleMobileExperienceSectionMove(type: string, direction: "up" | "down") {
+  if (!state.mobileExperience) {
+    return;
+  }
+
+  const screen = state.mobileExperience.draft.screens.find((candidate) => candidate.id === "home");
+  if (!screen) {
+    return;
+  }
+
+  const index = screen.sections.findIndex((section) => section.type === type);
+  const nextIndex = direction === "up" ? index - 1 : index + 1;
+  if (index < 0 || nextIndex < 0 || nextIndex >= screen.sections.length) {
+    return;
+  }
+
+  const sections = [...screen.sections];
+  const [section] = sections.splice(index, 1);
+  if (!section) {
+    return;
+  }
+  sections.splice(nextIndex, 0, section);
+  screen.sections = sections;
+  render();
 }
 
 export async function handleMobileExperienceSubmit(form: HTMLFormElement) {
@@ -105,7 +149,11 @@ export async function handleMobileExperienceSubmit(form: HTMLFormElement) {
       mobileExperienceSaveDraftRequestSchema.parse({
         versionId: state.mobileExperience?.draft.versionId,
         templateId: formData.get("templateId"),
-        theme: state.mobileExperience?.draft.theme ?? {},
+        theme: {
+          accentColor: String(formData.get("accentColor") ?? "").trim() || undefined,
+          backgroundColor: String(formData.get("backgroundColor") ?? "").trim() || undefined,
+          foregroundColor: String(formData.get("foregroundColor") ?? "").trim() || undefined
+        },
         protectedNavigation: ["home", "menu", "orders", "account"],
         screens: [
           {
