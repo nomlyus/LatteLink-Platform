@@ -70,6 +70,11 @@ import {
   internalLocationSummarySchema,
   launchApprovalRequestSchema,
   launchReadinessResponseSchema,
+  mobileExperienceDocumentSchema,
+  mobileExperienceDraftResponseSchema,
+  mobileExperiencePublishRequestSchema,
+  mobileExperienceSaveDraftRequestSchema,
+  mobileExperienceVersionsResponseSchema,
   mobileReleaseProfileUpdateSchema,
   onboardingSummarySchema,
   operatorOnboardingUpdateSchema,
@@ -2756,6 +2761,18 @@ export async function registerRoutes(app: FastifyInstance) {
     })
   );
 
+  app.get("/v1/mobile-experience", { preHandler: app.rateLimit(catalogReadRateLimit) }, async (request, reply) =>
+    proxyUpstream({
+      request,
+      reply,
+      baseUrl: catalogBaseUrl,
+      serviceLabel: "Catalog",
+      method: "GET",
+      path: "/v1/mobile-experience",
+      responseSchema: mobileExperienceDocumentSchema
+    })
+  );
+
   app.get("/v1/store/cards", { preHandler: app.rateLimit(catalogReadRateLimit) }, async (request, reply) =>
     proxyUpstream({
       request,
@@ -4250,6 +4267,120 @@ export async function registerRoutes(app: FastifyInstance) {
           ...operatorLocationHeader(locationContext.locationId)
         },
         responseSchema: adminStoreConfigSchema
+      });
+    }
+  );
+
+  app.get(
+    "/v1/admin/mobile-experience",
+    {
+      preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("store:read")]
+    },
+    async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "GET",
+        path: "/v1/catalog/admin/mobile-experience",
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken,
+          ...operatorLocationHeader(locationContext.locationId)
+        },
+        responseSchema: mobileExperienceDraftResponseSchema
+      });
+    }
+  );
+
+  app.get(
+    "/v1/admin/mobile-experience/versions",
+    {
+      preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("store:read")]
+    },
+    async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "GET",
+        path: "/v1/catalog/admin/mobile-experience/versions",
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken,
+          ...operatorLocationHeader(locationContext.locationId)
+        },
+        responseSchema: mobileExperienceVersionsResponseSchema
+      });
+    }
+  );
+
+  app.put(
+    "/v1/admin/mobile-experience/draft",
+    {
+      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("store:write")]
+    },
+    async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+
+      const input = mobileExperienceSaveDraftRequestSchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "PUT",
+        path: "/v1/catalog/admin/mobile-experience/draft",
+        body: input,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken,
+          ...operatorLocationHeader(locationContext.locationId)
+        },
+        responseSchema: mobileExperienceDraftResponseSchema
+      });
+    }
+  );
+
+  app.post(
+    "/v1/admin/mobile-experience/publish",
+    {
+      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("store:write")]
+    },
+    async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+
+      const input = mobileExperiencePublishRequestSchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "POST",
+        path: "/v1/catalog/admin/mobile-experience/publish",
+        body: input,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken,
+          ...operatorLocationHeader(locationContext.locationId)
+        },
+        responseSchema: mobileExperienceDocumentSchema
       });
     }
   );

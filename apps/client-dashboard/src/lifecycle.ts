@@ -195,6 +195,7 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
       state.newsCards = [];
       state.discountCodes = [];
       state.storeConfig = null;
+      state.mobileExperience = null;
       state.teamUsers = [];
     } else {
       const snapshot = await fetchOperatorSnapshot(session, state.selectedLocationId);
@@ -206,6 +207,7 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
       state.newsCards = snapshot.cards;
       state.discountCodes = snapshot.discountCodes;
       state.storeConfig = snapshot.storeConfig;
+      state.mobileExperience = snapshot.mobileExperience;
       state.teamUsers = mergePendingTeamUserUpdates(snapshot.team);
     }
 

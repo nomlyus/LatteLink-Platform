@@ -5,6 +5,7 @@ import {
   isOrderTrackingEnabled,
   homeNewsCardsResponseSchema,
   menuResponseSchema,
+  mobileExperienceDocumentSchema,
   storeConfigResponseSchema,
   type AppConfig,
   type HomeNewsCard,
@@ -15,6 +16,7 @@ import {
   type MenuItemCustomizationInput,
   type MenuItemCustomizationOption,
   type MenuResponse,
+  type MobileExperienceDocument,
   type StoreConfigResponse
 } from "@lattelink/contracts-catalog";
 import { API_BASE_URL, CATALOG_API_BASE_URL, MOBILE_LOCATION_ID, apiClient, catalogApiClient } from "../api/client";
@@ -24,6 +26,7 @@ const catalogMenuQueryKey = ["catalog", "menu"] as const;
 const catalogHomeNewsCardsQueryKey = ["catalog", "home-news-cards"] as const;
 const catalogStoreConfigQueryKey = ["catalog", "store-config"] as const;
 const catalogAppConfigQueryKey = ["catalog", "app-config"] as const;
+const catalogMobileExperienceQueryKey = ["catalog", "mobile-experience"] as const;
 const catalogStaleTimeMs = 60_000;
 
 export type MenuImageVariant = "list" | "hero";
@@ -136,6 +139,19 @@ async function fetchAppConfig(): Promise<AppConfig> {
   );
 }
 
+async function fetchMobileExperience(): Promise<MobileExperienceDocument> {
+  return withCriticalDataLoadSentry(
+    {
+      feature: "home",
+      operation: "load_mobile_experience",
+      endpoint: "/mobile-experience",
+      apiBaseUrl: API_BASE_URL,
+      locationId: MOBILE_LOCATION_ID
+    },
+    async () => mobileExperienceDocumentSchema.parse(await apiClient.mobileExperience())
+  );
+}
+
 export function prefetchCatalogQueries(queryClient: QueryClient) {
   void Promise.allSettled([
     queryClient.prefetchQuery({
@@ -156,6 +172,11 @@ export function prefetchCatalogQueries(queryClient: QueryClient) {
     queryClient.prefetchQuery({
       queryKey: catalogHomeNewsCardsQueryKey,
       queryFn: fetchHomeNewsCards,
+      staleTime: catalogStaleTimeMs
+    }),
+    queryClient.prefetchQuery({
+      queryKey: catalogMobileExperienceQueryKey,
+      queryFn: fetchMobileExperience,
       staleTime: catalogStaleTimeMs
     })
   ]);
@@ -189,6 +210,14 @@ export function useAppConfigQuery() {
   return useQuery({
     queryKey: catalogAppConfigQueryKey,
     queryFn: fetchAppConfig,
+    staleTime: catalogStaleTimeMs
+  });
+}
+
+export function useMobileExperienceQuery() {
+  return useQuery({
+    queryKey: catalogMobileExperienceQueryKey,
+    queryFn: fetchMobileExperience,
     staleTime: catalogStaleTimeMs
   });
 }
@@ -248,5 +277,6 @@ export type {
   MenuItem,
   MenuItemCustomizationGroup,
   MenuItemCustomizationInput,
-  MenuItemCustomizationOption
+  MenuItemCustomizationOption,
+  MobileExperienceDocument
 };

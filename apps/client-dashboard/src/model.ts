@@ -37,7 +37,7 @@ const operatorOrderSchema = orderSchema.extend({
 export type OperatorOrder = z.output<typeof operatorOrderSchema>;
 export type OperatorOrderStatus = z.output<typeof orderStatusSchema>;
 export type OperatorOrderFilter = "all" | "active" | "completed";
-export type DashboardSection = "overview" | "orders" | "menu" | "cards" | "discounts" | "store" | "team";
+export type DashboardSection = "overview" | "orders" | "menu" | "cards" | "discounts" | "experience" | "store" | "team";
 export type OperatorCapability = z.output<typeof operatorCapabilitySchema>;
 export type OperatorUser = z.output<typeof operatorUserSchema>;
 export const operatorMenuItemSchema = adminMenuItemSchema.extend({
@@ -273,6 +273,7 @@ export function getAvailableSections(
     sections.push("discounts");
   }
   if (canAccessCapability(operator, "store:read")) {
+    sections.push("experience");
     sections.push("store");
   }
   if (canAccessCapability(operator, "team:read")) {

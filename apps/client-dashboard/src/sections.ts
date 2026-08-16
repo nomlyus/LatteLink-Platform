@@ -13,6 +13,7 @@ export const dashboardSectionLabels: Record<DashboardSection, string> = {
   menu: "Menu",
   cards: "News cards",
   discounts: "Discounts",
+  experience: "App builder",
   team: "Team",
   store: "Settings"
 };
@@ -67,6 +68,7 @@ export function getAvailableDashboardSections() {
   }
 
   if (canAccessCapability(state.session?.operator ?? null, "store:read")) {
+    sections.push("experience");
     sections.push("store");
   }
 

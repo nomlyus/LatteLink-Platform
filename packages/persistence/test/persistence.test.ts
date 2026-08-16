@@ -31,6 +31,7 @@ import * as migration0019 from "../src/migrations/0019_remove_legacy_seeded_oper
 import * as migration0020 from "../src/migrations/0020_stripe_phase1_foundations.js";
 import * as migration0035 from "../src/migrations/0035_onboarding_client_shells.js";
 import * as migration0036 from "../src/migrations/0036_backfill_onboarding_client_shells.js";
+import * as migration0038 from "../src/migrations/0038_mobile_experience_builder.js";
 import { resolveMigrationFolderPath } from "../src/migrate.js";
 
 describe("persistence", () => {
@@ -154,7 +155,8 @@ describe("persistence", () => {
       "0019_remove_legacy_seeded_operator_users": migration0019,
       "0020_stripe_phase1_foundations": migration0020,
       "0035_onboarding_client_shells": migration0035,
-      "0036_backfill_onboarding_client_shells": migration0036
+      "0036_backfill_onboarding_client_shells": migration0036,
+      "0038_mobile_experience_builder": migration0038
     };
 
     expect(basename(resolveMigrationFolderPath())).toBe("migrations");
@@ -180,7 +182,8 @@ describe("persistence", () => {
       "0019_remove_legacy_seeded_operator_users",
       "0020_stripe_phase1_foundations",
       "0035_onboarding_client_shells",
-      "0036_backfill_onboarding_client_shells"
+      "0036_backfill_onboarding_client_shells",
+      "0038_mobile_experience_builder"
     ]);
 
     for (const migration of Object.values(migrations)) {

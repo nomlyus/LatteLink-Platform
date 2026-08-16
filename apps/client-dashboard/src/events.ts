@@ -46,6 +46,7 @@ import {
 } from "./controllers/cards.js";
 import { handleDiscountCodeCreateSubmit, handleDiscountCodeSubmit } from "./controllers/discounts.js";
 import { handleStoreSubmit } from "./controllers/store.js";
+import { handleMobileExperiencePublish, handleMobileExperienceSubmit } from "./controllers/experience.js";
 import { handleTeamCreateSubmit, handleTeamUserDelete, handleTeamUserSubmit } from "./controllers/team.js";
 import { handleOrderAdvance } from "./controllers/orders.js";
 import {
@@ -114,6 +115,9 @@ export function registerEvents() {
         return;
       case "store-config":
         void handleStoreSubmit(target);
+        return;
+      case "mobile-experience":
+        void handleMobileExperienceSubmit(target);
         return;
       case "onboarding-step":
         void handleOnboardingStepSubmit(target);
@@ -279,9 +283,10 @@ export function registerEvents() {
         section === "overview" ||
         section === "orders" ||
         section === "menu" ||
-        section === "cards" ||
-        section === "discounts" ||
-        section === "store" ||
+          section === "cards" ||
+          section === "discounts" ||
+          section === "experience" ||
+          section === "store" ||
         section === "team"
       ) {
         if (!getAvailableDashboardSections().includes(section)) {
@@ -300,6 +305,11 @@ export function registerEvents() {
           startAutoRefresh(loadDashboard);
         }
       }
+      return;
+    }
+
+    if (action === "publish-mobile-experience") {
+      void handleMobileExperiencePublish();
       return;
     }
 

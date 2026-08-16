@@ -22,6 +22,9 @@ import {
   adminStoreConfigUpdateSchema,
   appConfigSchema,
   homeNewsCardsResponseSchema,
+  mobileExperienceDraftResponseSchema,
+  mobileExperienceDocumentSchema,
+  mobileExperienceSaveDraftRequestSchema,
   onboardingSummarySchema,
   operatorOnboardingUpdateSchema,
   stripeConnectDashboardLinkRequestSchema,
@@ -78,6 +81,7 @@ export type OperatorDashboardSnapshot = {
   cards: OperatorNewsCard[];
   discountCodes: OperatorDiscountCode[];
   storeConfig: z.output<typeof adminStoreConfigSchema> | null;
+  mobileExperience: z.output<typeof mobileExperienceDraftResponseSchema> | null;
   team: OperatorUser[];
 };
 
@@ -517,7 +521,7 @@ export async function fetchOperatorSnapshot(
   const capabilitySet = new Set(session.operator.capabilities);
   const query = locationId ? { locationId } : undefined;
   const fallbackLocationId = locationId ?? session.operator.locationId;
-  const [appConfig, orders, menu, cards, discountCodeResponse, storeConfig, teamResponse] = await Promise.all([
+  const [appConfig, orders, menu, cards, discountCodeResponse, storeConfig, mobileExperience, teamResponse] = await Promise.all([
     locationId
       ? requestJson({
           apiBaseUrl: session.apiBaseUrl,
@@ -581,6 +585,17 @@ export async function fetchOperatorSnapshot(
           })
         : Promise.resolve(null)
       : Promise.resolve(null),
+    capabilitySet.has("store:read")
+      ? locationId
+        ? requestJson({
+            apiBaseUrl: session.apiBaseUrl,
+            accessToken: session.accessToken,
+            path: "/admin/mobile-experience",
+            query,
+            schema: mobileExperienceDraftResponseSchema
+          })
+        : Promise.resolve(null)
+      : Promise.resolve(null),
     capabilitySet.has("team:read")
       ? locationId
         ? requestJson({
@@ -603,6 +618,7 @@ export async function fetchOperatorSnapshot(
     })),
     discountCodes: discountCodeResponse.discountCodes,
     storeConfig,
+    mobileExperience,
     team: teamResponse.users
   };
 }
@@ -880,6 +896,34 @@ export function updateOperatorStoreConfig(
     method: "PUT",
     body: adminStoreConfigUpdateSchema.parse(normalizeStoreConfigForm(input)),
     schema: adminStoreConfigSchema
+  });
+}
+
+export function saveOperatorMobileExperienceDraft(
+  session: OperatorSession,
+  locationId: string | null,
+  input: z.input<typeof mobileExperienceSaveDraftRequestSchema>
+) {
+  return requestJson({
+    apiBaseUrl: session.apiBaseUrl,
+    accessToken: session.accessToken,
+    path: "/admin/mobile-experience/draft",
+    query: { locationId: requireSelectedLocationId(locationId) },
+    method: "PUT",
+    body: mobileExperienceSaveDraftRequestSchema.parse(input),
+    schema: mobileExperienceDraftResponseSchema
+  });
+}
+
+export function publishOperatorMobileExperience(session: OperatorSession, locationId: string | null, draftVersionId?: string) {
+  return requestJson({
+    apiBaseUrl: session.apiBaseUrl,
+    accessToken: session.accessToken,
+    path: "/admin/mobile-experience/publish",
+    query: { locationId: requireSelectedLocationId(locationId) },
+    method: "POST",
+    body: { draftVersionId },
+    schema: mobileExperienceDocumentSchema
   });
 }
 

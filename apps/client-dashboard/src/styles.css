@@ -1470,6 +1470,167 @@ label.field > span {
   align-items: start;
 }
 
+.experience-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 24px;
+  align-items: start;
+}
+
+.experience-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.experience-form .dash-form-actions,
+.experience-section-controls {
+  grid-column: 1 / -1;
+}
+
+.experience-section-controls {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.experience-section-toggle {
+  min-height: 56px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--color-surface-2);
+  font-weight: 700;
+}
+
+.experience-phone-shell {
+  position: sticky;
+  top: 96px;
+}
+
+.experience-phone {
+  width: 100%;
+  min-height: 640px;
+  border: 1px solid rgba(20, 24, 32, 0.16);
+  border-radius: 34px;
+  background: #f6f2ec;
+  padding: 18px;
+  box-shadow: 0 28px 70px rgba(28, 22, 16, 0.16);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.experience-phone-top {
+  min-height: 94px;
+  border-radius: 24px 24px 14px 14px;
+  background: #1f2a24;
+  color: #ffffff;
+  padding: 20px 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.experience-phone-top strong {
+  font-size: 28px;
+  line-height: 30px;
+}
+
+.experience-phone-top span {
+  font-size: 13px;
+  opacity: 0.78;
+}
+
+.experience-phone-body {
+  flex: 1;
+  padding: 14px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.experience-phone-hero,
+.experience-phone-block {
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid rgba(40, 36, 28, 0.08);
+  padding: 14px;
+}
+
+.experience-phone-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.experience-phone-hero span {
+  color: #667067;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.experience-phone-hero strong,
+.experience-phone-block strong {
+  color: #161a18;
+  font-size: 18px;
+  line-height: 22px;
+}
+
+.experience-phone-hero p,
+.experience-phone-block p {
+  margin: 0;
+  color: #67706a;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.experience-phone-hero button {
+  align-self: flex-start;
+  border: 0;
+  border-radius: 999px;
+  background: #2f6b4f;
+  color: #ffffff;
+  padding: 9px 13px;
+  font-weight: 800;
+}
+
+.experience-phone-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.experience-phone-actions span {
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.68);
+  border: 1px solid rgba(40, 36, 28, 0.08);
+  min-height: 48px;
+  display: grid;
+  place-items: center;
+  color: #252925;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.experience-phone-tabs {
+  min-height: 54px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(40, 36, 28, 0.08);
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  place-items: center;
+  color: #606962;
+  font-size: 11px;
+  font-weight: 800;
+}
+
 @media (max-width: 900px) {
   .dash-split-layout--orders {
     grid-template-columns: 1fr;
@@ -2996,10 +3157,20 @@ label.field > span {
     grid-template-columns: 88px minmax(0, 1fr);
   }
 
-  .dash-menu-image-preview {
-    width: 88px;
-    height: 88px;
+  .experience-layout,
+  .experience-form,
+  .experience-section-controls {
+    grid-template-columns: 1fr;
   }
+
+  .experience-phone-shell {
+    position: static;
+  }
+
+.dash-menu-image-preview {
+  width: 88px;
+  height: 88px;
+}
 }
 
 @media (max-width: 520px) {

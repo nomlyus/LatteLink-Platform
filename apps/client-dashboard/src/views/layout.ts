@@ -19,6 +19,7 @@ import { renderMenuSection } from "./menu.js";
 import { renderMenuCreateWizard } from "./menu-wizard.js";
 import { renderCardsSection } from "./cards.js";
 import { renderDiscountsSection } from "./discounts.js";
+import { renderExperienceSection } from "./experience.js";
 import { renderStoreSection } from "./store.js";
 import { renderTeamSection } from "./team.js";
 
@@ -59,6 +60,8 @@ function renderDashboardContent() {
       return renderCardsSection();
     case "discounts":
       return renderDiscountsSection();
+    case "experience":
+      return renderExperienceSection();
     case "store":
       return renderStoreSection();
     case "team":

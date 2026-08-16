@@ -495,6 +495,21 @@ export interface AuditLogTable {
   occurred_at: Generated<string>;
 }
 
+export interface CatalogMobileExperienceDraftTable {
+  location_id: string;
+  experience_json: unknown;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
+export interface CatalogMobileExperienceVersionTable {
+  version_id: string;
+  location_id: string;
+  experience_json: unknown;
+  published_at: Generated<string>;
+  created_at: Generated<string>;
+}
+
 export interface PersistenceDatabase {
   payments_charges: PaymentsChargeTable;
   payments_refunds: PaymentsRefundTable;
@@ -534,6 +549,8 @@ export interface PersistenceDatabase {
   catalog_client_locations: CatalogClientLocationTable;
   catalog_onboarding_progress: CatalogOnboardingProgressTable;
   catalog_mobile_release_profiles: CatalogMobileReleaseProfileTable;
+  catalog_mobile_experience_drafts: CatalogMobileExperienceDraftTable;
+  catalog_mobile_experience_versions: CatalogMobileExperienceVersionTable;
   operator_owner_invites: OperatorOwnerInviteTable;
   audit_log: AuditLogTable;
 }

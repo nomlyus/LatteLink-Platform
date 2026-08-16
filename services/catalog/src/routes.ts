@@ -21,6 +21,11 @@ import {
   internalLocationParamsSchema,
   internalLocationSummarySchema,
   launchApprovalRequestSchema,
+  mobileExperienceDocumentSchema,
+  mobileExperienceDraftResponseSchema,
+  mobileExperiencePublishRequestSchema,
+  mobileExperienceSaveDraftRequestSchema,
+  mobileExperienceVersionsResponseSchema,
   mobileReleaseProfileUpdateSchema,
   onboardingSummarySchema,
   operatorOnboardingUpdateSchema,
@@ -305,6 +310,20 @@ export async function registerRoutes(app: FastifyInstance) {
       return reply.status(404).send(locationNotFoundError(request.id, resolvedLocationId));
     }
     return locationContext.storeConfig;
+  });
+
+  app.get("/v1/mobile-experience", async (request, reply) => {
+    reply.header("cache-control", publicCatalogCacheControl);
+    const { locationId } = locationIdQuerySchema.parse(request.query);
+    const resolvedLocationId = locationId ?? defaultLocationId;
+    if (!resolvedLocationId) {
+      return reply.status(400).send(missingLocationIdError(request.id));
+    }
+    const locationContext = await getPublicLocationContext(resolvedLocationId);
+    if (!locationContext) {
+      return reply.status(404).send(locationNotFoundError(request.id, resolvedLocationId));
+    }
+    return mobileExperienceDocumentSchema.parse(await repository.getPublishedMobileExperience(resolvedLocationId));
   });
 
   function getOperatorLocationId(request: FastifyRequest, reply: FastifyReply): string | undefined {
@@ -719,6 +738,91 @@ export async function registerRoutes(app: FastifyInstance) {
         }
       });
       return updatedStoreConfig;
+    }
+  );
+
+  app.get(
+    "/v1/catalog/admin/mobile-experience",
+    {
+      preHandler: [app.rateLimit(gatewayReadRateLimit), requireGatewayAccess]
+    },
+    async (request, reply) => {
+      const locationId = getOperatorLocationId(request, reply);
+      if (!locationId) return reply;
+      return mobileExperienceDraftResponseSchema.parse(await repository.getAdminMobileExperience(locationId));
+    }
+  );
+
+  app.get(
+    "/v1/catalog/admin/mobile-experience/versions",
+    {
+      preHandler: [app.rateLimit(gatewayReadRateLimit), requireGatewayAccess]
+    },
+    async (request, reply) => {
+      const locationId = getOperatorLocationId(request, reply);
+      if (!locationId) return reply;
+      return mobileExperienceVersionsResponseSchema.parse(await repository.listAdminMobileExperienceVersions(locationId));
+    }
+  );
+
+  app.put(
+    "/v1/catalog/admin/mobile-experience/draft",
+    {
+      preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess]
+    },
+    async (request, reply) => {
+      const locationId = getOperatorLocationId(request, reply);
+      if (!locationId) return reply;
+      const input = mobileExperienceSaveDraftRequestSchema.parse(request.body);
+      const draft = await repository.saveAdminMobileExperienceDraft(locationId, input);
+      await recordAuditLog(request, repository, {
+        locationId,
+        actorId: getActorId(request),
+        actorType: "operator",
+        action: "mobile_experience.draft_saved",
+        targetId: draft.draft.versionId,
+        targetType: "mobile_experience",
+        payload: {
+          templateId: draft.draft.templateId,
+          sections: draft.draft.screens.flatMap((screen) => screen.sections.map((section) => section.type))
+        }
+      });
+      return mobileExperienceDraftResponseSchema.parse(draft);
+    }
+  );
+
+  app.post(
+    "/v1/catalog/admin/mobile-experience/publish",
+    {
+      preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess]
+    },
+    async (request, reply) => {
+      const locationId = getOperatorLocationId(request, reply);
+      if (!locationId) return reply;
+      const input = mobileExperiencePublishRequestSchema.parse(request.body);
+      try {
+        const published = await repository.publishAdminMobileExperience(locationId, input.draftVersionId);
+        await recordAuditLog(request, repository, {
+          locationId,
+          actorId: getActorId(request),
+          actorType: "operator",
+          action: "mobile_experience.published",
+          targetId: published.versionId,
+          targetType: "mobile_experience",
+          payload: {
+            templateId: published.templateId,
+            publishedAt: published.publishedAt
+          }
+        });
+        return mobileExperienceDocumentSchema.parse(published);
+      } catch (error) {
+        return sendError(reply, {
+          statusCode: 409,
+          code: "MOBILE_EXPERIENCE_DRAFT_CONFLICT",
+          message: error instanceof Error ? error.message : "Mobile experience draft could not be published.",
+          requestId: request.id
+        });
+      }
     }
   );
 

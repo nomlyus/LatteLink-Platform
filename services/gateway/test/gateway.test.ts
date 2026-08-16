@@ -26,6 +26,7 @@ describe("gateway", () => {
   const fetchMock = vi.fn<typeof fetch>();
   const authHeader = { authorization: "Bearer access-token" } as const;
   const ownerOperatorHeaders = { authorization: "Bearer operator-owner-access-token" } as const;
+  const managerOperatorHeaders = { authorization: "Bearer operator-manager-access-token" } as const;
   const storeOperatorHeaders = { authorization: "Bearer operator-store-access-token" } as const;
   const multiLocationOperatorHeaders = { authorization: "Bearer operator-multi-location-access-token" } as const;
   const ownerInternalAdminHeaders = { authorization: "Bearer internal-admin-owner-access-token" } as const;
@@ -1000,6 +1001,37 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
+      if (url.endsWith("/v1/mobile-experience") && method === "GET") {
+        return new Response(
+          JSON.stringify({
+            locationId: "flagship-01",
+            versionId: "mex-public",
+            status: "published",
+            templateId: "coffee_standard",
+            theme: {},
+            protectedNavigation: ["home", "menu", "orders", "account"],
+            screens: [
+              {
+                id: "home",
+                sections: [
+                  {
+                    id: "hero",
+                    type: "hero",
+                    visible: true,
+                    title: "Gazelle Coffee",
+                    subtitle: "Order ahead",
+                    action: "open_menu",
+                    actionLabel: "Order now"
+                  }
+                ]
+              }
+            ],
+            publishedAt: "2026-03-20T00:00:00.000Z"
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
       if (url.endsWith("/v1/orders/quote") && method === "POST") {
         const body = JSON.parse(String(init?.body ?? "{}")) as {
           locationId: string;
@@ -1395,6 +1427,104 @@ let previousFreeClientDashboardDomain: string | undefined;
             hours: body.hours ?? "Daily · 7:00 AM - 6:00 PM",
             taxRateBasisPoints: body.taxRateBasisPoints ?? 600,
             pickupInstructions: body.pickupInstructions ?? "Pickup at the flagship order counter."
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      if (url.endsWith("/v1/catalog/admin/mobile-experience") && method === "GET") {
+        return new Response(
+          JSON.stringify({
+            locationId: "flagship-01",
+            draft: {
+              locationId: "flagship-01",
+              versionId: "mex-draft",
+              status: "draft",
+              templateId: "coffee_standard",
+              theme: {},
+              protectedNavigation: ["home", "menu", "orders", "account"],
+              screens: [
+                {
+                  id: "home",
+                  sections: [
+                    {
+                      id: "hero",
+                      type: "hero",
+                      visible: true,
+                      title: "Gazelle Coffee",
+                      subtitle: "Order ahead",
+                      action: "open_menu",
+                      actionLabel: "Order now"
+                    }
+                  ]
+                }
+              ]
+            }
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      if (url.endsWith("/v1/catalog/admin/mobile-experience/draft") && method === "PUT") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { templateId?: string };
+        return new Response(
+          JSON.stringify({
+            locationId: "flagship-01",
+            draft: {
+              locationId: "flagship-01",
+              versionId: "mex-draft",
+              status: "draft",
+              templateId: body.templateId ?? "coffee_standard",
+              theme: {},
+              protectedNavigation: ["home", "menu", "orders", "account"],
+              screens: body.screens ?? [
+                {
+                  id: "home",
+                  sections: [
+                    {
+                      id: "hero",
+                      type: "hero",
+                      visible: true,
+                      title: "Gazelle Coffee",
+                      subtitle: "Order ahead",
+                      action: "open_menu",
+                      actionLabel: "Order now"
+                    }
+                  ]
+                }
+              ]
+            }
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      if (url.endsWith("/v1/catalog/admin/mobile-experience/publish") && method === "POST") {
+        return new Response(
+          JSON.stringify({
+            locationId: "flagship-01",
+            versionId: "mex-published",
+            status: "published",
+            templateId: "coffee_standard",
+            theme: {},
+            protectedNavigation: ["home", "menu", "orders", "account"],
+            screens: [
+              {
+                id: "home",
+                sections: [
+                  {
+                    id: "hero",
+                    type: "hero",
+                    visible: true,
+                    title: "Gazelle Coffee",
+                    subtitle: "Order ahead",
+                    action: "open_menu",
+                    actionLabel: "Order now"
+                  }
+                ]
+              }
+            ],
+            publishedAt: "2026-03-20T00:00:00.000Z"
           }),
           { status: 200, headers: { "content-type": "application/json" } }
         );
@@ -2437,6 +2567,22 @@ let previousFreeClientDashboardDomain: string | undefined;
     await app.close();
   });
 
+  it("returns v1 mobile experience through the catalog proxy", async () => {
+    const app = await buildApp();
+    const response = await app.inject({ method: "GET", url: "/v1/mobile-experience" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      locationId: "flagship-01",
+      status: "published",
+      protectedNavigation: ["home", "menu", "orders", "account"]
+    });
+
+    const requestedUrls = fetchMock.mock.calls.map(([input]) => (typeof input === "string" ? input : input.url));
+    expect(requestedUrls).toContain("http://catalog.internal/v1/mobile-experience");
+    await app.close();
+  });
+
   it("returns unauthorized on /v1/auth/me without bearer token", async () => {
     const app = await buildApp();
     const response = await app.inject({ method: "GET", url: "/v1/auth/me" });
@@ -3280,6 +3426,78 @@ let previousFreeClientDashboardDomain: string | undefined;
     if (adminOrdersCall) {
       const upstreamHeaders = new Headers((adminOrdersCall[1]?.headers ?? {}) as HeadersInit);
       expect(upstreamHeaders.get("x-user-id")).toBeNull();
+    }
+
+    await app.close();
+  });
+
+  it("forwards admin mobile experience draft and publish actions through the gateway", async () => {
+    const app = await buildApp();
+    const draftPayload = {
+      templateId: "coffee_standard",
+      theme: {},
+      protectedNavigation: ["home", "menu", "orders", "account"],
+      screens: [
+        {
+          id: "home",
+          sections: [
+            {
+              id: "hero",
+              type: "hero",
+              visible: true,
+              title: "Gazelle Coffee",
+              subtitle: "Order ahead",
+              action: "open_menu",
+              actionLabel: "Order now"
+            }
+          ]
+        }
+      ]
+    };
+
+    const draftResponse = await app.inject({
+      method: "PUT",
+      url: "/v1/admin/mobile-experience/draft",
+      headers: ownerOperatorHeaders,
+      payload: draftPayload
+    });
+    expect(draftResponse.statusCode).toBe(200);
+    expect(draftResponse.json()).toMatchObject({
+      draft: {
+        versionId: "mex-draft",
+        templateId: "coffee_standard"
+      }
+    });
+
+    const publishResponse = await app.inject({
+      method: "POST",
+      url: "/v1/admin/mobile-experience/publish",
+      headers: ownerOperatorHeaders,
+      payload: { draftVersionId: "mex-draft" }
+    });
+    expect(publishResponse.statusCode).toBe(200);
+    expect(publishResponse.json()).toMatchObject({
+      versionId: "mex-published",
+      status: "published"
+    });
+
+    const readonlyResponse = await app.inject({
+      method: "POST",
+      url: "/v1/admin/mobile-experience/publish",
+      headers: managerOperatorHeaders,
+      payload: { draftVersionId: "mex-draft" }
+    });
+    expect(readonlyResponse.statusCode).toBe(403);
+
+    const draftCall = fetchMock.mock.calls.find(([input, init]) => {
+      const url = typeof input === "string" ? input : input.url;
+      return url === "http://catalog.internal/v1/catalog/admin/mobile-experience/draft" && init?.method === "PUT";
+    });
+    expect(draftCall).toBeDefined();
+    if (draftCall) {
+      const upstreamHeaders = new Headers((draftCall[1]?.headers ?? {}) as HeadersInit);
+      expect(upstreamHeaders.get("x-gateway-token")).toBe("gateway-test-token");
+      expect(upstreamHeaders.get("x-operator-location-id")).toBe("flagship-01");
     }
 
     await app.close();

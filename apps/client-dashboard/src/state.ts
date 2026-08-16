@@ -1,6 +1,7 @@
 import type {
   AdminStoreConfig,
   AppConfig,
+  MobileExperienceDraftResponse,
   MenuItemCustomizationGroup
 } from "@lattelink/contracts-catalog";
 import type {
@@ -56,6 +57,7 @@ export type AppState = {
   newsCards: OperatorNewsCard[];
   discountCodes: OperatorDiscountCode[];
   storeConfig: AdminStoreConfig | null;
+  mobileExperience: MobileExperienceDraftResponse | null;
   teamUsers: OperatorUser[];
   selectedOrderId: string | null;
   busyOrderId: string | null;
@@ -68,6 +70,8 @@ export type AppState = {
   busyDiscountCodeId: string | null;
   busyTeamUserId: string | null;
   savingStore: boolean;
+  savingMobileExperience: boolean;
+  publishingMobileExperience: boolean;
   creatingMenuItem: boolean;
   menuCreateWizardOpen: boolean;
   menuCreateWizardStep: 1 | 2 | 3;
@@ -138,6 +142,7 @@ export const state: AppState = {
   newsCards: [],
   discountCodes: [],
   storeConfig: null,
+  mobileExperience: null,
   teamUsers: [],
   selectedOrderId: null,
   busyOrderId: null,
@@ -150,6 +155,8 @@ export const state: AppState = {
   busyDiscountCodeId: null,
   busyTeamUserId: null,
   savingStore: false,
+  savingMobileExperience: false,
+  publishingMobileExperience: false,
   creatingMenuItem: false,
   menuCreateWizardOpen: false,
   menuCreateWizardStep: 1,
@@ -229,6 +236,7 @@ export function resetDashboardData() {
   state.newsCards = [];
   state.discountCodes = [];
   state.storeConfig = null;
+  state.mobileExperience = null;
   state.teamUsers = [];
   state.onboardingSummary = null;
   state.onboardingAutoOpened = false;
@@ -246,6 +254,8 @@ export function resetDashboardData() {
   state.busyDeleteNewsCardId = null;
   state.busyTeamUserId = null;
   state.savingStore = false;
+  state.savingMobileExperience = false;
+  state.publishingMobileExperience = false;
   state.creatingMenuItem = false;
   state.creatingNewsCard = false;
   state.creatingTeamUser = false;

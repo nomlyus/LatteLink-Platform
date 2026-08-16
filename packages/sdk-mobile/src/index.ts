@@ -14,6 +14,7 @@ import {
   appConfigSchema,
   homeNewsCardsResponseSchema,
   menuResponseSchema,
+  mobileExperienceDocumentSchema,
   storeConfigResponseSchema
 } from "@lattelink/contracts-catalog";
 import { authSessionSchema } from "@lattelink/contracts-core";
@@ -194,6 +195,11 @@ export class GazelleApiClient {
   async appConfig(): Promise<z.output<typeof appConfigSchema>> {
     const data = await this.get<unknown>(`/app-config${this.locationQuery()}`);
     return appConfigSchema.parse(data);
+  }
+
+  async mobileExperience(): Promise<z.output<typeof mobileExperienceDocumentSchema>> {
+    const data = await this.get<unknown>(`/mobile-experience${this.locationQuery()}`);
+    return mobileExperienceDocumentSchema.parse(data);
   }
 
   async quoteOrder(input: z.input<typeof quoteRequestSchema>): Promise<z.output<typeof orderQuoteSchema>> {

@@ -14,6 +14,9 @@ import {
   internalClientListResponseSchema,
   internalClientSummarySchema,
   launchApprovalRequestSchema,
+  mobileExperienceDocumentSchema,
+  mobileExperienceDraftResponseSchema,
+  mobileExperienceVersionsResponseSchema,
   mobileReleaseProfileSchema,
   mobileReleaseProfileUpdateSchema,
   onboardingSummarySchema,
@@ -36,6 +39,10 @@ import {
   type InternalLocationPaymentProfileUpdate,
   type InternalLocationSummary,
   type LaunchApprovalRequest,
+  type MobileExperienceDocument,
+  type MobileExperienceDraftResponse,
+  type MobileExperienceSaveDraftRequest,
+  type MobileExperienceVersionsResponse,
   type MobileReleaseProfile,
   type MobileReleaseProfileUpdate,
   type OnboardingStatus,
@@ -395,6 +402,11 @@ type CatalogRepository = {
     taxRateBasisPoints?: number;
     capabilities?: AppConfigStoreCapabilities;
   }): Promise<AdminStoreConfig>;
+  getPublishedMobileExperience(locationId: string): Promise<MobileExperienceDocument>;
+  getAdminMobileExperience(locationId: string): Promise<MobileExperienceDraftResponse>;
+  saveAdminMobileExperienceDraft(locationId: string, input: MobileExperienceSaveDraftRequest): Promise<MobileExperienceDraftResponse>;
+  publishAdminMobileExperience(locationId: string, draftVersionId?: string): Promise<MobileExperienceDocument>;
+  listAdminMobileExperienceVersions(locationId: string): Promise<MobileExperienceVersionsResponse>;
   getMenu(locationId: string): Promise<MenuResponse>;
   getStoreConfig(locationId: string): Promise<StoreConfigResponse | undefined>;
   writeAuditLog(entry: AuditLogEntry): Promise<void>;
@@ -540,6 +552,86 @@ function buildStoreConfigResponse(input: StoreConfigRecord) {
     prepEtaMinutes: input.prepEtaMinutes,
     taxRateBasisPoints: input.taxRateBasisPoints,
     pickupInstructions: input.pickupInstructions
+  });
+}
+
+function createMobileExperienceVersionId() {
+  return `mex_${Date.now()}_${randomUUID().slice(0, 8)}`;
+}
+
+function buildDefaultMobileExperience(input: {
+  locationId: string;
+  appConfig?: AppConfig;
+  published?: boolean;
+}): MobileExperienceDocument {
+  const now = new Date().toISOString();
+  const appConfig = input.appConfig ?? resolveDefaultAppConfigPayload();
+  return mobileExperienceDocumentSchema.parse({
+    locationId: input.locationId,
+    versionId: "default",
+    status: input.published ? "published" : "draft",
+    templateId: "coffee_standard",
+    theme: {
+      accentColor: appConfig.theme.accent,
+      backgroundColor: appConfig.theme.background,
+      foregroundColor: appConfig.theme.foreground
+    },
+    protectedNavigation: ["home", "menu", "orders", "account"],
+    screens: [
+      {
+        id: "home",
+        title: appConfig.brand.brandName,
+        sections: [
+          {
+            id: "hero",
+            type: "hero",
+            visible: true,
+            title: appConfig.brand.brandName,
+            subtitle: appConfig.brand.locationName,
+            action: "open_menu",
+            actionLabel: "Order now"
+          },
+          {
+            id: "quick-actions",
+            type: "quick_actions",
+            visible: true,
+            title: "Quick actions",
+            actions: ["open_menu", "open_orders", "open_account"]
+          },
+          {
+            id: "featured-menu",
+            type: "featured_menu",
+            visible: true,
+            title: "Popular today",
+            itemLimit: 4
+          },
+          {
+            id: "news-cards",
+            type: "news_cards",
+            visible: true,
+            title: "Latest",
+            cardLimit: 4
+          }
+        ]
+      }
+    ],
+    createdAt: now,
+    updatedAt: now,
+    publishedAt: input.published ? now : undefined
+  });
+}
+
+function buildMobileExperienceDraft(input: {
+  locationId: string;
+  appConfig?: AppConfig;
+  draft?: MobileExperienceDocument;
+  published?: MobileExperienceDocument;
+}): MobileExperienceDraftResponse {
+  const draft = input.draft ?? buildDefaultMobileExperience({ locationId: input.locationId, appConfig: input.appConfig });
+  return mobileExperienceDraftResponseSchema.parse({
+    locationId: input.locationId,
+    draft,
+    published: input.published
   });
 }
 
@@ -837,6 +929,8 @@ function createInMemoryRepository(): CatalogRepository {
   const clientLocationsByLocation = new Map<string, ClientLocationRecord>();
   const onboardingProgressByLocation = new Map<string, OnboardingProgressRecord>();
   const mobileReleaseProfilesByLocation = new Map<string, MobileReleaseProfile>();
+  const mobileExperienceDraftsByLocation = new Map<string, MobileExperienceDocument>();
+  const mobileExperienceVersionsByLocation = new Map<string, MobileExperienceDocument[]>();
 
   async function buildMemoryOnboarding(locationId: string) {
     const location = clientLocationsByLocation.get(locationId);
@@ -1567,6 +1661,78 @@ function createInMemoryRepository(): CatalogRepository {
       appConfigsByLocation.set(locationId, nextAppConfig);
 
       return nextAdminStoreConfig;
+    },
+    async getPublishedMobileExperience(locationId) {
+      const versions = mobileExperienceVersionsByLocation.get(locationId) ?? [];
+      const latest = versions[0];
+      if (latest) {
+        return mobileExperienceDocumentSchema.parse(latest);
+      }
+
+      return buildDefaultMobileExperience({
+        locationId,
+        appConfig: appConfigsByLocation.get(locationId) ?? defaultAppConfig,
+        published: true
+      });
+    },
+    async getAdminMobileExperience(locationId) {
+      return buildMobileExperienceDraft({
+        locationId,
+        appConfig: appConfigsByLocation.get(locationId) ?? defaultAppConfig,
+        draft: mobileExperienceDraftsByLocation.get(locationId),
+        published: mobileExperienceVersionsByLocation.get(locationId)?.[0]
+      });
+    },
+    async saveAdminMobileExperienceDraft(locationId, input) {
+      const existing = mobileExperienceDraftsByLocation.get(locationId);
+      const now = new Date().toISOString();
+      const draft = mobileExperienceDocumentSchema.parse({
+        ...input,
+        locationId,
+        versionId: input.versionId ?? existing?.versionId ?? createMobileExperienceVersionId(),
+        status: "draft",
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now
+      });
+      mobileExperienceDraftsByLocation.set(locationId, draft);
+
+      return this.getAdminMobileExperience(locationId);
+    },
+    async publishAdminMobileExperience(locationId, draftVersionId) {
+      const draft = mobileExperienceDraftsByLocation.get(locationId) ??
+        buildDefaultMobileExperience({
+          locationId,
+          appConfig: appConfigsByLocation.get(locationId) ?? defaultAppConfig
+        });
+      if (draftVersionId && draft.versionId !== draftVersionId) {
+        throw new Error("Draft version no longer matches the latest saved draft.");
+      }
+      const now = new Date().toISOString();
+      const published = mobileExperienceDocumentSchema.parse({
+        ...draft,
+        locationId,
+        versionId: createMobileExperienceVersionId(),
+        status: "published",
+        createdAt: now,
+        updatedAt: now,
+        publishedAt: now
+      });
+      mobileExperienceVersionsByLocation.set(locationId, [
+        published,
+        ...(mobileExperienceVersionsByLocation.get(locationId) ?? [])
+      ]);
+      mobileExperienceDraftsByLocation.set(locationId, mobileExperienceDocumentSchema.parse({
+        ...published,
+        status: "draft",
+        publishedAt: undefined
+      }));
+      return published;
+    },
+    async listAdminMobileExperienceVersions(locationId) {
+      return mobileExperienceVersionsResponseSchema.parse({
+        locationId,
+        versions: mobileExperienceVersionsByLocation.get(locationId) ?? []
+      });
     },
     async getMenu(locationId) {
       return menusByLocation.get(locationId) ?? menuResponseSchema.parse({
@@ -3143,6 +3309,149 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         pickupInstructions: input.pickupInstructions,
         taxRateBasisPoints,
         capabilities: nextAppConfig.storeCapabilities
+      });
+    },
+    async getPublishedMobileExperience(locationId) {
+      const row = await db
+        .selectFrom("catalog_mobile_experience_versions")
+        .select("experience_json")
+        .where("location_id", "=", locationId)
+        .orderBy("published_at", "desc")
+        .executeTakeFirst();
+      if (row) {
+        return mobileExperienceDocumentSchema.parse(row.experience_json);
+      }
+
+      return buildDefaultMobileExperience({
+        locationId,
+        appConfig: await this.getAppConfig(locationId),
+        published: true
+      });
+    },
+    async getAdminMobileExperience(locationId) {
+      const [draftRow, published] = await Promise.all([
+        db
+          .selectFrom("catalog_mobile_experience_drafts")
+          .select("experience_json")
+          .where("location_id", "=", locationId)
+          .executeTakeFirst(),
+        this.getPublishedMobileExperience(locationId)
+      ]);
+
+      return buildMobileExperienceDraft({
+        locationId,
+        appConfig: await this.getAppConfig(locationId),
+        draft: draftRow ? mobileExperienceDocumentSchema.parse(draftRow.experience_json) : undefined,
+        published
+      });
+    },
+    async saveAdminMobileExperienceDraft(locationId, input) {
+      const existing = await db
+        .selectFrom("catalog_mobile_experience_drafts")
+        .select("experience_json")
+        .where("location_id", "=", locationId)
+        .executeTakeFirst();
+      const existingDraft = existing ? mobileExperienceDocumentSchema.parse(existing.experience_json) : undefined;
+      const now = new Date().toISOString();
+      const draft = mobileExperienceDocumentSchema.parse({
+        ...input,
+        locationId,
+        versionId: input.versionId ?? existingDraft?.versionId ?? createMobileExperienceVersionId(),
+        status: "draft",
+        createdAt: existingDraft?.createdAt ?? now,
+        updatedAt: now
+      });
+
+      await db
+        .insertInto("catalog_mobile_experience_drafts")
+        .values({
+          location_id: locationId,
+          experience_json: draft
+        })
+        .onConflict((oc) =>
+          oc.column("location_id").doUpdateSet({
+            experience_json: draft,
+            updated_at: now
+          })
+        )
+        .execute();
+
+      return this.getAdminMobileExperience(locationId);
+    },
+    async publishAdminMobileExperience(locationId, draftVersionId) {
+      const draftRow = await db
+        .selectFrom("catalog_mobile_experience_drafts")
+        .select("experience_json")
+        .where("location_id", "=", locationId)
+        .executeTakeFirst();
+      const draft = draftRow
+        ? mobileExperienceDocumentSchema.parse(draftRow.experience_json)
+        : buildDefaultMobileExperience({
+            locationId,
+            appConfig: await this.getAppConfig(locationId)
+          });
+      if (draftVersionId && draft.versionId !== draftVersionId) {
+        throw new Error("Draft version no longer matches the latest saved draft.");
+      }
+
+      const now = new Date().toISOString();
+      const published = mobileExperienceDocumentSchema.parse({
+        ...draft,
+        locationId,
+        versionId: createMobileExperienceVersionId(),
+        status: "published",
+        createdAt: now,
+        updatedAt: now,
+        publishedAt: now
+      });
+
+      await db.transaction().execute(async (trx) => {
+        await trx
+          .insertInto("catalog_mobile_experience_versions")
+          .values({
+            version_id: published.versionId,
+            location_id: locationId,
+            experience_json: published,
+            published_at: now
+          })
+          .execute();
+
+        await trx
+          .insertInto("catalog_mobile_experience_drafts")
+          .values({
+            location_id: locationId,
+            experience_json: mobileExperienceDocumentSchema.parse({
+              ...published,
+              status: "draft",
+              publishedAt: undefined
+            })
+          })
+          .onConflict((oc) =>
+            oc.column("location_id").doUpdateSet({
+              experience_json: mobileExperienceDocumentSchema.parse({
+                ...published,
+                status: "draft",
+                publishedAt: undefined
+              }),
+              updated_at: now
+            })
+          )
+          .execute();
+      });
+
+      return published;
+    },
+    async listAdminMobileExperienceVersions(locationId) {
+      const rows = await db
+        .selectFrom("catalog_mobile_experience_versions")
+        .select("experience_json")
+        .where("location_id", "=", locationId)
+        .orderBy("published_at", "desc")
+        .execute();
+
+      return mobileExperienceVersionsResponseSchema.parse({
+        locationId,
+        versions: rows.map((row) => mobileExperienceDocumentSchema.parse(row.experience_json))
       });
     },
     async getStoreConfig(locationId) {

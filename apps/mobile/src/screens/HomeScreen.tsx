@@ -17,9 +17,12 @@ import {
 import Animated, { Extrapolation, interpolate, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
+  resolveMenuData,
   resolveAppConfigData,
   useAppConfigQuery,
   useHomeNewsCardsQuery,
+  useMenuQuery,
+  useMobileExperienceQuery,
   useStoreConfigQuery
 } from "../menu/catalog";
 import { isBackendReachabilityError } from "../api/client";
@@ -85,13 +88,19 @@ export function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const appConfigQuery = useAppConfigQuery();
+  const mobileExperienceQuery = useMobileExperienceQuery();
   const homeNewsCardsQuery = useHomeNewsCardsQuery();
+  const menuQuery = useMenuQuery();
   const storeConfigQuery = useStoreConfigQuery();
   const [isManualRefresh, setIsManualRefresh] = useState(false);
   const appConfig = resolveAppConfigData(appConfigQuery.data);
   const headerBackgroundColor = appConfig?.header.background || uiPalette.background;
   const headerForegroundColor = appConfig?.header.foreground ?? uiPalette.text;
   const homeNewsCards = homeNewsCardsQuery.data?.cards ?? [];
+  const menu = resolveMenuData(menuQuery.data);
+  const mobileExperience = mobileExperienceQuery.data;
+  const homeSections = mobileExperience?.screens.find((screen) => screen.id === "home")?.sections.filter((section) => section.visible) ?? [];
+  const heroSection = homeSections.find((section) => section.type === "hero");
   const hasBlockingHomeError =
     (!!appConfigQuery.error && !appConfigQuery.data) ||
     (!!storeConfigQuery.error && !storeConfigQuery.data);
@@ -101,6 +110,8 @@ export function HomeScreen() {
       : "We couldn’t load the live store details. Pull to refresh or try again in a moment.";
   const brandName = appConfig?.brand.brandName ?? "Store";
   const locationName = appConfig?.brand.locationName ?? "Location unavailable";
+  const displayBrandName = heroSection?.title ?? brandName;
+  const displayLocationName = heroSection?.subtitle ?? locationName;
   const scrollViewRef = useRef<ScrollView | null>(null);
   const scrollY = useSharedValue(0);
   const dockBottom = getTabBarBottomOffset(insets.bottom > 0);
@@ -198,10 +209,33 @@ export function HomeScreen() {
     if (isManualRefresh) return;
 
     setIsManualRefresh(true);
-    void Promise.allSettled([appConfigQuery.refetch(), homeNewsCardsQuery.refetch(), storeConfigQuery.refetch()]).finally(() => {
+    void Promise.allSettled([
+      appConfigQuery.refetch(),
+      mobileExperienceQuery.refetch(),
+      homeNewsCardsQuery.refetch(),
+      menuQuery.refetch(),
+      storeConfigQuery.refetch()
+    ]).finally(() => {
       setIsManualRefresh(false);
     });
-  }, [appConfigQuery, homeNewsCardsQuery, isManualRefresh, storeConfigQuery]);
+  }, [appConfigQuery, homeNewsCardsQuery, isManualRefresh, menuQuery, mobileExperienceQuery, storeConfigQuery]);
+
+  const handleExperienceAction = useCallback(
+    (action: "open_menu" | "open_orders" | "open_account") => {
+      switch (action) {
+        case "open_orders":
+          router.push("/(tabs)/orders");
+          return;
+        case "open_account":
+          router.push("/(tabs)/account");
+          return;
+        case "open_menu":
+        default:
+          router.push("/(tabs)/menu");
+      }
+    },
+    [router]
+  );
 
   if (hasBlockingHomeError) {
     return (
@@ -248,20 +282,90 @@ export function HomeScreen() {
         ]}
       >
         <View style={styles.cardGrid}>
-          {homeNewsCards.map((item) => (
-            <GlassCard key={item.title} style={styles.newsCard} contentStyle={styles.newsCardContent}>
-              <View style={styles.newsCardHeader}>
-                <HomeNewsTag label={item.label} />
-              </View>
+          {(homeSections.length > 0 ? homeSections : [{ id: "news-cards", type: "news_cards", visible: true, cardLimit: 4 } as const]).map((section) => {
+            if (section.type === "hero") {
+              return (
+                <GlassCard key={section.id} style={styles.experienceHeroCard} contentStyle={styles.experienceHeroCardContent}>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.experienceEyebrow}>Featured</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.experienceHeroTitle}>{section.title ?? brandName}</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.experienceHeroBody}>{section.subtitle ?? locationName}</Text>
+                  <Button
+                    label={section.actionLabel ?? "Order now"}
+                    variant="primary"
+                    onPress={() => handleExperienceAction(section.action ?? "open_menu")}
+                    style={styles.experienceHeroButton}
+                  />
+                </GlassCard>
+              );
+            }
 
-              <View style={styles.newsCopy}>
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.newsTitle}>{item.title}</Text>
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.newsBody}>{item.body}</Text>
-              </View>
+            if (section.type === "quick_actions") {
+              const actions = section.actions ?? ["open_menu", "open_orders", "open_account"];
+              return (
+                <View key={section.id} style={styles.quickActions}>
+                  {actions.map((action) => (
+                    <Pressable key={action} onPress={() => handleExperienceAction(action)} style={styles.quickActionButton}>
+                      <Ionicons
+                        name={action === "open_menu" ? "cafe-outline" : action === "open_orders" ? "receipt-outline" : "person-outline"}
+                        size={18}
+                        color={uiPalette.text}
+                      />
+                      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.quickActionText}>
+                        {action === "open_menu" ? "Menu" : action === "open_orders" ? "Orders" : "Account"}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              );
+            }
 
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.newsNote}>{item.note}</Text>
-            </GlassCard>
-          ))}
+            if (section.type === "featured_menu") {
+              const limit = section.itemLimit ?? 4;
+              const items = (section.categoryId
+                ? menu?.categories.find((category) => category.id === section.categoryId)?.items
+                : menu?.categories.flatMap((category) => category.items)) ?? [];
+              const featuredItems = items.slice(0, limit);
+              if (featuredItems.length === 0) {
+                return null;
+              }
+
+              return (
+                <View key={section.id} style={styles.featuredMenuSection}>
+                  <View style={styles.sectionTitleRow}>
+                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionTitle}>{section.title ?? "Popular today"}</Text>
+                    <Pressable onPress={() => router.push("/(tabs)/menu")} style={styles.sectionLink}>
+                      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionLinkText}>Menu</Text>
+                      <Ionicons name="chevron-forward" size={15} color={uiPalette.primary} />
+                    </Pressable>
+                  </View>
+                  <View style={styles.featuredMenuGrid}>
+                    {featuredItems.map((item) => (
+                      <GlassCard key={item.id} style={styles.featuredMenuCard} contentStyle={styles.featuredMenuCardContent}>
+                        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.featuredMenuName}>{item.name}</Text>
+                        <Text allowFontScaling={false} maxFontSizeMultiplier={1} numberOfLines={2} style={styles.featuredMenuDescription}>{item.description}</Text>
+                      </GlassCard>
+                    ))}
+                  </View>
+                </View>
+              );
+            }
+
+            const limit = section.type === "news_cards" ? section.cardLimit ?? 4 : 4;
+            return homeNewsCards.slice(0, limit).map((item) => (
+              <GlassCard key={`${section.id}-${item.cardId}`} style={styles.newsCard} contentStyle={styles.newsCardContent}>
+                <View style={styles.newsCardHeader}>
+                  <HomeNewsTag label={item.label} />
+                </View>
+
+                <View style={styles.newsCopy}>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.newsTitle}>{item.title}</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.newsBody}>{item.body}</Text>
+                </View>
+
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.newsNote}>{item.note}</Text>
+              </GlassCard>
+            ));
+          })}
         </View>
       </Animated.ScrollView>
 
@@ -270,12 +374,12 @@ export function HomeScreen() {
       >
         <Animated.View style={headerContentStyle}>
           <View style={styles.hero}>
-            <Animated.Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.title, titleStyle, { color: headerForegroundColor }]}>{brandName}</Animated.Text>
+            <Animated.Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.title, titleStyle, { color: headerForegroundColor }]}>{displayBrandName}</Animated.Text>
           </View>
 
           <Animated.View style={[styles.storeRail, storeRailStyle]}>
             <View style={styles.storeCopy}>
-              <Animated.Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.storeTitle, storeTitleStyle, { color: headerForegroundColor }]}>{locationName}</Animated.Text>
+              <Animated.Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.storeTitle, storeTitleStyle, { color: headerForegroundColor }]}>{displayLocationName}</Animated.Text>
             </View>
 
             <Animated.View style={menuLinkStyle}>
@@ -358,6 +462,109 @@ const styles = StyleSheet.create({
   cardGrid: {
     paddingTop: 12,
     gap: 14
+  },
+  experienceHeroCard: {
+    width: "100%",
+    minHeight: 176
+  },
+  experienceHeroCardContent: {
+    minHeight: 176,
+    justifyContent: "space-between",
+    gap: 12
+  },
+  experienceEyebrow: {
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+    color: uiPalette.textMuted,
+    fontWeight: "700"
+  },
+  experienceHeroTitle: {
+    fontSize: 30,
+    lineHeight: 34,
+    color: uiPalette.text,
+    fontFamily: uiTypography.displayFamily,
+    fontWeight: "600"
+  },
+  experienceHeroBody: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: uiPalette.textSecondary
+  },
+  experienceHeroButton: {
+    alignSelf: "flex-start",
+    marginTop: 2
+  },
+  quickActions: {
+    flexDirection: "row",
+    gap: 10
+  },
+  quickActionButton: {
+    flex: 1,
+    minHeight: 58,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "rgba(18, 22, 28, 0.1)",
+    backgroundColor: "rgba(255,255,255,0.58)",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5
+  },
+  quickActionText: {
+    fontSize: 12,
+    lineHeight: 15,
+    color: uiPalette.text,
+    fontWeight: "700"
+  },
+  featuredMenuSection: {
+    gap: 10
+  },
+  sectionTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    paddingHorizontal: 2
+  },
+  sectionTitle: {
+    flex: 1,
+    fontSize: 20,
+    lineHeight: 24,
+    color: uiPalette.text,
+    fontFamily: uiTypography.displayFamily,
+    fontWeight: "600"
+  },
+  sectionLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2
+  },
+  sectionLinkText: {
+    fontSize: 13,
+    lineHeight: 16,
+    color: uiPalette.primary,
+    fontWeight: "700"
+  },
+  featuredMenuGrid: {
+    gap: 10
+  },
+  featuredMenuCard: {
+    width: "100%"
+  },
+  featuredMenuCardContent: {
+    gap: 5
+  },
+  featuredMenuName: {
+    fontSize: 17,
+    lineHeight: 21,
+    color: uiPalette.text,
+    fontWeight: "700"
+  },
+  featuredMenuDescription: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: uiPalette.textSecondary
   },
   errorShell: {
     flex: 1,

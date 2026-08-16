@@ -922,6 +922,146 @@ export const launchReadinessResponseSchema = z.object({
   checks: z.array(launchReadinessCheckSchema)
 });
 
+export const mobileExperienceTemplateSchema = z.enum(["coffee_standard", "editorial_featured", "compact_ordering"]);
+export const mobileExperienceScreenSchema = z.enum(["home"]);
+export const mobileExperienceSectionTypeSchema = z.enum(["hero", "quick_actions", "featured_menu", "news_cards"]);
+export const mobileExperienceActionSchema = z.enum(["open_menu", "open_orders", "open_account"]);
+export const mobileExperienceStatusSchema = z.enum(["draft", "published"]);
+
+export const mobileExperienceThemeSchema = z.object({
+  accentColor: z.string().min(1).optional(),
+  backgroundColor: z.string().min(1).optional(),
+  foregroundColor: z.string().min(1).optional()
+});
+
+const mobileExperienceBaseSectionSchema = z.object({
+  id: z.string().min(1),
+  type: mobileExperienceSectionTypeSchema,
+  visible: z.boolean().default(true),
+  title: z.string().trim().min(1).optional(),
+  subtitle: z.string().trim().min(1).optional()
+});
+
+export const mobileExperienceHeroSectionSchema = mobileExperienceBaseSectionSchema.extend({
+  type: z.literal("hero"),
+  action: mobileExperienceActionSchema.default("open_menu"),
+  actionLabel: z.string().trim().min(1).default("Order now")
+});
+
+export const mobileExperienceQuickActionsSectionSchema = mobileExperienceBaseSectionSchema.extend({
+  type: z.literal("quick_actions"),
+  actions: z.array(mobileExperienceActionSchema).min(1).max(3).default(["open_menu", "open_orders", "open_account"])
+});
+
+export const mobileExperienceFeaturedMenuSectionSchema = mobileExperienceBaseSectionSchema.extend({
+  type: z.literal("featured_menu"),
+  categoryId: z.string().trim().min(1).optional(),
+  itemLimit: z.number().int().min(1).max(8).default(4)
+});
+
+export const mobileExperienceNewsCardsSectionSchema = mobileExperienceBaseSectionSchema.extend({
+  type: z.literal("news_cards"),
+  cardLimit: z.number().int().min(1).max(8).default(4)
+});
+
+export const mobileExperienceSectionSchema = z.discriminatedUnion("type", [
+  mobileExperienceHeroSectionSchema,
+  mobileExperienceQuickActionsSectionSchema,
+  mobileExperienceFeaturedMenuSectionSchema,
+  mobileExperienceNewsCardsSectionSchema
+]);
+
+export const mobileExperienceScreenConfigSchema = z.object({
+  id: mobileExperienceScreenSchema,
+  title: z.string().trim().min(1).optional(),
+  sections: z.array(mobileExperienceSectionSchema).min(1).max(12)
+});
+
+const mobileExperienceDocumentBaseSchema = z.object({
+  locationId: z.string().min(1),
+  versionId: z.string().min(1),
+  status: mobileExperienceStatusSchema,
+  templateId: mobileExperienceTemplateSchema,
+  theme: mobileExperienceThemeSchema.default({}),
+  protectedNavigation: z.array(z.enum(["home", "menu", "orders", "account"])).default(["home", "menu", "orders", "account"]),
+  screens: z.array(mobileExperienceScreenConfigSchema).min(1),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  publishedAt: z.string().datetime().optional()
+});
+
+export const mobileExperienceDocumentSchema = mobileExperienceDocumentBaseSchema
+  .superRefine((value, context) => {
+    const protectedNavigation = new Set(value.protectedNavigation);
+    for (const route of ["home", "menu", "orders", "account"] as const) {
+      if (!protectedNavigation.has(route)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["protectedNavigation"],
+          message: `Protected route "${route}" cannot be removed.`
+        });
+      }
+    }
+
+    const homeScreen = value.screens.find((screen) => screen.id === "home");
+    if (!homeScreen) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["screens"],
+        message: "A home screen is required."
+      });
+      return;
+    }
+
+    const sectionIds = new Set<string>();
+    for (const [index, section] of homeScreen.sections.entries()) {
+      if (sectionIds.has(section.id)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["screens", 0, "sections", index, "id"],
+          message: `Duplicate section id "${section.id}".`
+        });
+      }
+      sectionIds.add(section.id);
+    }
+
+    if (!homeScreen.sections.some((section) => section.type === "hero" && section.visible)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["screens"],
+        message: "The home screen must include a visible hero section."
+      });
+    }
+  });
+
+export const mobileExperienceDraftResponseSchema = z.object({
+  locationId: z.string().min(1),
+  draft: mobileExperienceDocumentSchema,
+  published: mobileExperienceDocumentSchema.optional()
+});
+
+export const mobileExperienceSaveDraftRequestSchema = mobileExperienceDocumentBaseSchema
+  .omit({
+    locationId: true,
+    versionId: true,
+    status: true,
+    createdAt: true,
+    updatedAt: true,
+    publishedAt: true
+  })
+  .extend({
+    versionId: z.string().min(1).optional()
+  });
+
+export const mobileExperiencePublishRequestSchema = z.object({
+  draftVersionId: z.string().min(1).optional()
+});
+
+export const mobileExperienceVersionsResponseSchema = z.object({
+  locationId: z.string().min(1),
+  versions: z.array(mobileExperienceDocumentSchema)
+});
+
 export type MenuItemCustomizationOption = z.output<typeof menuItemCustomizationOptionSchema>;
 export type MenuItemCustomizationGroup = z.output<typeof menuItemCustomizationGroupSchema>;
 export type MenuItemCustomizationSelection = z.output<typeof menuItemCustomizationSelectionSchema>;
@@ -986,6 +1126,13 @@ export type InternalLocationSummary = z.output<typeof internalLocationSummarySch
 export type InternalLocationListResponse = z.output<typeof internalLocationListResponseSchema>;
 export type LaunchReadinessCheck = z.output<typeof launchReadinessCheckSchema>;
 export type LaunchReadinessResponse = z.output<typeof launchReadinessResponseSchema>;
+export type MobileExperienceTemplate = z.output<typeof mobileExperienceTemplateSchema>;
+export type MobileExperienceSection = z.output<typeof mobileExperienceSectionSchema>;
+export type MobileExperienceDocument = z.output<typeof mobileExperienceDocumentSchema>;
+export type MobileExperienceDraftResponse = z.output<typeof mobileExperienceDraftResponseSchema>;
+export type MobileExperienceSaveDraftRequest = z.output<typeof mobileExperienceSaveDraftRequestSchema>;
+export type MobileExperiencePublishRequest = z.output<typeof mobileExperiencePublishRequestSchema>;
+export type MobileExperienceVersionsResponse = z.output<typeof mobileExperienceVersionsResponseSchema>;
 
 export type CustomizationValidationIssueCode =
   | "unknown_group"
@@ -1303,6 +1450,12 @@ export const catalogContract = {
       request: z.undefined(),
       response: storeConfigResponseSchema
     },
+    mobileExperience: {
+      method: "GET",
+      path: "/mobile-experience",
+      request: z.undefined(),
+      response: mobileExperienceDocumentSchema
+    },
     adminMenu: {
       method: "GET",
       path: "/admin/menu",
@@ -1368,6 +1521,24 @@ export const catalogContract = {
       path: "/admin/store/config",
       request: adminStoreConfigUpdateSchema,
       response: adminStoreConfigSchema
+    },
+    adminMobileExperience: {
+      method: "GET",
+      path: "/admin/mobile-experience",
+      request: z.undefined(),
+      response: mobileExperienceDraftResponseSchema
+    },
+    adminMobileExperienceDraftUpdate: {
+      method: "PUT",
+      path: "/admin/mobile-experience/draft",
+      request: mobileExperienceSaveDraftRequestSchema,
+      response: mobileExperienceDraftResponseSchema
+    },
+    adminMobileExperiencePublish: {
+      method: "POST",
+      path: "/admin/mobile-experience/publish",
+      request: mobileExperiencePublishRequestSchema,
+      response: mobileExperienceDocumentSchema
     }
   }
 } as const;

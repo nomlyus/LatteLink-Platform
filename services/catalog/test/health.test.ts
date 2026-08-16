@@ -11,6 +11,8 @@ import {
   internalLocationListResponseSchema,
   internalLocationSummarySchema,
   menuResponseSchema,
+  mobileExperienceDocumentSchema,
+  mobileExperienceDraftResponseSchema,
   onboardingSummarySchema,
   storeConfigResponseSchema
 } from "@lattelink/contracts-catalog";
@@ -127,6 +129,7 @@ describe("catalog service", () => {
       "/v1/menu?locationId=unknown-location",
       "/v1/cards?locationId=unknown-location",
       "/v1/store/cards?locationId=unknown-location",
+      "/v1/mobile-experience?locationId=unknown-location",
       "/v1/store/config?locationId=unknown-location"
     ]) {
       const response = await app.inject({ method: "GET", url });
@@ -183,6 +186,19 @@ describe("catalog service", () => {
     expect(parsed.isOpen).toBe(true);
     expect(parsed.nextOpenAt).toBeNull();
     expect(parsed.prepEtaMinutes).toBeGreaterThan(0);
+    await app.close();
+  });
+
+  it("returns a default published mobile experience for public clients", async () => {
+    const app = await buildApp();
+    const response = await app.inject({ method: "GET", url: `/v1/mobile-experience?locationId=${DEFAULT_LOCATION_ID}` });
+
+    expect(response.statusCode).toBe(200);
+    const parsed = mobileExperienceDocumentSchema.parse(response.json());
+    expect(parsed.locationId).toBe(DEFAULT_LOCATION_ID);
+    expect(parsed.status).toBe("published");
+    expect(parsed.protectedNavigation).toEqual(["home", "menu", "orders", "account"]);
+    expect(parsed.screens[0]?.sections.some((section) => section.type === "hero")).toBe(true);
     await app.close();
   });
 
@@ -365,6 +381,71 @@ describe("catalog service", () => {
       loyaltyEnabled: false
     });
 
+    await app.close();
+  });
+
+  it("saves and publishes gateway-protected mobile experience drafts", async () => {
+    process.env.GATEWAY_INTERNAL_API_TOKEN = "catalog-gateway-token";
+    const app = await buildApp();
+    const headers = {
+      "x-gateway-token": "catalog-gateway-token",
+      "x-operator-location-id": DEFAULT_LOCATION_ID,
+      "x-user-id": "operator-01"
+    };
+
+    const draftResponse = await app.inject({
+      method: "PUT",
+      url: "/v1/catalog/admin/mobile-experience/draft",
+      headers,
+      payload: {
+        templateId: "compact_ordering",
+        theme: {},
+        protectedNavigation: ["home", "menu", "orders", "account"],
+        screens: [
+          {
+            id: "home",
+            title: "Rawaq",
+            sections: [
+              {
+                id: "hero",
+                type: "hero",
+                visible: true,
+                title: "Rawaq",
+                subtitle: "Order ahead",
+                action: "open_menu",
+                actionLabel: "Start order"
+              },
+              {
+                id: "news-cards",
+                type: "news_cards",
+                visible: true,
+                title: "Latest",
+                cardLimit: 2
+              }
+            ]
+          }
+        ]
+      }
+    });
+
+    expect(draftResponse.statusCode).toBe(200);
+    const draft = mobileExperienceDraftResponseSchema.parse(draftResponse.json());
+    expect(draft.draft.templateId).toBe("compact_ordering");
+
+    const publishResponse = await app.inject({
+      method: "POST",
+      url: "/v1/catalog/admin/mobile-experience/publish",
+      headers,
+      payload: { draftVersionId: draft.draft.versionId }
+    });
+
+    expect(publishResponse.statusCode).toBe(200);
+    const published = mobileExperienceDocumentSchema.parse(publishResponse.json());
+    expect(published.status).toBe("published");
+    expect(published.templateId).toBe("compact_ordering");
+
+    const publicResponse = await app.inject({ method: "GET", url: `/v1/mobile-experience?locationId=${DEFAULT_LOCATION_ID}` });
+    expect(mobileExperienceDocumentSchema.parse(publicResponse.json()).templateId).toBe("compact_ordering");
     await app.close();
   });
 
