@@ -39,6 +39,8 @@ describe("gateway", () => {
   let previousGatewayInternalToken: string | undefined;
   let previousOrdersInternalToken: string | undefined;
   let previousGatewayOrderStreamPollMs: string | undefined;
+  let previousGatewayOrderStreamMaxPerLocation: string | undefined;
+  let previousGatewayOrderStreamMaxGlobal: string | undefined;
   let previousValkeyUrl: string | undefined;
 let previousCorsAllowedOrigins: string | undefined;
 let previousCorsAllowedOriginHostSuffixes: string | undefined;
@@ -199,6 +201,8 @@ let previousFreeClientDashboardDomain: string | undefined;
     previousGatewayInternalToken = process.env.GATEWAY_INTERNAL_API_TOKEN;
     previousOrdersInternalToken = process.env.ORDERS_INTERNAL_API_TOKEN;
     previousGatewayOrderStreamPollMs = process.env.GATEWAY_ORDER_STREAM_POLL_MS;
+    previousGatewayOrderStreamMaxPerLocation = process.env.GATEWAY_ORDER_STREAM_MAX_PER_LOCATION;
+    previousGatewayOrderStreamMaxGlobal = process.env.GATEWAY_ORDER_STREAM_MAX_GLOBAL;
     previousValkeyUrl = process.env.VALKEY_URL;
     previousCorsAllowedOrigins = process.env.CORS_ALLOWED_ORIGINS;
     previousCorsAllowedOriginHostSuffixes = process.env.CORS_ALLOWED_ORIGIN_HOST_SUFFIXES;
@@ -2137,6 +2141,18 @@ let previousFreeClientDashboardDomain: string | undefined;
       process.env.GATEWAY_ORDER_STREAM_POLL_MS = previousGatewayOrderStreamPollMs;
     }
 
+    if (previousGatewayOrderStreamMaxPerLocation === undefined) {
+      delete process.env.GATEWAY_ORDER_STREAM_MAX_PER_LOCATION;
+    } else {
+      process.env.GATEWAY_ORDER_STREAM_MAX_PER_LOCATION = previousGatewayOrderStreamMaxPerLocation;
+    }
+
+    if (previousGatewayOrderStreamMaxGlobal === undefined) {
+      delete process.env.GATEWAY_ORDER_STREAM_MAX_GLOBAL;
+    } else {
+      process.env.GATEWAY_ORDER_STREAM_MAX_GLOBAL = previousGatewayOrderStreamMaxGlobal;
+    }
+
     if (previousValkeyUrl === undefined) {
       delete process.env.VALKEY_URL;
     } else {
@@ -2799,6 +2815,107 @@ let previousFreeClientDashboardDomain: string | undefined;
     expect(response.headers["content-type"]).toContain("text/event-stream");
     expect(response.body).toContain('"type":"snapshot"');
     expect(response.body).toContain('"id":"123e4567-e89b-12d3-a456-426614174150"');
+
+    await app.close();
+  });
+
+  it("rejects customer order streams when the per-location stream cap is reached", async () => {
+    process.env.GATEWAY_ORDER_STREAM_POLL_MS = "60000";
+    process.env.GATEWAY_ORDER_STREAM_MAX_PER_LOCATION = "1";
+    const app = await buildApp();
+    const firstOrderId = "123e4567-e89b-12d3-a456-426614174157";
+    const secondOrderId = "123e4567-e89b-12d3-a456-426614174158";
+    queuedOrderStatuses.set(firstOrderId, ["IN_PREP"]);
+    queuedOrderStatuses.set(secondOrderId, ["IN_PREP"]);
+
+    const firstStream = app.inject({
+      method: "GET",
+      url: `/v1/orders/${firstOrderId}/stream`,
+      headers: authHeader
+    });
+    firstStream.catch(() => undefined);
+
+    await vi.waitFor(() => {
+      const firstOrderFetch = fetchMock.mock.calls.some(([input, init]) => {
+        const url = typeof input === "string" ? input : input.url;
+        return url === `http://orders.internal/v1/orders/${firstOrderId}` && (init?.method ?? "GET") === "GET";
+      });
+      expect(firstOrderFetch).toBe(true);
+    });
+
+    const rejectedResponse = await app.inject({
+      method: "GET",
+      url: `/v1/orders/${secondOrderId}/stream`,
+      headers: authHeader
+    });
+
+    expect(rejectedResponse.statusCode).toBe(503);
+    expect(rejectedResponse.json()).toMatchObject({
+      code: "STREAM_CAPACITY_EXCEEDED"
+    });
+
+    await app.close();
+  });
+
+  it("releases order stream capacity after terminal stream cleanup", async () => {
+    process.env.GATEWAY_ORDER_STREAM_MAX_PER_LOCATION = "1";
+    const app = await buildApp();
+    const firstOrderId = "123e4567-e89b-12d3-a456-426614174159";
+    const secondOrderId = "123e4567-e89b-12d3-a456-426614174160";
+    queuedOrderStatuses.set(firstOrderId, ["COMPLETED"]);
+    queuedOrderStatuses.set(secondOrderId, ["COMPLETED"]);
+
+    const firstResponse = await app.inject({
+      method: "GET",
+      url: `/v1/orders/${firstOrderId}/stream`,
+      headers: authHeader
+    });
+    expect(firstResponse.statusCode).toBe(200);
+
+    const secondResponse = await app.inject({
+      method: "GET",
+      url: `/v1/orders/${secondOrderId}/stream`,
+      headers: authHeader
+    });
+    expect(secondResponse.statusCode).toBe(200);
+    expect(secondResponse.body).toContain(`"id":"${secondOrderId}"`);
+
+    await app.close();
+  });
+
+  it("rejects order streams when the global stream cap is reached", async () => {
+    process.env.GATEWAY_ORDER_STREAM_POLL_MS = "60000";
+    process.env.GATEWAY_ORDER_STREAM_MAX_PER_LOCATION = "10";
+    process.env.GATEWAY_ORDER_STREAM_MAX_GLOBAL = "1";
+    const app = await buildApp();
+    const orderId = "123e4567-e89b-12d3-a456-426614174161";
+    queuedOrderStatuses.set(orderId, ["IN_PREP"]);
+
+    const firstStream = app.inject({
+      method: "GET",
+      url: `/v1/orders/${orderId}/stream`,
+      headers: authHeader
+    });
+    firstStream.catch(() => undefined);
+
+    await vi.waitFor(() => {
+      const firstOrderFetch = fetchMock.mock.calls.some(([input, init]) => {
+        const url = typeof input === "string" ? input : input.url;
+        return url === `http://orders.internal/v1/orders/${orderId}` && (init?.method ?? "GET") === "GET";
+      });
+      expect(firstOrderFetch).toBe(true);
+    });
+
+    const rejectedResponse = await app.inject({
+      method: "GET",
+      url: "/v1/admin/orders/stream",
+      headers: ownerOperatorHeaders
+    });
+
+    expect(rejectedResponse.statusCode).toBe(503);
+    expect(rejectedResponse.json()).toMatchObject({
+      code: "STREAM_CAPACITY_EXCEEDED"
+    });
 
     await app.close();
   });
