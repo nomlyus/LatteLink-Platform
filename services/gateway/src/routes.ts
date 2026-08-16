@@ -221,6 +221,7 @@ const supportOrderLookupResponseSchema = z.object({
 const defaultRateLimitWindowMs = 60_000;
 const defaultUpstreamTimeoutMs = 5_000;
 const defaultOrderStreamPollIntervalMs = 2_000;
+const defaultOrderStreamMaxPerLocation = 100;
 type StreamOrderFetchSuccess = {
   order: z.output<typeof orderSchema>;
 };
@@ -235,6 +236,105 @@ type StreamOrdersFetchError = {
   statusCode: number;
   error: z.output<typeof apiErrorSchema>;
 };
+type OrderStreamCapacityLease = {
+  release: () => void;
+};
+type OrderStreamCapacityLimits = {
+  maxPerLocation: number;
+  maxGlobal?: number;
+};
+type OrderStreamCapacityRequest = {
+  streamType: "customer_orders" | "customer_order" | "admin_orders";
+  request: FastifyRequest;
+  locationIds: string[];
+};
+
+function normalizeCapacityLocationIds(locationIds: string[]) {
+  return [...new Set(locationIds.map((locationId) => locationId.trim()).filter(Boolean))].sort();
+}
+
+function parseOptionalPositiveInteger(value: string | undefined): number | undefined {
+  if (value === undefined || value.trim().length === 0) {
+    return undefined;
+  }
+
+  return toPositiveInteger(value, 0) || undefined;
+}
+
+function orderStreamCapacityExceeded(requestId: string) {
+  return apiErrorSchema.parse({
+    code: "STREAM_CAPACITY_EXCEEDED",
+    message: "Order stream capacity is temporarily full. Please retry shortly.",
+    requestId
+  });
+}
+
+class OrderStreamCapacityTracker {
+  private readonly locationCounts = new Map<string, number>();
+  private globalCount = 0;
+
+  constructor(private readonly limits: OrderStreamCapacityLimits) {}
+
+  acquire(input: OrderStreamCapacityRequest): OrderStreamCapacityLease | null {
+    const locationIds = normalizeCapacityLocationIds(input.locationIds);
+
+    if (this.limits.maxGlobal !== undefined && this.globalCount >= this.limits.maxGlobal) {
+      input.request.log.warn(
+        {
+          requestId: input.request.id,
+          streamType: input.streamType,
+          limitType: "global",
+          current: this.globalCount,
+          max: this.limits.maxGlobal
+        },
+        "order stream capacity exceeded"
+      );
+      return null;
+    }
+
+    for (const locationId of locationIds) {
+      const current = this.locationCounts.get(locationId) ?? 0;
+      if (current >= this.limits.maxPerLocation) {
+        input.request.log.warn(
+          {
+            requestId: input.request.id,
+            streamType: input.streamType,
+            limitType: "location",
+            locationId,
+            current,
+            max: this.limits.maxPerLocation
+          },
+          "order stream capacity exceeded"
+        );
+        return null;
+      }
+    }
+
+    this.globalCount += 1;
+    for (const locationId of locationIds) {
+      this.locationCounts.set(locationId, (this.locationCounts.get(locationId) ?? 0) + 1);
+    }
+
+    let released = false;
+    return {
+      release: () => {
+        if (released) {
+          return;
+        }
+        released = true;
+        this.globalCount = Math.max(0, this.globalCount - 1);
+        for (const locationId of locationIds) {
+          const next = Math.max(0, (this.locationCounts.get(locationId) ?? 0) - 1);
+          if (next === 0) {
+            this.locationCounts.delete(locationId);
+          } else {
+            this.locationCounts.set(locationId, next);
+          }
+        }
+      }
+    };
+  }
+}
 
 class UpstreamHttpError extends Error {
   serviceLabel: string;
@@ -1630,6 +1730,13 @@ export async function registerRoutes(app: FastifyInstance) {
     process.env.GATEWAY_ORDER_STREAM_POLL_MS,
     defaultOrderStreamPollIntervalMs
   );
+  const orderStreamCapacityTracker = new OrderStreamCapacityTracker({
+    maxPerLocation: toPositiveInteger(
+      process.env.GATEWAY_ORDER_STREAM_MAX_PER_LOCATION,
+      defaultOrderStreamMaxPerLocation
+    ),
+    maxGlobal: parseOptionalPositiveInteger(process.env.GATEWAY_ORDER_STREAM_MAX_GLOBAL)
+  });
   const valkeyUrl = trimToUndefined(process.env.VALKEY_URL);
   const eventBusSubscriber = valkeyUrl ? new EventBusSubscriber(valkeyUrl) : null;
   const staffReadRateLimit = {
@@ -2802,6 +2909,15 @@ export async function registerRoutes(app: FastifyInstance) {
       return reply.status(statusCode).send(error);
     }
 
+    const capacityLease = orderStreamCapacityTracker.acquire({
+      streamType: "customer_orders",
+      request,
+      locationIds: initialOrdersResult.orders.map((order) => order.locationId)
+    });
+    if (!capacityLease) {
+      return reply.status(503).send(orderStreamCapacityExceeded(request.id));
+    }
+
     reply.hijack();
     reply.raw.statusCode = 200;
     reply.raw.setHeader("Content-Type", "text/event-stream");
@@ -2824,6 +2940,7 @@ export async function registerRoutes(app: FastifyInstance) {
       }
       unsubscribeFromOrderEvents?.();
       unsubscribeFromOrderEvents = null;
+      capacityLease.release();
       if (closed) {
         return;
       }
@@ -3006,6 +3123,15 @@ export async function registerRoutes(app: FastifyInstance) {
         return reply.status(statusCode).send(error);
       }
 
+      const capacityLease = orderStreamCapacityTracker.acquire({
+        streamType: "customer_order",
+        request,
+        locationIds: [initialOrderResult.order.locationId]
+      });
+      if (!capacityLease) {
+        return reply.status(503).send(orderStreamCapacityExceeded(request.id));
+      }
+
       reply.hijack();
       reply.raw.statusCode = 200;
       reply.raw.setHeader("Content-Type", "text/event-stream");
@@ -3029,6 +3155,7 @@ export async function registerRoutes(app: FastifyInstance) {
         }
         unsubscribeFromOrderEvents?.();
         unsubscribeFromOrderEvents = null;
+        capacityLease.release();
         if (closed) {
           return;
         }
@@ -3509,6 +3636,15 @@ export async function registerRoutes(app: FastifyInstance) {
         return reply.status(502).send({ code: "UPSTREAM_INVALID_RESPONSE", message: "Orders response invalid", requestId: request.id });
       }
 
+      const capacityLease = orderStreamCapacityTracker.acquire({
+        streamType: "admin_orders",
+        request,
+        locationIds: locationId ? [locationId] : parsedOrders.data.map((order) => order.locationId)
+      });
+      if (!capacityLease) {
+        return reply.status(503).send(orderStreamCapacityExceeded(request.id));
+      }
+
       // Read CORS headers set by @fastify/cors before hijack — they live on the Fastify
       // reply object and would be lost once we take over the raw response.
       const corsOriginHeader = reply.getHeader("access-control-allow-origin") as string | undefined;
@@ -3549,6 +3685,7 @@ export async function registerRoutes(app: FastifyInstance) {
         }
         unsubscribe?.();
         unsubscribe = null;
+        capacityLease.release();
         if (closed) {
           return;
         }

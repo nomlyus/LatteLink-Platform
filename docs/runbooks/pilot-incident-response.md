@@ -309,6 +309,31 @@ Message:
 
 > The ordering API is temporarily unavailable. We are restoring service and will confirm when ordering is safe to resume.
 
+## Scenario: Order Stream Capacity Exceeded
+
+Symptom:
+
+- Mobile app or client dashboard order stream requests return `503` with `STREAM_CAPACITY_EXCEEDED`.
+
+Meaning:
+
+- The gateway has reached its in-memory per-process SSE connection cap for order streams.
+- `GATEWAY_ORDER_STREAM_MAX_PER_LOCATION` caps open order streams per location.
+- `GATEWAY_ORDER_STREAM_MAX_GLOBAL` optionally caps all open order streams in one gateway process.
+- In the current single-host stack this is a practical guardrail. In horizontally scaled containers, these counters are per replica until moved into shared storage such as Valkey.
+
+Safe first action:
+
+1. Check whether one browser/device/session is reconnecting repeatedly.
+2. Confirm gateway memory and open connection count.
+3. Restart only the affected client session if the issue is localized.
+4. Raise the cap only if the traffic is legitimate and the gateway has headroom.
+
+What not to do:
+
+- Do not disable the cap during an active incident.
+- Do not raise the cap without checking host memory and file descriptor pressure.
+
 ## Scenario 8: `/ready` Down but `/health` Passes
 
 Symptom:
