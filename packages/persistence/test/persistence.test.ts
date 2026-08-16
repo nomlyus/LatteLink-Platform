@@ -1,3 +1,4 @@
+import { readdirSync } from "node:fs";
 import { basename } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -186,5 +187,23 @@ describe("persistence", () => {
       expect(typeof migration.up).toBe("function");
       expect(typeof migration.down).toBe("function");
     }
+  });
+
+  it("prevents new duplicate migration number prefixes", () => {
+    // 0015 was duplicated before deployed migration history was stabilized; do not add new duplicates.
+    const allowedHistoricalDuplicates = new Set(["0015"]);
+    const migrationFiles = readdirSync(resolveMigrationFolderPath()).filter((file) => /^\d{4}_.+\.ts$/.test(file));
+    const prefixesByNumber = new Map<string, string[]>();
+
+    for (const file of migrationFiles) {
+      const prefix = file.slice(0, 4);
+      prefixesByNumber.set(prefix, [...(prefixesByNumber.get(prefix) ?? []), file]);
+    }
+
+    const unexpectedDuplicates = [...prefixesByNumber.entries()]
+      .filter(([prefix, files]) => files.length > 1 && !allowedHistoricalDuplicates.has(prefix))
+      .map(([prefix, files]) => `${prefix}: ${files.sort().join(", ")}`);
+
+    expect(unexpectedDuplicates).toEqual([]);
   });
 });
