@@ -1,6 +1,6 @@
 {
   "name": "@lattelink/mobile",
-  "version": "1.0.6",
+  "version": "1.0.10",
   "private": true,
   "main": "./index.js",
   "scripts": {
