@@ -1,6 +1,6 @@
 # Mobile EAS Build Matrix
 
-Last updated: `2026-06-01`
+Last updated: `2026-08-16`
 
 ## Purpose
 
@@ -110,6 +110,56 @@ Optional values:
 ## Build Commands
 
 Run from `apps/mobile` or use `pnpm --filter @lattelink/mobile exec ...`.
+
+## Merchant-Specific Build Preparation
+
+For a new merchant app, do not hand-edit `apps/mobile/eas.json` for every client. Generate a merchant
+build bundle from the approved app identity profile, then use the generated commands as the auditable
+handoff into EAS.
+
+Create a merchant manifest with the approved identity and release values:
+
+```json
+{
+  "locationId": "rawaqcoffee01",
+  "appName": "Rawaq",
+  "displayName": "Rawaq",
+  "bundleIdentifier": "com.lattelink.rawaq.beta",
+  "sku": "rawaq-ios-beta",
+  "applePayMerchantId": "merchant.com.lattelink.rawaq.beta",
+  "ascAppId": "6761780971",
+  "apiBaseUrl": "https://api-dev.nomly.us/v1",
+  "appVersion": "1.0.10",
+  "runtimeVersion": "1.0.10",
+  "sentryDsn": "https://<public-key>@<org>.ingest.sentry.io/<project>",
+  "sentryOrg": "nomly",
+  "sentryProject": "mobile",
+  "targetLocationIds": ["rawaqcoffee01"],
+  "releaseNotes": "Performance optimizations, security updates, and reliability improvements."
+}
+```
+
+Prepare the build bundle from the exact source commit recorded in the internal admin release panel:
+
+```bash
+pnpm --filter @lattelink/mobile merchant-build:prepare -- \
+  --input ./merchant.json \
+  --profile beta \
+  --source-commit <40-character-git-sha>
+```
+
+The script writes generated artifacts under `.nomly/mobile-builds/<locationId>/<profile>/`:
+
+- `.env.eas`: release environment for `app.config.ts`
+- `build-manifest.json`: source commit, config hash, bundle identifier, App Store Connect app ID, and commands
+- `commands.sh`: preflight, App Store Connect integration, build, and submit commands
+
+Run the generated `preflight` command before any build. If `ascAppId` is present, run the generated
+`eas integrations:asc:connect` command before submission so EAS Submit targets the correct App Store
+Connect app for that merchant. Then run the generated build and submit commands.
+
+Use `--execute preflight`, `--execute build`, `--execute submit`, or `--execute all` only after checking
+the generated manifest. The default mode only writes the bundle and does not call EAS.
 
 Before starting a build, run the release preflight with the same EAS environment the build/update will use:
 

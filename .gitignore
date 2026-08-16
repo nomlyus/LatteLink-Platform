@@ -36,5 +36,6 @@ coverage
 crash.log
 
 # misc
+.nomly
 openapi/*.json
 repo-files.md
