@@ -73,6 +73,7 @@ import {
   mobileExperienceDocumentSchema,
   mobileExperienceDraftResponseSchema,
   mobileExperiencePublishRequestSchema,
+  mobileExperienceRollbackRequestSchema,
   mobileExperienceSaveDraftRequestSchema,
   mobileExperienceVersionsResponseSchema,
   mobileReleaseProfileUpdateSchema,
@@ -4387,6 +4388,36 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   );
 
+  app.post(
+    "/v1/admin/mobile-experience/rollback",
+    {
+      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("store:write")]
+    },
+    async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+
+      const input = mobileExperienceRollbackRequestSchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "POST",
+        path: "/v1/catalog/admin/mobile-experience/rollback",
+        body: input,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken,
+          ...operatorLocationHeader(locationContext.locationId)
+        },
+        responseSchema: mobileExperienceDocumentSchema
+      });
+    }
+  );
+
   app.get(
     "/v1/admin/onboarding",
     {
@@ -5190,6 +5221,60 @@ export async function registerRoutes(app: FastifyInstance) {
         },
         forwardUserIdHeader: false,
         responseSchema: onboardingSummarySchema
+      });
+    }
+  );
+
+  app.get(
+    "/v1/internal/locations/:locationId/mobile-experience/versions",
+    {
+      preHandler: [app.rateLimit(authReadRateLimit), requireInternalAdminCapability("clients:read")]
+    },
+    async (request, reply) => {
+      const { locationId } = internalLocationParamsSchema.parse(request.params);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "GET",
+        path: "/v1/catalog/admin/mobile-experience/versions",
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken,
+          ...operatorLocationHeader(locationId),
+          ...internalAdminActorHeader(request)
+        },
+        forwardUserIdHeader: false,
+        responseSchema: mobileExperienceVersionsResponseSchema
+      });
+    }
+  );
+
+  app.post(
+    "/v1/internal/locations/:locationId/mobile-experience/rollback",
+    {
+      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+    },
+    async (request, reply) => {
+      const { locationId } = internalLocationParamsSchema.parse(request.params);
+      const input = mobileExperienceRollbackRequestSchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "POST",
+        path: "/v1/catalog/admin/mobile-experience/rollback",
+        body: input,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken,
+          ...operatorLocationHeader(locationId),
+          ...internalAdminActorHeader(request)
+        },
+        forwardUserIdHeader: false,
+        responseSchema: mobileExperienceDocumentSchema
       });
     }
   );

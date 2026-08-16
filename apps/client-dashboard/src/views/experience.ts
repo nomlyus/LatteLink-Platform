@@ -44,6 +44,14 @@ function renderTemplateOptions(draft: MobileExperienceDocument) {
     .join("");
 }
 
+function renderSectionOrderOptions(currentIndex: number) {
+  return [0, 1, 2, 3]
+    .map(
+      (index) => `<option value="${index + 1}" ${index === currentIndex ? "selected" : ""}>${index + 1}</option>`
+    )
+    .join("");
+}
+
 function renderSectionToggles(sections: MobileExperienceSection[]) {
   return sections
     .map(
@@ -51,10 +59,48 @@ function renderSectionToggles(sections: MobileExperienceSection[]) {
         <label class="experience-section-toggle">
           <input type="checkbox" name="sectionVisible:${section.type}" ${section.visible ? "checked" : ""} ${section.type === "hero" ? "disabled checked" : ""} />
           <span>${escapeHtml(sectionLabels[section.type])}</span>
+          <select name="sectionOrder:${section.type}" aria-label="${escapeHtml(sectionLabels[section.type])} order">
+            ${renderSectionOrderOptions(sections.findIndex((candidate) => candidate.type === section.type))}
+          </select>
         </label>
       `
     )
     .join("");
+}
+
+function renderVersionHistory(canWrite: boolean) {
+  const versions = state.mobileExperienceVersions.versions;
+  if (versions.length === 0) {
+    return "";
+  }
+
+  return `
+    <div class="experience-version-history">
+      <div class="dash-panel-title">Published versions</div>
+      ${versions
+        .slice(0, 5)
+        .map((version) => {
+          const restoring = state.rollingBackMobileExperienceVersionId === version.versionId;
+          const label = version.publishedAt ? new Date(version.publishedAt).toLocaleString() : version.versionId;
+          return `
+            <div class="experience-version-row">
+              <span>${escapeHtml(label)}</span>
+              <span>${escapeHtml(templateLabels[version.templateId])}</span>
+              <button
+                class="button button--ghost"
+                type="button"
+                data-action="rollback-mobile-experience"
+                data-version-id="${escapeHtml(version.versionId)}"
+                ${!canWrite || restoring ? "disabled" : ""}
+              >
+                ${restoring ? "Restoring..." : "Restore"}
+              </button>
+            </div>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
 }
 
 function renderPreviewSection(section: MobileExperienceSection) {
@@ -134,7 +180,6 @@ export function renderExperienceSection() {
   const featuredMenu = getSection(sections, "featured_menu");
   const newsCards = getSection(sections, "news_cards");
   const canWrite = canUpdateStoreSettings(state.session?.operator ?? null);
-  const sectionOrder = sections.map((section) => section.type).join(",");
   const publishedLabel = state.mobileExperience?.published?.publishedAt
     ? `Published ${new Date(state.mobileExperience.published.publishedAt).toLocaleString()}`
     : "Not published yet";
@@ -159,7 +204,6 @@ export function renderExperienceSection() {
             canWrite
               ? `
                 <form class="experience-form" data-form="mobile-experience">
-                  <input type="hidden" name="sectionOrder" value="${escapeHtml(sectionOrder)}" />
                   <label class="field">
                     <span>Base template</span>
                     <select name="templateId">${renderTemplateOptions(draft)}</select>
@@ -204,6 +248,7 @@ export function renderExperienceSection() {
                     </button>
                   </div>
                 </form>
+                ${renderVersionHistory(canWrite)}
               `
               : `<p class="muted-copy">App experience editing is read-only for your current role.</p>`
           }

@@ -24,6 +24,7 @@ import {
   mobileExperienceDocumentSchema,
   mobileExperienceDraftResponseSchema,
   mobileExperiencePublishRequestSchema,
+  mobileExperienceRollbackRequestSchema,
   mobileExperienceSaveDraftRequestSchema,
   mobileExperienceVersionsResponseSchema,
   mobileReleaseProfileUpdateSchema,
@@ -820,6 +821,41 @@ export async function registerRoutes(app: FastifyInstance) {
           statusCode: 409,
           code: "MOBILE_EXPERIENCE_DRAFT_CONFLICT",
           message: error instanceof Error ? error.message : "Mobile experience draft could not be published.",
+          requestId: request.id
+        });
+      }
+    }
+  );
+
+  app.post(
+    "/v1/catalog/admin/mobile-experience/rollback",
+    {
+      preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess]
+    },
+    async (request, reply) => {
+      const locationId = getOperatorLocationId(request, reply);
+      if (!locationId) return reply;
+      const input = mobileExperienceRollbackRequestSchema.parse(request.body);
+      try {
+        const published = await repository.rollbackAdminMobileExperience(locationId, input.versionId);
+        await recordAuditLog(request, repository, {
+          locationId,
+          actorId: getActorId(request),
+          actorType: "operator",
+          action: "mobile_experience.rolled_back",
+          targetId: published.versionId,
+          targetType: "mobile_experience",
+          payload: {
+            restoredVersionId: input.versionId,
+            publishedAt: published.publishedAt
+          }
+        });
+        return mobileExperienceDocumentSchema.parse(published);
+      } catch (error) {
+        return sendError(reply, {
+          statusCode: 404,
+          code: "MOBILE_EXPERIENCE_VERSION_NOT_FOUND",
+          message: error instanceof Error ? error.message : "Mobile experience version could not be restored.",
           requestId: request.id
         });
       }

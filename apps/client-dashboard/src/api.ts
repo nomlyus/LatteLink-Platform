@@ -24,7 +24,9 @@ import {
   homeNewsCardsResponseSchema,
   mobileExperienceDraftResponseSchema,
   mobileExperienceDocumentSchema,
+  mobileExperienceRollbackRequestSchema,
   mobileExperienceSaveDraftRequestSchema,
+  mobileExperienceVersionsResponseSchema,
   onboardingSummarySchema,
   operatorOnboardingUpdateSchema,
   stripeConnectDashboardLinkRequestSchema,
@@ -82,6 +84,7 @@ export type OperatorDashboardSnapshot = {
   discountCodes: OperatorDiscountCode[];
   storeConfig: z.output<typeof adminStoreConfigSchema> | null;
   mobileExperience: z.output<typeof mobileExperienceDraftResponseSchema> | null;
+  mobileExperienceVersions: z.output<typeof mobileExperienceVersionsResponseSchema>;
   team: OperatorUser[];
 };
 
@@ -521,7 +524,17 @@ export async function fetchOperatorSnapshot(
   const capabilitySet = new Set(session.operator.capabilities);
   const query = locationId ? { locationId } : undefined;
   const fallbackLocationId = locationId ?? session.operator.locationId;
-  const [appConfig, orders, menu, cards, discountCodeResponse, storeConfig, mobileExperience, teamResponse] = await Promise.all([
+  const [
+    appConfig,
+    orders,
+    menu,
+    cards,
+    discountCodeResponse,
+    storeConfig,
+    mobileExperience,
+    mobileExperienceVersions,
+    teamResponse
+  ] = await Promise.all([
     locationId
       ? requestJson({
           apiBaseUrl: session.apiBaseUrl,
@@ -596,6 +609,17 @@ export async function fetchOperatorSnapshot(
           })
         : Promise.resolve(null)
       : Promise.resolve(null),
+    capabilitySet.has("store:read")
+      ? locationId
+        ? requestJson({
+            apiBaseUrl: session.apiBaseUrl,
+            accessToken: session.accessToken,
+            path: "/admin/mobile-experience/versions",
+            query,
+            schema: mobileExperienceVersionsResponseSchema
+          })
+        : Promise.resolve(mobileExperienceVersionsResponseSchema.parse({ locationId: fallbackLocationId, versions: [] }))
+      : Promise.resolve(mobileExperienceVersionsResponseSchema.parse({ locationId: fallbackLocationId, versions: [] })),
     capabilitySet.has("team:read")
       ? locationId
         ? requestJson({
@@ -619,6 +643,7 @@ export async function fetchOperatorSnapshot(
     discountCodes: discountCodeResponse.discountCodes,
     storeConfig,
     mobileExperience,
+    mobileExperienceVersions,
     team: teamResponse.users
   };
 }
@@ -923,6 +948,19 @@ export function publishOperatorMobileExperience(session: OperatorSession, locati
     query: { locationId: requireSelectedLocationId(locationId) },
     method: "POST",
     body: { draftVersionId },
+    schema: mobileExperienceDocumentSchema
+  });
+}
+
+export function rollbackOperatorMobileExperience(session: OperatorSession, locationId: string | null, versionId: string) {
+  const body = mobileExperienceRollbackRequestSchema.parse({ versionId });
+  return requestJson({
+    apiBaseUrl: session.apiBaseUrl,
+    accessToken: session.accessToken,
+    path: "/admin/mobile-experience/rollback",
+    query: { locationId: requireSelectedLocationId(locationId) },
+    method: "POST",
+    body,
     schema: mobileExperienceDocumentSchema
   });
 }

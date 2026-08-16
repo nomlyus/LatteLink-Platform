@@ -2,6 +2,7 @@ import type {
   AdminStoreConfig,
   AppConfig,
   MobileExperienceDraftResponse,
+  MobileExperienceVersionsResponse,
   MenuItemCustomizationGroup
 } from "@lattelink/contracts-catalog";
 import type {
@@ -58,6 +59,7 @@ export type AppState = {
   discountCodes: OperatorDiscountCode[];
   storeConfig: AdminStoreConfig | null;
   mobileExperience: MobileExperienceDraftResponse | null;
+  mobileExperienceVersions: MobileExperienceVersionsResponse;
   teamUsers: OperatorUser[];
   selectedOrderId: string | null;
   busyOrderId: string | null;
@@ -72,6 +74,7 @@ export type AppState = {
   savingStore: boolean;
   savingMobileExperience: boolean;
   publishingMobileExperience: boolean;
+  rollingBackMobileExperienceVersionId: string | null;
   creatingMenuItem: boolean;
   menuCreateWizardOpen: boolean;
   menuCreateWizardStep: 1 | 2 | 3;
@@ -143,6 +146,7 @@ export const state: AppState = {
   discountCodes: [],
   storeConfig: null,
   mobileExperience: null,
+  mobileExperienceVersions: { locationId: initialSelectedLocationId === "all" ? "" : initialSelectedLocationId ?? "", versions: [] },
   teamUsers: [],
   selectedOrderId: null,
   busyOrderId: null,
@@ -157,6 +161,7 @@ export const state: AppState = {
   savingStore: false,
   savingMobileExperience: false,
   publishingMobileExperience: false,
+  rollingBackMobileExperienceVersionId: null,
   creatingMenuItem: false,
   menuCreateWizardOpen: false,
   menuCreateWizardStep: 1,
@@ -237,6 +242,7 @@ export function resetDashboardData() {
   state.discountCodes = [];
   state.storeConfig = null;
   state.mobileExperience = null;
+  state.mobileExperienceVersions = { locationId: "", versions: [] };
   state.teamUsers = [];
   state.onboardingSummary = null;
   state.onboardingAutoOpened = false;

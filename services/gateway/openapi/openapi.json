@@ -911,6 +911,15 @@
         }
       }
     },
+    "/admin/mobile-experience/rollback": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/admin/onboarding": {
       "get": {
         "responses": {
@@ -1230,6 +1239,44 @@
     },
     "/internal/locations/{locationId}/mobile-release": {
       "patch": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "locationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/internal/locations/{locationId}/mobile-experience/versions": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "locationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/internal/locations/{locationId}/mobile-experience/rollback": {
+      "post": {
         "parameters": [
           {
             "schema": {

@@ -196,6 +196,7 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
       state.discountCodes = [];
       state.storeConfig = null;
       state.mobileExperience = null;
+      state.mobileExperienceVersions = { locationId: "", versions: [] };
       state.teamUsers = [];
     } else {
       const snapshot = await fetchOperatorSnapshot(session, state.selectedLocationId);
@@ -208,6 +209,7 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
       state.discountCodes = snapshot.discountCodes;
       state.storeConfig = snapshot.storeConfig;
       state.mobileExperience = snapshot.mobileExperience;
+      state.mobileExperienceVersions = snapshot.mobileExperienceVersions;
       state.teamUsers = mergePendingTeamUserUpdates(snapshot.team);
     }
 

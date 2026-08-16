@@ -1057,6 +1057,10 @@ export const mobileExperiencePublishRequestSchema = z.object({
   draftVersionId: z.string().min(1).optional()
 });
 
+export const mobileExperienceRollbackRequestSchema = z.object({
+  versionId: z.string().min(1)
+});
+
 export const mobileExperienceVersionsResponseSchema = z.object({
   locationId: z.string().min(1),
   versions: z.array(mobileExperienceDocumentSchema)
@@ -1132,6 +1136,7 @@ export type MobileExperienceDocument = z.output<typeof mobileExperienceDocumentS
 export type MobileExperienceDraftResponse = z.output<typeof mobileExperienceDraftResponseSchema>;
 export type MobileExperienceSaveDraftRequest = z.output<typeof mobileExperienceSaveDraftRequestSchema>;
 export type MobileExperiencePublishRequest = z.output<typeof mobileExperiencePublishRequestSchema>;
+export type MobileExperienceRollbackRequest = z.output<typeof mobileExperienceRollbackRequestSchema>;
 export type MobileExperienceVersionsResponse = z.output<typeof mobileExperienceVersionsResponseSchema>;
 
 export type CustomizationValidationIssueCode =
@@ -1538,6 +1543,12 @@ export const catalogContract = {
       method: "POST",
       path: "/admin/mobile-experience/publish",
       request: mobileExperiencePublishRequestSchema,
+      response: mobileExperienceDocumentSchema
+    },
+    adminMobileExperienceRollback: {
+      method: "POST",
+      path: "/admin/mobile-experience/rollback",
+      request: mobileExperienceRollbackRequestSchema,
       response: mobileExperienceDocumentSchema
     }
   }

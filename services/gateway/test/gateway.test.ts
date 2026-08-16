@@ -1530,6 +1530,74 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
+      if (url.endsWith("/v1/catalog/admin/mobile-experience/versions") && method === "GET") {
+        return new Response(
+          JSON.stringify({
+            locationId: "flagship-01",
+            versions: [
+              {
+                locationId: "flagship-01",
+                versionId: "mex-published",
+                status: "published",
+                templateId: "coffee_standard",
+                theme: {},
+                protectedNavigation: ["home", "menu", "orders", "account"],
+                screens: [
+                  {
+                    id: "home",
+                    sections: [
+                      {
+                        id: "hero",
+                        type: "hero",
+                        visible: true,
+                        title: "Gazelle Coffee",
+                        subtitle: "Order ahead",
+                        action: "open_menu",
+                        actionLabel: "Order now"
+                      }
+                    ]
+                  }
+                ],
+                publishedAt: "2026-03-20T00:00:00.000Z"
+              }
+            ]
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      if (url.endsWith("/v1/catalog/admin/mobile-experience/rollback") && method === "POST") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { versionId?: string };
+        return new Response(
+          JSON.stringify({
+            locationId: "flagship-01",
+            versionId: "mex-restored",
+            status: "published",
+            templateId: "coffee_standard",
+            theme: {},
+            protectedNavigation: ["home", "menu", "orders", "account"],
+            screens: [
+              {
+                id: "home",
+                sections: [
+                  {
+                    id: "hero",
+                    type: "hero",
+                    visible: true,
+                    title: body.versionId === "mex-published" ? "Gazelle Coffee" : "Restored",
+                    subtitle: "Order ahead",
+                    action: "open_menu",
+                    actionLabel: "Order now"
+                  }
+                ]
+              }
+            ],
+            publishedAt: "2026-03-21T00:00:00.000Z"
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
       if (url.endsWith("/v1/catalog/internal/locations/bootstrap") && method === "POST") {
         const body = JSON.parse(String(init?.body ?? "{}")) as {
           brandId?: string;
@@ -3481,6 +3549,28 @@ let previousFreeClientDashboardDomain: string | undefined;
       status: "published"
     });
 
+    const versionsResponse = await app.inject({
+      method: "GET",
+      url: "/v1/admin/mobile-experience/versions",
+      headers: ownerOperatorHeaders
+    });
+    expect(versionsResponse.statusCode).toBe(200);
+    expect(versionsResponse.json()).toMatchObject({
+      versions: [{ versionId: "mex-published" }]
+    });
+
+    const rollbackResponse = await app.inject({
+      method: "POST",
+      url: "/v1/admin/mobile-experience/rollback",
+      headers: ownerOperatorHeaders,
+      payload: { versionId: "mex-published" }
+    });
+    expect(rollbackResponse.statusCode).toBe(200);
+    expect(rollbackResponse.json()).toMatchObject({
+      versionId: "mex-restored",
+      status: "published"
+    });
+
     const readonlyResponse = await app.inject({
       method: "POST",
       url: "/v1/admin/mobile-experience/publish",
@@ -3496,6 +3586,17 @@ let previousFreeClientDashboardDomain: string | undefined;
     expect(draftCall).toBeDefined();
     if (draftCall) {
       const upstreamHeaders = new Headers((draftCall[1]?.headers ?? {}) as HeadersInit);
+      expect(upstreamHeaders.get("x-gateway-token")).toBe("gateway-test-token");
+      expect(upstreamHeaders.get("x-operator-location-id")).toBe("flagship-01");
+    }
+
+    const rollbackCall = fetchMock.mock.calls.find(([input, init]) => {
+      const url = typeof input === "string" ? input : input.url;
+      return url === "http://catalog.internal/v1/catalog/admin/mobile-experience/rollback" && init?.method === "POST";
+    });
+    expect(rollbackCall).toBeDefined();
+    if (rollbackCall) {
+      const upstreamHeaders = new Headers((rollbackCall[1]?.headers ?? {}) as HeadersInit);
       expect(upstreamHeaders.get("x-gateway-token")).toBe("gateway-test-token");
       expect(upstreamHeaders.get("x-operator-location-id")).toBe("flagship-01");
     }

@@ -446,6 +446,55 @@ describe("catalog service", () => {
 
     const publicResponse = await app.inject({ method: "GET", url: `/v1/mobile-experience?locationId=${DEFAULT_LOCATION_ID}` });
     expect(mobileExperienceDocumentSchema.parse(publicResponse.json()).templateId).toBe("compact_ordering");
+
+    const secondDraftResponse = await app.inject({
+      method: "PUT",
+      url: "/v1/catalog/admin/mobile-experience/draft",
+      headers,
+      payload: {
+        templateId: "editorial_featured",
+        theme: {},
+        protectedNavigation: ["home", "menu", "orders", "account"],
+        screens: [
+          {
+            id: "home",
+            title: "Editorial",
+            sections: [
+              {
+                id: "hero",
+                type: "hero",
+                visible: true,
+                title: "Editorial",
+                subtitle: "Second version",
+                action: "open_menu",
+                actionLabel: "Browse"
+              }
+            ]
+          }
+        ]
+      }
+    });
+    const secondDraft = mobileExperienceDraftResponseSchema.parse(secondDraftResponse.json());
+    await app.inject({
+      method: "POST",
+      url: "/v1/catalog/admin/mobile-experience/publish",
+      headers,
+      payload: { draftVersionId: secondDraft.draft.versionId }
+    });
+
+    const rollbackResponse = await app.inject({
+      method: "POST",
+      url: "/v1/catalog/admin/mobile-experience/rollback",
+      headers,
+      payload: { versionId: published.versionId }
+    });
+    expect(rollbackResponse.statusCode).toBe(200);
+    const restored = mobileExperienceDocumentSchema.parse(rollbackResponse.json());
+    expect(restored.versionId).not.toBe(published.versionId);
+    expect(restored.templateId).toBe("compact_ordering");
+
+    const restoredPublicResponse = await app.inject({ method: "GET", url: `/v1/mobile-experience?locationId=${DEFAULT_LOCATION_ID}` });
+    expect(mobileExperienceDocumentSchema.parse(restoredPublicResponse.json()).templateId).toBe("compact_ordering");
     await app.close();
   });
 

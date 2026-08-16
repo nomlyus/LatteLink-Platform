@@ -1506,6 +1506,38 @@ label.field > span {
   font-weight: 700;
 }
 
+.experience-section-toggle select {
+  margin-left: auto;
+  width: 64px;
+  min-height: 36px;
+}
+
+.experience-version-history {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+.experience-version-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.experience-version-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .experience-phone-shell {
   position: sticky;
   top: 96px;
@@ -3160,6 +3192,10 @@ label.field > span {
   .experience-layout,
   .experience-form,
   .experience-section-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .experience-version-row {
     grid-template-columns: 1fr;
   }
 

@@ -2,7 +2,11 @@ import {
   mobileExperienceSaveDraftRequestSchema,
   type MobileExperienceSection
 } from "@lattelink/contracts-catalog";
-import { publishOperatorMobileExperience, saveOperatorMobileExperienceDraft } from "../api.js";
+import {
+  publishOperatorMobileExperience,
+  rollbackOperatorMobileExperience,
+  saveOperatorMobileExperienceDraft
+} from "../api.js";
 import { canUpdateStoreSettings } from "../model.js";
 import { handleOperatorActionError, loadDashboard } from "../lifecycle.js";
 import { render } from "../render.js";
@@ -11,14 +15,20 @@ import { addToast } from "../toast-runtime.js";
 
 const supportedSectionTypes = ["hero", "quick_actions", "featured_menu", "news_cards"] as const;
 
-function parseSectionOrder(raw: FormDataEntryValue | null) {
-  const requested = String(raw ?? "")
+function parseSectionOrder(formData: FormData) {
+  const requested = [...supportedSectionTypes].sort((left, right) => {
+    const leftOrder = Number.parseInt(String(formData.get(`sectionOrder:${left}`) ?? ""), 10);
+    const rightOrder = Number.parseInt(String(formData.get(`sectionOrder:${right}`) ?? ""), 10);
+    return (Number.isFinite(leftOrder) ? leftOrder : 999) - (Number.isFinite(rightOrder) ? rightOrder : 999);
+  });
+
+  const legacyOrder = String(formData.get("sectionOrder") ?? "")
     .split(",")
     .map((value) => value.trim())
     .filter((value): value is (typeof supportedSectionTypes)[number] =>
       supportedSectionTypes.includes(value as (typeof supportedSectionTypes)[number])
     );
-  const ordered = requested.length > 0 ? requested : [...supportedSectionTypes];
+  const ordered = requested.length > 0 ? requested : legacyOrder;
   return [...ordered, ...supportedSectionTypes.filter((section) => !ordered.includes(section))];
 }
 
@@ -30,7 +40,7 @@ function isSectionVisible(formData: FormData, type: string) {
 }
 
 function buildSections(formData: FormData): MobileExperienceSection[] {
-  const order = parseSectionOrder(formData.get("sectionOrder"));
+  const order = parseSectionOrder(formData);
   return order.map((type) => {
     if (type === "hero") {
       return {
@@ -141,6 +151,35 @@ export async function handleMobileExperiencePublish() {
     await handleOperatorActionError(error, "Unable to publish app experience.");
   } finally {
     state.publishingMobileExperience = false;
+    render();
+  }
+}
+
+export async function handleMobileExperienceRollback(versionId: string) {
+  if (!state.session || !state.mobileExperience) {
+    return;
+  }
+  if (!canUpdateStoreSettings(state.session.operator)) {
+    setError("App experience publishing is read-only for your account.");
+    render();
+    return;
+  }
+
+  try {
+    state.rollingBackMobileExperienceVersionId = versionId;
+    setError(null);
+    render();
+    await rollbackOperatorMobileExperience(
+      state.session,
+      state.selectedLocationId === "all" ? null : state.selectedLocationId,
+      versionId
+    );
+    addToast("Restored and published the selected app experience version.", "success");
+    await loadDashboard();
+  } catch (error) {
+    await handleOperatorActionError(error, "Unable to restore app experience version.");
+  } finally {
+    state.rollingBackMobileExperienceVersionId = null;
     render();
   }
 }

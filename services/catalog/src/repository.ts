@@ -406,6 +406,7 @@ type CatalogRepository = {
   getAdminMobileExperience(locationId: string): Promise<MobileExperienceDraftResponse>;
   saveAdminMobileExperienceDraft(locationId: string, input: MobileExperienceSaveDraftRequest): Promise<MobileExperienceDraftResponse>;
   publishAdminMobileExperience(locationId: string, draftVersionId?: string): Promise<MobileExperienceDocument>;
+  rollbackAdminMobileExperience(locationId: string, versionId: string): Promise<MobileExperienceDocument>;
   listAdminMobileExperienceVersions(locationId: string): Promise<MobileExperienceVersionsResponse>;
   getMenu(locationId: string): Promise<MenuResponse>;
   getStoreConfig(locationId: string): Promise<StoreConfigResponse | undefined>;
@@ -1710,6 +1711,35 @@ function createInMemoryRepository(): CatalogRepository {
       const now = new Date().toISOString();
       const published = mobileExperienceDocumentSchema.parse({
         ...draft,
+        locationId,
+        versionId: createMobileExperienceVersionId(),
+        status: "published",
+        createdAt: now,
+        updatedAt: now,
+        publishedAt: now
+      });
+      mobileExperienceVersionsByLocation.set(locationId, [
+        published,
+        ...(mobileExperienceVersionsByLocation.get(locationId) ?? [])
+      ]);
+      mobileExperienceDraftsByLocation.set(locationId, mobileExperienceDocumentSchema.parse({
+        ...published,
+        status: "draft",
+        publishedAt: undefined
+      }));
+      return published;
+    },
+    async rollbackAdminMobileExperience(locationId, versionId) {
+      const source = (mobileExperienceVersionsByLocation.get(locationId) ?? []).find(
+        (version) => version.versionId === versionId
+      );
+      if (!source) {
+        throw new Error("Mobile experience version was not found.");
+      }
+
+      const now = new Date().toISOString();
+      const published = mobileExperienceDocumentSchema.parse({
+        ...source,
         locationId,
         versionId: createMobileExperienceVersionId(),
         status: "published",
@@ -3433,6 +3463,63 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
                 status: "draft",
                 publishedAt: undefined
               }),
+              updated_at: now
+            })
+          )
+          .execute();
+      });
+
+      return published;
+    },
+    async rollbackAdminMobileExperience(locationId, versionId) {
+      const sourceRow = await db
+        .selectFrom("catalog_mobile_experience_versions")
+        .select("experience_json")
+        .where("location_id", "=", locationId)
+        .where("version_id", "=", versionId)
+        .executeTakeFirst();
+
+      if (!sourceRow) {
+        throw new Error("Mobile experience version was not found.");
+      }
+
+      const source = mobileExperienceDocumentSchema.parse(sourceRow.experience_json);
+      const now = new Date().toISOString();
+      const published = mobileExperienceDocumentSchema.parse({
+        ...source,
+        locationId,
+        versionId: createMobileExperienceVersionId(),
+        status: "published",
+        createdAt: now,
+        updatedAt: now,
+        publishedAt: now
+      });
+      const draft = mobileExperienceDocumentSchema.parse({
+        ...published,
+        status: "draft",
+        publishedAt: undefined
+      });
+
+      await db.transaction().execute(async (trx) => {
+        await trx
+          .insertInto("catalog_mobile_experience_versions")
+          .values({
+            version_id: published.versionId,
+            location_id: locationId,
+            experience_json: published,
+            published_at: now
+          })
+          .execute();
+
+        await trx
+          .insertInto("catalog_mobile_experience_drafts")
+          .values({
+            location_id: locationId,
+            experience_json: draft
+          })
+          .onConflict((oc) =>
+            oc.column("location_id").doUpdateSet({
+              experience_json: draft,
               updated_at: now
             })
           )

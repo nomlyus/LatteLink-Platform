@@ -46,7 +46,11 @@ import {
 } from "./controllers/cards.js";
 import { handleDiscountCodeCreateSubmit, handleDiscountCodeSubmit } from "./controllers/discounts.js";
 import { handleStoreSubmit } from "./controllers/store.js";
-import { handleMobileExperiencePublish, handleMobileExperienceSubmit } from "./controllers/experience.js";
+import {
+  handleMobileExperiencePublish,
+  handleMobileExperienceRollback,
+  handleMobileExperienceSubmit
+} from "./controllers/experience.js";
 import { handleTeamCreateSubmit, handleTeamUserDelete, handleTeamUserSubmit } from "./controllers/team.js";
 import { handleOrderAdvance } from "./controllers/orders.js";
 import {
@@ -310,6 +314,14 @@ export function registerEvents() {
 
     if (action === "publish-mobile-experience") {
       void handleMobileExperiencePublish();
+      return;
+    }
+
+    if (action === "rollback-mobile-experience") {
+      const versionId = actionElement.dataset.versionId;
+      if (versionId) {
+        void handleMobileExperienceRollback(versionId);
+      }
       return;
     }
 
