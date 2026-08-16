@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { NomlyMark } from "./Logo";
-import { demoHref } from "@/lib/site";
+import { merchantStartHref } from "@/lib/site";
 import { TrackedAnchor } from "./TrackedAnchor";
 import { buttonStyles } from "./Sections";
 
@@ -74,16 +74,16 @@ export function Nav() {
           </ul>
 
           <TrackedAnchor
-            href={demoHref}
+            href={merchantStartHref}
             style={buttonStyles("primary")}
             eventName="cta_click"
             eventProperties={{
               placement: "nav",
-              label: "request_access",
-              destination: "contact",
+              label: "start_building",
+              destination: "client_dashboard",
             }}
           >
-            Request access
+            Start building
           </TrackedAnchor>
         </div>
       </nav>

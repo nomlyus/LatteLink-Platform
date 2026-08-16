@@ -110,6 +110,7 @@ export function renderAuthScreen() {
     return renderOwnerInviteScreen();
   }
 
+  const launchEntry = state.launchEntryIntent;
   const googleSsoConfigured = isGoogleSignInConfigured();
   const googleButtonHint =
     state.authProviders === null
@@ -120,9 +121,13 @@ export function renderAuthScreen() {
 
   return renderAuthShell(`
           <div class="auth-card__header">
-            <p class="eyebrow">Store access</p>
-            <h1>Sign in to your dashboard.</h1>
-            <p class="muted-copy">Use the email and password assigned to your store account.</p>
+            <p class="eyebrow">${launchEntry ? "App launch" : "Store access"}</p>
+            <h1>${launchEntry ? "Start your branded app setup." : "Sign in to your dashboard."}</h1>
+            <p class="muted-copy">${
+              launchEntry
+                ? "Use your owner account to configure store details, payments, menu, and the app builder in one guided flow."
+                : "Use the email and password assigned to your store account."
+            }</p>
           </div>
 
           ${renderBanner()}

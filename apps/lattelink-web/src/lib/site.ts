@@ -7,10 +7,27 @@ export const siteUrl = "https://nomly.us";
 export const privacyPolicyPath = "/privacy-policy";
 export const privacyPolicyUrl = `${siteUrl}${privacyPolicyPath}`;
 export const siteTitle =
-  "LatteLink by nomly — Mobile ordering for modern coffee shops";
+  "Nomly — Create your own branded ordering app";
 export const siteDescription =
-  "LatteLink by nomly helps independent coffee shops launch polished mobile ordering, loyalty, and customer experiences without marketplace economics.";
+  "Nomly helps independent coffee shops create, launch, and operate branded mobile ordering apps without marketplace economics.";
 export const contactEmail = "hello@lattelink.app";
 export const termsOfServicePath = "/terms";
 export const termsOfServiceUrl = `${siteUrl}${termsOfServicePath}`;
 export const demoHref = "/#contact";
+
+const configuredDashboardUrl = process.env.NEXT_PUBLIC_CLIENT_DASHBOARD_URL?.trim();
+
+function normalizeExternalUrl(value: string) {
+  return value.startsWith("http://") || value.startsWith("https://") || value.startsWith("/")
+    ? value
+    : `https://${value}`;
+}
+
+function withQueryParam(url: string, key: string, value: string) {
+  const parsed = new URL(url, siteUrl);
+  parsed.searchParams.set(key, value);
+  return parsed.toString();
+}
+
+export const merchantDashboardUrl = configuredDashboardUrl ? normalizeExternalUrl(configuredDashboardUrl) : "https://app.nomly.us";
+export const merchantStartHref = withQueryParam(merchantDashboardUrl, "intent", "launch");

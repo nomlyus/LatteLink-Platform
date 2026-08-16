@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { demoHref } from "@/lib/site";
+import { demoHref, merchantStartHref } from "@/lib/site";
 import { TrackedAnchor } from "./TrackedAnchor";
 import { buttonStyles } from "./Sections";
 
@@ -63,7 +63,7 @@ export function Hero() {
             maxWidth: 880,
           }}
         >
-          Mobile ordering for modern coffee shops.
+          Create your own branded ordering app.
         </motion.h1>
 
         <motion.p
@@ -78,9 +78,9 @@ export function Hero() {
             color: "var(--color-text-muted)",
           }}
         >
-          LatteLink by nomly helps independent coffee shops launch a polished
-          mobile ordering app, loyalty program, and customer experience —
-          without giving up margin to a marketplace.
+          Nomly gives independent coffee shops one place to design, launch,
+          and operate a branded iOS ordering app with payments, menu control,
+          customer ownership, and App Store release support built in.
         </motion.p>
 
         <motion.div
@@ -96,28 +96,28 @@ export function Hero() {
           }}
         >
           <TrackedAnchor
-            href={demoHref}
+            href={merchantStartHref}
             style={buttonStyles("primary")}
             eventName="cta_click"
             eventProperties={{
               placement: "hero",
-              label: "request_access",
-              destination: "contact",
+              label: "start_building",
+              destination: "client_dashboard",
             }}
           >
-            Request access
+            Start building
           </TrackedAnchor>
           <TrackedAnchor
-            href="#product"
+            href={demoHref}
             style={buttonStyles("secondary")}
             eventName="cta_click"
             eventProperties={{
               placement: "hero",
-              label: "see_product",
-              destination: "product",
+              label: "request_walkthrough",
+              destination: "contact",
             }}
           >
-            See the product
+            Request walkthrough
           </TrackedAnchor>
         </motion.div>
 
@@ -132,7 +132,7 @@ export function Hero() {
             letterSpacing: "0.02em",
           }}
         >
-          Built for independent coffee shops &middot; Currently in pilot
+          Self-serve setup with Nomly-managed review, build, and App Store launch
         </motion.div>
       </div>
     </section>

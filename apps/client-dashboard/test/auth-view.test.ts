@@ -5,6 +5,7 @@ import { renderAuthScreen } from "../src/views/auth";
 describe("operator auth view", () => {
   afterEach(() => {
     state.ownerInvite = null;
+    state.launchEntryIntent = false;
     state.authEmail = "";
     state.authPassword = "";
     state.authProviders = null;
@@ -25,5 +26,16 @@ describe("operator auth view", () => {
     expect(html).toContain("Use your store Google account");
     expect(html).not.toContain(removedProviderLabel);
     expect(html).not.toContain(removedProviderHint);
+  });
+
+  it("renders launch setup copy when merchants arrive from nomly.us", () => {
+    state.launchEntryIntent = true;
+    state.authProviders = { google: { configured: false } };
+
+    const html = renderAuthScreen();
+
+    expect(html).toContain("App launch");
+    expect(html).toContain("Start your branded app setup.");
+    expect(html).toContain("configure store details, payments, menu, and the app builder");
   });
 });

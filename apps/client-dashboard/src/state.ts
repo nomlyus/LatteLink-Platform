@@ -40,6 +40,7 @@ export type AppState = {
     accepting: boolean;
   } | null;
   onboardingSummary: OperatorOnboardingSummary | null;
+  launchEntryIntent: boolean;
   onboardingAutoOpened: boolean;
   onboardingWizardOpen: boolean;
   onboardingWizardStep: 1 | 2 | 3 | 4;
@@ -127,6 +128,7 @@ export const state: AppState = {
   authProviders: null,
   ownerInvite: null,
   onboardingSummary: null,
+  launchEntryIntent: false,
   onboardingAutoOpened: false,
   onboardingWizardOpen: false,
   onboardingWizardStep: 1,
@@ -245,6 +247,7 @@ export function resetDashboardData() {
   state.mobileExperienceVersions = { locationId: "", versions: [] };
   state.teamUsers = [];
   state.onboardingSummary = null;
+  state.launchEntryIntent = false;
   state.onboardingAutoOpened = false;
   state.onboardingWizardOpen = false;
   state.onboardingWizardStep = 1;

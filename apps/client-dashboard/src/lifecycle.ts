@@ -153,6 +153,40 @@ function autoOpenOwnerOnboarding() {
   markOnboardingWizardSeen(operator.operatorUserId, state.onboardingSummary.locationId);
 }
 
+function applyLaunchEntryIntent() {
+  if (!state.launchEntryIntent) {
+    return false;
+  }
+
+  const operator = state.session?.operator ?? null;
+  if (!operator) {
+    return false;
+  }
+
+  if (!isOwnerOperator(operator)) {
+    state.launchEntryIntent = false;
+    setNotice("Sign in with an owner account to create and launch a branded app.");
+    return false;
+  }
+
+  if (state.onboardingSummary && isOnboardingIncomplete(state.onboardingSummary.status)) {
+    state.section = "store";
+    persistSection(state.section);
+    state.onboardingWizardOpen = true;
+    state.onboardingWizardStep = 1;
+    state.onboardingAutoOpened = true;
+    state.launchEntryIntent = false;
+    setNotice("Continue your branded app launch setup.");
+    return true;
+  }
+
+  state.section = "experience";
+  persistSection(state.section);
+  state.launchEntryIntent = false;
+  setNotice("Your app builder is ready.");
+  return true;
+}
+
 export async function loadDashboard(options: { silent?: boolean } = {}): Promise<void> {
   if (!state.session) {
     state.loading = false;
@@ -215,7 +249,9 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
 
     alertForCurrentOrders();
     await loadOwnerOnboarding(session);
-    autoOpenOwnerOnboarding();
+    if (!applyLaunchEntryIntent()) {
+      autoOpenOwnerOnboarding();
+    }
     state.lastRefreshedAt = Date.now();
     ensureSectionIsAvailable();
     reconcileSelectedOrder();
@@ -242,6 +278,7 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
 }
 
 export async function applyVerifiedSession(nextSession: OperatorSession, notice: string) {
+  const launchEntryIntent = state.launchEntryIntent;
   state.session = nextSession;
   state.section = isStoreOperator(nextSession.operator) ? "orders" : "overview";
   state.selectedLocationId = isStoreOperator(nextSession.operator)
@@ -260,6 +297,7 @@ export async function applyVerifiedSession(nextSession: OperatorSession, notice:
   stopAutoRefresh();
   clearPendingCancel();
   resetDashboardData();
+  state.launchEntryIntent = launchEntryIntent;
   resetMenuCreateWizard();
   render();
   await loadDashboard();

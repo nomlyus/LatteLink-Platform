@@ -6,7 +6,7 @@ import { AnimateIn, Stagger, StaggerItem } from "./AnimateIn";
 const features = [
   {
     title: "Branded mobile app",
-    desc: "A polished iOS app under your shop's name and brand — not a marketplace listing buried among competitors.",
+    desc: "A polished iOS app under your shop's name and brand, generated from your approved Nomly setup instead of a custom code fork.",
   },
   {
     title: "Mobile ordering",
@@ -22,7 +22,7 @@ const features = [
   },
   {
     title: "Operator dashboard",
-    desc: "Menus, hours, pricing, loyalty, and customer activity all editable in one clean operator console.",
+    desc: "Store profile, payments, menus, team access, launch status, app layout, and customer activity all live in one clean console.",
   },
   {
     title: "Flat pricing",
@@ -35,8 +35,8 @@ export function ProductOverview() {
     <Section id="product">
       <SectionHeader
         eyebrow="Product"
-        title="Everything a coffee shop needs to own its mobile experience."
-        lead="LatteLink replaces the patchwork of marketplace apps, generic loyalty plug-ins, and DIY tooling with one product designed for independent shops."
+        title="Everything a coffee shop needs to create and run its own app."
+        lead="Nomly replaces marketplace listings, custom app rebuilds, generic loyalty plug-ins, and manual launch coordination with one product designed for independent shops."
       />
 
       <Stagger
@@ -87,7 +87,7 @@ export function ProductOverview() {
             textAlign: "center",
           }}
         >
-          Coffee-only by design. No multi-vertical compromises.
+          Coffee-first by design. Built for repeatable branded app launches, not one-off custom projects.
         </div>
       </AnimateIn>
 

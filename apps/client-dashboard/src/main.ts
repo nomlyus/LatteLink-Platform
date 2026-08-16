@@ -31,11 +31,32 @@ function handleStripeReturnParams() {
   return { returned, refreshRequested: refreshed };
 }
 
+function handleLaunchEntryParams() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const intent = params.get("intent")?.trim().toLowerCase();
+  const start = params.get("start")?.trim().toLowerCase();
+  if (intent !== "launch" && start !== "app") {
+    return;
+  }
+
+  state.launchEntryIntent = true;
+  setNotice("Sign in to create and launch your branded app.");
+  params.delete("intent");
+  params.delete("start");
+  const nextSearch = params.toString();
+  window.history.replaceState({}, document.title, `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}`);
+}
+
 async function bootstrap() {
   registerEvents();
 
   state.initializing = false;
   const stripeReturn = handleStripeReturnParams();
+  handleLaunchEntryParams();
 
   const handledOwnerInvite = await handleOwnerInviteFromUrl();
   if (handledOwnerInvite) {
