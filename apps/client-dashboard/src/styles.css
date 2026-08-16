@@ -2714,6 +2714,37 @@ label.field > span {
   gap: 8px;
 }
 
+.onboarding-payment-status {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+}
+
+.onboarding-payment-status div {
+  min-width: 0;
+}
+
+.onboarding-payment-status span {
+  display: block;
+  color: var(--color-text-3);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.onboarding-payment-status strong {
+  display: block;
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+
+.onboarding-payment-status .muted-copy {
+  grid-column: 1 / -1;
+}
+
 .onboarding-pill-row {
   display: flex;
   flex-wrap: wrap;
@@ -3175,6 +3206,7 @@ label.field > span {
   .dash-data-row__fields--news-card,
   .dash-customization-group-grid,
   .dash-customization-option-row,
+  .onboarding-payment-status,
   .dash-wizard-body--split {
     grid-template-columns: 1fr;
   }

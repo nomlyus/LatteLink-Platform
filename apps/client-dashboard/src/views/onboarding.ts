@@ -339,12 +339,15 @@ function renderWizardPayments() {
   const readiness = state.onboardingSummary?.paymentReadiness;
   const stripe = state.appConfig?.paymentCapabilities.stripe;
   const dashboardAvailable = stripe?.dashboardEnabled === true;
+  const hasStripeAccount = dashboardAvailable || (readiness?.onboardingState !== undefined && readiness.onboardingState !== "unconfigured");
   const paymentsComplete = isStepComplete("payments_connected");
+  const missingFields = readiness?.missingRequiredFields ?? [];
   const paymentCopy = paymentsComplete
     ? "Stripe is connected for this location."
     : readiness?.onboardingState && readiness.onboardingState !== "unconfigured"
       ? "Stripe needs a little more information before launch."
       : "Only owner accounts can connect payments.";
+  const connectLabel = paymentsComplete ? "Stripe connected" : hasStripeAccount ? "Continue Stripe setup" : "Connect Stripe";
 
   return `
     <div class="dash-wizard-body dash-wizard-body--stacked onboarding-wizard-panel">
@@ -353,9 +356,33 @@ function renderWizardPayments() {
         <h3 class="dash-surface-title">${paymentsComplete ? "Payments connected" : "Connect Stripe"}</h3>
         <p class="muted-copy">${escapeHtml(paymentCopy)}</p>
       </div>
+      ${
+        readiness
+          ? `
+            <div class="onboarding-payment-status">
+              <div>
+                <span>Status</span>
+                <strong>${escapeHtml(readiness.onboardingState)}</strong>
+              </div>
+              <div>
+                <span>Readiness</span>
+                <strong>${readiness.ready ? "Ready" : "Needs attention"}</strong>
+              </div>
+              ${
+                missingFields.length > 0
+                  ? `<p class="muted-copy">Missing: ${escapeHtml(missingFields.join(", "))}.</p>`
+                  : ""
+              }
+            </div>
+          `
+          : ""
+      }
       <div class="onboarding-payment-actions">
         <button class="button button--primary" type="button" data-action="start-stripe-onboarding" ${state.updatingOnboarding || paymentsComplete ? "disabled" : ""}>
-          ${paymentsComplete ? "Stripe connected" : "Connect Stripe"}
+          ${escapeHtml(connectLabel)}
+        </button>
+        <button class="button button--secondary" type="button" data-action="refresh-stripe-status" ${state.updatingOnboarding || !hasStripeAccount ? "disabled" : ""}>
+          Refresh status
         </button>
         <button class="button button--secondary" type="button" data-action="open-stripe-dashboard" ${state.updatingOnboarding || !dashboardAvailable ? "disabled" : ""}>
           Open Stripe Express

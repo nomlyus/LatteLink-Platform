@@ -118,6 +118,38 @@ describe("dashboard sections", () => {
     expect(html).not.toContain("Launch review");
   });
 
+  it("renders Stripe recovery controls in the owner onboarding payments step", () => {
+    state.session = ownerSession;
+    state.onboardingSummary = {
+      ...onboardingSummary,
+      paymentReadiness: {
+        ready: false,
+        onboardingState: "pending",
+        missingRequiredFields: ["stripeChargesEnabled", "stripePayoutsEnabled"]
+      }
+    };
+    state.appConfig = {
+      paymentCapabilities: {
+        stripe: {
+          enabled: true,
+          onboarded: false,
+          dashboardEnabled: true
+        }
+      }
+    } as unknown as NonNullable<typeof state.appConfig>;
+    state.storeConfig = storeConfig;
+    state.onboardingWizardOpen = true;
+    state.onboardingWizardStep = 3;
+
+    const html = renderOnboardingWizard();
+
+    expect(html).toContain("Continue Stripe setup");
+    expect(html).toContain("Refresh status");
+    expect(html).toContain("Open Stripe Express");
+    expect(html).toContain("stripeChargesEnabled, stripePayoutsEnabled");
+    expect(html).toContain('data-action="refresh-stripe-status"');
+  });
+
   it("keeps owner assignment out of the team UI and shows delete for non-owner accounts", () => {
     state.session = {
       ...ownerSession,

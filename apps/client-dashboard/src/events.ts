@@ -62,7 +62,8 @@ import {
   handleOnboardingStoreBasicsSubmit,
   handleOnboardingStoreOperationsSubmit,
   handleStripeDashboardOpen,
-  handleStripeOnboardingStart
+  handleStripeOnboardingStart,
+  handleStripeStatusRefresh
 } from "./controllers/onboarding.js";
 
 function closeOpenAccountMenus(target?: Node) {
@@ -280,6 +281,9 @@ export function registerEvents() {
         return;
       case "open-stripe-dashboard":
         void handleStripeDashboardOpen();
+        return;
+      case "refresh-stripe-status":
+        void handleStripeStatusRefresh();
         return;
       case "delete-team-user": {
         const operatorUserId = actionElement.dataset.operatorUserId;
