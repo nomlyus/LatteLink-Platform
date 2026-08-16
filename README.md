@@ -1,34 +1,40 @@
 # LatteLink Platform
 
-LatteLink is Gazelle's ordering, loyalty, payments, and operator platform. This repository is a private production monorepo containing the customer mobile app, storefront web app, client dashboard, admin console, API gateway, domain services, workers, shared contracts, deployment scripts, and infrastructure configuration.
+LatteLink is Nomly/Gazelle's commerce platform for mobile ordering, storefront ordering, client operations, admin operations, payments, loyalty, notifications, and merchant onboarding.
 
-The platform supports a two-environment delivery model:
+This is a private production monorepo. It contains the customer apps, operator/admin surfaces, API gateway, domain services, shared contracts, workers, deployment automation, and infrastructure configuration.
 
-- `develop` is the shared integration branch and auto-deploys to the `dev` stack.
+## Current Operating Model
+
+- `develop` is the integration branch and deploys to the shared `dev` stack after images publish successfully.
 - `main` is production-ready history.
-- Production deploys are deliberate and use a verified full git SHA plus a semantic release tag.
+- Production backend/API deploys are gated by a published GitHub Release, not by a plain push to `main`.
+- GitHub Release tags use semantic versions: `vX.Y.Z`.
+- The iOS App Store marketing version is kept aligned with the platform release when a native binary is shipped.
+- Deployed Postgres data lives in external Supabase databases. The Compose Postgres service is local-only and must not be treated as deployed data.
+- Admin console deployment is handled by Vercel Git integration. GitHub Actions verifies the admin console but does not run a token-based Vercel CLI deploy.
 
 ## Repository Map
 
 ```text
 apps/
-  mobile/             Expo customer ordering app
+  mobile/             Expo iOS customer ordering app
   client-dashboard/   Client/operator dashboard
   admin-console/      Internal admin console
   lattelink-web/      Customer storefront web app
 
 services/
   gateway/            Public API gateway and OpenAPI surface
-  identity/           Customer, operator, owner, and session identity
-  catalog/            Menu, catalog, media, and availability APIs
-  orders/             Cart checkout, order lifecycle, and fulfillment APIs
-  payments/           Payment provider integration and reconciliation
+  identity/           Customer, operator, owner, and internal-admin identity
+  catalog/            Menu, catalog, media, availability, and location APIs
+  orders/             Cart checkout, order draft/finalization, and lifecycle APIs
+  payments/           Stripe/Clover integration and payment reconciliation
   loyalty/            Loyalty balance and ledger APIs
-  notifications/      Push notification device and outbox APIs
+  notifications/      Push devices, receipts, and notification outbox APIs
   workers/            Menu sync, notification dispatch, payment reconciliation
 
 packages/
-  contracts/          Shared Zod/API contract packages
+  contracts/          Shared API contract packages
   sdk-mobile/         Generated mobile SDK types
   persistence/        Database migrations and persistence helpers
   event-bus/          Internal event primitives
@@ -37,11 +43,11 @@ packages/
   config-*/           Shared TypeScript and ESLint config
 
 infra/
-  free/               Compose-based deploy bundle and host scripts
-  terraform/          Cloud infrastructure modules and envs
+  free/               Compose deploy bundle and host scripts
+  terraform/          Cloud infrastructure modules and environment config
 
 docs/
-  architecture/       System architecture and API contract notes
+  architecture/       Architecture and API contract notes
   runbooks/           Operational, release, QA, and deploy runbooks
   roadmaps/           Product and engineering roadmap documents
 ```
@@ -50,11 +56,12 @@ docs/
 
 - Node.js `>=22`
 - pnpm `10.5.2`
-- Docker, when running the Compose stack or deploy tooling
-- Expo/EAS CLI access for native mobile builds
+- Docker, for local Compose and deploy-bundle work
+- Expo/EAS access for native mobile builds and OTA updates
 - Terraform CLI for infrastructure work
+- GitHub CLI for release/deploy operations
 
-Install dependencies from the repo root:
+Install dependencies:
 
 ```bash
 pnpm install
@@ -62,13 +69,13 @@ pnpm install
 
 ## Common Commands
 
-Run all standard validation:
+Full repo validation:
 
 ```bash
 pnpm verify
 ```
 
-Run individual validation phases:
+Individual phases:
 
 ```bash
 pnpm lint
@@ -77,7 +84,7 @@ pnpm test
 pnpm build
 ```
 
-Run a scoped package command:
+Scoped package examples:
 
 ```bash
 pnpm --filter @lattelink/gateway test
@@ -85,7 +92,7 @@ pnpm --filter @lattelink/client-dashboard typecheck
 pnpm --filter @lattelink/mobile lint
 ```
 
-Generate and verify API contracts:
+Contracts and generated SDK:
 
 ```bash
 pnpm contracts:openapi
@@ -93,7 +100,7 @@ pnpm contracts:drift
 pnpm sdk:generate
 ```
 
-Run release policy checks:
+Release policy tests:
 
 ```bash
 pnpm test:release-policy
@@ -101,15 +108,15 @@ pnpm test:release-policy
 
 ## Local Development
 
-Start local API services on localhost:
+Start local API services:
 
 ```bash
 pnpm dev:services
 ```
 
-This starts identity, orders, catalog, payments, loyalty, notifications, and gateway. Gateway listens on `127.0.0.1:8080`.
+The gateway listens on `127.0.0.1:8080`.
 
-Start local API services for a physical device on the same network:
+Start local services for a physical device on the same LAN:
 
 ```bash
 pnpm dev:services:lan
@@ -127,7 +134,7 @@ Start the mobile app against LAN services:
 pnpm dev:mobile:lan
 ```
 
-Run a specific web app:
+Run a web surface:
 
 ```bash
 pnpm --filter @lattelink/client-dashboard dev
@@ -144,11 +151,11 @@ curl -s http://127.0.0.1:3001/health
 curl -s http://127.0.0.1:3004/health
 ```
 
-See [Local Dev Stack](docs/runbooks/local-dev-stack.md) for the full local app and API runbook.
+See [Local Dev Stack](docs/runbooks/local-dev-stack.md) for the detailed local runbook.
 
-## Environment And Data Policy
+## Environment And Data
 
-Environment files are intentionally not committed. Use the checked-in examples as templates:
+Environment files are not committed. Start from the checked-in examples:
 
 - [.env.example](.env.example)
 - [apps/mobile/.env.example](apps/mobile/.env.example)
@@ -157,32 +164,37 @@ Environment files are intentionally not committed. Use the checked-in examples a
 - [apps/lattelink-web/.env.example](apps/lattelink-web/.env.example)
 - [infra/free/.env.example](infra/free/.env.example)
 
-Deployed environments use external Supabase Postgres through `DATABASE_URL`. The bundled Compose `postgres` service is local-only and starts only when explicitly requested with the `local-db` profile.
+Deployed environments use external Supabase Postgres through `DATABASE_URL`. The Compose `postgres` service is only for local development and starts only with the explicit `local-db` profile.
 
-Do not point `dev` and `production` at the same database, Redis instance, or payment credentials. See [Two-Environment Deploy](docs/runbooks/two-environment-deploy.md) for the required environment variables, secrets, Supabase pool policy, and deploy sequencing.
+Do not share databases, Redis instances, OAuth credentials, payment credentials, Apple keys, or internal API tokens across `dev` and `production`.
+
+See:
+
+- [Two-Environment Deploy](docs/runbooks/two-environment-deploy.md)
+- [Database Backup And Restore](docs/runbooks/database-backup-restore.md)
 
 ## Database Migrations
 
 Migrations live in [packages/persistence/src/migrations](packages/persistence/src/migrations).
 
-Run persistence package validation:
+Validate persistence:
 
 ```bash
 pnpm --filter @lattelink/persistence test
 pnpm --filter @lattelink/persistence typecheck
 ```
 
-Run migrations only against the intended database URL:
+Run migrations only against the intended external database:
 
 ```bash
 DATABASE_URL=<postgres-url> pnpm --filter @lattelink/persistence migrate
 ```
 
-For backup, restore, and Supabase drill procedures, use [Database Backup And Restore](docs/runbooks/database-backup-restore.md).
+## Product Surfaces
 
-## Mobile App Releases
+### Mobile App
 
-The mobile app lives in [apps/mobile](apps/mobile). It is an Expo app with EAS build/update workflows.
+The customer iOS app is in [apps/mobile](apps/mobile). It uses Expo and EAS.
 
 Common commands:
 
@@ -190,78 +202,99 @@ Common commands:
 pnpm --filter @lattelink/mobile test
 pnpm --filter @lattelink/mobile typecheck
 pnpm --filter @lattelink/mobile release:classify
-pnpm --filter @lattelink/mobile release:check
+pnpm --filter @lattelink/mobile release:check -- production
 pnpm --filter @lattelink/mobile update:beta
 pnpm --filter @lattelink/mobile update:production
 ```
 
-Prefer OTA updates when a change is JavaScript, styling, copy, configuration, or API behavior that does not require native binary changes. Use a new native build when the change affects native dependencies, app config, entitlements, permissions, Expo SDK/native modules, build profiles, or App Store metadata.
+Use OTA updates for JavaScript, styling, copy, and compatible configuration changes. Use a native build when native dependencies, app config, entitlements, permissions, Expo SDK/native modules, build profiles, runtime version, or App Store metadata change.
 
-See:
+Runbooks:
 
 - [Mobile EAS Builds](docs/runbooks/mobile-eas-builds.md)
 - [Mobile TestFlight Pilot Release](docs/runbooks/mobile-testflight-pilot-release.md)
 - [Mobile Pilot Purchase Flow QA](docs/runbooks/mobile-pilot-purchase-flow-qa.md)
 
-## Client And Admin Surfaces
+### Client Dashboard
 
-The client dashboard is the operator-facing surface for client teams. Owner access and owner provisioning are controlled through the internal/admin path; client dashboard team management must not allow owner-role assignment.
+The client dashboard is in [apps/client-dashboard](apps/client-dashboard). It is the operator-facing surface for store teams.
 
-Relevant runbooks:
+Important access rules:
+
+- Owner access is provisioned through the internal admin path.
+- Client dashboard team management must not assign or promote owner access.
+- Client dashboard owners can manage manager/store accounts.
+- Owner accounts can only be managed from the admin dashboard.
+
+Runbooks:
 
 - [Client Dashboard QA](docs/runbooks/client-dashboard-pilot-qa.md)
 - [Client Dashboard Owner Provisioning](docs/runbooks/client-dashboard-owner-provisioning.md)
+
+### Admin Console
+
+The admin console is in [apps/admin-console](apps/admin-console). GitHub Actions verifies it, and Vercel Git integration owns deployment.
+
+Runbook:
+
 - [Admin Console Deployment](docs/runbooks/admin-console-vercel-deployment.md)
+
+### Storefront Web
+
+The storefront web app is in [apps/lattelink-web](apps/lattelink-web).
+
+Runbook:
+
 - [LatteLink Web Deployment](docs/runbooks/lattelink-vercel-deployment.md)
 
-## Release And Deployment Flow
+## Release Flow
 
-The authoritative development and release policy is [Development Flow](docs/runbooks/development-flow.md).
-
-Daily flow:
+Normal development:
 
 1. Start from `origin/develop`.
-2. Make the change locally.
-3. Run relevant validation.
-4. Commit with a clear message.
+2. Make the change.
+3. Run relevant local validation.
+4. Commit clearly.
 5. Push to `origin/develop`.
-6. Let GitHub Actions publish images and deploy that SHA to `dev`.
-7. Verify the deployed `dev` environment.
+6. Wait for GitHub Actions to publish images and deploy the SHA to `dev`.
+7. Verify the deployed dev stack.
 
-Production flow:
+Production release:
 
-1. Promote the exact verified SHA to `main`.
-2. Run `deploy-prod` with `release_kind=release`, a full `image_tag` SHA on `origin/main`, and the next semantic `release_tag`.
-3. Let production smoke checks pass.
-4. The workflow creates the release tag after the production smoke check.
-5. Create or update the GitHub Release notes and changelog record as needed.
+1. Confirm the candidate SHA has passed in `dev`.
+2. Fast-forward or merge the verified SHA to `main`.
+3. Push `main`.
+4. Wait for main CI, security, CodeQL, and image publishing to pass.
+5. Create a non-draft, non-prerelease GitHub Release with a new advancing `vX.Y.Z` tag and release notes.
+6. The `deploy-prod` workflow runs from the release event.
+7. The production policy check verifies that the release tag points to current `origin/main`, the tag advances, and release notes are present.
+8. Production deploy and smoke checks must pass.
 
-Example production release command:
+Manual rollback dispatch:
 
 ```bash
-gh workflow run deploy-prod.yml \
-  -f image_tag=<verified-main-sha> \
-  -f release_kind=release \
-  -f release_tag=v1.0.6
+gh workflow run deploy-prod.yml -f image_tag=<previous-known-good-full-sha>
 ```
 
-Rollback uses the same workflow with a previous known-good SHA and `release_kind=rollback`.
+Rollback dispatches are only for previous known-good SHAs that already exist on `origin/main`.
 
 ## GitHub Actions
 
-Key workflows:
+Core workflows:
 
 - `.github/workflows/ci.yml`
 - `.github/workflows/publish-images.yml`
 - `.github/workflows/deploy-dev.yml`
 - `.github/workflows/deploy-prod.yml`
+- `.github/workflows/admin-console-vercel.yml`
+- `.github/workflows/lattelink-vercel.yml`
 - `.github/workflows/codeql.yml`
 - `.github/workflows/secret-scan.yml`
 - `.github/workflows/dependency-review.yml`
 - `.github/workflows/database-restore-drill.yml`
 - `.github/workflows/uptime-monitor.yml`
 
-Security and dependency workflows must stay green before promotion to production.
+Security, dependency, CodeQL, and release-policy checks must stay green before production promotion.
 
 ## Security
 
@@ -272,13 +305,15 @@ Rules:
 - Never commit secrets, `.env` files, tokens, keys, or production data.
 - Store runtime secrets in GitHub Environments and managed secret stores.
 - Treat Supabase connection strings, payment credentials, OAuth credentials, Apple keys, and internal API tokens as sensitive.
-- Keep dependency overrides current and review Dependabot/security alerts before release.
+- Keep dependency overrides current.
+- Review Dependabot and code scanning alerts before release.
 - Report vulnerabilities to `security@gazellecoffee.com`.
 
-## Important Docs
+## Key Docs
 
 - [Architecture Overview](docs/architecture/architecture-overview.md)
 - [API Contracts](docs/architecture/api-contracts.md)
+- [Development Flow](docs/runbooks/development-flow.md)
 - [Release Runbook](docs/runbooks/release-runbook.md)
 - [Production Prerequisites](docs/runbooks/production-prerequisites.md)
 - [Launch Readiness Checklist](docs/runbooks/launch-readiness-checklist.md)
