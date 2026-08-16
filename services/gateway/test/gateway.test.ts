@@ -1001,7 +1001,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
-      if (url.endsWith("/v1/mobile-experience") && method === "GET") {
+      if (new URL(url).pathname === "/v1/mobile-experience" && method === "GET") {
         return new Response(
           JSON.stringify({
             locationId: "flagship-01",
@@ -2569,7 +2569,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
   it("returns v1 mobile experience through the catalog proxy", async () => {
     const app = await buildApp();
-    const response = await app.inject({ method: "GET", url: "/v1/mobile-experience" });
+    const response = await app.inject({ method: "GET", url: "/v1/mobile-experience?locationId=flagship-01" });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
@@ -2579,7 +2579,7 @@ let previousFreeClientDashboardDomain: string | undefined;
     });
 
     const requestedUrls = fetchMock.mock.calls.map(([input]) => (typeof input === "string" ? input : input.url));
-    expect(requestedUrls).toContain("http://catalog.internal/v1/mobile-experience");
+    expect(requestedUrls).toContain("http://catalog.internal/v1/mobile-experience?locationId=flagship-01");
     await app.close();
   });
 

@@ -2769,6 +2769,8 @@ export async function registerRoutes(app: FastifyInstance) {
       serviceLabel: "Catalog",
       method: "GET",
       path: "/v1/mobile-experience",
+      forwardQuery: true,
+      forwardCacheControl: true,
       responseSchema: mobileExperienceDocumentSchema
     })
   );
