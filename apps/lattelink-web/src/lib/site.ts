@@ -23,11 +23,20 @@ function normalizeExternalUrl(value: string) {
     : `https://${value}`;
 }
 
-function withQueryParam(url: string, key: string, value: string) {
-  const parsed = new URL(url, siteUrl);
-  parsed.searchParams.set(key, value);
-  return parsed.toString();
+export function resolveMerchantDashboardUrl(hostname = "") {
+  if (configuredDashboardUrl) {
+    return normalizeExternalUrl(configuredDashboardUrl);
+  }
+
+  const normalizedHostname = hostname.toLowerCase().split(":")[0];
+  const isDevelopmentHost =
+    normalizedHostname === "dev.nomly.us" ||
+    normalizedHostname === "localhost" ||
+    normalizedHostname === "127.0.0.1" ||
+    normalizedHostname.endsWith(".vercel.app");
+
+  return isDevelopmentHost ? "https://app-dev.nomly.us" : "https://app.nomly.us";
 }
 
-export const merchantDashboardUrl = configuredDashboardUrl ? normalizeExternalUrl(configuredDashboardUrl) : "https://app.nomly.us";
-export const merchantStartHref = withQueryParam(merchantDashboardUrl, "intent", "launch");
+export const merchantDashboardUrl = resolveMerchantDashboardUrl();
+export const merchantStartHref = "/launch?intent=launch";
