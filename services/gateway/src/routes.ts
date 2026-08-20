@@ -80,6 +80,7 @@ import {
   mobileExperienceRollbackRequestSchema,
   mobileExperienceSaveDraftRequestSchema,
   mobileExperienceVersionsResponseSchema,
+  mobileReleaseBuildJobApprovalSchema,
   mobileReleaseBuildJobCreateSchema,
   mobileReleaseBuildJobListResponseSchema,
   mobileReleaseBuildJobSchema,
@@ -143,6 +144,7 @@ const jwtAccessTokenClaimsSchema = z.object({
   iat: z.number().int()
 });
 const orderIdParamsSchema = z.object({ orderId: z.string().uuid() });
+const mobileReleaseBuildJobParamsSchema = z.object({ jobId: z.string().uuid() });
 const discountCodeIdParamsSchema = z.object({ discountCodeId: z.string().uuid() });
 const menuItemParamsSchema = z.object({ itemId: z.string().min(1) });
 const cardParamsSchema = z.object({ cardId: z.string().min(1) });
@@ -5506,6 +5508,35 @@ export async function registerRoutes(app: FastifyInstance) {
         serviceLabel: "Catalog",
         method: "POST",
         path: `/v1/catalog/internal/locations/${locationId}/mobile-release/build-jobs`,
+        body: input,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken,
+          ...internalAdminActorHeader(request)
+        },
+        forwardUserIdHeader: false,
+        responseSchema: mobileReleaseBuildJobSchema
+      });
+    }
+  );
+
+  app.post(
+    "/v1/internal/mobile-release/build-jobs/:jobId/approve",
+    {
+      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+    },
+    async (request, reply) => {
+      const { jobId } = mobileReleaseBuildJobParamsSchema.parse(request.params);
+      const input = mobileReleaseBuildJobApprovalSchema.parse({
+        approvedBy: request.authenticatedInternalAdmin?.email ?? "internal-admin"
+      });
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "POST",
+        path: `/v1/catalog/internal/mobile-release/build-jobs/${jobId}/approve`,
         body: input,
         additionalHeaders: {
           "x-gateway-token": gatewayInternalApiToken,

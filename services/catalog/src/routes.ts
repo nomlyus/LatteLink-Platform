@@ -29,6 +29,7 @@ import {
   mobileExperienceRollbackRequestSchema,
   mobileExperienceSaveDraftRequestSchema,
   mobileExperienceVersionsResponseSchema,
+  mobileReleaseBuildJobApprovalSchema,
   mobileReleaseBuildJobCreateSchema,
   mobileReleaseBuildJobClaimResponseSchema,
   mobileReleaseBuildJobListResponseSchema,
@@ -1270,6 +1271,29 @@ export async function registerRoutes(app: FastifyInstance) {
           serviceErrorSchema.parse({
             code: "MOBILE_RELEASE_BUILD_JOB_NOT_FOUND",
             message: "Mobile release build job not found",
+            requestId: request.id,
+            details: { jobId }
+          })
+        );
+      }
+      return mobileReleaseBuildJobSchema.parse(job);
+    }
+  );
+
+  app.post(
+    "/v1/catalog/internal/mobile-release/build-jobs/:jobId/approve",
+    {
+      preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess]
+    },
+    async (request, reply) => {
+      const { jobId } = mobileReleaseBuildJobParamsSchema.parse(request.params);
+      const input = mobileReleaseBuildJobApprovalSchema.parse(request.body);
+      const job = await repository.approveMobileReleaseBuildJob(jobId, input);
+      if (!job) {
+        return reply.status(409).send(
+          serviceErrorSchema.parse({
+            code: "MOBILE_RELEASE_BUILD_NOT_AWAITING_APPROVAL",
+            message: "The mobile release build is not awaiting approval.",
             requestId: request.id,
             details: { jobId }
           })

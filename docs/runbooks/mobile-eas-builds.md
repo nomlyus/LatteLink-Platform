@@ -158,6 +158,38 @@ Run the generated `preflight` command before any build. If `ascAppId` is present
 `eas integrations:asc:connect` command before submission so EAS Submit targets the correct App Store
 Connect app for that merchant. Then run the generated build and submit commands.
 
+## Control-Plane Build Queue
+
+The internal admin console queues a merchant build as a two-phase job. The worker prepares and runs
+the EAS build first, records the returned build ID, and moves the job to `awaiting_approval`. It never
+submits that build to Apple automatically. An internal admin must use **Approve submission**, after
+which the worker submits the recorded EAS build ID and marks the job `succeeded` only after EAS
+returns a submission result.
+
+The deployed worker needs an approved runner command and release environment values:
+
+```bash
+MOBILE_RELEASE_RUNNER_ENABLED=true
+MOBILE_RELEASE_RUNNER_COMMAND="bash /opt/nomly/mobile-release-runner.sh"
+MOBILE_RELEASE_API_BASE_URL=https://api-dev.nomly.us/v1
+MOBILE_RELEASE_APP_VERSION=1.0.10
+MOBILE_RELEASE_APPLE_PAY_MERCHANT_ID=merchant.com.example.beta
+MOBILE_RELEASE_SENTRY_DSN=https://<public-key>@<org>.ingest.sentry.io/<project>
+MOBILE_RELEASE_SENTRY_ORG=nomly
+MOBILE_RELEASE_SENTRY_PROJECT=mobile
+```
+
+The runner command receives these environment variables for each job:
+
+- `MOBILE_RELEASE_JOB_JSON`: generated merchant input JSON
+- `MOBILE_RELEASE_EXECUTE`: `build` for the first phase or `submit` after approval
+- `MOBILE_RELEASE_EAS_BUILD_ID`: the previously recorded EAS build ID during submission
+- `MOBILE_RELEASE_SOURCE_COMMIT_SHA`, `MOBILE_RELEASE_BUILD_PROFILE`, and `MOBILE_RELEASE_CONFIG_HASH`
+
+The runner must execute the generated merchant build preparation script with the recorded source
+commit and pass the phase through to the generated `commands.sh`. Keep EAS and App Store Connect
+credentials in the deployment secret store; never put them in a job payload or repository file.
+
 Use `--execute preflight`, `--execute build`, `--execute submit`, or `--execute all` only after checking
 the generated manifest. The default mode only writes the bundle and does not call EAS.
 

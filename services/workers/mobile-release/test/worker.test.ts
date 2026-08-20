@@ -15,10 +15,18 @@ const job = {
   buildProfile: "beta",
   sourceCommitSha: "0123456789abcdef0123456789abcdef01234567",
   configHash: "config-hash-123",
+  approvalRequired: true,
   appStoreReviewNotes: "Performance and reliability updates.",
   createdAt: "2026-08-20T00:00:00.000Z",
   updatedAt: "2026-08-20T00:00:00.000Z",
   startedAt: "2026-08-20T00:00:00.000Z"
+};
+
+const approvedJob = {
+  ...job,
+  approvedAt: "2026-08-20T00:02:00.000Z",
+  approvedBy: "admin@example.com",
+  easBuildId: "eas-build-1"
 };
 
 const onboarding = {
@@ -100,7 +108,25 @@ describe("mobile release worker", () => {
 
   it("passes a validated merchant build manifest to the provider command", async () => {
     const result = await processMobileReleaseJob(config(), runtime(), job);
-    expect(result).toEqual({ easBuildId: "eas-build-1", easSubmissionId: "eas-submission-1" });
+    expect(result).toEqual({
+      providerIds: { easBuildId: "eas-build-1", easSubmissionId: "eas-submission-1" },
+      awaitingApproval: true
+    });
+  });
+
+  it("submits the approved EAS build instead of creating a second build", async () => {
+    const runCommand = vi.fn(async (_command, env) => {
+      expect(env.MOBILE_RELEASE_EXECUTE).toBe("submit");
+      expect(env.MOBILE_RELEASE_EAS_BUILD_ID).toBe("eas-build-1");
+      return '{"submissionId":"eas-submission-2"}';
+    });
+
+    const result = await processMobileReleaseJob(config(), runtime({ runCommand }), approvedJob);
+
+    expect(result).toEqual({
+      providerIds: { easSubmissionId: "eas-submission-2" },
+      awaitingApproval: false
+    });
   });
 
   it("marks provider failures as terminal job failures", async () => {

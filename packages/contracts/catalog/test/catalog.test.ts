@@ -28,6 +28,7 @@ import {
   isPlatformManagedMenu,
   launchApprovalRequestSchema,
   menuResponseSchema,
+  mobileReleaseBuildJobApprovalSchema,
   mobileReleaseBuildJobCreateSchema,
   mobileReleaseBuildJobListResponseSchema,
   mobileReleaseBuildJobSchema,
@@ -679,12 +680,14 @@ describe("contracts-catalog", () => {
       buildProfile: create.buildProfile,
       sourceCommitSha: create.sourceCommitSha,
       configHash: create.configHash,
+      approvalRequired: true,
       requestedBy: create.requestedBy,
       createdAt: "2026-05-06T12:00:00.000Z",
       updatedAt: "2026-05-06T12:00:00.000Z"
     });
 
     expect(create.profile).toBe("beta");
+    expect(mobileReleaseBuildJobApprovalSchema.parse({ approvedBy: "admin@example.com" }).approvedBy).toBe("admin@example.com");
     expect(mobileReleaseBuildJobListResponseSchema.parse({ jobs: [job] }).jobs[0]?.status).toBe("queued");
   });
 

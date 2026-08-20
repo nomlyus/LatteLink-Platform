@@ -19,6 +19,7 @@ import {
 import {
   buildCapabilities,
   approveInternalLocationLaunch,
+  approveInternalLocationMobileReleaseBuildJob,
   cancelSupportOrder,
   createInternalClient,
   createStripeDashboardLink,
@@ -410,6 +411,23 @@ export async function startMobileReleaseBuildJobAction(formData: FormData) {
   }
 
   redirect(`/clients/${locationId}?releaseBuildQueued=1`);
+}
+
+export async function approveMobileReleaseBuildJobAction(formData: FormData) {
+  const locationId = readString(formData, "locationId");
+  const jobId = readString(formData, "jobId");
+  if (!locationId || !jobId) {
+    redirect("/clients?error=Location ID and build job ID are required.");
+  }
+
+  try {
+    await requireAdminCapability("clients:write");
+    await approveInternalLocationMobileReleaseBuildJob(jobId);
+  } catch (error) {
+    redirect(`/clients/${locationId}?releaseError=${encodeURIComponent(toRedirectError(error))}`);
+  }
+
+  redirect(`/clients/${locationId}?releaseBuildApproved=1`);
 }
 
 export async function updateAppIdentityAction(formData: FormData) {

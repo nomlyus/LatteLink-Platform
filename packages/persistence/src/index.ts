@@ -478,11 +478,14 @@ export interface CatalogMobileReleaseBuildJobTable {
   job_id: string;
   location_id: string;
   tenant_id: string;
-  status: "queued" | "running" | "succeeded" | "failed" | "canceled";
+  status: "queued" | "running" | "awaiting_approval" | "submitting" | "succeeded" | "failed" | "canceled";
   profile: "beta" | "production";
   build_profile: string;
   source_commit_sha: string;
   config_hash: string;
+  approval_required: boolean;
+  approved_at: string | null;
+  approved_by: string | null;
   app_store_review_notes: string | null;
   requested_by: string | null;
   eas_build_id: string | null;

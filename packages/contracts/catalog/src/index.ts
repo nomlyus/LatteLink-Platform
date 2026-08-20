@@ -757,7 +757,15 @@ export const mobileReleaseProfileSchema = z.object({
   updatedAt: z.string().datetime().optional()
 });
 
-export const mobileReleaseBuildJobStatusSchema = z.enum(["queued", "running", "succeeded", "failed", "canceled"]);
+export const mobileReleaseBuildJobStatusSchema = z.enum([
+  "queued",
+  "running",
+  "awaiting_approval",
+  "submitting",
+  "succeeded",
+  "failed",
+  "canceled"
+]);
 export const mobileReleaseBuildTargetProfileSchema = z.enum(["beta", "production"]);
 
 export const mobileReleaseBuildJobSchema = z.object({
@@ -768,6 +776,9 @@ export const mobileReleaseBuildJobSchema = z.object({
   buildProfile: z.string().trim().min(1),
   sourceCommitSha: z.string().trim().regex(/^[a-f0-9]{40}$/i),
   configHash: z.string().trim().min(8),
+  approvalRequired: z.boolean(),
+  approvedAt: z.string().datetime().optional(),
+  approvedBy: z.string().trim().min(1).optional(),
   appStoreReviewNotes: z.string().trim().min(1).optional(),
   requestedBy: z.string().trim().min(1).optional(),
   easBuildId: z.string().trim().min(1).optional(),
@@ -797,9 +808,15 @@ export const mobileReleaseBuildJobUpdateSchema = z
     status: mobileReleaseBuildJobStatusSchema,
     easBuildId: z.string().trim().min(1).optional(),
     easSubmissionId: z.string().trim().min(1).optional(),
+    approvedAt: z.string().datetime().optional(),
+    approvedBy: z.string().trim().min(1).optional(),
     errorMessage: z.string().trim().min(1).optional()
   })
   .strict();
+
+export const mobileReleaseBuildJobApprovalSchema = z.object({
+  approvedBy: z.string().trim().min(1)
+});
 
 export const mobileReleaseBuildJobClaimResponseSchema = z.object({
   job: mobileReleaseBuildJobSchema.optional()
@@ -1252,6 +1269,7 @@ export type MobileReleaseBuildJob = z.output<typeof mobileReleaseBuildJobSchema>
 export type MobileReleaseBuildJobCreate = z.output<typeof mobileReleaseBuildJobCreateSchema>;
 export type MobileReleaseBuildJobListResponse = z.output<typeof mobileReleaseBuildJobListResponseSchema>;
 export type MobileReleaseBuildJobUpdate = z.output<typeof mobileReleaseBuildJobUpdateSchema>;
+export type MobileReleaseBuildJobApproval = z.output<typeof mobileReleaseBuildJobApprovalSchema>;
 export type MobileReleaseBuildJobClaimResponse = z.output<typeof mobileReleaseBuildJobClaimResponseSchema>;
 export type AppIdentityAssetMode = z.output<typeof appIdentityAssetModeSchema>;
 export type AppIdentityReadiness = z.output<typeof appIdentityReadinessSchema>;

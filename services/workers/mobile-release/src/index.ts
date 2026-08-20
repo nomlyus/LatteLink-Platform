@@ -218,22 +218,37 @@ function buildMerchantInput(config: MobileReleaseWorkerConfig, job: MobileReleas
   };
 }
 
-function parseProviderIds(output: string) {
-  const candidates = output
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith("{") && line.endsWith("}"));
-  for (const candidate of candidates.reverse()) {
+function parseProviderIds(output: string, phase: "build" | "submit") {
+  const values: unknown[] = [];
+  for (const line of output.split("\n").map((entry) => entry.trim()).filter(Boolean).reverse()) {
     try {
-      const parsed = JSON.parse(candidate) as Record<string, unknown>;
-      const easBuildId = typeof parsed.buildId === "string" ? parsed.buildId : typeof parsed.id === "string" ? parsed.id : undefined;
-      const easSubmissionId = typeof parsed.submissionId === "string" ? parsed.submissionId : undefined;
-      if (easBuildId || easSubmissionId) return { easBuildId, easSubmissionId };
+      values.push(JSON.parse(line));
     } catch {
-      // Provider output is best-effort metadata; the job result remains authoritative.
+      // EAS may prefix JSON with progress output; continue with the next line.
     }
   }
-  return {};
+
+  const visit = (value: unknown): { easBuildId?: string; easSubmissionId?: string } | undefined => {
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        const result = visit(entry);
+        if (result) return result;
+      }
+      return undefined;
+    }
+    if (!value || typeof value !== "object") return undefined;
+    const record = value as Record<string, unknown>;
+    const easBuildId = typeof record.buildId === "string" ? record.buildId : phase === "build" && typeof record.id === "string" ? record.id : undefined;
+    const easSubmissionId = typeof record.submissionId === "string" ? record.submissionId : phase === "submit" && typeof record.id === "string" ? record.id : undefined;
+    if (easBuildId || easSubmissionId) return { easBuildId, easSubmissionId };
+    for (const nested of Object.values(record)) {
+      const result = visit(nested);
+      if (result) return result;
+    }
+    return undefined;
+  };
+
+  return visit(values) ?? {};
 }
 
 export async function processMobileReleaseJob(config: MobileReleaseWorkerConfig, runtime: MobileReleaseWorkerRuntime, job: MobileReleaseBuildJob) {
@@ -243,6 +258,10 @@ export async function processMobileReleaseJob(config: MobileReleaseWorkerConfig,
 
   const onboarding = await runtime.getOnboarding(job.locationId);
   const merchantInput = buildMerchantInput(config, job, onboarding);
+  const submitting = Boolean(job.approvedAt);
+  if (submitting && !job.easBuildId) {
+    throw new Error("Approved mobile release job is missing the EAS build ID required for submission");
+  }
   const workspace = await mkdtemp(join(tmpdir(), "nomly-mobile-release-"));
   const inputPath = join(workspace, `${job.locationId}-${randomUUID()}.json`);
   try {
@@ -254,9 +273,11 @@ export async function processMobileReleaseJob(config: MobileReleaseWorkerConfig,
       MOBILE_RELEASE_PROFILE: job.profile,
       MOBILE_RELEASE_BUILD_PROFILE: job.buildProfile,
       MOBILE_RELEASE_SOURCE_COMMIT_SHA: job.sourceCommitSha,
-      MOBILE_RELEASE_CONFIG_HASH: job.configHash
+      MOBILE_RELEASE_CONFIG_HASH: job.configHash,
+      MOBILE_RELEASE_EXECUTE: submitting ? "submit" : "build",
+      MOBILE_RELEASE_EAS_BUILD_ID: job.easBuildId ?? ""
     });
-    return parseProviderIds(output);
+    return { providerIds: parseProviderIds(output, submitting ? "submit" : "build"), awaitingApproval: !submitting };
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -267,8 +288,16 @@ export async function processNextMobileReleaseJob(config: MobileReleaseWorkerCon
   if (!job) return undefined;
 
   try {
-    const providerIds = await processMobileReleaseJob(config, runtime, job);
-    await runtime.updateJob(job.jobId, { status: "succeeded", ...providerIds });
+    if (job.approvedAt) {
+      await runtime.updateJob(job.jobId, { status: "submitting" });
+    }
+    const result = await processMobileReleaseJob(config, runtime, job);
+    if (result.awaitingApproval) {
+      await runtime.updateJob(job.jobId, { status: "awaiting_approval", ...result.providerIds });
+      runtime.logger.info(`[mobile-release] awaiting approval for ${job.jobId} (${job.locationId})`);
+      return { jobId: job.jobId, status: "awaiting_approval" as const };
+    }
+    await runtime.updateJob(job.jobId, { status: "succeeded", ...result.providerIds });
     runtime.logger.info(`[mobile-release] completed ${job.jobId} (${job.locationId})`);
     return { jobId: job.jobId, status: "succeeded" as const };
   } catch (error) {

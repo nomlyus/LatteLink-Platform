@@ -9,7 +9,7 @@ export async function up(db: MigrationDb): Promise<void> {
       location_id TEXT NOT NULL REFERENCES catalog_client_locations (location_id) ON DELETE CASCADE,
       tenant_id TEXT NOT NULL REFERENCES catalog_clients (tenant_id) ON DELETE CASCADE,
       status TEXT NOT NULL DEFAULT 'queued'
-        CHECK (status IN ('queued', 'running', 'succeeded', 'failed', 'canceled')),
+        CHECK (status IN ('queued', 'running', 'awaiting_approval', 'submitting', 'succeeded', 'failed', 'canceled')),
       profile TEXT NOT NULL DEFAULT 'beta'
         CHECK (profile IN ('beta', 'production')),
       build_profile TEXT NOT NULL,

@@ -20,6 +20,7 @@ import {
   mobileExperienceDocumentSchema,
   mobileExperienceDraftResponseSchema,
   mobileExperienceVersionsResponseSchema,
+  mobileReleaseBuildJobApprovalSchema,
   mobileReleaseBuildJobCreateSchema,
   mobileReleaseBuildJobListResponseSchema,
   mobileReleaseBuildJobSchema,
@@ -55,6 +56,7 @@ import {
   type MobileExperienceSaveDraftRequest,
   type MobileExperienceVersionsResponse,
   type MobileReleaseBuildJob,
+  type MobileReleaseBuildJobApproval,
   type MobileReleaseBuildJobCreate,
   type MobileReleaseBuildJobListResponse,
   type MobileReleaseBuildJobUpdate,
@@ -282,7 +284,13 @@ export function serializeCatalogTimestamp(value: CatalogTimestamp) {
 
 function mobileReleaseBuildStatusUpdate(status: MobileReleaseBuildJob["status"], errorMessage?: string) {
   if (status === "succeeded") {
-    return { status: "build_ready" as const, statusLabel: "Build ready", blockedReason: undefined };
+    return { status: "submitted_for_review" as const, statusLabel: "Submitted for review", blockedReason: undefined };
+  }
+  if (status === "awaiting_approval") {
+    return { status: "build_ready" as const, statusLabel: "Awaiting submission approval", blockedReason: undefined };
+  }
+  if (status === "submitting") {
+    return { status: "submitted_for_review" as const, statusLabel: "Submitting for review", blockedReason: undefined };
   }
   if (status === "failed" || status === "canceled") {
     return {
@@ -403,6 +411,7 @@ type CatalogRepository = {
   listInternalLocationMobileReleaseBuildJobs(locationId: string): Promise<MobileReleaseBuildJobListResponse>;
   claimNextMobileReleaseBuildJob(): Promise<MobileReleaseBuildJob | undefined>;
   updateMobileReleaseBuildJob(jobId: string, input: MobileReleaseBuildJobUpdate): Promise<MobileReleaseBuildJob | undefined>;
+  approveMobileReleaseBuildJob(jobId: string, input: MobileReleaseBuildJobApproval): Promise<MobileReleaseBuildJob | undefined>;
   replaceInternalLocationMenu(locationId: string, input: MenuResponse): Promise<MenuResponse>;
   getInternalLocationPaymentProfile(locationId: string): Promise<ClientPaymentProfile | undefined>;
   updateInternalLocationPaymentProfile(
@@ -1557,6 +1566,7 @@ function createInMemoryRepository(): CatalogRepository {
         buildProfile: input.buildProfile,
         sourceCommitSha: input.sourceCommitSha,
         configHash: input.configHash,
+        approvalRequired: true,
         appStoreReviewNotes: input.appStoreReviewNotes,
         requestedBy: input.requestedBy,
         createdAt: now,
@@ -1620,6 +1630,8 @@ function createInMemoryRepository(): CatalogRepository {
           status: input.status,
           easBuildId: input.easBuildId ?? current.easBuildId,
           easSubmissionId: input.easSubmissionId ?? current.easSubmissionId,
+          approvedAt: input.approvedAt ?? current.approvedAt,
+          approvedBy: input.approvedBy ?? current.approvedBy,
           errorMessage: input.errorMessage,
           updatedAt: now,
           ...(terminal ? { finishedAt: now } : {})
@@ -1644,6 +1656,19 @@ function createInMemoryRepository(): CatalogRepository {
         return updated;
       }
 
+      return undefined;
+    },
+    async approveMobileReleaseBuildJob(jobId, rawInput) {
+      const input = mobileReleaseBuildJobApprovalSchema.parse(rawInput);
+      for (const jobs of mobileReleaseBuildJobsByLocation.values()) {
+        const current = jobs.find((job) => job.jobId === jobId);
+        if (!current || current.status !== "awaiting_approval") continue;
+        return this.updateMobileReleaseBuildJob(jobId, {
+          status: "queued",
+          approvedAt: new Date().toISOString(),
+          approvedBy: input.approvedBy
+        });
+      }
       return undefined;
     },
     async getInternalLocationPaymentProfile(locationId) {
@@ -2349,6 +2374,9 @@ function toMobileReleaseBuildJob(row: {
   build_profile: string;
   source_commit_sha: string;
   config_hash: string;
+  approval_required: boolean;
+  approved_at: CatalogTimestamp;
+  approved_by: string | null;
   app_store_review_notes: string | null;
   requested_by: string | null;
   eas_build_id: string | null;
@@ -2367,6 +2395,9 @@ function toMobileReleaseBuildJob(row: {
     buildProfile: row.build_profile,
     sourceCommitSha: row.source_commit_sha,
     configHash: row.config_hash,
+    approvalRequired: row.approval_required,
+    approvedAt: serializeCatalogTimestamp(row.approved_at),
+    approvedBy: row.approved_by ?? undefined,
     appStoreReviewNotes: row.app_store_review_notes ?? undefined,
     requestedBy: row.requested_by ?? undefined,
     easBuildId: row.eas_build_id ?? undefined,
@@ -3370,6 +3401,7 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
           build_profile: input.buildProfile,
           source_commit_sha: input.sourceCommitSha,
           config_hash: input.configHash,
+          approval_required: true,
           app_store_review_notes: input.appStoreReviewNotes ?? null,
           requested_by: input.requestedBy ?? null,
           request_json: input,
@@ -3443,7 +3475,7 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
       const terminal = input.status === "succeeded" || input.status === "failed" || input.status === "canceled";
       const existing = await db
         .selectFrom("catalog_mobile_release_build_jobs")
-        .select(["eas_build_id", "eas_submission_id"])
+        .select(["eas_build_id", "eas_submission_id", "approved_at", "approved_by"])
         .where("job_id", "=", jobId)
         .executeTakeFirst();
       const row = await db
@@ -3452,6 +3484,8 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
           status: input.status,
           eas_build_id: input.easBuildId ?? existing?.eas_build_id ?? null,
           eas_submission_id: input.easSubmissionId ?? existing?.eas_submission_id ?? null,
+          approved_at: input.approvedAt ?? existing?.approved_at ?? null,
+          approved_by: input.approvedBy ?? existing?.approved_by ?? null,
           error_message: input.errorMessage ?? null,
           updated_at: now,
           ...(terminal ? { finished_at: now } : {})
@@ -3474,6 +3508,31 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
           .execute();
       }
 
+      return row ? toMobileReleaseBuildJob(row) : undefined;
+    },
+    async approveMobileReleaseBuildJob(jobId, rawInput) {
+      const input = mobileReleaseBuildJobApprovalSchema.parse(rawInput);
+      const existing = await db
+        .selectFrom("catalog_mobile_release_build_jobs")
+        .select(["status"])
+        .where("job_id", "=", jobId)
+        .executeTakeFirst();
+      if (!existing || existing.status !== "awaiting_approval") {
+        return undefined;
+      }
+      const now = new Date().toISOString();
+      const row = await db
+        .updateTable("catalog_mobile_release_build_jobs")
+        .set({
+          status: "queued",
+          approved_at: now,
+          approved_by: input.approvedBy,
+          updated_at: now
+        })
+        .where("job_id", "=", jobId)
+        .where("status", "=", "awaiting_approval")
+        .returningAll()
+        .executeTakeFirst();
       return row ? toMobileReleaseBuildJob(row) : undefined;
     },
     async getInternalLocationPaymentProfile(locationId) {

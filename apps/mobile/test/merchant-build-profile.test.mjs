@@ -63,8 +63,9 @@ describe("merchant mobile build preparation", () => {
       });
       expect(manifest.configHash).toMatch(/^[a-f0-9]{64}$/);
       expect(commands).toContain("eas integrations:asc:connect");
-      expect(commands).toContain("eas build --platform ios --profile beta");
-      expect(commands).toContain("eas submit --platform ios --profile beta");
+      expect(commands).toContain("MOBILE_RELEASE_EXECUTE");
+      expect(commands).toContain("eas build --platform ios --profile beta --non-interactive --json");
+      expect(commands).toContain('eas submit --platform ios --profile beta --id "${MOBILE_RELEASE_EAS_BUILD_ID}"');
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }

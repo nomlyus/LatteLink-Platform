@@ -207,6 +207,13 @@ export async function createInternalLocationMobileReleaseBuildJob(
   });
 }
 
+export async function approveInternalLocationMobileReleaseBuildJob(jobId: string) {
+  return requestInternalApi<MobileReleaseBuildJob>(`/v1/internal/mobile-release/build-jobs/${jobId}/approve`, {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+}
+
 export async function updateInternalLocationAppIdentity(locationId: string, input: InternalAppIdentityProfileUpdate) {
   return requestInternalApi<OnboardingSummary>(`/v1/internal/locations/${locationId}/app-identity`, {
     method: "PATCH",

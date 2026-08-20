@@ -11,6 +11,7 @@ import type {
 import { notFound } from "next/navigation";
 import {
   approveLaunchAction,
+  approveMobileReleaseBuildJobAction,
   prepareMobileReleaseBuildAction,
   startMobileReleaseBuildJobAction,
   updateAppIdentityAction,
@@ -352,6 +353,15 @@ function MobileReleaseStatusPanel({
                   {job.easBuildId ? <p>EAS build: {job.easBuildId}</p> : null}
                   {job.easSubmissionId ? <p>EAS submit: {job.easSubmissionId}</p> : null}
                   {job.errorMessage ? <p>{job.errorMessage}</p> : null}
+                  {job.status === "awaiting_approval" ? (
+                    <form action={approveMobileReleaseBuildJobAction}>
+                      <input type="hidden" name="locationId" value={locationId} />
+                      <input type="hidden" name="jobId" value={job.jobId} />
+                      <button type="submit" className="secondary-button">
+                        Approve submission
+                      </button>
+                    </form>
+                  ) : null}
                 </div>
               </div>
             ))}

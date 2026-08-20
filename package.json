@@ -28,6 +28,7 @@
     "e2e:dev-checkout": "node scripts/dev-checkout-e2e.mjs",
     "release:validate-tag": "node scripts/validate-release-tag.mjs",
     "test:release-policy": "node --test scripts/validate-release-tag.test.mjs scripts/validate-production-release.test.mjs",
+    "sentry:review": "node scripts/sentry-review.mjs",
     "sdk:generate": "pnpm --filter @lattelink/sdk-mobile generate",
     "terraform:fmt": "terraform -chdir=infra/terraform/envs/dev fmt -recursive -check",
     "terraform:validate": "pnpm -r --filter ./infra/terraform/envs/* run validate"

@@ -1543,6 +1543,7 @@ describe("catalog service", () => {
       buildProfile: "ios-us-nomly-buildqueue-beta",
       sourceCommitSha: "0123456789abcdef0123456789abcdef01234567",
       configHash: "abc123456789",
+      approvalRequired: true,
       requestedBy: "admin-console"
     });
 
@@ -1604,30 +1605,96 @@ describe("catalog service", () => {
         "x-gateway-token": "catalog-gateway-token"
       },
       payload: {
-        status: "succeeded",
-        easBuildId: "eas-build-123",
-        easSubmissionId: "eas-submission-123"
+        status: "awaiting_approval",
+        easBuildId: "eas-build-123"
       }
     });
     expect(updateResponse.statusCode, updateResponse.body).toBe(200);
     expect(updateResponse.json()).toMatchObject({
-      status: "succeeded",
+      status: "awaiting_approval",
       easBuildId: "eas-build-123",
-      easSubmissionId: "eas-submission-123",
-      finishedAt: expect.any(String)
+      approvalRequired: true
     });
 
-    const completedOnboardingResponse = await app.inject({
+    const readyOnboardingResponse = await app.inject({
       method: "GET",
       url: `/v1/catalog/internal/locations/${created.locationId}/onboarding`,
       headers: {
         "x-gateway-token": "catalog-gateway-token"
       }
     });
-    expect(completedOnboardingResponse.statusCode).toBe(200);
-    expect(onboardingSummarySchema.parse(completedOnboardingResponse.json()).mobileRelease).toMatchObject({
+    expect(readyOnboardingResponse.statusCode).toBe(200);
+    expect(onboardingSummarySchema.parse(readyOnboardingResponse.json()).mobileRelease).toMatchObject({
       status: "build_ready",
-      statusLabel: "Build ready"
+      statusLabel: "Awaiting submission approval"
+    });
+
+    const approveResponse = await app.inject({
+      method: "POST",
+      url: `/v1/catalog/internal/mobile-release/build-jobs/${mobileBuildJobResponse.json().jobId}/approve`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        approvedBy: "admin@example.com"
+      }
+    });
+    expect(approveResponse.statusCode, approveResponse.body).toBe(200);
+    expect(approveResponse.json()).toMatchObject({
+      status: "queued",
+      easBuildId: "eas-build-123",
+      approvedAt: expect.any(String),
+      approvedBy: "admin@example.com"
+    });
+
+    const submissionClaimResponse = await app.inject({
+      method: "POST",
+      url: "/v1/catalog/internal/mobile-release/build-jobs/claim",
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {}
+    });
+    expect(submissionClaimResponse.statusCode, submissionClaimResponse.body).toBe(200);
+    expect(submissionClaimResponse.json()).toMatchObject({
+      job: {
+        jobId: mobileBuildJobResponse.json().jobId,
+        status: "running",
+        approvedBy: "admin@example.com"
+      }
+    });
+
+    const submitResponse = await app.inject({
+      method: "PATCH",
+      url: `/v1/catalog/internal/mobile-release/build-jobs/${mobileBuildJobResponse.json().jobId}`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        status: "succeeded",
+        easSubmissionId: "eas-submission-123"
+      }
+    });
+    expect(submitResponse.statusCode, submitResponse.body).toBe(200);
+    expect(submitResponse.json()).toMatchObject({
+      status: "succeeded",
+      easBuildId: "eas-build-123",
+      easSubmissionId: "eas-submission-123",
+      approvedBy: "admin@example.com",
+      finishedAt: expect.any(String)
+    });
+
+    const submittedOnboardingResponse = await app.inject({
+      method: "GET",
+      url: `/v1/catalog/internal/locations/${created.locationId}/onboarding`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      }
+    });
+    expect(submittedOnboardingResponse.statusCode).toBe(200);
+    expect(onboardingSummarySchema.parse(submittedOnboardingResponse.json()).mobileRelease).toMatchObject({
+      status: "submitted_for_review",
+      statusLabel: "Submitted for review"
     });
 
     const noQueuedJobResponse = await app.inject({

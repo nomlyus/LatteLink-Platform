@@ -178,8 +178,8 @@ function buildCommands(paths, profile, input) {
   return {
     preflight: `${sourceEnv}; pnpm --filter @lattelink/mobile release:check -- ${profile}`,
     ascConnect,
-    build: `${sourceEnv}; pnpm --filter @lattelink/mobile exec eas build --platform ios --profile ${profile} --non-interactive`,
-    submit: `${sourceEnv}; pnpm --filter @lattelink/mobile exec eas submit --platform ios --profile ${profile} --latest --non-interactive --what-to-test ${shellQuote(whatToTest)}`
+    build: `${sourceEnv}; pnpm --filter @lattelink/mobile exec eas build --platform ios --profile ${profile} --non-interactive --json`,
+    submit: `${sourceEnv}; test -n "${'${MOBILE_RELEASE_EAS_BUILD_ID:-}'}"; pnpm --filter @lattelink/mobile exec eas submit --platform ios --profile ${profile} --id "${'${MOBILE_RELEASE_EAS_BUILD_ID}'}" --non-interactive --what-to-test ${shellQuote(whatToTest)} --json`
   };
 }
 
@@ -239,7 +239,33 @@ export async function prepareMerchantBuild(rawArgs) {
   await writeFile(paths.manifestFile, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
   await writeFile(
     paths.commandsFile,
-    `#!/usr/bin/env bash\nset -euo pipefail\n\n${commands.preflight}\n${commands.ascConnect}\n${commands.build}\n${commands.submit}\n`,
+    `#!/usr/bin/env bash
+set -euo pipefail
+
+case "${'${MOBILE_RELEASE_EXECUTE:-all}'}" in
+  preflight)
+    ${commands.preflight}
+    ;;
+  build)
+    ${commands.preflight}
+    ${commands.ascConnect}
+    ${commands.build}
+    ;;
+  submit)
+    ${commands.submit}
+    ;;
+  all)
+    ${commands.preflight}
+    ${commands.ascConnect}
+    ${commands.build}
+    ${commands.submit}
+    ;;
+  *)
+    echo "Unsupported MOBILE_RELEASE_EXECUTE phase" >&2
+    exit 2
+    ;;
+esac
+`,
     "utf8"
   );
 
