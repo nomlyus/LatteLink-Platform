@@ -474,6 +474,27 @@ export interface CatalogMobileReleaseProfileTable {
   updated_at: Generated<string>;
 }
 
+export interface CatalogMobileReleaseBuildJobTable {
+  job_id: string;
+  location_id: string;
+  tenant_id: string;
+  status: "queued" | "running" | "succeeded" | "failed" | "canceled";
+  profile: "beta" | "production";
+  build_profile: string;
+  source_commit_sha: string;
+  config_hash: string;
+  app_store_review_notes: string | null;
+  requested_by: string | null;
+  eas_build_id: string | null;
+  eas_submission_id: string | null;
+  error_message: string | null;
+  request_json: unknown;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
 export interface CatalogAppIdentityProfileTable {
   location_id: string;
   tenant_id: string;
@@ -579,6 +600,7 @@ export interface PersistenceDatabase {
   catalog_client_locations: CatalogClientLocationTable;
   catalog_onboarding_progress: CatalogOnboardingProgressTable;
   catalog_mobile_release_profiles: CatalogMobileReleaseProfileTable;
+  catalog_mobile_release_build_jobs: CatalogMobileReleaseBuildJobTable;
   catalog_app_identity_profiles: CatalogAppIdentityProfileTable;
   catalog_mobile_experience_drafts: CatalogMobileExperienceDraftTable;
   catalog_mobile_experience_versions: CatalogMobileExperienceVersionTable;

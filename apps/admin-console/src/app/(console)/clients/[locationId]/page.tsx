@@ -3,6 +3,7 @@ import Link from "next/link";
 import type {
   AppIdentityProfile,
   LaunchReadinessResponse,
+  MobileReleaseBuildJob,
   MobileReleaseProfile,
   MobileReleaseStatus,
   OnboardingSummary
@@ -11,12 +12,14 @@ import { notFound } from "next/navigation";
 import {
   approveLaunchAction,
   prepareMobileReleaseBuildAction,
+  startMobileReleaseBuildJobAction,
   updateAppIdentityAction,
   updateMobileReleaseAction
 } from "@/app/actions";
 import { LaunchReadinessChecklist } from "@/components/LaunchReadinessChecklist";
 import {
   getInternalLocation,
+  listInternalLocationMobileReleaseBuildJobs,
   getInternalLocationOnboarding,
   getInternalLocationOwner,
   getInternalLocationReadiness,
@@ -48,6 +51,12 @@ function mobileReleaseStatusLabel(status: MobileReleaseStatus | undefined, statu
 function mobileReleaseTone(status: MobileReleaseStatus | undefined) {
   if (status === "live" || status === "ready_for_launch" || status === "approved") return "healthy";
   if (status === "blocked") return "critical";
+  return "warning";
+}
+
+function mobileReleaseBuildJobTone(status: MobileReleaseBuildJob["status"]) {
+  if (status === "succeeded") return "healthy";
+  if (status === "failed" || status === "canceled") return "critical";
   return "warning";
 }
 
@@ -183,11 +192,13 @@ function LaunchApprovalPanel({ locationId, onboarding, readiness }: {
 function MobileReleaseStatusPanel({
   locationId,
   release,
-  identity
+  identity,
+  buildJobs
 }: {
   locationId: string;
   release?: MobileReleaseProfile;
   identity?: AppIdentityProfile;
+  buildJobs: MobileReleaseBuildJob[];
 }) {
   const status = release?.status ?? "not_started";
   const statusLabel = mobileReleaseStatusLabel(status, release?.statusLabel);
@@ -195,6 +206,7 @@ function MobileReleaseStatusPanel({
   const sourceCommitSha = release?.sourceCommitSha ?? readCurrentSourceCommitSha();
   const configHash = release?.configHash ?? buildMobileReleaseConfigHash(locationId, identity);
   const buildProfile = release?.buildProfile ?? buildDefaultBuildProfile(identity);
+  const buildJobReady = Boolean(release?.buildProfile && release.sourceCommitSha && release.configHash);
   const defaultReviewNotes =
     release?.appStoreReviewNotes ??
     `Merchant app build prepared for ${identity?.appName ?? locationId}. Backend content and layout updates are delivered through Nomly without requiring a native binary rebuild.`;
@@ -285,6 +297,67 @@ function MobileReleaseStatusPanel({
           <p>Complete the app identity profile before recording a native build configuration.</p>
         </div>
       )}
+
+      <div className="callout build-prep-panel">
+        <div>
+          <strong>Start build job</strong>
+          <p>
+            Creates the tracked build request that the mobile release runner will pick up. Use this only after the prepared build metadata matches the intended commit and app identity.
+          </p>
+        </div>
+        <form action={startMobileReleaseBuildJobAction} className="stack-form">
+          <input type="hidden" name="locationId" value={locationId} />
+          <input type="hidden" name="buildProfile" value={release?.buildProfile ?? ""} />
+          <input type="hidden" name="sourceCommitSha" value={release?.sourceCommitSha ?? ""} />
+          <input type="hidden" name="configHash" value={release?.configHash ?? ""} />
+          <input type="hidden" name="appStoreReviewNotes" value={release?.appStoreReviewNotes ?? defaultReviewNotes} />
+          <input type="hidden" name="requestedBy" value="admin-console" />
+          <label className="field">
+            <span>Target lane</span>
+            <select name="profile" defaultValue="beta">
+              <option value="beta">Beta / TestFlight</option>
+              <option value="production">Production / App Store</option>
+            </select>
+          </label>
+          <div className="form-actions">
+            <button type="submit" className="primary-button" disabled={!buildJobReady}>
+              Start Build Job
+            </button>
+          </div>
+          {!buildJobReady ? (
+            <p className="field-hint">Prepare the build metadata before creating a tracked job.</p>
+          ) : null}
+        </form>
+      </div>
+
+      <div className="build-job-list">
+        <div className="section-heading">
+          <span className="eyebrow">Build Jobs</span>
+          <h4>Recent requests</h4>
+        </div>
+        {buildJobs.length === 0 ? (
+          <p className="subtle-copy">No mobile build jobs have been started for this location yet.</p>
+        ) : (
+          <div className="mini-list">
+            {buildJobs.map((job) => (
+              <div key={job.jobId} className="mini-list-item">
+                <div className="mini-list-copy">
+                  <strong>
+                    {job.profile === "production" ? "Production" : "Beta"} build
+                    <span className={`status-badge is-${mobileReleaseBuildJobTone(job.status)}`}>{job.status}</span>
+                  </strong>
+                  <p>
+                    <code>{job.sourceCommitSha.slice(0, 12)}</code> · config <code>{job.configHash.slice(0, 12)}</code> · {new Date(job.createdAt).toLocaleString()}
+                  </p>
+                  {job.easBuildId ? <p>EAS build: {job.easBuildId}</p> : null}
+                  {job.easSubmissionId ? <p>EAS submit: {job.easSubmissionId}</p> : null}
+                  {job.errorMessage ? <p>{job.errorMessage}</p> : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <form action={updateMobileReleaseAction} className="stack-form release-form">
         <input type="hidden" name="locationId" value={locationId} />
@@ -494,6 +567,7 @@ export default async function ClientDetailPage({ params, searchParams }: ClientD
   const invited = typeof query.invited === "string" ? query.invited : undefined;
   const releaseUpdated = typeof query.releaseUpdated === "string" ? query.releaseUpdated : undefined;
   const releasePrepared = typeof query.releasePrepared === "string" ? query.releasePrepared : undefined;
+  const releaseBuildQueued = typeof query.releaseBuildQueued === "string" ? query.releaseBuildQueued : undefined;
   const releaseError = typeof query.releaseError === "string" ? query.releaseError : undefined;
   const appIdentityUpdated = typeof query.appIdentityUpdated === "string" ? query.appIdentityUpdated : undefined;
   const appIdentityError = typeof query.appIdentityError === "string" ? query.appIdentityError : undefined;
@@ -502,11 +576,12 @@ export default async function ClientDetailPage({ params, searchParams }: ClientD
   const launchError = typeof query.launchError === "string" ? query.launchError : undefined;
 
   try {
-    const [location, ownerSummary, launchReadiness, onboarding] = await Promise.all([
+    const [location, ownerSummary, launchReadiness, onboarding, buildJobsResponse] = await Promise.all([
       getInternalLocation(locationId),
       getInternalLocationOwner(locationId),
       getInternalLocationReadiness(locationId),
-      getInternalLocationOnboarding(locationId)
+      getInternalLocationOnboarding(locationId),
+      listInternalLocationMobileReleaseBuildJobs(locationId)
     ]);
 
     const hasOwner = Boolean(ownerSummary.owner);
@@ -541,6 +616,7 @@ export default async function ClientDetailPage({ params, searchParams }: ClientD
         {created ? <p className="inline-message inline-message-success">Client shell created.</p> : null}
         {invited ? <p className="inline-message inline-message-success">Owner invite sent.</p> : null}
         {releasePrepared ? <p className="inline-message inline-message-success">Mobile build configuration prepared.</p> : null}
+        {releaseBuildQueued ? <p className="inline-message inline-message-success">Mobile build job queued.</p> : null}
         {releaseUpdated ? <p className="inline-message inline-message-success">Mobile release status updated.</p> : null}
         {releaseError ? <p className="inline-message inline-message-error">{releaseError}</p> : null}
         {appIdentityUpdated ? <p className="inline-message inline-message-success">App identity updated.</p> : null}
@@ -715,6 +791,7 @@ export default async function ClientDetailPage({ params, searchParams }: ClientD
           locationId={locationId}
           release={onboarding.mobileRelease}
           identity={onboarding.appIdentity}
+          buildJobs={buildJobsResponse.jobs}
         />
       </section>
     );

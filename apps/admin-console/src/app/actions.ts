@@ -1,7 +1,11 @@
 "use server";
 
 import type { AppConfigStoreCapabilities } from "@lattelink/contracts-catalog";
-import { internalAppIdentityProfileUpdateSchema, mobileReleaseProfileUpdateSchema } from "@lattelink/contracts-catalog";
+import {
+  internalAppIdentityProfileUpdateSchema,
+  mobileReleaseBuildJobCreateSchema,
+  mobileReleaseProfileUpdateSchema
+} from "@lattelink/contracts-catalog";
 import { redirect } from "next/navigation";
 import {
   AdminAuthError,
@@ -19,6 +23,7 @@ import {
   createInternalClient,
   createStripeDashboardLink,
   createStripeOnboardingLink,
+  createInternalLocationMobileReleaseBuildJob,
   expireSupportCheckout,
   getInternalLocationOnboarding,
   getInternalLocationReadiness,
@@ -379,6 +384,32 @@ export async function prepareMobileReleaseBuildAction(formData: FormData) {
   }
 
   redirect(`/clients/${locationId}?releasePrepared=1`);
+}
+
+export async function startMobileReleaseBuildJobAction(formData: FormData) {
+  const locationId = readString(formData, "locationId");
+  if (!locationId) {
+    redirect("/clients?error=Location ID is required.");
+  }
+
+  try {
+    await requireAdminCapability("clients:write");
+    await createInternalLocationMobileReleaseBuildJob(
+      locationId,
+      mobileReleaseBuildJobCreateSchema.parse({
+        profile: readString(formData, "profile") === "production" ? "production" : "beta",
+        buildProfile: readString(formData, "buildProfile"),
+        sourceCommitSha: readString(formData, "sourceCommitSha"),
+        configHash: readString(formData, "configHash"),
+        appStoreReviewNotes: readOptionalString(formData, "appStoreReviewNotes"),
+        requestedBy: readOptionalString(formData, "requestedBy")
+      })
+    );
+  } catch (error) {
+    redirect(`/clients/${locationId}?releaseError=${encodeURIComponent(toRedirectError(error))}`);
+  }
+
+  redirect(`/clients/${locationId}?releaseBuildQueued=1`);
 }
 
 export async function updateAppIdentityAction(formData: FormData) {

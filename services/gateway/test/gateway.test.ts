@@ -2006,6 +2006,62 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
+      const internalLocationMobileReleaseBuildJobsMatch = url.match(
+        /\/v1\/catalog\/internal\/locations\/([^/]+)\/mobile-release\/build-jobs$/
+      );
+      if (internalLocationMobileReleaseBuildJobsMatch && method === "POST") {
+        const locationId = internalLocationMobileReleaseBuildJobsMatch[1];
+        const body = JSON.parse(String(init?.body ?? "{}")) as {
+          profile?: "beta" | "production";
+          buildProfile?: string;
+          sourceCommitSha?: string;
+          configHash?: string;
+          appStoreReviewNotes?: string;
+          requestedBy?: string;
+        };
+
+        return new Response(
+          JSON.stringify({
+            jobId: "123e4567-e89b-12d3-a456-426614174321",
+            locationId,
+            status: "queued",
+            profile: body.profile ?? "beta",
+            buildProfile: body.buildProfile ?? "ios-com-lattelink-northside-beta",
+            sourceCommitSha: body.sourceCommitSha ?? "0123456789abcdef0123456789abcdef01234567",
+            configHash: body.configHash ?? "abc123456789",
+            appStoreReviewNotes: body.appStoreReviewNotes,
+            requestedBy: body.requestedBy,
+            createdAt: "2026-05-06T12:00:00.000Z",
+            updatedAt: "2026-05-06T12:00:00.000Z"
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      if (internalLocationMobileReleaseBuildJobsMatch && method === "GET") {
+        const locationId = internalLocationMobileReleaseBuildJobsMatch[1];
+
+        return new Response(
+          JSON.stringify({
+            jobs: [
+              {
+                jobId: "123e4567-e89b-12d3-a456-426614174321",
+                locationId,
+                status: "queued",
+                profile: "beta",
+                buildProfile: "ios-com-lattelink-northside-beta",
+                sourceCommitSha: "0123456789abcdef0123456789abcdef01234567",
+                configHash: "abc123456789",
+                requestedBy: "admin-console",
+                createdAt: "2026-05-06T12:00:00.000Z",
+                updatedAt: "2026-05-06T12:00:00.000Z"
+              }
+            ]
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
       const internalLocationMobileReleaseMatch = url.match(/\/v1\/catalog\/internal\/locations\/([^/]+)\/mobile-release$/);
       if (internalLocationMobileReleaseMatch && method === "PATCH") {
         const locationId = internalLocationMobileReleaseMatch[1];
@@ -4678,6 +4734,62 @@ let previousFreeClientDashboardDomain: string | undefined;
         buildNumber: "42"
       }
     });
+
+    const mobileBuildJobResponse = await app.inject({
+      method: "POST",
+      url: "/v1/internal/locations/northside-01/mobile-release/build-jobs",
+      headers: ownerInternalAdminHeaders,
+      payload: {
+        profile: "beta",
+        buildProfile: "ios-com-lattelink-northside-beta",
+        sourceCommitSha: "0123456789abcdef0123456789abcdef01234567",
+        configHash: "abc123456789",
+        appStoreReviewNotes: "Performance improvements and reliability fixes.",
+        requestedBy: "admin-console"
+      }
+    });
+    expect(mobileBuildJobResponse.statusCode, mobileBuildJobResponse.body).toBe(200);
+    expect(mobileBuildJobResponse.json()).toMatchObject({
+      jobId: "123e4567-e89b-12d3-a456-426614174321",
+      locationId: "northside-01",
+      status: "queued",
+      profile: "beta",
+      buildProfile: "ios-com-lattelink-northside-beta",
+      sourceCommitSha: "0123456789abcdef0123456789abcdef01234567",
+      configHash: "abc123456789"
+    });
+
+    const mobileBuildJobsResponse = await app.inject({
+      method: "GET",
+      url: "/v1/internal/locations/northside-01/mobile-release/build-jobs",
+      headers: readonlyInternalAdminHeaders
+    });
+    expect(mobileBuildJobsResponse.statusCode, mobileBuildJobsResponse.body).toBe(200);
+    expect(mobileBuildJobsResponse.json()).toMatchObject({
+      jobs: [
+        {
+          jobId: "123e4567-e89b-12d3-a456-426614174321",
+          locationId: "northside-01",
+          status: "queued"
+        }
+      ]
+    });
+
+    const buildJobCall = fetchMock.mock.calls.find(([input]) => {
+      const url = typeof input === "string" ? input : input.url;
+      return url === "http://catalog.internal/v1/catalog/internal/locations/northside-01/mobile-release/build-jobs";
+    });
+    expect(buildJobCall).toBeDefined();
+    if (buildJobCall) {
+      const upstreamHeaders = new Headers((buildJobCall[1]?.headers ?? {}) as HeadersInit);
+      expect(upstreamHeaders.get("x-gateway-token")).toBe("gateway-test-token");
+      expect(upstreamHeaders.get("x-user-id")).toBe("223e4567-e89b-12d3-a456-426614174999");
+      expect(JSON.parse(String(buildJobCall[1]?.body ?? "{}"))).toMatchObject({
+        buildProfile: "ios-com-lattelink-northside-beta",
+        sourceCommitSha: "0123456789abcdef0123456789abcdef01234567",
+        configHash: "abc123456789"
+      });
+    }
 
     const blockedLaunchApprovalResponse = await app.inject({
       method: "POST",

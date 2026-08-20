@@ -29,6 +29,9 @@ import {
   mobileExperienceRollbackRequestSchema,
   mobileExperienceSaveDraftRequestSchema,
   mobileExperienceVersionsResponseSchema,
+  mobileReleaseBuildJobCreateSchema,
+  mobileReleaseBuildJobListResponseSchema,
+  mobileReleaseBuildJobSchema,
   mobileReleaseProfileUpdateSchema,
   onboardingSummarySchema,
   operatorAppIdentityProfileUpdateSchema,
@@ -1183,6 +1186,43 @@ export async function registerRoutes(app: FastifyInstance) {
       }
 
       return onboardingSummarySchema.parse(onboarding);
+    }
+  );
+
+  app.get(
+    "/v1/catalog/internal/locations/:locationId/mobile-release/build-jobs",
+    {
+      preHandler: [app.rateLimit(gatewayReadRateLimit), requireGatewayAccess]
+    },
+    async (request) => {
+      const { locationId } = internalLocationParamsSchema.parse(request.params);
+      return mobileReleaseBuildJobListResponseSchema.parse(
+        await repository.listInternalLocationMobileReleaseBuildJobs(locationId)
+      );
+    }
+  );
+
+  app.post(
+    "/v1/catalog/internal/locations/:locationId/mobile-release/build-jobs",
+    {
+      preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess]
+    },
+    async (request, reply) => {
+      const { locationId } = internalLocationParamsSchema.parse(request.params);
+      const input = mobileReleaseBuildJobCreateSchema.parse(request.body);
+      const job = await repository.createInternalLocationMobileReleaseBuildJob(locationId, input);
+      if (!job) {
+        return reply.status(404).send(
+          serviceErrorSchema.parse({
+            code: "ONBOARDING_NOT_FOUND",
+            message: "Onboarding state not found",
+            requestId: request.id,
+            details: { locationId }
+          })
+        );
+      }
+
+      return mobileReleaseBuildJobSchema.parse(job);
     }
   );
 

@@ -1499,6 +1499,90 @@ describe("catalog service", () => {
     await app.close();
   });
 
+  it("queues mobile release build jobs for client shells", async () => {
+    process.env.GATEWAY_INTERNAL_API_TOKEN = "catalog-gateway-token";
+    const app = await buildApp();
+
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/v1/catalog/internal/clients",
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        clientName: "Build Queue Coffee",
+        locationName: "Build Queue Flagship",
+        marketLabel: "Detroit, MI",
+        ownerEmail: "owner-build-queue@example.com",
+        ownerName: "Build Queue Owner"
+      }
+    });
+    expect(createResponse.statusCode, createResponse.body).toBe(200);
+    const created = adminClientCreateResponseSchema.parse(createResponse.json());
+
+    const mobileBuildJobResponse = await app.inject({
+      method: "POST",
+      url: `/v1/catalog/internal/locations/${created.locationId}/mobile-release/build-jobs`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        profile: "beta",
+        buildProfile: "ios-us-nomly-buildqueue-beta",
+        sourceCommitSha: "0123456789abcdef0123456789abcdef01234567",
+        configHash: "abc123456789",
+        appStoreReviewNotes: "Performance improvements and reliability fixes.",
+        requestedBy: "admin-console"
+      }
+    });
+    expect(mobileBuildJobResponse.statusCode, mobileBuildJobResponse.body).toBe(200);
+    expect(mobileBuildJobResponse.json()).toMatchObject({
+      locationId: created.locationId,
+      status: "queued",
+      profile: "beta",
+      buildProfile: "ios-us-nomly-buildqueue-beta",
+      sourceCommitSha: "0123456789abcdef0123456789abcdef01234567",
+      configHash: "abc123456789",
+      requestedBy: "admin-console"
+    });
+
+    const mobileBuildJobsResponse = await app.inject({
+      method: "GET",
+      url: `/v1/catalog/internal/locations/${created.locationId}/mobile-release/build-jobs`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      }
+    });
+    expect(mobileBuildJobsResponse.statusCode, mobileBuildJobsResponse.body).toBe(200);
+    expect(mobileBuildJobsResponse.json()).toMatchObject({
+      jobs: [
+        {
+          jobId: mobileBuildJobResponse.json().jobId,
+          locationId: created.locationId,
+          status: "queued"
+        }
+      ]
+    });
+
+    const onboardingResponse = await app.inject({
+      method: "GET",
+      url: `/v1/catalog/internal/locations/${created.locationId}/onboarding`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      }
+    });
+    expect(onboardingResponse.statusCode).toBe(200);
+    expect(onboardingSummarySchema.parse(onboardingResponse.json()).mobileRelease).toMatchObject({
+      status: "build_configuring",
+      statusLabel: "Build job queued",
+      buildProfile: "ios-us-nomly-buildqueue-beta",
+      sourceCommitSha: "0123456789abcdef0123456789abcdef01234567",
+      configHash: "abc123456789"
+    });
+
+    await app.close();
+  });
+
   it("reflects the default location payment profile in public app-config", async () => {
     process.env.GATEWAY_INTERNAL_API_TOKEN = "catalog-gateway-token";
     const app = await buildApp();

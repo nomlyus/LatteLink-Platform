@@ -20,6 +20,9 @@ import {
   mobileExperienceDocumentSchema,
   mobileExperienceDraftResponseSchema,
   mobileExperienceVersionsResponseSchema,
+  mobileReleaseBuildJobCreateSchema,
+  mobileReleaseBuildJobListResponseSchema,
+  mobileReleaseBuildJobSchema,
   mobileReleaseProfileSchema,
   mobileReleaseProfileUpdateSchema,
   onboardingSummarySchema,
@@ -50,6 +53,9 @@ import {
   type MobileExperienceDraftResponse,
   type MobileExperienceSaveDraftRequest,
   type MobileExperienceVersionsResponse,
+  type MobileReleaseBuildJob,
+  type MobileReleaseBuildJobCreate,
+  type MobileReleaseBuildJobListResponse,
   type MobileReleaseProfile,
   type MobileReleaseProfileUpdate,
   type OnboardingStatus,
@@ -374,6 +380,11 @@ type CatalogRepository = {
     locationId: string,
     input: MobileReleaseProfileUpdate
   ): Promise<OnboardingSummary | undefined>;
+  createInternalLocationMobileReleaseBuildJob(
+    locationId: string,
+    input: MobileReleaseBuildJobCreate
+  ): Promise<MobileReleaseBuildJob | undefined>;
+  listInternalLocationMobileReleaseBuildJobs(locationId: string): Promise<MobileReleaseBuildJobListResponse>;
   replaceInternalLocationMenu(locationId: string, input: MenuResponse): Promise<MenuResponse>;
   getInternalLocationPaymentProfile(locationId: string): Promise<ClientPaymentProfile | undefined>;
   updateInternalLocationPaymentProfile(
@@ -1023,6 +1034,7 @@ function createInMemoryRepository(): CatalogRepository {
   const clientLocationsByLocation = new Map<string, ClientLocationRecord>();
   const onboardingProgressByLocation = new Map<string, OnboardingProgressRecord>();
   const mobileReleaseProfilesByLocation = new Map<string, MobileReleaseProfile>();
+  const mobileReleaseBuildJobsByLocation = new Map<string, MobileReleaseBuildJob[]>();
   const appIdentityProfilesByLocation = new Map<string, AppIdentityProfile>();
   const mobileExperienceDraftsByLocation = new Map<string, MobileExperienceDocument>();
   const mobileExperienceVersionsByLocation = new Map<string, MobileExperienceDocument[]>();
@@ -1510,6 +1522,49 @@ function createInMemoryRepository(): CatalogRepository {
       });
       mobileReleaseProfilesByLocation.set(locationId, next);
       return buildMemoryOnboarding(locationId);
+    },
+    async createInternalLocationMobileReleaseBuildJob(locationId, rawInput) {
+      const input = mobileReleaseBuildJobCreateSchema.parse(rawInput);
+      const existingRelease = mobileReleaseProfilesByLocation.get(locationId);
+      const location = clientLocationsByLocation.get(locationId);
+      if (!existingRelease || !location) {
+        return undefined;
+      }
+      const now = new Date().toISOString();
+      const job = mobileReleaseBuildJobSchema.parse({
+        jobId: randomUUID(),
+        locationId,
+        status: "queued",
+        profile: input.profile,
+        buildProfile: input.buildProfile,
+        sourceCommitSha: input.sourceCommitSha,
+        configHash: input.configHash,
+        appStoreReviewNotes: input.appStoreReviewNotes,
+        requestedBy: input.requestedBy,
+        createdAt: now,
+        updatedAt: now
+      });
+      const jobs = mobileReleaseBuildJobsByLocation.get(locationId) ?? [];
+      mobileReleaseBuildJobsByLocation.set(locationId, [job, ...jobs]);
+      mobileReleaseProfilesByLocation.set(
+        locationId,
+        mobileReleaseProfileSchema.parse({
+          ...existingRelease,
+          status: "build_configuring",
+          statusLabel: "Build job queued",
+          buildProfile: input.buildProfile,
+          sourceCommitSha: input.sourceCommitSha,
+          configHash: input.configHash,
+          appStoreReviewNotes: input.appStoreReviewNotes ?? existingRelease.appStoreReviewNotes,
+          updatedAt: now
+        })
+      );
+      return job;
+    },
+    async listInternalLocationMobileReleaseBuildJobs(locationId) {
+      return mobileReleaseBuildJobListResponseSchema.parse({
+        jobs: mobileReleaseBuildJobsByLocation.get(locationId) ?? []
+      });
     },
     async getInternalLocationPaymentProfile(locationId) {
       return paymentProfilesByLocation.get(locationId);
@@ -2203,6 +2258,44 @@ function toMobileReleaseProfile(row: {
     blockedReason: row.blocked_reason ?? undefined,
     notes: row.notes ?? undefined,
     updatedAt: serializeCatalogTimestamp(row.updated_at)
+  });
+}
+
+function toMobileReleaseBuildJob(row: {
+  job_id: string;
+  location_id: string;
+  status: MobileReleaseBuildJob["status"];
+  profile: MobileReleaseBuildJob["profile"];
+  build_profile: string;
+  source_commit_sha: string;
+  config_hash: string;
+  app_store_review_notes: string | null;
+  requested_by: string | null;
+  eas_build_id: string | null;
+  eas_submission_id: string | null;
+  error_message: string | null;
+  created_at: CatalogTimestamp;
+  updated_at: CatalogTimestamp;
+  started_at: CatalogTimestamp;
+  finished_at: CatalogTimestamp;
+}): MobileReleaseBuildJob {
+  return mobileReleaseBuildJobSchema.parse({
+    jobId: row.job_id,
+    locationId: row.location_id,
+    status: row.status,
+    profile: row.profile,
+    buildProfile: row.build_profile,
+    sourceCommitSha: row.source_commit_sha,
+    configHash: row.config_hash,
+    appStoreReviewNotes: row.app_store_review_notes ?? undefined,
+    requestedBy: row.requested_by ?? undefined,
+    easBuildId: row.eas_build_id ?? undefined,
+    easSubmissionId: row.eas_submission_id ?? undefined,
+    errorMessage: row.error_message ?? undefined,
+    createdAt: serializeCatalogTimestamp(row.created_at),
+    updatedAt: serializeCatalogTimestamp(row.updated_at),
+    startedAt: serializeCatalogTimestamp(row.started_at),
+    finishedAt: serializeCatalogTimestamp(row.finished_at)
   });
 }
 
@@ -3173,6 +3266,64 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         .where("location_id", "=", locationId)
         .execute();
       return buildPostgresOnboarding(locationId);
+    },
+    async createInternalLocationMobileReleaseBuildJob(locationId, rawInput) {
+      const input = mobileReleaseBuildJobCreateSchema.parse(rawInput);
+      const existing = await db
+        .selectFrom("catalog_mobile_release_profiles")
+        .selectAll()
+        .where("location_id", "=", locationId)
+        .executeTakeFirst();
+      if (!existing) {
+        return undefined;
+      }
+      const now = new Date().toISOString();
+      const jobId = randomUUID();
+      const row = await db
+        .insertInto("catalog_mobile_release_build_jobs")
+        .values({
+          job_id: jobId,
+          location_id: locationId,
+          tenant_id: existing.tenant_id,
+          status: "queued",
+          profile: input.profile,
+          build_profile: input.buildProfile,
+          source_commit_sha: input.sourceCommitSha,
+          config_hash: input.configHash,
+          app_store_review_notes: input.appStoreReviewNotes ?? null,
+          requested_by: input.requestedBy ?? null,
+          request_json: input,
+          created_at: now,
+          updated_at: now
+        })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      await db
+        .updateTable("catalog_mobile_release_profiles")
+        .set({
+          status: "build_configuring",
+          status_label: "Build job queued",
+          build_profile: input.buildProfile,
+          source_commit_sha: input.sourceCommitSha,
+          config_hash: input.configHash,
+          app_store_review_notes: input.appStoreReviewNotes ?? existing.app_store_review_notes,
+          updated_at: now
+        })
+        .where("location_id", "=", locationId)
+        .execute();
+      return toMobileReleaseBuildJob(row);
+    },
+    async listInternalLocationMobileReleaseBuildJobs(locationId) {
+      const rows = await db
+        .selectFrom("catalog_mobile_release_build_jobs")
+        .selectAll()
+        .where("location_id", "=", locationId)
+        .orderBy("created_at", "desc")
+        .limit(25)
+        .execute();
+      return mobileReleaseBuildJobListResponseSchema.parse({
+        jobs: rows.map(toMobileReleaseBuildJob)
+      });
     },
     async getInternalLocationPaymentProfile(locationId) {
       const row = await db

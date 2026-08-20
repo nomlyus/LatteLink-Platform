@@ -28,6 +28,9 @@ import {
   isPlatformManagedMenu,
   launchApprovalRequestSchema,
   menuResponseSchema,
+  mobileReleaseBuildJobCreateSchema,
+  mobileReleaseBuildJobListResponseSchema,
+  mobileReleaseBuildJobSchema,
   mobileReleaseProfileUpdateSchema,
   onboardingSummarySchema,
   operatorOnboardingUpdateSchema,
@@ -658,6 +661,31 @@ describe("contracts-catalog", () => {
     expect(launchApproval.approved).toBe(true);
     expect(launchApproval.live).toBe(true);
     expect(mobileReleaseUpdate.status).toBe("submitted_for_review");
+  });
+
+  it("validates mobile release build jobs", () => {
+    const create = mobileReleaseBuildJobCreateSchema.parse({
+      buildProfile: "ios-com-lattelink-rawaq-beta",
+      sourceCommitSha: "0123456789abcdef0123456789abcdef01234567",
+      configHash: "abc123456789",
+      requestedBy: "admin-console"
+    });
+
+    const job = mobileReleaseBuildJobSchema.parse({
+      jobId: "123e4567-e89b-12d3-a456-426614174321",
+      locationId: "rawaqcoffee01",
+      status: "queued",
+      profile: create.profile,
+      buildProfile: create.buildProfile,
+      sourceCommitSha: create.sourceCommitSha,
+      configHash: create.configHash,
+      requestedBy: create.requestedBy,
+      createdAt: "2026-05-06T12:00:00.000Z",
+      updatedAt: "2026-05-06T12:00:00.000Z"
+    });
+
+    expect(create.profile).toBe("beta");
+    expect(mobileReleaseBuildJobListResponseSchema.parse({ jobs: [job] }).jobs[0]?.status).toBe("queued");
   });
 
   it("validates payment profile payloads", () => {

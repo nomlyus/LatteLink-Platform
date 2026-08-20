@@ -17,6 +17,9 @@ import type {
   InternalAppIdentityProfileUpdate,
   LaunchApprovalRequest,
   LaunchReadinessResponse,
+  MobileReleaseBuildJob,
+  MobileReleaseBuildJobCreate,
+  MobileReleaseBuildJobListResponse,
   MobileReleaseProfileUpdate,
   OnboardingSummary,
   StripeConnectLinkResponse,
@@ -184,6 +187,22 @@ export async function getInternalLocationOnboarding(locationId: string) {
 export async function updateInternalLocationMobileRelease(locationId: string, input: MobileReleaseProfileUpdate) {
   return requestInternalApi<OnboardingSummary>(`/v1/internal/locations/${locationId}/mobile-release`, {
     method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function listInternalLocationMobileReleaseBuildJobs(locationId: string) {
+  return requestInternalApi<MobileReleaseBuildJobListResponse>(
+    `/v1/internal/locations/${locationId}/mobile-release/build-jobs`
+  );
+}
+
+export async function createInternalLocationMobileReleaseBuildJob(
+  locationId: string,
+  input: MobileReleaseBuildJobCreate
+) {
+  return requestInternalApi<MobileReleaseBuildJob>(`/v1/internal/locations/${locationId}/mobile-release/build-jobs`, {
+    method: "POST",
     body: JSON.stringify(input)
   });
 }

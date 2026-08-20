@@ -757,6 +757,41 @@ export const mobileReleaseProfileSchema = z.object({
   updatedAt: z.string().datetime().optional()
 });
 
+export const mobileReleaseBuildJobStatusSchema = z.enum(["queued", "running", "succeeded", "failed", "canceled"]);
+export const mobileReleaseBuildTargetProfileSchema = z.enum(["beta", "production"]);
+
+export const mobileReleaseBuildJobSchema = z.object({
+  jobId: z.string().uuid(),
+  locationId: z.string().trim().min(1),
+  status: mobileReleaseBuildJobStatusSchema,
+  profile: mobileReleaseBuildTargetProfileSchema,
+  buildProfile: z.string().trim().min(1),
+  sourceCommitSha: z.string().trim().regex(/^[a-f0-9]{40}$/i),
+  configHash: z.string().trim().min(8),
+  appStoreReviewNotes: z.string().trim().min(1).optional(),
+  requestedBy: z.string().trim().min(1).optional(),
+  easBuildId: z.string().trim().min(1).optional(),
+  easSubmissionId: z.string().trim().min(1).optional(),
+  errorMessage: z.string().trim().min(1).optional(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  startedAt: z.string().datetime().optional(),
+  finishedAt: z.string().datetime().optional()
+});
+
+export const mobileReleaseBuildJobCreateSchema = z.object({
+  profile: mobileReleaseBuildTargetProfileSchema.default("beta"),
+  buildProfile: z.string().trim().min(1),
+  sourceCommitSha: z.string().trim().regex(/^[a-f0-9]{40}$/i),
+  configHash: z.string().trim().min(8),
+  appStoreReviewNotes: z.string().trim().min(1).optional(),
+  requestedBy: z.string().trim().min(1).optional()
+});
+
+export const mobileReleaseBuildJobListResponseSchema = z.object({
+  jobs: z.array(mobileReleaseBuildJobSchema)
+});
+
 export const appIdentityAssetModeSchema = z.enum(["placeholder", "provided"]);
 
 export const appIdentityReadinessSchema = z.object({
@@ -1198,6 +1233,11 @@ export type OnboardingChecklistItem = z.output<typeof onboardingChecklistItemSch
 export type MobileReleaseStatus = z.output<typeof mobileReleaseStatusSchema>;
 export type MobileReleaseProfile = z.output<typeof mobileReleaseProfileSchema>;
 export type MobileReleaseProfileUpdate = z.output<typeof mobileReleaseProfileUpdateSchema>;
+export type MobileReleaseBuildJobStatus = z.output<typeof mobileReleaseBuildJobStatusSchema>;
+export type MobileReleaseBuildTargetProfile = z.output<typeof mobileReleaseBuildTargetProfileSchema>;
+export type MobileReleaseBuildJob = z.output<typeof mobileReleaseBuildJobSchema>;
+export type MobileReleaseBuildJobCreate = z.output<typeof mobileReleaseBuildJobCreateSchema>;
+export type MobileReleaseBuildJobListResponse = z.output<typeof mobileReleaseBuildJobListResponseSchema>;
 export type AppIdentityAssetMode = z.output<typeof appIdentityAssetModeSchema>;
 export type AppIdentityReadiness = z.output<typeof appIdentityReadinessSchema>;
 export type AppIdentityProfile = z.output<typeof appIdentityProfileSchema>;

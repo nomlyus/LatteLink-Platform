@@ -80,6 +80,9 @@ import {
   mobileExperienceRollbackRequestSchema,
   mobileExperienceSaveDraftRequestSchema,
   mobileExperienceVersionsResponseSchema,
+  mobileReleaseBuildJobCreateSchema,
+  mobileReleaseBuildJobListResponseSchema,
+  mobileReleaseBuildJobSchema,
   mobileReleaseProfileUpdateSchema,
   onboardingSummarySchema,
   operatorAppIdentityProfileUpdateSchema,
@@ -5431,6 +5434,58 @@ export async function registerRoutes(app: FastifyInstance) {
         },
         forwardUserIdHeader: false,
         responseSchema: onboardingSummarySchema
+      });
+    }
+  );
+
+  app.get(
+    "/v1/internal/locations/:locationId/mobile-release/build-jobs",
+    {
+      preHandler: [app.rateLimit(authReadRateLimit), requireInternalAdminCapability("clients:read")]
+    },
+    async (request, reply) => {
+      const { locationId } = internalLocationParamsSchema.parse(request.params);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "GET",
+        path: `/v1/catalog/internal/locations/${locationId}/mobile-release/build-jobs`,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken,
+          ...internalAdminActorHeader(request)
+        },
+        forwardUserIdHeader: false,
+        responseSchema: mobileReleaseBuildJobListResponseSchema
+      });
+    }
+  );
+
+  app.post(
+    "/v1/internal/locations/:locationId/mobile-release/build-jobs",
+    {
+      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+    },
+    async (request, reply) => {
+      const { locationId } = internalLocationParamsSchema.parse(request.params);
+      const input = mobileReleaseBuildJobCreateSchema.parse(request.body);
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "POST",
+        path: `/v1/catalog/internal/locations/${locationId}/mobile-release/build-jobs`,
+        body: input,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken,
+          ...internalAdminActorHeader(request)
+        },
+        forwardUserIdHeader: false,
+        responseSchema: mobileReleaseBuildJobSchema
       });
     }
   );
