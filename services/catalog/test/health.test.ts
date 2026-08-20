@@ -1580,6 +1580,67 @@ describe("catalog service", () => {
       configHash: "abc123456789"
     });
 
+    const claimResponse = await app.inject({
+      method: "POST",
+      url: "/v1/catalog/internal/mobile-release/build-jobs/claim",
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {}
+    });
+    expect(claimResponse.statusCode, claimResponse.body).toBe(200);
+    expect(claimResponse.json()).toMatchObject({
+      job: {
+        jobId: mobileBuildJobResponse.json().jobId,
+        status: "running",
+        startedAt: expect.any(String)
+      }
+    });
+
+    const updateResponse = await app.inject({
+      method: "PATCH",
+      url: `/v1/catalog/internal/mobile-release/build-jobs/${mobileBuildJobResponse.json().jobId}`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        status: "succeeded",
+        easBuildId: "eas-build-123",
+        easSubmissionId: "eas-submission-123"
+      }
+    });
+    expect(updateResponse.statusCode, updateResponse.body).toBe(200);
+    expect(updateResponse.json()).toMatchObject({
+      status: "succeeded",
+      easBuildId: "eas-build-123",
+      easSubmissionId: "eas-submission-123",
+      finishedAt: expect.any(String)
+    });
+
+    const completedOnboardingResponse = await app.inject({
+      method: "GET",
+      url: `/v1/catalog/internal/locations/${created.locationId}/onboarding`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      }
+    });
+    expect(completedOnboardingResponse.statusCode).toBe(200);
+    expect(onboardingSummarySchema.parse(completedOnboardingResponse.json()).mobileRelease).toMatchObject({
+      status: "build_ready",
+      statusLabel: "Build ready"
+    });
+
+    const noQueuedJobResponse = await app.inject({
+      method: "POST",
+      url: "/v1/catalog/internal/mobile-release/build-jobs/claim",
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {}
+    });
+    expect(noQueuedJobResponse.statusCode, noQueuedJobResponse.body).toBe(200);
+    expect(noQueuedJobResponse.json()).toEqual({});
+
     await app.close();
   });
 

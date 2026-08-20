@@ -58,6 +58,8 @@ jobs:
             service_package: "@lattelink/notifications-dispatch-worker"
           - service_name: workers/payment-reconciler
             service_package: "@lattelink/payment-reconciler-worker"
+          - service_name: workers/mobile-release
+            service_package: "@lattelink/mobile-release-worker"
     steps:
       - uses: actions/checkout@v5
 

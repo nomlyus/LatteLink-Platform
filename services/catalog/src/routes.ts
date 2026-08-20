@@ -30,8 +30,10 @@ import {
   mobileExperienceSaveDraftRequestSchema,
   mobileExperienceVersionsResponseSchema,
   mobileReleaseBuildJobCreateSchema,
+  mobileReleaseBuildJobClaimResponseSchema,
   mobileReleaseBuildJobListResponseSchema,
   mobileReleaseBuildJobSchema,
+  mobileReleaseBuildJobUpdateSchema,
   mobileReleaseProfileUpdateSchema,
   onboardingSummarySchema,
   operatorAppIdentityProfileUpdateSchema,
@@ -69,6 +71,9 @@ const cardParamsSchema = z.object({
 });
 const tenantParamsSchema = z.object({
   tenantId: z.string().min(1)
+});
+const mobileReleaseBuildJobParamsSchema = z.object({
+  jobId: z.string().uuid()
 });
 const adminMenuItemUpdateWithCustomizationsSchema = adminMenuItemUpdateSchema.extend({
   customizationGroups: z.array(z.unknown()).optional()
@@ -810,6 +815,20 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   );
 
+  app.get(
+    "/v1/catalog/admin/mobile-release/build-jobs",
+    {
+      preHandler: [app.rateLimit(gatewayReadRateLimit), requireGatewayAccess]
+    },
+    async (request, reply) => {
+      const locationId = getOperatorLocationId(request, reply);
+      if (!locationId) return reply;
+      return mobileReleaseBuildJobListResponseSchema.parse(
+        await repository.listInternalLocationMobileReleaseBuildJobs(locationId)
+      );
+    }
+  );
+
   app.put(
     "/v1/catalog/admin/mobile-experience/draft",
     {
@@ -1222,6 +1241,40 @@ export async function registerRoutes(app: FastifyInstance) {
         );
       }
 
+      return mobileReleaseBuildJobSchema.parse(job);
+    }
+  );
+
+  app.post(
+    "/v1/catalog/internal/mobile-release/build-jobs/claim",
+    {
+      preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess]
+    },
+    async () =>
+      mobileReleaseBuildJobClaimResponseSchema.parse({
+        job: await repository.claimNextMobileReleaseBuildJob()
+      })
+  );
+
+  app.patch(
+    "/v1/catalog/internal/mobile-release/build-jobs/:jobId",
+    {
+      preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess]
+    },
+    async (request, reply) => {
+      const { jobId } = mobileReleaseBuildJobParamsSchema.parse(request.params);
+      const input = mobileReleaseBuildJobUpdateSchema.parse(request.body);
+      const job = await repository.updateMobileReleaseBuildJob(jobId, input);
+      if (!job) {
+        return reply.status(404).send(
+          serviceErrorSchema.parse({
+            code: "MOBILE_RELEASE_BUILD_JOB_NOT_FOUND",
+            message: "Mobile release build job not found",
+            requestId: request.id,
+            details: { jobId }
+          })
+        );
+      }
       return mobileReleaseBuildJobSchema.parse(job);
     }
   );

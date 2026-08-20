@@ -3,6 +3,7 @@ import type {
   AppConfig,
   MobileExperienceDraftResponse,
   MobileExperienceVersionsResponse,
+  MobileReleaseBuildJobListResponse,
   MenuItemCustomizationGroup
 } from "@lattelink/contracts-catalog";
 import type {
@@ -66,6 +67,7 @@ export type AppState = {
   storeConfig: AdminStoreConfig | null;
   mobileExperience: MobileExperienceDraftResponse | null;
   mobileExperienceVersions: MobileExperienceVersionsResponse;
+  mobileReleaseBuildJobs: MobileReleaseBuildJobListResponse;
   teamUsers: OperatorUser[];
   selectedOrderId: string | null;
   busyOrderId: string | null;
@@ -159,6 +161,7 @@ export const state: AppState = {
   storeConfig: null,
   mobileExperience: null,
   mobileExperienceVersions: { locationId: initialSelectedLocationId === "all" ? "" : initialSelectedLocationId ?? "", versions: [] },
+  mobileReleaseBuildJobs: { jobs: [] },
   teamUsers: [],
   selectedOrderId: null,
   busyOrderId: null,
@@ -255,6 +258,7 @@ export function resetDashboardData() {
   state.storeConfig = null;
   state.mobileExperience = null;
   state.mobileExperienceVersions = { locationId: "", versions: [] };
+  state.mobileReleaseBuildJobs = { jobs: [] };
   state.teamUsers = [];
   state.onboardingSummary = null;
   state.launchEntryIntent = false;

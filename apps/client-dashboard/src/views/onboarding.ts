@@ -242,6 +242,41 @@ function renderLaunchStatusCard() {
   `;
 }
 
+function renderBuildJobsCard() {
+  const jobs = state.mobileReleaseBuildJobs.jobs.slice(0, 3);
+  if (jobs.length === 0) {
+    return "";
+  }
+
+  return `
+    <article class="dash-surface onboarding-build-jobs-card">
+      <div class="dash-surface-head">
+        <div>
+          <div class="dash-panel-title">Release activity</div>
+          <h3 class="dash-surface-title">Build progress</h3>
+        </div>
+        <span class="dash-status-badge dash-status-badge--neutral">${jobs.some((job) => job.status === "running" || job.status === "queued") ? "In progress" : "Recent"}</span>
+      </div>
+      <div class="onboarding-build-jobs-list">
+        ${jobs
+          .map(
+            (job) => `
+              <div class="onboarding-build-job-row">
+                <div>
+                  <strong>${escapeHtml(job.profile === "production" ? "Production" : "Beta")} build</strong>
+                  <small>${escapeHtml(job.status)} · ${escapeHtml(job.sourceCommitSha.slice(0, 12))}</small>
+                </div>
+                <span class="dash-status-badge dash-status-badge--neutral">${escapeHtml(job.status)}</span>
+              </div>
+              ${job.errorMessage ? `<p class="muted-copy onboarding-build-job-error">${escapeHtml(job.errorMessage)}</p>` : ""}
+            `
+          )
+          .join("")}
+      </div>
+    </article>
+  `;
+}
+
 function renderIntegrationsCard() {
   return `
     <article class="dash-surface onboarding-integrations-card">
@@ -544,6 +579,7 @@ export function renderOnboardingSection() {
         description: "Nomly manages release updates from here."
       })}
       ${renderLaunchStatusCard()}
+      ${renderBuildJobsCard()}
       ${renderIntegrationsCard()}
     `;
   }
@@ -551,6 +587,7 @@ export function renderOnboardingSection() {
   return `
     ${renderLaunchSetupCard()}
     ${renderLaunchStatusCard()}
+    ${renderBuildJobsCard()}
     ${renderIntegrationsCard()}
   `;
 }

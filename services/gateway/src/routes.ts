@@ -4473,6 +4473,33 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   );
 
+  app.get(
+    "/v1/admin/mobile-release/build-jobs",
+    {
+      preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("store:read")]
+    },
+    async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "GET",
+        path: "/v1/catalog/admin/mobile-release/build-jobs",
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken,
+          ...operatorLocationHeader(locationContext.locationId)
+        },
+        responseSchema: mobileReleaseBuildJobListResponseSchema
+      });
+    }
+  );
+
   app.put(
     "/v1/admin/mobile-experience/draft",
     {

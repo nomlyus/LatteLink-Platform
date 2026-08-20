@@ -27,6 +27,7 @@ import {
   mobileExperienceRollbackRequestSchema,
   mobileExperienceSaveDraftRequestSchema,
   mobileExperienceVersionsResponseSchema,
+  mobileReleaseBuildJobListResponseSchema,
   merchantLaunchRequestSchema,
   merchantLaunchResponseSchema,
   onboardingSummarySchema,
@@ -89,6 +90,7 @@ export type OperatorDashboardSnapshot = {
   storeConfig: z.output<typeof adminStoreConfigSchema> | null;
   mobileExperience: z.output<typeof mobileExperienceDraftResponseSchema> | null;
   mobileExperienceVersions: z.output<typeof mobileExperienceVersionsResponseSchema>;
+  mobileReleaseBuildJobs: z.output<typeof mobileReleaseBuildJobListResponseSchema>;
   team: OperatorUser[];
 };
 
@@ -562,6 +564,7 @@ export async function fetchOperatorSnapshot(
     storeConfig,
     mobileExperience,
     mobileExperienceVersions,
+    mobileReleaseBuildJobs,
     teamResponse
   ] = await Promise.all([
     locationId
@@ -649,6 +652,17 @@ export async function fetchOperatorSnapshot(
           })
         : Promise.resolve(mobileExperienceVersionsResponseSchema.parse({ locationId: fallbackLocationId, versions: [] }))
       : Promise.resolve(mobileExperienceVersionsResponseSchema.parse({ locationId: fallbackLocationId, versions: [] })),
+    capabilitySet.has("store:read")
+      ? locationId
+        ? requestJson({
+            apiBaseUrl: session.apiBaseUrl,
+            accessToken: session.accessToken,
+            path: "/admin/mobile-release/build-jobs",
+            query,
+            schema: mobileReleaseBuildJobListResponseSchema
+          })
+        : Promise.resolve(mobileReleaseBuildJobListResponseSchema.parse({ jobs: [] }))
+      : Promise.resolve(mobileReleaseBuildJobListResponseSchema.parse({ jobs: [] })),
     capabilitySet.has("team:read")
       ? locationId
         ? requestJson({
@@ -673,6 +687,7 @@ export async function fetchOperatorSnapshot(
     storeConfig,
     mobileExperience,
     mobileExperienceVersions,
+    mobileReleaseBuildJobs,
     team: teamResponse.users
   };
 }

@@ -2872,6 +2872,41 @@ label.field > span {
   font-size: 13px;
 }
 
+.onboarding-build-jobs-card {
+  display: block;
+}
+
+.onboarding-build-jobs-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.onboarding-build-job-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border);
+}
+
+.onboarding-build-job-row strong,
+.onboarding-build-job-row small {
+  display: block;
+}
+
+.onboarding-build-job-row small {
+  margin-top: 2px;
+  color: var(--color-text-3);
+  font-size: 12px;
+}
+
+.onboarding-build-job-error {
+  margin: -4px 0 0;
+  color: var(--color-danger);
+}
+
 .onboarding-wizard-panel {
   min-height: 220px;
   justify-content: center;

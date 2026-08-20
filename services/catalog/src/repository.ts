@@ -23,6 +23,7 @@ import {
   mobileReleaseBuildJobCreateSchema,
   mobileReleaseBuildJobListResponseSchema,
   mobileReleaseBuildJobSchema,
+  mobileReleaseBuildJobUpdateSchema,
   mobileReleaseProfileSchema,
   mobileReleaseProfileUpdateSchema,
   onboardingSummarySchema,
@@ -56,6 +57,7 @@ import {
   type MobileReleaseBuildJob,
   type MobileReleaseBuildJobCreate,
   type MobileReleaseBuildJobListResponse,
+  type MobileReleaseBuildJobUpdate,
   type MobileReleaseProfile,
   type MobileReleaseProfileUpdate,
   type OnboardingStatus,
@@ -278,6 +280,20 @@ export function serializeCatalogTimestamp(value: CatalogTimestamp) {
   return value instanceof Date ? value.toISOString() : value;
 }
 
+function mobileReleaseBuildStatusUpdate(status: MobileReleaseBuildJob["status"], errorMessage?: string) {
+  if (status === "succeeded") {
+    return { status: "build_ready" as const, statusLabel: "Build ready", blockedReason: undefined };
+  }
+  if (status === "failed" || status === "canceled") {
+    return {
+      status: "blocked" as const,
+      statusLabel: status === "failed" ? "Build failed" : "Build canceled",
+      blockedReason: errorMessage ?? `Mobile release build ${status}`
+    };
+  }
+  return { status: "build_configuring" as const, statusLabel: "Build in progress", blockedReason: undefined };
+}
+
 function generateInternalId(prefix: "brd" | "loc" | "ten") {
   return `${prefix}_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
 }
@@ -385,6 +401,8 @@ type CatalogRepository = {
     input: MobileReleaseBuildJobCreate
   ): Promise<MobileReleaseBuildJob | undefined>;
   listInternalLocationMobileReleaseBuildJobs(locationId: string): Promise<MobileReleaseBuildJobListResponse>;
+  claimNextMobileReleaseBuildJob(): Promise<MobileReleaseBuildJob | undefined>;
+  updateMobileReleaseBuildJob(jobId: string, input: MobileReleaseBuildJobUpdate): Promise<MobileReleaseBuildJob | undefined>;
   replaceInternalLocationMenu(locationId: string, input: MenuResponse): Promise<MenuResponse>;
   getInternalLocationPaymentProfile(locationId: string): Promise<ClientPaymentProfile | undefined>;
   updateInternalLocationPaymentProfile(
@@ -1565,6 +1583,68 @@ function createInMemoryRepository(): CatalogRepository {
       return mobileReleaseBuildJobListResponseSchema.parse({
         jobs: mobileReleaseBuildJobsByLocation.get(locationId) ?? []
       });
+    },
+    async claimNextMobileReleaseBuildJob() {
+      for (const jobs of mobileReleaseBuildJobsByLocation.values()) {
+        const queuedJob = jobs.find((job) => job.status === "queued");
+        if (!queuedJob) {
+          continue;
+        }
+
+        const now = new Date().toISOString();
+        const runningJob = mobileReleaseBuildJobSchema.parse({
+          ...queuedJob,
+          status: "running",
+          startedAt: now,
+          updatedAt: now
+        });
+        const nextJobs = jobs.map((job) => (job.jobId === runningJob.jobId ? runningJob : job));
+        mobileReleaseBuildJobsByLocation.set(runningJob.locationId, nextJobs);
+        return runningJob;
+      }
+
+      return undefined;
+    },
+    async updateMobileReleaseBuildJob(jobId, rawInput) {
+      const input = mobileReleaseBuildJobUpdateSchema.parse(rawInput);
+      for (const [locationId, jobs] of mobileReleaseBuildJobsByLocation.entries()) {
+        const current = jobs.find((job) => job.jobId === jobId);
+        if (!current) {
+          continue;
+        }
+
+        const now = new Date().toISOString();
+        const terminal = input.status === "succeeded" || input.status === "failed" || input.status === "canceled";
+        const updated = mobileReleaseBuildJobSchema.parse({
+          ...current,
+          status: input.status,
+          easBuildId: input.easBuildId ?? current.easBuildId,
+          easSubmissionId: input.easSubmissionId ?? current.easSubmissionId,
+          errorMessage: input.errorMessage,
+          updatedAt: now,
+          ...(terminal ? { finishedAt: now } : {})
+        });
+        mobileReleaseBuildJobsByLocation.set(
+          locationId,
+          jobs.map((job) => (job.jobId === jobId ? updated : job))
+        );
+        const existingRelease = mobileReleaseProfilesByLocation.get(locationId);
+        if (existingRelease) {
+          const releaseUpdate = mobileReleaseBuildStatusUpdate(input.status, input.errorMessage);
+          mobileReleaseProfilesByLocation.set(
+            locationId,
+            mobileReleaseProfileSchema.parse({
+              ...existingRelease,
+              ...releaseUpdate,
+              locationId,
+              updatedAt: now
+            })
+          );
+        }
+        return updated;
+      }
+
+      return undefined;
     },
     async getInternalLocationPaymentProfile(locationId) {
       return paymentProfilesByLocation.get(locationId);
@@ -3324,6 +3404,77 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
       return mobileReleaseBuildJobListResponseSchema.parse({
         jobs: rows.map(toMobileReleaseBuildJob)
       });
+    },
+    async claimNextMobileReleaseBuildJob() {
+      const now = new Date().toISOString();
+      const row = await db.transaction().execute(async (transaction) => {
+        const candidate = await transaction
+          .selectFrom("catalog_mobile_release_build_jobs")
+          .selectAll()
+          .where("status", "=", "queued")
+          .orderBy("created_at", "asc")
+          .limit(1)
+          .forUpdate()
+          .skipLocked()
+          .executeTakeFirst();
+
+        if (!candidate) {
+          return undefined;
+        }
+
+        return transaction
+          .updateTable("catalog_mobile_release_build_jobs")
+          .set({
+            status: "running",
+            started_at: now,
+            updated_at: now
+          })
+          .where("job_id", "=", candidate.job_id)
+          .where("status", "=", "queued")
+          .returningAll()
+          .executeTakeFirst();
+      });
+
+      return row ? toMobileReleaseBuildJob(row) : undefined;
+    },
+    async updateMobileReleaseBuildJob(jobId, rawInput) {
+      const input = mobileReleaseBuildJobUpdateSchema.parse(rawInput);
+      const now = new Date().toISOString();
+      const terminal = input.status === "succeeded" || input.status === "failed" || input.status === "canceled";
+      const existing = await db
+        .selectFrom("catalog_mobile_release_build_jobs")
+        .select(["eas_build_id", "eas_submission_id"])
+        .where("job_id", "=", jobId)
+        .executeTakeFirst();
+      const row = await db
+        .updateTable("catalog_mobile_release_build_jobs")
+        .set({
+          status: input.status,
+          eas_build_id: input.easBuildId ?? existing?.eas_build_id ?? null,
+          eas_submission_id: input.easSubmissionId ?? existing?.eas_submission_id ?? null,
+          error_message: input.errorMessage ?? null,
+          updated_at: now,
+          ...(terminal ? { finished_at: now } : {})
+        })
+        .where("job_id", "=", jobId)
+        .returningAll()
+        .executeTakeFirst();
+
+      if (row) {
+        const releaseUpdate = mobileReleaseBuildStatusUpdate(input.status, input.errorMessage);
+        await db
+          .updateTable("catalog_mobile_release_profiles")
+          .set({
+            status: releaseUpdate.status,
+            status_label: releaseUpdate.statusLabel,
+            blocked_reason: releaseUpdate.blockedReason ?? null,
+            updated_at: now
+          })
+          .where("location_id", "=", row.location_id)
+          .execute();
+      }
+
+      return row ? toMobileReleaseBuildJob(row) : undefined;
     },
     async getInternalLocationPaymentProfile(locationId) {
       const row = await db

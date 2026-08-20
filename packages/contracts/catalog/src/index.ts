@@ -792,6 +792,19 @@ export const mobileReleaseBuildJobListResponseSchema = z.object({
   jobs: z.array(mobileReleaseBuildJobSchema)
 });
 
+export const mobileReleaseBuildJobUpdateSchema = z
+  .object({
+    status: mobileReleaseBuildJobStatusSchema,
+    easBuildId: z.string().trim().min(1).optional(),
+    easSubmissionId: z.string().trim().min(1).optional(),
+    errorMessage: z.string().trim().min(1).optional()
+  })
+  .strict();
+
+export const mobileReleaseBuildJobClaimResponseSchema = z.object({
+  job: mobileReleaseBuildJobSchema.optional()
+});
+
 export const appIdentityAssetModeSchema = z.enum(["placeholder", "provided"]);
 
 export const appIdentityReadinessSchema = z.object({
@@ -1238,6 +1251,8 @@ export type MobileReleaseBuildTargetProfile = z.output<typeof mobileReleaseBuild
 export type MobileReleaseBuildJob = z.output<typeof mobileReleaseBuildJobSchema>;
 export type MobileReleaseBuildJobCreate = z.output<typeof mobileReleaseBuildJobCreateSchema>;
 export type MobileReleaseBuildJobListResponse = z.output<typeof mobileReleaseBuildJobListResponseSchema>;
+export type MobileReleaseBuildJobUpdate = z.output<typeof mobileReleaseBuildJobUpdateSchema>;
+export type MobileReleaseBuildJobClaimResponse = z.output<typeof mobileReleaseBuildJobClaimResponseSchema>;
 export type AppIdentityAssetMode = z.output<typeof appIdentityAssetModeSchema>;
 export type AppIdentityReadiness = z.output<typeof appIdentityReadinessSchema>;
 export type AppIdentityProfile = z.output<typeof appIdentityProfileSchema>;

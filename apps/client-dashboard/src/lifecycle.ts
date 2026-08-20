@@ -231,6 +231,7 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
       state.storeConfig = null;
       state.mobileExperience = null;
       state.mobileExperienceVersions = { locationId: "", versions: [] };
+      state.mobileReleaseBuildJobs = { jobs: [] };
       state.teamUsers = [];
     } else {
       const snapshot = await fetchOperatorSnapshot(session, state.selectedLocationId);
@@ -244,6 +245,7 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
       state.storeConfig = snapshot.storeConfig;
       state.mobileExperience = snapshot.mobileExperience;
       state.mobileExperienceVersions = snapshot.mobileExperienceVersions;
+      state.mobileReleaseBuildJobs = snapshot.mobileReleaseBuildJobs;
       state.teamUsers = mergePendingTeamUserUpdates(snapshot.team);
     }
 

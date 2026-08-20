@@ -342,6 +342,29 @@ services:
       payments:
         condition: service_healthy
 
+  worker-mobile-release:
+    image: ${IMAGE_REGISTRY_PREFIX:-ghcr.io/anxiousdaoud/lattelink-platform}/workers/mobile-release:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - DEPLOY_ENV=${DEPLOY_ENV:-unknown}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.1}
+      - CATALOG_SERVICE_BASE_URL=http://catalog:3002
+      - GATEWAY_INTERNAL_API_TOKEN=${GATEWAY_INTERNAL_API_TOKEN:?GATEWAY_INTERNAL_API_TOKEN is required}
+      - MOBILE_RELEASE_RUNNER_ENABLED=${MOBILE_RELEASE_RUNNER_ENABLED:-true}
+      - MOBILE_RELEASE_RUNNER_INTERVAL_MS=${MOBILE_RELEASE_RUNNER_INTERVAL_MS:-10000}
+      - MOBILE_RELEASE_RUNNER_COMMAND=${MOBILE_RELEASE_RUNNER_COMMAND:-}
+      - MOBILE_RELEASE_API_BASE_URL=${MOBILE_RELEASE_API_BASE_URL:-}
+      - MOBILE_RELEASE_APP_VERSION=${MOBILE_RELEASE_APP_VERSION:-1.0.0}
+      - MOBILE_RELEASE_APPLE_PAY_MERCHANT_ID=${MOBILE_RELEASE_APPLE_PAY_MERCHANT_ID:-}
+      - MOBILE_RELEASE_SENTRY_DSN=${MOBILE_RELEASE_SENTRY_DSN:-}
+      - MOBILE_RELEASE_SENTRY_ORG=${MOBILE_RELEASE_SENTRY_ORG:-}
+      - MOBILE_RELEASE_SENTRY_PROJECT=${MOBILE_RELEASE_SENTRY_PROJECT:-}
+    depends_on:
+      catalog:
+        condition: service_healthy
+
   postgres:
     image: postgres:16-alpine
     container_name: lattelink-postgres
