@@ -1520,6 +1520,87 @@ describe("catalog service", () => {
     expect(createResponse.statusCode, createResponse.body).toBe(200);
     const created = adminClientCreateResponseSchema.parse(createResponse.json());
 
+    const appIdentityResponse = await app.inject({
+      method: "PATCH",
+      url: `/v1/catalog/internal/locations/${created.locationId}/app-identity`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        appName: "Build Queue Coffee",
+        displayName: "Build Queue Coffee",
+        bundleIdentifier: "us.nomly.buildqueue",
+        sku: "build-queue-ios",
+        subtitle: "Order ahead",
+        description: "Order ahead from Build Queue Coffee.",
+        keywords: ["coffee", "pickup"],
+        supportUrl: "https://build-queue.example/support",
+        privacyPolicyUrl: "https://build-queue.example/privacy",
+        targetLocationIds: [created.locationId],
+        assetMode: "placeholder"
+      }
+    });
+    expect(appIdentityResponse.statusCode, appIdentityResponse.body).toBe(200);
+
+    const secondClientResponse = await app.inject({
+      method: "POST",
+      url: "/v1/catalog/internal/clients",
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        clientName: "Second Build Queue Coffee",
+        locationName: "Second Build Queue Flagship",
+        marketLabel: "Ann Arbor, MI",
+        ownerEmail: "owner-second-build-queue@example.com",
+        ownerName: "Second Build Queue Owner"
+      }
+    });
+    expect(secondClientResponse.statusCode, secondClientResponse.body).toBe(200);
+    const secondClient = adminClientCreateResponseSchema.parse(secondClientResponse.json());
+
+    const crossTenantIdentityResponse = await app.inject({
+      method: "PATCH",
+      url: `/v1/catalog/internal/locations/${created.locationId}/app-identity`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        appName: "Build Queue Coffee",
+        displayName: "Build Queue Coffee",
+        bundleIdentifier: "us.nomly.buildqueue",
+        sku: "build-queue-ios",
+        subtitle: "Order ahead",
+        description: "Order ahead from Build Queue Coffee.",
+        keywords: ["coffee", "pickup"],
+        supportUrl: "https://build-queue.example/support",
+        privacyPolicyUrl: "https://build-queue.example/privacy",
+        targetLocationIds: [secondClient.locationId],
+        assetMode: "placeholder"
+      }
+    });
+    expect(crossTenantIdentityResponse.statusCode, crossTenantIdentityResponse.body).toBe(422);
+    expect(crossTenantIdentityResponse.json()).toMatchObject({
+      code: "APP_IDENTITY_TARGET_LOCATION_FORBIDDEN"
+    });
+
+    const preparedReleaseResponse = await app.inject({
+      method: "PATCH",
+      url: `/v1/catalog/internal/locations/${created.locationId}/mobile-release`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        status: "build_configuring",
+        statusLabel: "Build configuration prepared",
+        buildProfile: "ios-us-nomly-buildqueue-beta",
+        sourceCommitSha: "0123456789abcdef0123456789abcdef01234567",
+        configHash: "abc123456789",
+        appStoreReviewNotes: "Performance improvements and reliability fixes."
+      }
+    });
+    expect(preparedReleaseResponse.statusCode, preparedReleaseResponse.body).toBe(200);
+
     const mobileBuildJobResponse = await app.inject({
       method: "POST",
       url: `/v1/catalog/internal/locations/${created.locationId}/mobile-release/build-jobs`,
@@ -1545,6 +1626,25 @@ describe("catalog service", () => {
       configHash: "abc123456789",
       approvalRequired: true,
       requestedBy: "admin-console"
+    });
+
+    const duplicateBuildJobResponse = await app.inject({
+      method: "POST",
+      url: `/v1/catalog/internal/locations/${created.locationId}/mobile-release/build-jobs`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        profile: "beta",
+        buildProfile: "ios-us-nomly-buildqueue-beta",
+        sourceCommitSha: "0123456789abcdef0123456789abcdef01234567",
+        configHash: "abc123456789",
+        appStoreReviewNotes: "Performance improvements and reliability fixes."
+      }
+    });
+    expect(duplicateBuildJobResponse.statusCode, duplicateBuildJobResponse.body).toBe(409);
+    expect(duplicateBuildJobResponse.json()).toMatchObject({
+      code: "MOBILE_RELEASE_BUILD_ALREADY_ACTIVE"
     });
 
     const mobileBuildJobsResponse = await app.inject({
@@ -1596,6 +1696,21 @@ describe("catalog service", () => {
         status: "running",
         startedAt: expect.any(String)
       }
+    });
+
+    const invalidTransitionResponse = await app.inject({
+      method: "PATCH",
+      url: `/v1/catalog/internal/mobile-release/build-jobs/${mobileBuildJobResponse.json().jobId}`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        status: "queued"
+      }
+    });
+    expect(invalidTransitionResponse.statusCode, invalidTransitionResponse.body).toBe(409);
+    expect(invalidTransitionResponse.json()).toMatchObject({
+      code: "MOBILE_RELEASE_BUILD_INVALID_TRANSITION"
     });
 
     const updateResponse = await app.inject({
@@ -1663,6 +1778,18 @@ describe("catalog service", () => {
         approvedBy: "admin@example.com"
       }
     });
+
+    const submittingResponse = await app.inject({
+      method: "PATCH",
+      url: `/v1/catalog/internal/mobile-release/build-jobs/${mobileBuildJobResponse.json().jobId}`,
+      headers: {
+        "x-gateway-token": "catalog-gateway-token"
+      },
+      payload: {
+        status: "submitting"
+      }
+    });
+    expect(submittingResponse.statusCode, submittingResponse.body).toBe(200);
 
     const submitResponse = await app.inject({
       method: "PATCH",

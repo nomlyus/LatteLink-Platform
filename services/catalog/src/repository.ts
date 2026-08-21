@@ -302,6 +302,100 @@ function mobileReleaseBuildStatusUpdate(status: MobileReleaseBuildJob["status"],
   return { status: "build_configuring" as const, statusLabel: "Build in progress", blockedReason: undefined };
 }
 
+const activeMobileReleaseBuildJobStatuses = ["queued", "running", "awaiting_approval", "submitting"] as const;
+
+const mobileReleaseBuildJobTransitions: Record<MobileReleaseBuildJob["status"], readonly MobileReleaseBuildJob["status"][]> = {
+  queued: ["queued", "running", "canceled"],
+  running: ["running", "awaiting_approval", "submitting", "failed", "canceled"],
+  awaiting_approval: ["awaiting_approval", "queued", "canceled"],
+  submitting: ["submitting", "succeeded", "failed", "canceled"],
+  succeeded: ["succeeded"],
+  failed: ["failed"],
+  canceled: ["canceled"]
+};
+
+export class MobileReleaseBuildJobError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly statusCode = 409,
+    readonly details?: Record<string, unknown>
+  ) {
+    super(message);
+    this.name = "MobileReleaseBuildJobError";
+  }
+}
+
+function assertMobileReleaseBuildJobTransition(
+  currentStatus: MobileReleaseBuildJob["status"],
+  nextStatus: MobileReleaseBuildJob["status"]
+) {
+  if (!mobileReleaseBuildJobTransitions[currentStatus].includes(nextStatus)) {
+    throw new MobileReleaseBuildJobError(
+      "MOBILE_RELEASE_BUILD_INVALID_TRANSITION",
+      `Cannot move mobile release build from ${currentStatus} to ${nextStatus}.`,
+      409,
+      { currentStatus, nextStatus }
+    );
+  }
+}
+
+function assertPreparedMobileReleaseBuild(
+  input: MobileReleaseBuildJobCreate,
+  release: MobileReleaseProfile,
+  appIdentity: AppIdentityProfile | undefined,
+  activeJob?: MobileReleaseBuildJob
+) {
+  if (!appIdentity?.readiness.ready) {
+    throw new MobileReleaseBuildJobError(
+      "MOBILE_RELEASE_APP_IDENTITY_NOT_READY",
+      "Complete the merchant app identity profile before creating a mobile release build.",
+      422,
+      { missingRequiredFields: appIdentity?.readiness.missingRequiredFields ?? ["app identity profile"] }
+    );
+  }
+
+  const preparedFields = {
+    buildProfile: release.buildProfile,
+    sourceCommitSha: release.sourceCommitSha,
+    configHash: release.configHash
+  };
+  const requestedFields = {
+    buildProfile: input.buildProfile,
+    sourceCommitSha: input.sourceCommitSha,
+    configHash: input.configHash
+  };
+  if (
+    preparedFields.buildProfile !== requestedFields.buildProfile ||
+    preparedFields.sourceCommitSha !== requestedFields.sourceCommitSha ||
+    preparedFields.configHash !== requestedFields.configHash
+  ) {
+    throw new MobileReleaseBuildJobError(
+      "MOBILE_RELEASE_BUILD_CONFIGURATION_MISMATCH",
+      "The requested build does not match the prepared merchant release configuration. Prepare the build again.",
+      409,
+      { prepared: preparedFields, requested: requestedFields }
+    );
+  }
+
+  if (input.appStoreReviewNotes && release.appStoreReviewNotes && input.appStoreReviewNotes !== release.appStoreReviewNotes) {
+    throw new MobileReleaseBuildJobError(
+      "MOBILE_RELEASE_REVIEW_NOTES_MISMATCH",
+      "The requested review notes do not match the prepared merchant release configuration.",
+      409
+    );
+  }
+
+  if (activeJob) {
+    throw new MobileReleaseBuildJobError(
+      "MOBILE_RELEASE_BUILD_ALREADY_ACTIVE",
+      "This merchant already has an active mobile release build. Wait for it to finish before starting another.",
+      409,
+      { jobId: activeJob.jobId, status: activeJob.status }
+    );
+  }
+}
+
 function generateInternalId(prefix: "brd" | "loc" | "ten") {
   return `${prefix}_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
 }
@@ -745,6 +839,25 @@ type ClientLocationRecord = {
   createdAt?: string;
   updatedAt?: string;
 };
+
+function assertTargetLocationsBelongToTenant(
+  locationId: string,
+  tenantId: string,
+  targetLocationIds: string[],
+  resolveTenantId: (targetLocationId: string) => string | undefined
+) {
+  const invalidLocationIds = [...new Set(targetLocationIds)].filter(
+    (targetLocationId) => resolveTenantId(targetLocationId) !== tenantId
+  );
+  if (invalidLocationIds.length > 0) {
+    throw new MobileReleaseBuildJobError(
+      "APP_IDENTITY_TARGET_LOCATION_FORBIDDEN",
+      "An app identity can only target locations belonging to the same merchant.",
+      422,
+      { locationId, invalidLocationIds }
+    );
+  }
+}
 
 type OnboardingProgressRecord = {
   tenantId: string;
@@ -1487,6 +1600,12 @@ function createInMemoryRepository(): CatalogRepository {
         locationId,
         updatedAt: new Date().toISOString()
       });
+      assertTargetLocationsBelongToTenant(
+        locationId,
+        location.tenantId,
+        next.targetLocationIds,
+        (targetLocationId) => clientLocationsByLocation.get(targetLocationId)?.tenantId
+      );
       appIdentityProfilesByLocation.set(locationId, next);
       return buildMemoryOnboarding(locationId);
     },
@@ -1503,6 +1622,12 @@ function createInMemoryRepository(): CatalogRepository {
         locationId,
         updatedAt: new Date().toISOString()
       });
+      assertTargetLocationsBelongToTenant(
+        locationId,
+        location.tenantId,
+        next.targetLocationIds,
+        (targetLocationId) => clientLocationsByLocation.get(targetLocationId)?.tenantId
+      );
       appIdentityProfilesByLocation.set(locationId, next);
       return buildMemoryOnboarding(locationId);
     },
@@ -1557,6 +1682,11 @@ function createInMemoryRepository(): CatalogRepository {
       if (!existingRelease || !location) {
         return undefined;
       }
+      const existingJobs = mobileReleaseBuildJobsByLocation.get(locationId) ?? [];
+      const activeJob = existingJobs.find((job) =>
+        (activeMobileReleaseBuildJobStatuses as readonly string[]).includes(job.status)
+      );
+      assertPreparedMobileReleaseBuild(input, existingRelease, appIdentityProfilesByLocation.get(locationId), activeJob);
       const now = new Date().toISOString();
       const job = mobileReleaseBuildJobSchema.parse({
         jobId: randomUUID(),
@@ -1572,8 +1702,7 @@ function createInMemoryRepository(): CatalogRepository {
         createdAt: now,
         updatedAt: now
       });
-      const jobs = mobileReleaseBuildJobsByLocation.get(locationId) ?? [];
-      mobileReleaseBuildJobsByLocation.set(locationId, [job, ...jobs]);
+      mobileReleaseBuildJobsByLocation.set(locationId, [job, ...existingJobs]);
       mobileReleaseProfilesByLocation.set(
         locationId,
         mobileReleaseProfileSchema.parse({
@@ -1625,6 +1754,7 @@ function createInMemoryRepository(): CatalogRepository {
 
         const now = new Date().toISOString();
         const terminal = input.status === "succeeded" || input.status === "failed" || input.status === "canceled";
+        assertMobileReleaseBuildJobTransition(current.status, input.status);
         const updated = mobileReleaseBuildJobSchema.parse({
           ...current,
           status: input.status,
@@ -3180,6 +3310,18 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         locationId,
         updatedAt: now
       });
+      const targetLocations = await db
+        .selectFrom("catalog_client_locations")
+        .select(["location_id", "tenant_id"])
+        .where("location_id", "in", next.targetLocationIds)
+        .execute();
+      const tenantByLocationId = new Map(targetLocations.map((targetLocation) => [targetLocation.location_id, targetLocation.tenant_id]));
+      assertTargetLocationsBelongToTenant(
+        locationId,
+        location.tenant_id,
+        next.targetLocationIds,
+        (targetLocationId) => tenantByLocationId.get(targetLocationId)
+      );
       await db
         .insertInto("catalog_app_identity_profiles")
         .values({
@@ -3263,6 +3405,18 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         locationId,
         updatedAt: now
       });
+      const targetLocations = await db
+        .selectFrom("catalog_client_locations")
+        .select(["location_id", "tenant_id"])
+        .where("location_id", "in", next.targetLocationIds)
+        .execute();
+      const tenantByLocationId = new Map(targetLocations.map((targetLocation) => [targetLocation.location_id, targetLocation.tenant_id]));
+      assertTargetLocationsBelongToTenant(
+        locationId,
+        location.tenant_id,
+        next.targetLocationIds,
+        (targetLocationId) => tenantByLocationId.get(targetLocationId)
+      );
       await db
         .insertInto("catalog_app_identity_profiles")
         .values({
@@ -3388,6 +3542,20 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
       if (!existing) {
         return undefined;
       }
+      const identityRow = await db
+        .selectFrom("catalog_app_identity_profiles")
+        .selectAll()
+        .where("location_id", "=", locationId)
+        .executeTakeFirst();
+      const activeRow = await db
+        .selectFrom("catalog_mobile_release_build_jobs")
+        .selectAll()
+        .where("location_id", "=", locationId)
+        .where("status", "in", [...activeMobileReleaseBuildJobStatuses])
+        .orderBy("created_at", "desc")
+        .executeTakeFirst();
+      const existingRelease = toMobileReleaseProfile(existing);
+      assertPreparedMobileReleaseBuild(input, existingRelease, identityRow ? toAppIdentityProfile(identityRow) : undefined, activeRow ? toMobileReleaseBuildJob(activeRow) : undefined);
       const now = new Date().toISOString();
       const jobId = randomUUID();
       const row = await db
@@ -3475,22 +3643,27 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
       const terminal = input.status === "succeeded" || input.status === "failed" || input.status === "canceled";
       const existing = await db
         .selectFrom("catalog_mobile_release_build_jobs")
-        .select(["eas_build_id", "eas_submission_id", "approved_at", "approved_by"])
+        .selectAll()
         .where("job_id", "=", jobId)
         .executeTakeFirst();
+      if (!existing) {
+        return undefined;
+      }
+      assertMobileReleaseBuildJobTransition(existing.status as MobileReleaseBuildJob["status"], input.status);
       const row = await db
         .updateTable("catalog_mobile_release_build_jobs")
         .set({
           status: input.status,
-          eas_build_id: input.easBuildId ?? existing?.eas_build_id ?? null,
-          eas_submission_id: input.easSubmissionId ?? existing?.eas_submission_id ?? null,
-          approved_at: input.approvedAt ?? existing?.approved_at ?? null,
-          approved_by: input.approvedBy ?? existing?.approved_by ?? null,
+          eas_build_id: input.easBuildId ?? existing.eas_build_id ?? null,
+          eas_submission_id: input.easSubmissionId ?? existing.eas_submission_id ?? null,
+          approved_at: input.approvedAt ?? existing.approved_at ?? null,
+          approved_by: input.approvedBy ?? existing.approved_by ?? null,
           error_message: input.errorMessage ?? null,
           updated_at: now,
           ...(terminal ? { finished_at: now } : {})
         })
         .where("job_id", "=", jobId)
+        .where("status", "=", existing.status)
         .returningAll()
         .executeTakeFirst();
 

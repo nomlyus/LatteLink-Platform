@@ -47,7 +47,7 @@ import {
 } from "@lattelink/contracts-catalog";
 import { getPersistenceReadinessMetadata } from "@lattelink/persistence";
 import { z } from "zod";
-import { createCatalogRepository } from "./repository.js";
+import { createCatalogRepository, MobileReleaseBuildJobError } from "./repository.js";
 import { resolveDefaultLocationId } from "./tenant.js";
 import {
   createMenuImageUploadService,
@@ -128,6 +128,10 @@ function sendError(
       details: input.details
     })
   );
+}
+
+function isUniqueViolation(error: unknown) {
+  return Boolean(error && typeof error === "object" && "code" in error && (error as { code?: unknown }).code === "23505");
 }
 
 function secretsMatch(expected: string, provided: string) {
@@ -763,7 +767,21 @@ export async function registerRoutes(app: FastifyInstance) {
       const locationId = getOperatorLocationId(request, reply);
       if (!locationId) return reply;
       const input = operatorAppIdentityProfileUpdateSchema.parse(request.body);
-      const onboarding = await repository.updateOperatorLocationAppIdentity(locationId, input);
+      let onboarding: Awaited<ReturnType<typeof repository.updateOperatorLocationAppIdentity>>;
+      try {
+        onboarding = await repository.updateOperatorLocationAppIdentity(locationId, input);
+      } catch (error) {
+        if (error instanceof MobileReleaseBuildJobError) {
+          return sendError(reply, {
+            statusCode: error.statusCode,
+            code: error.code,
+            message: error.message,
+            requestId: request.id,
+            details: error.details
+          });
+        }
+        throw error;
+      }
       if (!onboarding) {
         return reply.status(404).send(
           serviceErrorSchema.parse({
@@ -1145,7 +1163,21 @@ export async function registerRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const { locationId } = internalLocationParamsSchema.parse(request.params);
       const input = internalAppIdentityProfileUpdateSchema.parse(request.body);
-      const onboarding = await repository.updateInternalLocationAppIdentity(locationId, input);
+      let onboarding: Awaited<ReturnType<typeof repository.updateInternalLocationAppIdentity>>;
+      try {
+        onboarding = await repository.updateInternalLocationAppIdentity(locationId, input);
+      } catch (error) {
+        if (error instanceof MobileReleaseBuildJobError) {
+          return sendError(reply, {
+            statusCode: error.statusCode,
+            code: error.code,
+            message: error.message,
+            requestId: request.id,
+            details: error.details
+          });
+        }
+        throw error;
+      }
       if (!onboarding) {
         return reply.status(404).send(
           serviceErrorSchema.parse({
@@ -1230,7 +1262,32 @@ export async function registerRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const { locationId } = internalLocationParamsSchema.parse(request.params);
       const input = mobileReleaseBuildJobCreateSchema.parse(request.body);
-      const job = await repository.createInternalLocationMobileReleaseBuildJob(locationId, input);
+      let job: Awaited<ReturnType<typeof repository.createInternalLocationMobileReleaseBuildJob>>;
+      try {
+        job = await repository.createInternalLocationMobileReleaseBuildJob(locationId, {
+          ...input,
+          requestedBy: input.requestedBy ?? getActorId(request)
+        });
+      } catch (error) {
+        if (error instanceof MobileReleaseBuildJobError) {
+          return sendError(reply, {
+            statusCode: error.statusCode,
+            code: error.code,
+            message: error.message,
+            requestId: request.id,
+            details: error.details
+          });
+        }
+        if (isUniqueViolation(error)) {
+          return sendError(reply, {
+            statusCode: 409,
+            code: "MOBILE_RELEASE_BUILD_ALREADY_ACTIVE",
+            message: "This merchant already has an active mobile release build. Wait for it to finish before starting another.",
+            requestId: request.id
+          });
+        }
+        throw error;
+      }
       if (!job) {
         return reply.status(404).send(
           serviceErrorSchema.parse({
@@ -1265,7 +1322,21 @@ export async function registerRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const { jobId } = mobileReleaseBuildJobParamsSchema.parse(request.params);
       const input = mobileReleaseBuildJobUpdateSchema.parse(request.body);
-      const job = await repository.updateMobileReleaseBuildJob(jobId, input);
+      let job: Awaited<ReturnType<typeof repository.updateMobileReleaseBuildJob>>;
+      try {
+        job = await repository.updateMobileReleaseBuildJob(jobId, input);
+      } catch (error) {
+        if (error instanceof MobileReleaseBuildJobError) {
+          return sendError(reply, {
+            statusCode: error.statusCode,
+            code: error.code,
+            message: error.message,
+            requestId: request.id,
+            details: error.details
+          });
+        }
+        throw error;
+      }
       if (!job) {
         return reply.status(404).send(
           serviceErrorSchema.parse({
