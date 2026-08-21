@@ -16,7 +16,11 @@ compose() {
 
 dump_failure() {
   local exit_code=$?
-  trap - ERR
+  trap - EXIT
+
+  if [ "${exit_code}" -eq 0 ]; then
+    return 0
+  fi
 
   echo "[deploy-compose] deployment failed; collecting service diagnostics" >&2
   compose ps >&2 || true
@@ -28,7 +32,7 @@ dump_failure() {
   exit "${exit_code}"
 }
 
-trap dump_failure ERR
+trap dump_failure EXIT
 
 "${SCRIPT_DIR}/check-live-payments-env.sh" "${ENV_FILE}"
 "${SCRIPT_DIR}/check-postgres-pool-budget.sh" "${ENV_FILE}"
