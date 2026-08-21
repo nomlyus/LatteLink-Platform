@@ -14,6 +14,22 @@ compose() {
   docker compose --project-name "${PROJECT_NAME}" --env-file "${ENV_FILE}" "$@"
 }
 
+dump_failure() {
+  local exit_code=$?
+  trap - ERR
+
+  echo "[deploy-compose] deployment failed; collecting service diagnostics" >&2
+  compose ps >&2 || true
+  for service in identity catalog orders payments loyalty notifications gateway; do
+    echo "[deploy-compose] logs: ${service}" >&2
+    compose logs --no-color --tail=80 "${service}" >&2 || true
+  done
+
+  exit "${exit_code}"
+}
+
+trap dump_failure ERR
+
 "${SCRIPT_DIR}/check-live-payments-env.sh" "${ENV_FILE}"
 "${SCRIPT_DIR}/check-postgres-pool-budget.sh" "${ENV_FILE}"
 
