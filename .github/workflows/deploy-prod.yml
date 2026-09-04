@@ -43,6 +43,9 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           DISPATCH_SOURCE_SHA: ${{ inputs.source_sha }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_BODY: ${{ github.event.release.body }}
+          RELEASE_DRAFT: ${{ github.event.release.draft }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
           APP_VERSION_FALLBACK: ${{ vars.APP_VERSION }}
         run: |
           set -euo pipefail

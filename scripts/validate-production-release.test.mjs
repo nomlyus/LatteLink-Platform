@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { validateProductionRelease } from "./validate-production-release.mjs";
@@ -14,7 +15,7 @@ function validRelease(overrides = {}) {
     targetSha: mainSha,
     mainSha,
     previousReleaseTag: "v1.0.4",
-    ...overrides
+    ...overrides,
   };
 }
 
@@ -28,28 +29,54 @@ test("accepts a stable published release with notes targeting current main", () 
 test("requires release notes", () => {
   assert.throws(
     () => validateProductionRelease(validRelease({ releaseBody: "  \n\t" })),
-    /non-empty GitHub Release notes/
+    /non-empty GitHub Release notes/,
   );
 });
 
 test("rejects draft and prerelease objects", () => {
-  assert.throws(() => validateProductionRelease(validRelease({ releaseDraft: true })), /draft release/);
-  assert.throws(() => validateProductionRelease(validRelease({ releasePrerelease: true })), /prerelease/);
+  assert.throws(
+    () => validateProductionRelease(validRelease({ releaseDraft: true })),
+    /draft release/,
+  );
+  assert.throws(
+    () => validateProductionRelease(validRelease({ releasePrerelease: true })),
+    /prerelease/,
+  );
 });
 
 test("requires the release target to match current main", () => {
   assert.throws(
     () =>
       validateProductionRelease(
-        validRelease({ targetSha: "2222222222222222222222222222222222222222" })
+        validRelease({ targetSha: "2222222222222222222222222222222222222222" }),
       ),
-    /must match current origin\/main/
+    /must match current origin\/main/,
   );
 });
 
 test("requires the release tag to advance", () => {
   assert.throws(
     () => validateProductionRelease(validRelease({ releaseTag: "v1.0.4" })),
-    /must be greater/
+    /must be greater/,
+  );
+});
+
+test("production workflow passes GitHub release metadata to the validator", async () => {
+  const workflow = await readFile(
+    new URL("../.github/workflows/deploy-prod.yml", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    workflow,
+    /RELEASE_BODY: \$\{\{ github\.event\.release\.body \}\}/,
+  );
+  assert.match(
+    workflow,
+    /RELEASE_DRAFT: \$\{\{ github\.event\.release\.draft \}\}/,
+  );
+  assert.match(
+    workflow,
+    /RELEASE_PRERELEASE: \$\{\{ github\.event\.release\.prerelease \}\}/,
   );
 });
