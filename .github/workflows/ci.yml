@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches:
+      - develop
       - main
 
 concurrency:
@@ -103,10 +104,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-      - run: node --test scripts/validate-release-tag.test.mjs scripts/validate-production-release.test.mjs
+      - run: pnpm test:release-policy
 
   build:
     name: build
