@@ -472,6 +472,15 @@
         }
       }
     },
+    "/merchant/launch": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/orders/checkouts": {
       "post": {
         "responses": {
@@ -893,6 +902,15 @@
         }
       }
     },
+    "/admin/mobile-release/build-jobs": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/admin/mobile-experience/draft": {
       "put": {
         "responses": {
@@ -928,6 +946,15 @@
           }
         }
       },
+      "patch": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/admin/app-identity": {
       "patch": {
         "responses": {
           "200": {
@@ -1237,6 +1264,25 @@
         }
       }
     },
+    "/internal/locations/{locationId}/app-identity": {
+      "patch": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "locationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/internal/locations/{locationId}/mobile-release": {
       "patch": {
         "parameters": [
@@ -1246,6 +1292,61 @@
             },
             "in": "path",
             "name": "locationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/internal/locations/{locationId}/mobile-release/build-jobs": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "locationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "locationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/internal/mobile-release/build-jobs/{jobId}/approve": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "jobId",
             "required": true
           }
         ],
