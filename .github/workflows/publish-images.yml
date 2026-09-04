@@ -2,10 +2,6 @@ name: publish-images
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - develop
-      - main
 
 permissions:
   contents: read
@@ -114,6 +110,6 @@ jobs:
             echo "- Prefix: \`${IMAGE_PREFIX}\`"
             echo "- SHA tag: \`${SHA_TAG}\`"
             echo
-            echo "- Pushes to \`develop\` automatically flow into \`deploy-dev\`."
-            echo "- Production deploys are gated on a published GitHub Release for the current \`main\` commit."
+            echo "- This workflow is retained for manual container publication and infrastructure portability."
+            echo "- Heroku deployments build from the gated Git source through \`heroku.yml\`."
           } >> "$GITHUB_STEP_SUMMARY"

@@ -2,7 +2,7 @@ name: deploy-prod
 run-name: >-
   deploy-prod
   ${{ github.event_name == 'release' && github.event.release.tag_name || 'rollback' }}
-  ${{ github.event_name == 'release' && github.event.release.target_commitish || inputs.image_tag }}
+  ${{ github.event_name == 'release' && github.event.release.target_commitish || inputs.source_sha }}
 
 on:
   release:
@@ -10,23 +10,27 @@ on:
       - published
   workflow_dispatch:
     inputs:
-      image_tag:
-        description: Full published Git SHA to roll back production
+      source_sha:
+        description: Full published main SHA to roll back production
         required: true
         type: string
 
 permissions:
   contents: read
-  packages: read
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: production
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.image_tag }}
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.source_sha }}
           fetch-depth: 0
 
       - uses: actions/setup-node@v6
@@ -37,11 +41,8 @@ jobs:
         id: release
         env:
           EVENT_NAME: ${{ github.event_name }}
-          DISPATCH_IMAGE_TAG: ${{ inputs.image_tag }}
+          DISPATCH_SOURCE_SHA: ${{ inputs.source_sha }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-          RELEASE_BODY: ${{ github.event.release.body }}
-          RELEASE_DRAFT: ${{ github.event.release.draft }}
-          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
           APP_VERSION_FALLBACK: ${{ vars.APP_VERSION }}
         run: |
           set -euo pipefail
@@ -72,181 +73,131 @@ jobs:
             exit 0
           fi
 
-          if ! printf '%s' "${DISPATCH_IMAGE_TAG}" | grep -Eq '^[0-9a-f]{40}$'; then
-            echo "Rollback image_tag must be a full 40-character git SHA." >&2
+          if ! printf '%s' "${DISPATCH_SOURCE_SHA}" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "Rollback source_sha must be a full 40-character Git SHA." >&2
             exit 1
           fi
 
           actual_sha="$(git rev-parse HEAD)"
-          if [ "${actual_sha}" != "${DISPATCH_IMAGE_TAG}" ]; then
-            echo "Checked out ${actual_sha}, but workflow input requested ${DISPATCH_IMAGE_TAG}." >&2
+          if [ "${actual_sha}" != "${DISPATCH_SOURCE_SHA}" ]; then
+            echo "Checked out ${actual_sha}, but workflow requested ${DISPATCH_SOURCE_SHA}." >&2
             exit 1
           fi
 
-          if ! git merge-base --is-ancestor "${DISPATCH_IMAGE_TAG}" refs/remotes/origin/main; then
-            echo "Rollback SHA ${DISPATCH_IMAGE_TAG} must already be on origin/main before deployment." >&2
+          if ! git merge-base --is-ancestor "${DISPATCH_SOURCE_SHA}" refs/remotes/origin/main; then
+            echo "Rollback SHA must already exist on origin/main." >&2
             exit 1
           fi
 
           {
             echo "release_tag="
             echo "app_version=${APP_VERSION_FALLBACK:-unknown}"
-            echo "target_sha=${DISPATCH_IMAGE_TAG}"
+            echo "target_sha=${DISPATCH_SOURCE_SHA}"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Check deploy prerequisites
-        id: deploy-check
+      - name: Validate Heroku deployment prerequisites
         env:
           DEPLOY_ENABLED: ${{ vars.DEPLOY_ENABLED }}
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          DATABASE_URL_SECRET: ${{ secrets.DATABASE_URL }}
+          HEROKU_APP_NAME: ${{ vars.HEROKU_APP_NAME }}
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           EXPECTED_SUPABASE_PROJECT_REF: ${{ vars.EXPECTED_SUPABASE_PROJECT_REF }}
           GATEWAY_INTERNAL_API_TOKEN: ${{ secrets.GATEWAY_INTERNAL_API_TOKEN }}
           ORDERS_INTERNAL_API_TOKEN: ${{ secrets.ORDERS_INTERNAL_API_TOKEN }}
           LOYALTY_INTERNAL_API_TOKEN: ${{ secrets.LOYALTY_INTERNAL_API_TOKEN }}
           NOTIFICATIONS_INTERNAL_API_TOKEN: ${{ secrets.NOTIFICATIONS_INTERNAL_API_TOKEN }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          APPLE_SIGN_IN_ENABLED: ${{ vars.APPLE_SIGN_IN_ENABLED }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
           APPLE_PRIVATE_KEY: ${{ secrets.APPLE_PRIVATE_KEY }}
           APPLE_ALLOWED_CLIENT_IDS: ${{ vars.APPLE_ALLOWED_CLIENT_IDS }}
-          APPLE_SIGN_IN_ENABLED: ${{ vars.APPLE_SIGN_IN_ENABLED }}
-          LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL }}
-          API_DOMAIN: ${{ vars.API_DOMAIN }}
-          IMAGE_REGISTRY_PREFIX: ${{ vars.IMAGE_REGISTRY_PREFIX }}
-          ALLOW_DEV_CUSTOMER_LOGIN: ${{ vars.ALLOW_DEV_CUSTOMER_LOGIN }}
           PAYMENTS_PROVIDER_MODE: ${{ vars.PAYMENTS_PROVIDER_MODE }}
-          CLOVER_OAUTH_ENVIRONMENT: ${{ vars.CLOVER_OAUTH_ENVIRONMENT }}
           CLOVER_APP_ID: ${{ secrets.CLOVER_APP_ID }}
           CLOVER_APP_SECRET: ${{ secrets.CLOVER_APP_SECRET }}
           CLOVER_OAUTH_REDIRECT_URI: ${{ secrets.CLOVER_OAUTH_REDIRECT_URI }}
           CLOVER_OAUTH_STATE_SECRET: ${{ secrets.CLOVER_OAUTH_STATE_SECRET }}
           CLOVER_WEBHOOK_SHARED_SECRET: ${{ secrets.CLOVER_WEBHOOK_SHARED_SECRET }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
-          STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
           STRIPE_CONNECT_WEBHOOK_SECRET: ${{ secrets.STRIPE_CONNECT_WEBHOOK_SECRET }}
-          CATALOG_MEDIA_R2_ACCOUNT_ID: ${{ vars.CATALOG_MEDIA_R2_ACCOUNT_ID }}
-          CATALOG_MEDIA_R2_ACCESS_KEY_ID: ${{ secrets.CATALOG_MEDIA_R2_ACCESS_KEY_ID }}
-          CATALOG_MEDIA_R2_SECRET_ACCESS_KEY: ${{ secrets.CATALOG_MEDIA_R2_SECRET_ACCESS_KEY }}
-          CATALOG_MEDIA_R2_BUCKET: ${{ vars.CATALOG_MEDIA_R2_BUCKET }}
-          CATALOG_MEDIA_PUBLIC_BASE_URL: ${{ vars.CATALOG_MEDIA_PUBLIC_BASE_URL }}
-          CATALOG_MEDIA_UPLOAD_MAX_BYTES: ${{ vars.CATALOG_MEDIA_UPLOAD_MAX_BYTES }}
-          CATALOG_MEDIA_UPLOAD_EXPIRY_SECONDS: ${{ vars.CATALOG_MEDIA_UPLOAD_EXPIRY_SECONDS }}
         run: |
+          set -euo pipefail
+
           if [ "${DEPLOY_ENABLED:-false}" != "true" ]; then
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "Skipping production deploy because DEPLOY_ENABLED is not true for this environment."
-            exit 0
+            echo "Production deployment is disabled by DEPLOY_ENABLED." >&2
+            exit 1
           fi
 
-          missing=0
-          for required in DEPLOY_HOST DEPLOY_USER DEPLOY_KEY GATEWAY_INTERNAL_API_TOKEN ORDERS_INTERNAL_API_TOKEN LOYALTY_INTERNAL_API_TOKEN NOTIFICATIONS_INTERNAL_API_TOKEN JWT_SECRET LETSENCRYPT_EMAIL API_DOMAIN IMAGE_REGISTRY_PREFIX EXPECTED_SUPABASE_PROJECT_REF; do
-            if [ -z "${!required}" ]; then
-              echo "missing: ${required}"
-              missing=1
+          for required in HEROKU_APP_NAME HEROKU_API_KEY DATABASE_URL EXPECTED_SUPABASE_PROJECT_REF GATEWAY_INTERNAL_API_TOKEN ORDERS_INTERNAL_API_TOKEN LOYALTY_INTERNAL_API_TOKEN NOTIFICATIONS_INTERNAL_API_TOKEN JWT_SECRET STRIPE_SECRET_KEY STRIPE_CONNECT_WEBHOOK_SECRET; do
+            if [ -z "${!required:-}" ]; then
+              echo "Missing required production deployment setting: ${required}" >&2
+              exit 1
             fi
           done
 
-          if [ -z "${DATABASE_URL_SECRET:-}" ]; then
-            echo "missing: provide DATABASE_URL"
-            missing=1
-          elif ! printf '%s' "${DATABASE_URL_SECRET}" | grep -Fq "${EXPECTED_SUPABASE_PROJECT_REF}"; then
-            echo "DATABASE_URL does not match EXPECTED_SUPABASE_PROJECT_REF for production"
-            missing=1
+          if ! printf '%s' "${DATABASE_URL}" | grep -Fq "${EXPECTED_SUPABASE_PROJECT_REF}"; then
+            echo "Production DATABASE_URL does not match EXPECTED_SUPABASE_PROJECT_REF." >&2
+            exit 1
           fi
 
           if [ "${APPLE_SIGN_IN_ENABLED:-false}" = "true" ]; then
-            for required in APPLE_TEAM_ID APPLE_KEY_ID APPLE_PRIVATE_KEY; do
+            for required in APPLE_TEAM_ID APPLE_KEY_ID APPLE_PRIVATE_KEY APPLE_ALLOWED_CLIENT_IDS; do
               if [ -z "${!required:-}" ]; then
-                echo "missing for Apple Sign In: ${required}"
-                missing=1
+                echo "Missing Apple Sign In setting: ${required}" >&2
+                exit 1
               fi
             done
-
-            if [ -z "${APPLE_ALLOWED_CLIENT_IDS:-}" ]; then
-              echo "missing for Apple Sign In: provide APPLE_ALLOWED_CLIENT_IDS"
-              missing=1
-            fi
           fi
 
           if [ "${PAYMENTS_PROVIDER_MODE:-simulated}" = "live" ]; then
-            if [ -z "${CLOVER_WEBHOOK_SHARED_SECRET:-}" ]; then
-              echo "missing for live Clover deploy: CLOVER_WEBHOOK_SHARED_SECRET"
-              missing=1
-            fi
-
-            has_oauth_bootstrap=1
-            for required in CLOVER_APP_ID CLOVER_APP_SECRET CLOVER_OAUTH_REDIRECT_URI CLOVER_OAUTH_STATE_SECRET; do
+            for required in CLOVER_APP_ID CLOVER_APP_SECRET CLOVER_OAUTH_REDIRECT_URI CLOVER_OAUTH_STATE_SECRET CLOVER_WEBHOOK_SHARED_SECRET; do
               if [ -z "${!required:-}" ]; then
-                has_oauth_bootstrap=0
+                echo "Missing live Clover setting: ${required}" >&2
+                exit 1
               fi
             done
-
-            if [ "${has_oauth_bootstrap}" -eq 0 ]; then
-              echo "missing for live Clover deploy: Clover OAuth bootstrap must be fully configured"
-              missing=1
-            fi
           fi
 
-          if [ "${missing}" -eq 0 ]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "Skipping production deploy because one or more required secrets/variables are missing."
-          fi
-
-      - name: Setup SSH key
-        if: steps.deploy-check.outputs.enabled == 'true'
+      - name: Synchronize Heroku config vars
         env:
-          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "${DEPLOY_KEY}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-
-      - name: Copy deployment bundle to server
-        if: steps.deploy-check.outputs.enabled == 'true'
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
-        run: |
-          remote_path="${DEPLOY_PATH:-/opt/lattelink-prod}"
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p '${remote_path}'"
-          scp -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 -r infra/free/* "${DEPLOY_USER}@${DEPLOY_HOST}:${remote_path}/"
-
-      - name: Deploy compose stack
-        if: steps.deploy-check.outputs.enabled == 'true'
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
-          API_DOMAIN: ${{ vars.API_DOMAIN }}
-          CLIENT_DASHBOARD_DOMAIN: ${{ vars.CLIENT_DASHBOARD_DOMAIN }}
-          IMAGE_TAG: ${{ steps.release.outputs.target_sha }}
-          APP_VERSION: ${{ steps.release.outputs.app_version }}
-          LOG_LEVEL: ${{ vars.LOG_LEVEL }}
-          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-          SENTRY_TRACES_SAMPLE_RATE: ${{ vars.SENTRY_TRACES_SAMPLE_RATE }}
-          IMAGE_REGISTRY_PREFIX: ${{ vars.IMAGE_REGISTRY_PREFIX }}
-          PASSKEY_RP_ID: ${{ vars.PASSKEY_RP_ID }}
-          ALLOW_DEV_CUSTOMER_LOGIN: ${{ vars.ALLOW_DEV_CUSTOMER_LOGIN }}
-          CUSTOMER_SESSION_ABSOLUTE_TTL_DAYS: ${{ vars.CUSTOMER_SESSION_ABSOLUTE_TTL_DAYS }}
-          OPERATOR_SESSION_ABSOLUTE_TTL_DAYS: ${{ vars.OPERATOR_SESSION_ABSOLUTE_TTL_DAYS }}
-          INTERNAL_ADMIN_SESSION_ABSOLUTE_TTL_DAYS: ${{ vars.INTERNAL_ADMIN_SESSION_ABSOLUTE_TTL_DAYS }}
-          CORS_ALLOWED_ORIGINS: ${{ vars.CORS_ALLOWED_ORIGINS }}
-          CORS_ALLOWED_ORIGIN_HOST_SUFFIXES: ${{ vars.CORS_ALLOWED_ORIGIN_HOST_SUFFIXES }}
-          LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          HEROKU_APP_NAME: ${{ vars.HEROKU_APP_NAME }}
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+          NODE_ENV: production
           DEPLOY_ENV: production
+          APP_VERSION: ${{ steps.release.outputs.app_version }}
+          LOG_LEVEL: ${{ vars.LOG_LEVEL || 'info' }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_TRACES_SAMPLE_RATE: ${{ vars.SENTRY_TRACES_SAMPLE_RATE || '0.1' }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           EXPECTED_SUPABASE_PROJECT_REF: ${{ vars.EXPECTED_SUPABASE_PROJECT_REF }}
+          POSTGRES_CONNECTION_TIMEOUT_MS: "5000"
+          POSTGRES_IDLE_TIMEOUT_MS: "10000"
+          POSTGRES_POOL_BUDGET_LIMIT: "60"
+          POSTGRES_POOL_HEADROOM_MIN: "20"
+          IDENTITY_POSTGRES_POOL_MAX: "5"
+          ORDERS_POSTGRES_POOL_MAX: "6"
+          CATALOG_POSTGRES_POOL_MAX: "4"
+          PAYMENTS_POSTGRES_POOL_MAX: "5"
+          LOYALTY_POSTGRES_POOL_MAX: "3"
+          NOTIFICATIONS_POSTGRES_POOL_MAX: "3"
+          PAYMENT_RECONCILER_POSTGRES_POOL_MAX: "1"
           GATEWAY_INTERNAL_API_TOKEN: ${{ secrets.GATEWAY_INTERNAL_API_TOKEN }}
           ORDERS_INTERNAL_API_TOKEN: ${{ secrets.ORDERS_INTERNAL_API_TOKEN }}
           LOYALTY_INTERNAL_API_TOKEN: ${{ secrets.LOYALTY_INTERNAL_API_TOKEN }}
           NOTIFICATIONS_INTERNAL_API_TOKEN: ${{ secrets.NOTIFICATIONS_INTERNAL_API_TOKEN }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          ALLOW_DEV_CUSTOMER_LOGIN: "false"
+          ALLOW_DEV_OPERATOR_LOGIN: "false"
+          CUSTOMER_SESSION_ABSOLUTE_TTL_DAYS: ${{ vars.CUSTOMER_SESSION_ABSOLUTE_TTL_DAYS || '90' }}
+          OPERATOR_SESSION_ABSOLUTE_TTL_DAYS: ${{ vars.OPERATOR_SESSION_ABSOLUTE_TTL_DAYS || '30' }}
+          INTERNAL_ADMIN_SESSION_ABSOLUTE_TTL_DAYS: ${{ vars.INTERNAL_ADMIN_SESSION_ABSOLUTE_TTL_DAYS || '14' }}
+          CLIENT_DASHBOARD_DOMAIN: ${{ vars.CLIENT_DASHBOARD_DOMAIN }}
+          CLIENT_DASHBOARD_BASE_URL: https://${{ vars.CLIENT_DASHBOARD_DOMAIN }}
+          ADMIN_CONSOLE_CLIENT_DASHBOARD_URL: https://${{ vars.CLIENT_DASHBOARD_DOMAIN }}
+          CORS_ALLOWED_ORIGINS: ${{ vars.CORS_ALLOWED_ORIGINS }}
+          PUBLIC_API_BASE_URL: https://${{ vars.API_DOMAIN }}/v1
+          PASSKEY_RP_ID: ${{ vars.PASSKEY_RP_ID }}
+          PASSKEY_RP_NAME: Nomly
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
           APPLE_PRIVATE_KEY: ${{ secrets.APPLE_PRIVATE_KEY }}
@@ -255,158 +206,78 @@ jobs:
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
           GOOGLE_OAUTH_STATE_SECRET: ${{ secrets.GOOGLE_OAUTH_STATE_SECRET }}
           GOOGLE_OAUTH_ALLOWED_REDIRECT_URIS: ${{ vars.GOOGLE_OAUTH_ALLOWED_REDIRECT_URIS }}
-          CATALOG_DEFAULT_LOCATION_ID: ${{ vars.CATALOG_DEFAULT_LOCATION_ID }}
-          CATALOG_DEFAULT_BRAND_ID: ${{ vars.CATALOG_DEFAULT_BRAND_ID }}
-          CATALOG_DEFAULT_BRAND_NAME: ${{ vars.CATALOG_DEFAULT_BRAND_NAME }}
-          CATALOG_DEFAULT_LOCATION_NAME: ${{ vars.CATALOG_DEFAULT_LOCATION_NAME }}
-          CATALOG_DEFAULT_MARKET_LABEL: ${{ vars.CATALOG_DEFAULT_MARKET_LABEL }}
-          WEBAPP_MENU_SOURCE_URL: ${{ vars.WEBAPP_MENU_SOURCE_URL }}
-          MENU_SYNC_LOCATION_ID: ${{ vars.MENU_SYNC_LOCATION_ID }}
-          MENU_SYNC_INTERVAL_MS: ${{ vars.MENU_SYNC_INTERVAL_MS }}
-          MENU_SYNC_MAX_RETRIES: ${{ vars.MENU_SYNC_MAX_RETRIES }}
-          MENU_SYNC_RETRY_DELAY_MS: ${{ vars.MENU_SYNC_RETRY_DELAY_MS }}
-          PAYMENTS_PROVIDER_MODE: ${{ vars.PAYMENTS_PROVIDER_MODE }}
-          CLOVER_OAUTH_ENVIRONMENT: ${{ vars.CLOVER_OAUTH_ENVIRONMENT }}
+          EMAIL_PROVIDER: ${{ vars.EMAIL_PROVIDER || 'console' }}
+          OWNER_INVITE_EMAIL_FROM: ${{ vars.OWNER_INVITE_EMAIL_FROM }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          PAYMENTS_PROVIDER_MODE: ${{ vars.PAYMENTS_PROVIDER_MODE || 'live' }}
+          CLOVER_OAUTH_ENVIRONMENT: ${{ vars.CLOVER_OAUTH_ENVIRONMENT || 'production' }}
           CLOVER_APP_ID: ${{ secrets.CLOVER_APP_ID }}
           CLOVER_APP_SECRET: ${{ secrets.CLOVER_APP_SECRET }}
           CLOVER_OAUTH_REDIRECT_URI: ${{ secrets.CLOVER_OAUTH_REDIRECT_URI }}
           CLOVER_OAUTH_STATE_SECRET: ${{ secrets.CLOVER_OAUTH_STATE_SECRET }}
           CLOVER_WEBHOOK_SHARED_SECRET: ${{ secrets.CLOVER_WEBHOOK_SHARED_SECRET }}
+          CLOVER_ORDER_TYPE_ID: ${{ vars.CLOVER_ORDER_TYPE_ID }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
           STRIPE_CONNECT_WEBHOOK_SECRET: ${{ secrets.STRIPE_CONNECT_WEBHOOK_SECRET }}
+          NOTIFICATIONS_PROVIDER_MODE: expo
+          EXPO_PUSH_API_URL: ${{ vars.EXPO_PUSH_API_URL }}
+          EXPO_ACCESS_TOKEN: ${{ secrets.EXPO_ACCESS_TOKEN }}
+          ORDER_FULFILLMENT_MODE: staff
+          CATALOG_DEFAULT_LOCATION_ID: ${{ vars.CATALOG_DEFAULT_LOCATION_ID }}
+          CATALOG_DEFAULT_BRAND_ID: ${{ vars.CATALOG_DEFAULT_BRAND_ID }}
+          CATALOG_DEFAULT_BRAND_NAME: ${{ vars.CATALOG_DEFAULT_BRAND_NAME }}
+          CATALOG_DEFAULT_LOCATION_NAME: ${{ vars.CATALOG_DEFAULT_LOCATION_NAME }}
+          CATALOG_DEFAULT_MARKET_LABEL: ${{ vars.CATALOG_DEFAULT_MARKET_LABEL }}
           CATALOG_MEDIA_R2_ACCOUNT_ID: ${{ vars.CATALOG_MEDIA_R2_ACCOUNT_ID }}
           CATALOG_MEDIA_R2_ACCESS_KEY_ID: ${{ secrets.CATALOG_MEDIA_R2_ACCESS_KEY_ID }}
           CATALOG_MEDIA_R2_SECRET_ACCESS_KEY: ${{ secrets.CATALOG_MEDIA_R2_SECRET_ACCESS_KEY }}
           CATALOG_MEDIA_R2_BUCKET: ${{ vars.CATALOG_MEDIA_R2_BUCKET }}
           CATALOG_MEDIA_PUBLIC_BASE_URL: ${{ vars.CATALOG_MEDIA_PUBLIC_BASE_URL }}
-          CATALOG_MEDIA_UPLOAD_MAX_BYTES: ${{ vars.CATALOG_MEDIA_UPLOAD_MAX_BYTES }}
-          CATALOG_MEDIA_UPLOAD_EXPIRY_SECONDS: ${{ vars.CATALOG_MEDIA_UPLOAD_EXPIRY_SECONDS }}
-          COMPOSE_PROJECT_NAME: ${{ vars.COMPOSE_PROJECT_NAME }}
-          GHCR_USERNAME: ${{ github.actor }}
-          GHCR_TOKEN: ${{ github.token }}
+          CATALOG_MEDIA_UPLOAD_MAX_BYTES: ${{ vars.CATALOG_MEDIA_UPLOAD_MAX_BYTES || '10485760' }}
+          CATALOG_MEDIA_UPLOAD_EXPIRY_SECONDS: ${{ vars.CATALOG_MEDIA_UPLOAD_EXPIRY_SECONDS || '300' }}
+          WEBAPP_MENU_SOURCE_URL: ${{ vars.WEBAPP_MENU_SOURCE_URL }}
+          MENU_SYNC_LOCATION_ID: ${{ vars.MENU_SYNC_LOCATION_ID }}
+          MENU_SYNC_INTERVAL_MS: ${{ vars.MENU_SYNC_INTERVAL_MS || '300000' }}
+          MENU_SYNC_MAX_RETRIES: ${{ vars.MENU_SYNC_MAX_RETRIES || '3' }}
+          MENU_SYNC_RETRY_DELAY_MS: ${{ vars.MENU_SYNC_RETRY_DELAY_MS || '2000' }}
+          MENU_SYNC_DEAD_LETTER_PATH: /tmp/nomly-menu-sync.jsonl
+          NOTIFICATIONS_DISPATCH_INTERVAL_MS: "5000"
+          NOTIFICATIONS_DISPATCH_BATCH_SIZE: "50"
+          PAYMENT_RECONCILER_ENABLED: "true"
+          PAYMENT_RECONCILER_INTERVAL_MS: "300000"
+          PAYMENT_RECONCILER_STALE_THRESHOLD_MS: "600000"
+          PAYMENT_RECONCILER_BATCH_SIZE: "50"
+        run: node scripts/heroku-sync-config.mjs
+
+      - name: Deploy released source to Heroku
+        env:
+          HEROKU_APP_NAME: ${{ vars.HEROKU_APP_NAME }}
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+          TARGET_SHA: ${{ steps.release.outputs.target_sha }}
         run: |
-          remote_path="${DEPLOY_PATH:-/opt/lattelink-prod}"
-
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "export DEPLOY_PATH='${remote_path}' API_DOMAIN='${API_DOMAIN}' CLIENT_DASHBOARD_DOMAIN='${CLIENT_DASHBOARD_DOMAIN}' IMAGE_TAG='${IMAGE_TAG}' APP_VERSION='${APP_VERSION}' LOG_LEVEL='${LOG_LEVEL}' SENTRY_DSN='${SENTRY_DSN}' SENTRY_TRACES_SAMPLE_RATE='${SENTRY_TRACES_SAMPLE_RATE}' IMAGE_REGISTRY_PREFIX='${IMAGE_REGISTRY_PREFIX}' PASSKEY_RP_ID='${PASSKEY_RP_ID}' ALLOW_DEV_CUSTOMER_LOGIN='${ALLOW_DEV_CUSTOMER_LOGIN}' CUSTOMER_SESSION_ABSOLUTE_TTL_DAYS='${CUSTOMER_SESSION_ABSOLUTE_TTL_DAYS}' OPERATOR_SESSION_ABSOLUTE_TTL_DAYS='${OPERATOR_SESSION_ABSOLUTE_TTL_DAYS}' INTERNAL_ADMIN_SESSION_ABSOLUTE_TTL_DAYS='${INTERNAL_ADMIN_SESSION_ABSOLUTE_TTL_DAYS}' CORS_ALLOWED_ORIGINS='${CORS_ALLOWED_ORIGINS}' CORS_ALLOWED_ORIGIN_HOST_SUFFIXES='${CORS_ALLOWED_ORIGIN_HOST_SUFFIXES}' LETSENCRYPT_EMAIL='${LETSENCRYPT_EMAIL}' DATABASE_URL='${DATABASE_URL}' DEPLOY_ENV='${DEPLOY_ENV}' EXPECTED_SUPABASE_PROJECT_REF='${EXPECTED_SUPABASE_PROJECT_REF}' GATEWAY_INTERNAL_API_TOKEN='${GATEWAY_INTERNAL_API_TOKEN}' ORDERS_INTERNAL_API_TOKEN='${ORDERS_INTERNAL_API_TOKEN}' LOYALTY_INTERNAL_API_TOKEN='${LOYALTY_INTERNAL_API_TOKEN}' NOTIFICATIONS_INTERNAL_API_TOKEN='${NOTIFICATIONS_INTERNAL_API_TOKEN}' JWT_SECRET='${JWT_SECRET}' APPLE_TEAM_ID='${APPLE_TEAM_ID}' APPLE_KEY_ID='${APPLE_KEY_ID}' APPLE_PRIVATE_KEY='${APPLE_PRIVATE_KEY}' APPLE_ALLOWED_CLIENT_IDS='${APPLE_ALLOWED_CLIENT_IDS}' GOOGLE_OAUTH_CLIENT_ID='${GOOGLE_OAUTH_CLIENT_ID}' GOOGLE_OAUTH_CLIENT_SECRET='${GOOGLE_OAUTH_CLIENT_SECRET}' GOOGLE_OAUTH_STATE_SECRET='${GOOGLE_OAUTH_STATE_SECRET}' GOOGLE_OAUTH_ALLOWED_REDIRECT_URIS='${GOOGLE_OAUTH_ALLOWED_REDIRECT_URIS}' CATALOG_DEFAULT_LOCATION_ID='${CATALOG_DEFAULT_LOCATION_ID}' CATALOG_DEFAULT_BRAND_ID='${CATALOG_DEFAULT_BRAND_ID}' CATALOG_DEFAULT_BRAND_NAME='${CATALOG_DEFAULT_BRAND_NAME}' CATALOG_DEFAULT_LOCATION_NAME='${CATALOG_DEFAULT_LOCATION_NAME}' CATALOG_DEFAULT_MARKET_LABEL='${CATALOG_DEFAULT_MARKET_LABEL}' WEBAPP_MENU_SOURCE_URL='${WEBAPP_MENU_SOURCE_URL}' MENU_SYNC_LOCATION_ID='${MENU_SYNC_LOCATION_ID}' MENU_SYNC_INTERVAL_MS='${MENU_SYNC_INTERVAL_MS}' MENU_SYNC_MAX_RETRIES='${MENU_SYNC_MAX_RETRIES}' MENU_SYNC_RETRY_DELAY_MS='${MENU_SYNC_RETRY_DELAY_MS}' PAYMENTS_PROVIDER_MODE='${PAYMENTS_PROVIDER_MODE}' CLOVER_OAUTH_ENVIRONMENT='${CLOVER_OAUTH_ENVIRONMENT}' CLOVER_APP_ID='${CLOVER_APP_ID}' CLOVER_APP_SECRET='${CLOVER_APP_SECRET}' CLOVER_OAUTH_REDIRECT_URI='${CLOVER_OAUTH_REDIRECT_URI}' CLOVER_OAUTH_STATE_SECRET='${CLOVER_OAUTH_STATE_SECRET}' CLOVER_WEBHOOK_SHARED_SECRET='${CLOVER_WEBHOOK_SHARED_SECRET}' STRIPE_SECRET_KEY='${STRIPE_SECRET_KEY}' STRIPE_PUBLISHABLE_KEY='${STRIPE_PUBLISHABLE_KEY}' STRIPE_CONNECT_WEBHOOK_SECRET='${STRIPE_CONNECT_WEBHOOK_SECRET}' CATALOG_MEDIA_R2_ACCOUNT_ID='${CATALOG_MEDIA_R2_ACCOUNT_ID}' CATALOG_MEDIA_R2_ACCESS_KEY_ID='${CATALOG_MEDIA_R2_ACCESS_KEY_ID}' CATALOG_MEDIA_R2_SECRET_ACCESS_KEY='${CATALOG_MEDIA_R2_SECRET_ACCESS_KEY}' CATALOG_MEDIA_R2_BUCKET='${CATALOG_MEDIA_R2_BUCKET}' CATALOG_MEDIA_PUBLIC_BASE_URL='${CATALOG_MEDIA_PUBLIC_BASE_URL}' CATALOG_MEDIA_UPLOAD_MAX_BYTES='${CATALOG_MEDIA_UPLOAD_MAX_BYTES}' CATALOG_MEDIA_UPLOAD_EXPIRY_SECONDS='${CATALOG_MEDIA_UPLOAD_EXPIRY_SECONDS}' COMPOSE_PROJECT_NAME='${COMPOSE_PROJECT_NAME}' GHCR_USERNAME='${GHCR_USERNAME}' GHCR_TOKEN='${GHCR_TOKEN}'; bash -s" <<'REMOTE'
           set -euo pipefail
+          trap 'rm -f "$HOME/.git-credentials"' EXIT
+          git config --global credential.helper store
+          printf 'https://heroku:%s@git.heroku.com\n' "${HEROKU_API_KEY}" > "$HOME/.git-credentials"
+          chmod 600 "$HOME/.git-credentials"
+          git push --force "https://git.heroku.com/${HEROKU_APP_NAME}.git" "${TARGET_SHA}:refs/heads/main"
 
-          cd "${DEPLOY_PATH}"
-          if [ -n "${CORS_ALLOWED_ORIGINS:-}" ]; then
-            CORS_ALLOWED_ORIGINS_VALUE="${CORS_ALLOWED_ORIGINS}"
-          elif [ -n "${CLIENT_DASHBOARD_DOMAIN:-}" ]; then
-            CORS_ALLOWED_ORIGINS_VALUE="https://${CLIENT_DASHBOARD_DOMAIN}"
-          else
-            CORS_ALLOWED_ORIGINS_VALUE="https://${API_DOMAIN}"
-          fi
-
-          DATABASE_URL_VALUE="${DATABASE_URL}"
-          DEPLOY_ENV_VALUE="${DEPLOY_ENV:-production}"
-          EXPECTED_SUPABASE_PROJECT_REF_VALUE="${EXPECTED_SUPABASE_PROJECT_REF}"
-          POSTGRES_PASSWORD_VALUE="unused-local-db"
-          COMPOSE_PROJECT_NAME_VALUE="${COMPOSE_PROJECT_NAME:-lattelink-prod}"
-          PUBLIC_API_BASE_URL_VALUE="https://${API_DOMAIN}/v1"
-          APPLE_PRIVATE_KEY_VALUE="${APPLE_PRIVATE_KEY//$'\r'/}"
-          APPLE_PRIVATE_KEY_VALUE="${APPLE_PRIVATE_KEY_VALUE//$'\n'/\\n}"
-          export DATABASE_URL="${DATABASE_URL_VALUE}"
-          export DEPLOY_ENV="${DEPLOY_ENV_VALUE}"
-          export EXPECTED_SUPABASE_PROJECT_REF="${EXPECTED_SUPABASE_PROJECT_REF_VALUE}"
-          export POSTGRES_PASSWORD="${POSTGRES_PASSWORD_VALUE}"
-          export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME_VALUE}"
-
-          cat > .env <<ENVVARS
-          API_DOMAIN=${API_DOMAIN}
-          CLIENT_DASHBOARD_DOMAIN=${CLIENT_DASHBOARD_DOMAIN}
-          LETSENCRYPT_EMAIL=${LETSENCRYPT_EMAIL}
-          IMAGE_REGISTRY_PREFIX=${IMAGE_REGISTRY_PREFIX}
-          IMAGE_TAG=${IMAGE_TAG}
-          APP_VERSION=${APP_VERSION:-unknown}
-          LOG_LEVEL=${LOG_LEVEL:-info}
-          SENTRY_DSN=${SENTRY_DSN}
-          SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.1}
-          COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME_VALUE}
-          POSTGRES_PASSWORD=${POSTGRES_PASSWORD_VALUE}
-          DATABASE_URL=${DATABASE_URL_VALUE}
-          DEPLOY_ENV=${DEPLOY_ENV_VALUE}
-          EXPECTED_SUPABASE_PROJECT_REF=${EXPECTED_SUPABASE_PROJECT_REF_VALUE}
-          POSTGRES_POOL_BUDGET_LIMIT=60
-          POSTGRES_POOL_HEADROOM_MIN=20
-          IDENTITY_POSTGRES_POOL_MAX=5
-          ORDERS_POSTGRES_POOL_MAX=6
-          CATALOG_POSTGRES_POOL_MAX=4
-          PAYMENTS_POSTGRES_POOL_MAX=5
-          LOYALTY_POSTGRES_POOL_MAX=3
-          NOTIFICATIONS_POSTGRES_POOL_MAX=3
-          PAYMENT_RECONCILER_POSTGRES_POOL_MAX=1
-          GATEWAY_INTERNAL_API_TOKEN=${GATEWAY_INTERNAL_API_TOKEN}
-          ORDERS_INTERNAL_API_TOKEN=${ORDERS_INTERNAL_API_TOKEN}
-          LOYALTY_INTERNAL_API_TOKEN=${LOYALTY_INTERNAL_API_TOKEN}
-          NOTIFICATIONS_INTERNAL_API_TOKEN=${NOTIFICATIONS_INTERNAL_API_TOKEN}
-          JWT_SECRET=${JWT_SECRET}
-          ALLOW_DEV_CUSTOMER_LOGIN=${ALLOW_DEV_CUSTOMER_LOGIN:-false}
-          CUSTOMER_SESSION_ABSOLUTE_TTL_DAYS=${CUSTOMER_SESSION_ABSOLUTE_TTL_DAYS:-90}
-          OPERATOR_SESSION_ABSOLUTE_TTL_DAYS=${OPERATOR_SESSION_ABSOLUTE_TTL_DAYS:-30}
-          INTERNAL_ADMIN_SESSION_ABSOLUTE_TTL_DAYS=${INTERNAL_ADMIN_SESSION_ABSOLUTE_TTL_DAYS:-14}
-          APPLE_TEAM_ID=${APPLE_TEAM_ID}
-          APPLE_KEY_ID=${APPLE_KEY_ID}
-          APPLE_PRIVATE_KEY=${APPLE_PRIVATE_KEY_VALUE}
-          APPLE_ALLOWED_CLIENT_IDS=${APPLE_ALLOWED_CLIENT_IDS}
-          PAYMENTS_PROVIDER_MODE=${PAYMENTS_PROVIDER_MODE:-simulated}
-          CLOVER_OAUTH_ENVIRONMENT=${CLOVER_OAUTH_ENVIRONMENT:-sandbox}
-          CLOVER_APP_ID=${CLOVER_APP_ID}
-          CLOVER_APP_SECRET=${CLOVER_APP_SECRET}
-          CLOVER_OAUTH_REDIRECT_URI=${CLOVER_OAUTH_REDIRECT_URI}
-          CLOVER_OAUTH_STATE_SECRET=${CLOVER_OAUTH_STATE_SECRET}
-          CLOVER_WEBHOOK_SHARED_SECRET=${CLOVER_WEBHOOK_SHARED_SECRET}
-          STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
-          STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY}
-          STRIPE_CONNECT_WEBHOOK_SECRET=${STRIPE_CONNECT_WEBHOOK_SECRET}
-          CATALOG_MEDIA_R2_ACCOUNT_ID=${CATALOG_MEDIA_R2_ACCOUNT_ID}
-          CATALOG_MEDIA_R2_ACCESS_KEY_ID=${CATALOG_MEDIA_R2_ACCESS_KEY_ID}
-          CATALOG_MEDIA_R2_SECRET_ACCESS_KEY=${CATALOG_MEDIA_R2_SECRET_ACCESS_KEY}
-          CATALOG_MEDIA_R2_BUCKET=${CATALOG_MEDIA_R2_BUCKET}
-          CATALOG_MEDIA_PUBLIC_BASE_URL=${CATALOG_MEDIA_PUBLIC_BASE_URL}
-          CATALOG_MEDIA_UPLOAD_MAX_BYTES=${CATALOG_MEDIA_UPLOAD_MAX_BYTES}
-          CATALOG_MEDIA_UPLOAD_EXPIRY_SECONDS=${CATALOG_MEDIA_UPLOAD_EXPIRY_SECONDS}
-          CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS_VALUE}
-          CORS_ALLOWED_ORIGIN_HOST_SUFFIXES=${CORS_ALLOWED_ORIGIN_HOST_SUFFIXES}
-          PUBLIC_API_BASE_URL=${PUBLIC_API_BASE_URL_VALUE}
-          PASSKEY_RP_ID=${PASSKEY_RP_ID:-${API_DOMAIN}}
-          GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
-          GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET}
-          GOOGLE_OAUTH_STATE_SECRET=${GOOGLE_OAUTH_STATE_SECRET}
-          GOOGLE_OAUTH_ALLOWED_REDIRECT_URIS=${GOOGLE_OAUTH_ALLOWED_REDIRECT_URIS}
-          CATALOG_DEFAULT_LOCATION_ID=${CATALOG_DEFAULT_LOCATION_ID}
-          CATALOG_DEFAULT_BRAND_ID=${CATALOG_DEFAULT_BRAND_ID}
-          CATALOG_DEFAULT_BRAND_NAME=${CATALOG_DEFAULT_BRAND_NAME}
-          CATALOG_DEFAULT_LOCATION_NAME=${CATALOG_DEFAULT_LOCATION_NAME}
-          CATALOG_DEFAULT_MARKET_LABEL=${CATALOG_DEFAULT_MARKET_LABEL}
-          WEBAPP_MENU_SOURCE_URL=${WEBAPP_MENU_SOURCE_URL}
-          MENU_SYNC_LOCATION_ID=${MENU_SYNC_LOCATION_ID}
-          MENU_SYNC_INTERVAL_MS=${MENU_SYNC_INTERVAL_MS}
-          MENU_SYNC_MAX_RETRIES=${MENU_SYNC_MAX_RETRIES}
-          MENU_SYNC_RETRY_DELAY_MS=${MENU_SYNC_RETRY_DELAY_MS}
-          ENVVARS
-
-          if [ -n "${GHCR_USERNAME:-}" ] && [ -n "${GHCR_TOKEN:-}" ] && printf '%s' "${IMAGE_REGISTRY_PREFIX}" | grep -q '^ghcr.io/'; then
-            printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USERNAME}" --password-stdin
-          fi
-          ./bin/deploy-compose.sh .env
-          REMOTE
-
-      - name: Smoke check deployed stack
-        if: steps.deploy-check.outputs.enabled == 'true'
+      - name: Wait for the production API
         env:
           API_DOMAIN: ${{ vars.API_DOMAIN }}
-          CLIENT_DASHBOARD_DOMAIN: ${{ vars.CLIENT_DASHBOARD_DOMAIN }}
         run: |
-          if [ -n "${CLIENT_DASHBOARD_DOMAIN:-}" ]; then
-            export CLIENT_DASHBOARD_ORIGIN="https://${CLIENT_DASHBOARD_DOMAIN}"
-          fi
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error --max-time 10 "https://${API_DOMAIN}/health" > /dev/null; then
+              exit 0
+            fi
+            echo "Waiting for production API (${attempt}/30)..."
+            sleep 5
+          done
+          echo "Production API did not become healthy." >&2
+          exit 1
 
-          ./infra/free/bin/smoke-check.sh "https://${API_DOMAIN}/v1"
-
-      - name: Skip production deploy (prerequisites missing)
-        if: steps.deploy-check.outputs.enabled != 'true'
-        run: echo "deploy-prod skipped due to missing required secrets/variables."
+      - name: Smoke check deployed stack
+        env:
+          CLIENT_DASHBOARD_ORIGIN: https://${{ vars.CLIENT_DASHBOARD_DOMAIN }}
+        run: ./infra/free/bin/smoke-check.sh "https://${{ vars.API_DOMAIN }}/v1"

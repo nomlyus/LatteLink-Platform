@@ -1,0 +1,9 @@
+build:
+  docker:
+    web: Dockerfile.heroku
+release:
+  image: web
+  command:
+    - node dist/migrate.js
+run:
+  web: node dist/index.js

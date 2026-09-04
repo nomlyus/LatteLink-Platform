@@ -1,6 +1,6 @@
 # LatteLink Development Flow
 
-Last reviewed: `2026-04-27`
+Last reviewed: `2026-09-03`
 
 This document is the single source of truth for how code moves through this repo. GitHub settings, branch protections, templates, and automation should stay aligned with this document. If another file disagrees with this one, this document wins.
 
@@ -78,10 +78,12 @@ Deployment is automatic to `dev` from `develop`, and deliberate to `production`.
 Flow:
 
 1. Push to `develop`
-2. GitHub Actions builds and publishes Docker images tagged with the full git SHA
-3. GitHub Actions deploys that SHA to the `dev` environment
+2. The full `ci` workflow validates the commit
+3. `deploy-dev` pushes that exact Git source to the Heroku development app
 4. Verify the deployed system in `dev`
-5. Promote the exact passing SHA to `production` with the production deploy workflow
+5. Fast-forward the exact passing commit to `main`
+6. Create a published GitHub Release with release notes for that commit
+7. `deploy-prod` validates the release and deploys it to the Heroku production app
 
 Production deploys, manual redeploys, and rollbacks should always use a known git SHA.
 
@@ -93,35 +95,33 @@ Versioning happens from `main`.
 
 - Production release tags are mandatory for new production releases.
 - Release tags use semantic versioning and must advance beyond the latest `vX.Y.Z` tag.
-- The production deploy workflow creates the tag after the production smoke check passes.
+- A GitHub Release must already exist and be published for the current `main`
+  commit before production deploy starts.
 - Update [CHANGELOG.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/CHANGELOG.md) when you want a formal release record.
 
 Typical release steps:
 
 ```bash
-git checkout develop
-git pull
-git checkout main
+git switch develop
+git pull --ff-only origin develop
+git switch main
+git pull --ff-only origin main
 git merge --ff-only develop
 git push origin main
-gh workflow run deploy-prod.yml \
-  -f image_tag=<verified-main-sha> \
-  -f release_kind=release \
-  -f release_tag=v0.2.1
+gh release create v1.0.11 --target main --title "v1.0.11" --notes-file release-notes.md
 ```
 
 The workflow rejects a new release if:
 
-- `image_tag` is not a full git SHA
-- the SHA is not already on `origin/main`
-- `release_tag` is missing, malformed, already exists, or is not greater than the latest `vX.Y.Z` tag
+- the release has no notes or is a draft/prerelease
+- the release tag is not semantic or does not advance
+- the tagged commit is not the current `origin/main` commit
 
 Rollbacks and manual redeploys use the same production deploy workflow without advancing the release tag:
 
 ```bash
 gh workflow run deploy-prod.yml \
-  -f image_tag=<previous-known-good-sha> \
-  -f release_kind=rollback
+  -f source_sha=<previous-known-good-main-sha>
 ```
 
 ---
