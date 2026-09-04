@@ -1,0 +1,38 @@
+{
+  "name": "@lattelink/backend-runtime",
+  "version": "1.0.10",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "migrate": "node dist/migrate.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src test --max-warnings=0",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@lattelink/catalog": "workspace:*",
+    "@lattelink/gateway": "workspace:*",
+    "@lattelink/identity": "workspace:*",
+    "@lattelink/loyalty": "workspace:*",
+    "@lattelink/menu-sync-worker": "workspace:*",
+    "@lattelink/notifications": "workspace:*",
+    "@lattelink/notifications-dispatch-worker": "workspace:*",
+    "@lattelink/orders": "workspace:*",
+    "@lattelink/payment-reconciler-worker": "workspace:*",
+    "@lattelink/payments": "workspace:*",
+    "@lattelink/persistence": "workspace:*",
+    "fastify": "5.8.5"
+  },
+  "devDependencies": {
+    "@lattelink/config-eslint": "workspace:*",
+    "@lattelink/config-typescript": "workspace:*",
+    "@types/node": "^22.20.1",
+    "eslint": "^9.39.5",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  }
+}
