@@ -213,7 +213,7 @@ Run `infra/free/bin/check-postgres-pool-budget.sh infra/free/.env.example` local
    the expected Supabase project reference.
 2. `scripts/heroku-sync-config.mjs` updates only changed, allowlisted Heroku
    config vars and never prints values.
-3. Heroku builds `infra/heroku/Dockerfile` through `heroku.yml`.
+3. Heroku builds `Dockerfile.heroku` through `heroku.yml`.
 4. Heroku runs `node dist/migrate.js` in the release phase. A failed migration
    blocks the release.
 5. The web process starts the loopback services, then the public gateway, then
