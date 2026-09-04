@@ -235,11 +235,12 @@ function parseStalePaymentIntentCandidate(row: unknown): StalePaymentIntentCandi
   };
 }
 
-async function listStalePendingPaymentIntents(
+export async function listStalePendingPaymentIntents(
   db: PersistenceDb,
   cutoffIso: string,
   batchSize: number
 ): Promise<StalePaymentIntentCandidate[]> {
+  // Payment references are legacy text; cast UUID keys, not potentially invalid references.
   const result = await sql<z.input<typeof stalePaymentIntentRowSchema>>`
     SELECT * FROM (
     SELECT
@@ -253,7 +254,7 @@ async function listStalePendingPaymentIntents(
       spi.created_at,
       o.order_json
     FROM payments_stripe_payment_intents spi
-    INNER JOIN orders o ON o.order_id = spi.order_id
+    INNER JOIN orders o ON o.order_id::text = spi.order_id
     WHERE o.order_json->>'status' = 'PENDING_PAYMENT'
     UNION ALL
     SELECT
@@ -267,7 +268,7 @@ async function listStalePendingPaymentIntents(
       spi.created_at,
       q.quote_json AS order_json
     FROM payments_stripe_payment_intents spi
-    INNER JOIN order_checkout_drafts d ON d.checkout_id = spi.order_id
+    INNER JOIN order_checkout_drafts d ON d.checkout_id::text = spi.order_id
     INNER JOIN orders_quotes q ON q.quote_id = d.quote_id
     WHERE d.status = 'OPEN'
     ) candidates
