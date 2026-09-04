@@ -114,6 +114,24 @@ type PersistedOperatorLocationAccessRow = {
   location_id: string;
 };
 
+type PersistedOperatorAuthenticatorRow = {
+  authenticator_id: string;
+  operator_user_id: string;
+  kind: OperatorAuthenticatorKind;
+  provider: OperatorAuthenticatorProvider;
+  issuer: string | null;
+  subject: string | null;
+  credential_id: string | null;
+  password_hash: string | null;
+  display_name: string | null;
+  metadata_json: unknown;
+  recovery_capable: boolean;
+  last_used_at: string | Date | null;
+  revoked_at: string | Date | null;
+  created_at: string | Date;
+  updated_at: string | Date;
+};
+
 type PersistedOperatorSessionRow = {
   access_token: string;
   refresh_token: string;
@@ -203,6 +221,18 @@ export type AppleAccountRecord = {
 };
 
 export type OperatorUserRecord = OperatorUser;
+export type OperatorAuthenticatorKind = "password" | "oauth" | "passkey";
+export type OperatorAuthenticatorProvider = "legacy_password" | "google" | "apple" | "webauthn";
+export type OperatorAuthenticatorRecord = {
+  authenticatorId: string;
+  operatorUserId: string;
+  kind: OperatorAuthenticatorKind;
+  provider: OperatorAuthenticatorProvider;
+  displayName: string;
+  recoveryCapable: boolean;
+  lastUsedAt?: string;
+  createdAt: string;
+};
 export type InternalAdminUserRecord = InternalAdminUser;
 export type OwnerInviteRecord = OwnerInvite & {
   tokenHash: string;
@@ -254,6 +284,26 @@ export type IdentityRepository = {
     email?: string;
     emailVerified: boolean;
   }): Promise<OperatorUserRecord | undefined>;
+  listOperatorAuthenticators(operatorUserId: string): Promise<OperatorAuthenticatorRecord[]>;
+  linkOperatorOAuthAuthenticator(input: {
+    operatorUserId: string;
+    provider: "google" | "apple";
+    issuer: string;
+    subject: string;
+    displayName?: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<OperatorAuthenticatorRecord>;
+  addOperatorPasskeyAuthenticator(input: {
+    operatorUserId: string;
+    credentialId: string;
+    displayName?: string;
+    recoveryCapable: boolean;
+    metadata?: Record<string, unknown>;
+  }): Promise<OperatorAuthenticatorRecord>;
+  revokeOperatorAuthenticator(input: {
+    operatorUserId: string;
+    authenticatorId: string;
+  }): Promise<OperatorAuthenticatorRecord | undefined>;
   verifyOperatorPassword(email: string, password: string): Promise<OperatorUserRecord | undefined>;
   createOperatorUser(input: {
     displayName: string;
@@ -264,7 +314,13 @@ export type IdentityRepository = {
   }): Promise<OperatorUserRecord>;
   updateOperatorUser(
     operatorUserId: string,
-    input: { displayName?: string; email?: string; role?: OperatorRole; active?: boolean; password?: string }
+    input: {
+      displayName?: string;
+      email?: string;
+      role?: OperatorRole;
+      active?: boolean;
+      password?: string;
+    }
   ): Promise<OperatorUserRecord | undefined>;
   deleteOperatorUser(operatorUserId: string): Promise<boolean>;
   createOwnerInvite(input: {
@@ -290,10 +346,7 @@ export type IdentityRepository = {
   getInternalAdminUserById(internalAdminUserId: string): Promise<InternalAdminUserRecord | undefined>;
   getInternalAdminUserByEmail(email: string): Promise<InternalAdminUserRecord | undefined>;
   verifyInternalAdminPassword(email: string, password: string): Promise<InternalAdminUserRecord | undefined>;
-  saveInternalAdminSession(
-    session: StoredInternalAdminSession,
-    authMethod: "password" | "refresh"
-  ): Promise<void>;
+  saveInternalAdminSession(session: StoredInternalAdminSession, authMethod: "password" | "refresh"): Promise<void>;
   rotateInternalAdminRefreshSession(
     refreshToken: string,
     createNextSession: (internalAdminUserId: string) => StoredInternalAdminSession,
@@ -515,7 +568,9 @@ function getInternalAdminBootstrapSeeds(): Array<{
   const ownerPassword = trimToUndefined(process.env.DEFAULT_INTERNAL_ADMIN_OWNER_PASSWORD);
   if (ownerEmail || ownerPassword) {
     if (!ownerEmail || !ownerPassword) {
-      throw new Error("DEFAULT_INTERNAL_ADMIN_OWNER_EMAIL and DEFAULT_INTERNAL_ADMIN_OWNER_PASSWORD must be configured together");
+      throw new Error(
+        "DEFAULT_INTERNAL_ADMIN_OWNER_EMAIL and DEFAULT_INTERNAL_ADMIN_OWNER_PASSWORD must be configured together"
+      );
     }
 
     seeds.push({
@@ -547,7 +602,9 @@ function getInternalAdminBootstrapSeeds(): Array<{
   const supportPassword = trimToUndefined(process.env.DEFAULT_INTERNAL_ADMIN_SUPPORT_PASSWORD);
   if (supportEmail || supportPassword) {
     if (!supportEmail || !supportPassword) {
-      throw new Error("DEFAULT_INTERNAL_ADMIN_SUPPORT_EMAIL and DEFAULT_INTERNAL_ADMIN_SUPPORT_PASSWORD must be configured together");
+      throw new Error(
+        "DEFAULT_INTERNAL_ADMIN_SUPPORT_EMAIL and DEFAULT_INTERNAL_ADMIN_SUPPORT_PASSWORD must be configured together"
+      );
     }
 
     seeds.push({
@@ -575,6 +632,39 @@ function toOperatorUserRecord(row: PersistedOperatorUserRow, locationIds?: reado
     createdAt: parseIsoDate(row.created_at),
     updatedAt: parseIsoDate(row.updated_at)
   };
+}
+
+function toOperatorAuthenticatorRecord(row: PersistedOperatorAuthenticatorRow): OperatorAuthenticatorRecord {
+  return {
+    authenticatorId: row.authenticator_id,
+    operatorUserId: row.operator_user_id,
+    kind: row.kind,
+    provider: row.provider,
+    displayName: row.display_name?.trim() || defaultAuthenticatorDisplayName(row.provider),
+    recoveryCapable: row.recovery_capable,
+    lastUsedAt: row.last_used_at ? parseIsoDate(row.last_used_at) : undefined,
+    createdAt: parseIsoDate(row.created_at)
+  };
+}
+
+function defaultAuthenticatorDisplayName(provider: OperatorAuthenticatorProvider) {
+  switch (provider) {
+    case "legacy_password":
+      return "Password";
+    case "google":
+      return "Google";
+    case "apple":
+      return "Apple";
+    case "webauthn":
+      return "Passkey";
+  }
+}
+
+function assertOAuthProviderIssuer(provider: "google" | "apple", issuer: string) {
+  const expectedIssuer = provider === "google" ? "https://accounts.google.com" : "https://appleid.apple.com";
+  if (issuer !== expectedIssuer) {
+    throw new Error("INVALID_AUTHENTICATOR_ISSUER");
+  }
 }
 
 function toInternalAdminUserRecord(row: PersistedInternalAdminUserRow): InternalAdminUserRecord {
@@ -619,7 +709,10 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
   const customerAuthMethodsByUserId = new Map<string, Set<CustomerAuthMethod>>();
   const operatorSessionsByAccessToken = new Map<string, { session: StoredOperatorSession; revokedAt?: string }>();
   const operatorAccessTokenByRefreshToken = new Map<string, string>();
-  const internalAdminSessionsByAccessToken = new Map<string, { session: StoredInternalAdminSession; revokedAt?: string }>();
+  const internalAdminSessionsByAccessToken = new Map<
+    string,
+    { session: StoredInternalAdminSession; revokedAt?: string }
+  >();
   const internalAdminAccessTokenByRefreshToken = new Map<string, string>();
   const passkeyChallengesByFlow = new Map<"register" | "auth", PasskeyChallengeRecord[]>();
   const passkeyCredentialsById = new Map<string, PasskeyCredentialRecord>();
@@ -633,20 +726,39 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
   const operatorUserIdByEmail = new Map<string, string>();
   const operatorUserIdByGoogleSub = new Map<string, string>();
   const operatorPasswordHashByUserId = new Map<string, string>();
+  const operatorAuthenticatorsById = new Map<
+    string,
+    OperatorAuthenticatorRecord & {
+      issuer?: string;
+      subject?: string;
+      credentialId?: string;
+      metadata?: Record<string, unknown>;
+      revokedAt?: string;
+    }
+  >();
   const ownerInvitesById = new Map<string, OwnerInviteRecord>();
   const internalAdminUsersById = new Map<string, InternalAdminUserRecord>();
   const internalAdminUserIdByEmail = new Map<string, string>();
   const internalAdminPasswordHashByUserId = new Map<string, string>();
 
-  function setOperatorLocationAccess(operatorUserId: string, primaryLocationId: string, extraLocationIds?: Iterable<string>) {
+  function setOperatorLocationAccess(
+    operatorUserId: string,
+    primaryLocationId: string,
+    extraLocationIds?: Iterable<string>
+  ) {
     operatorLocationIdsByUserId.set(
       operatorUserId,
-      new Set(normalizeOperatorLocationIds(primaryLocationId, extraLocationIds ? Array.from(extraLocationIds) : undefined))
+      new Set(
+        normalizeOperatorLocationIds(primaryLocationId, extraLocationIds ? Array.from(extraLocationIds) : undefined)
+      )
     );
   }
 
   function getOperatorLocationIds(operatorUserId: string, primaryLocationId: string) {
-    return normalizeOperatorLocationIds(primaryLocationId, Array.from(operatorLocationIdsByUserId.get(operatorUserId) ?? []));
+    return normalizeOperatorLocationIds(
+      primaryLocationId,
+      Array.from(operatorLocationIdsByUserId.get(operatorUserId) ?? [])
+    );
   }
 
   function cloneOperatorRecord(record: OperatorUserRecord) {
@@ -654,6 +766,55 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
       ...record,
       locationIds: getOperatorLocationIds(record.operatorUserId, record.locationId)
     };
+  }
+
+  function listActiveOperatorAuthenticators(operatorUserId: string) {
+    return Array.from(operatorAuthenticatorsById.values()).filter(
+      (authenticator) => authenticator.operatorUserId === operatorUserId && !authenticator.revokedAt
+    );
+  }
+
+  function saveMemoryPasswordAuthenticator(operatorUserId: string, passwordHash: string) {
+    const existing = listActiveOperatorAuthenticators(operatorUserId).find(
+      (authenticator) => authenticator.provider === "legacy_password"
+    );
+    if (existing) {
+      operatorPasswordHashByUserId.set(operatorUserId, passwordHash);
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const authenticatorId = randomUUID();
+    operatorAuthenticatorsById.set(authenticatorId, {
+      authenticatorId,
+      operatorUserId,
+      kind: "password",
+      provider: "legacy_password",
+      displayName: "Password",
+      recoveryCapable: true,
+      createdAt: now
+    });
+    operatorPasswordHashByUserId.set(operatorUserId, passwordHash);
+  }
+
+  function assertAuthenticatorCanBeRevoked(operator: OperatorUserRecord, authenticatorId: string) {
+    const active = listActiveOperatorAuthenticators(operator.operatorUserId);
+    const target = active.find((authenticator) => authenticator.authenticatorId === authenticatorId);
+    if (!target) {
+      return undefined;
+    }
+
+    const remainingRecoveryMethods = active.filter(
+      (authenticator) => authenticator.authenticatorId !== authenticatorId && authenticator.recoveryCapable
+    ).length;
+    if (target.recoveryCapable && remainingRecoveryMethods === 0) {
+      throw new Error("FINAL_RECOVERY_METHOD");
+    }
+    if (operator.role === "owner" && target.provider === "legacy_password" && remainingRecoveryMethods < 2) {
+      throw new Error("OWNER_PASSWORD_REQUIRES_TWO_RECOVERY_METHODS");
+    }
+
+    return target;
   }
 
   function ensureStoreAccountAvailable(locationId: string, excludeOperatorUserId?: string) {
@@ -867,7 +1028,9 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
       accessTokenByRefreshToken.delete(refreshToken);
 
       const nextSession = createNextSession(entry.session.userId);
-      sessionsByAccessToken.set(nextSession.accessToken, { session: nextSession });
+      sessionsByAccessToken.set(nextSession.accessToken, {
+        session: nextSession
+      });
       accessTokenByRefreshToken.set(nextSession.refreshToken, nextSession.accessToken);
       return toPublicSession(nextSession);
     },
@@ -955,7 +1118,9 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
     },
     async listOperatorUsers(locationId) {
       return Array.from(operatorUsersById.values())
-        .filter((user) => (locationId ? getOperatorLocationIds(user.operatorUserId, user.locationId).includes(locationId) : true))
+        .filter((user) =>
+          locationId ? getOperatorLocationIds(user.operatorUserId, user.locationId).includes(locationId) : true
+        )
         .map((user) => cloneOperatorRecord(user))
         .sort((left, right) => left.displayName.localeCompare(right.displayName));
     },
@@ -988,23 +1153,133 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
         return existing && existing.active ? cloneOperatorRecord(existing) : undefined;
       }
 
-      if (!input.emailVerified || !input.email) {
+      return undefined;
+    },
+    async listOperatorAuthenticators(operatorUserId) {
+      return listActiveOperatorAuthenticators(operatorUserId)
+        .map((authenticator) => ({
+          authenticatorId: authenticator.authenticatorId,
+          operatorUserId: authenticator.operatorUserId,
+          kind: authenticator.kind,
+          provider: authenticator.provider,
+          displayName: authenticator.displayName,
+          recoveryCapable: authenticator.recoveryCapable,
+          lastUsedAt: authenticator.lastUsedAt,
+          createdAt: authenticator.createdAt
+        }))
+        .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    },
+    async linkOperatorOAuthAuthenticator(input) {
+      assertOAuthProviderIssuer(input.provider, input.issuer);
+      const operator = operatorUsersById.get(input.operatorUserId);
+      if (!operator || !operator.active) {
+        throw new Error("OPERATOR_NOT_FOUND");
+      }
+
+      const existingIdentity = Array.from(operatorAuthenticatorsById.values()).find(
+        (authenticator) =>
+          authenticator.kind === "oauth" &&
+          authenticator.issuer === input.issuer &&
+          authenticator.subject === input.subject
+      );
+      if (existingIdentity) {
+        if (existingIdentity.operatorUserId !== input.operatorUserId) {
+          throw new Error("AUTHENTICATOR_ALREADY_LINKED");
+        }
+        if (existingIdentity.revokedAt) {
+          const activeProvider = listActiveOperatorAuthenticators(input.operatorUserId).find(
+            (authenticator) => authenticator.provider === input.provider
+          );
+          if (activeProvider) {
+            throw new Error("AUTHENTICATOR_PROVIDER_ALREADY_LINKED");
+          }
+          const reactivated = { ...existingIdentity, revokedAt: undefined };
+          operatorAuthenticatorsById.set(existingIdentity.authenticatorId, reactivated);
+          if (input.provider === "google") {
+            operatorUserIdByGoogleSub.set(input.subject, input.operatorUserId);
+          }
+          return { ...reactivated };
+        }
+        return { ...existingIdentity };
+      }
+
+      const existingProvider = listActiveOperatorAuthenticators(input.operatorUserId).find(
+        (authenticator) => authenticator.provider === input.provider
+      );
+      if (existingProvider) {
+        throw new Error("AUTHENTICATOR_PROVIDER_ALREADY_LINKED");
+      }
+
+      const now = new Date().toISOString();
+      const authenticatorId = randomUUID();
+      const record = {
+        authenticatorId,
+        operatorUserId: input.operatorUserId,
+        kind: "oauth" as const,
+        provider: input.provider,
+        displayName: input.displayName?.trim() || defaultAuthenticatorDisplayName(input.provider),
+        recoveryCapable: true,
+        createdAt: now,
+        issuer: input.issuer,
+        subject: input.subject,
+        metadata: input.metadata
+      };
+      operatorAuthenticatorsById.set(authenticatorId, record);
+      if (input.provider === "google") {
+        operatorUserIdByGoogleSub.set(input.subject, input.operatorUserId);
+      }
+      return { ...record };
+    },
+    async addOperatorPasskeyAuthenticator(input) {
+      const operator = operatorUsersById.get(input.operatorUserId);
+      if (!operator || !operator.active) {
+        throw new Error("OPERATOR_NOT_FOUND");
+      }
+      const duplicate = Array.from(operatorAuthenticatorsById.values()).find(
+        (authenticator) => authenticator.credentialId === input.credentialId
+      );
+      if (duplicate) {
+        throw new Error("AUTHENTICATOR_ALREADY_LINKED");
+      }
+
+      const now = new Date().toISOString();
+      const authenticatorId = randomUUID();
+      const record = {
+        authenticatorId,
+        operatorUserId: input.operatorUserId,
+        kind: "passkey" as const,
+        provider: "webauthn" as const,
+        displayName: input.displayName?.trim() || "Passkey",
+        recoveryCapable: input.recoveryCapable,
+        createdAt: now,
+        credentialId: input.credentialId,
+        metadata: input.metadata
+      };
+      operatorAuthenticatorsById.set(authenticatorId, record);
+      return { ...record };
+    },
+    async revokeOperatorAuthenticator(input) {
+      const operator = operatorUsersById.get(input.operatorUserId);
+      if (!operator) {
+        return undefined;
+      }
+      const target = assertAuthenticatorCanBeRevoked(operator, input.authenticatorId);
+      if (!target) {
         return undefined;
       }
 
-      const normalizedEmail = normalizeEmail(input.email);
-      const operatorUserId = operatorUserIdByEmail.get(normalizedEmail);
-      if (!operatorUserId) {
-        return undefined;
+      const revokedAt = new Date().toISOString();
+      operatorAuthenticatorsById.set(target.authenticatorId, {
+        ...target,
+        revokedAt
+      });
+      if (target.provider === "google" && target.subject) {
+        operatorUserIdByGoogleSub.delete(target.subject);
       }
-
-      const existing = operatorUsersById.get(operatorUserId);
-      if (!existing || !existing.active) {
-        return undefined;
+      if (target.provider === "legacy_password") {
+        operatorPasswordHashByUserId.delete(input.operatorUserId);
       }
-
-      operatorUserIdByGoogleSub.set(input.googleSub, operatorUserId);
-      return cloneOperatorRecord(existing);
+      return { ...target };
     },
     async verifyOperatorPassword(email, password) {
       const operatorUserId = operatorUserIdByEmail.get(normalizeEmail(email));
@@ -1045,7 +1320,7 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
             input.locationId
           ]);
           if (!operatorPasswordHashByUserId.has(existingId)) {
-            operatorPasswordHashByUserId.set(existingId, hashOperatorPassword(input.password));
+            saveMemoryPasswordAuthenticator(existingId, hashOperatorPassword(input.password));
           }
 
           return cloneOperatorRecord(updated);
@@ -1069,7 +1344,7 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
       operatorUsersById.set(record.operatorUserId, record);
       setOperatorLocationAccess(record.operatorUserId, record.locationId);
       operatorUserIdByEmail.set(record.email, record.operatorUserId);
-      operatorPasswordHashByUserId.set(record.operatorUserId, hashOperatorPassword(input.password));
+      saveMemoryPasswordAuthenticator(record.operatorUserId, hashOperatorPassword(input.password));
       return cloneOperatorRecord(record);
     },
     async updateOperatorUser(operatorUserId, input) {
@@ -1105,9 +1380,13 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
 
       operatorUsersById.set(operatorUserId, updated);
       if (input.password) {
-        operatorPasswordHashByUserId.set(operatorUserId, hashOperatorPassword(input.password));
+        saveMemoryPasswordAuthenticator(operatorUserId, hashOperatorPassword(input.password));
       }
-      setOperatorLocationAccess(operatorUserId, updated.locationId, getOperatorLocationIds(operatorUserId, existing.locationId));
+      setOperatorLocationAccess(
+        operatorUserId,
+        updated.locationId,
+        getOperatorLocationIds(operatorUserId, existing.locationId)
+      );
       return cloneOperatorRecord(updated);
     },
     async deleteOperatorUser(operatorUserId) {
@@ -1124,6 +1403,11 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
         }
       }
       operatorPasswordHashByUserId.delete(operatorUserId);
+      for (const [authenticatorId, authenticator] of operatorAuthenticatorsById.entries()) {
+        if (authenticator.operatorUserId === operatorUserId) {
+          operatorAuthenticatorsById.delete(authenticatorId);
+        }
+      }
       operatorLocationIdsByUserId.delete(operatorUserId);
       for (const [accessToken, entry] of operatorSessionsByAccessToken.entries()) {
         if (entry.session.operatorUserId === operatorUserId) {
@@ -1223,7 +1507,9 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
       operatorAccessTokenByRefreshToken.delete(refreshToken);
 
       const nextSession = createNextSession(entry.session.operatorUserId, entry.session.activeLocationId);
-      operatorSessionsByAccessToken.set(nextSession.accessToken, { session: nextSession });
+      operatorSessionsByAccessToken.set(nextSession.accessToken, {
+        session: nextSession
+      });
       operatorAccessTokenByRefreshToken.set(nextSession.refreshToken, nextSession.accessToken);
       return nextSession;
     },
@@ -1324,7 +1610,9 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
       internalAdminAccessTokenByRefreshToken.delete(refreshToken);
 
       const nextSession = createNextSession(entry.session.internalAdminUserId);
-      internalAdminSessionsByAccessToken.set(nextSession.accessToken, { session: nextSession });
+      internalAdminSessionsByAccessToken.set(nextSession.accessToken, {
+        session: nextSession
+      });
       internalAdminAccessTokenByRefreshToken.set(nextSession.refreshToken, nextSession.accessToken);
       return nextSession;
     },
@@ -1477,6 +1765,46 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
     if (existing) {
       throw new Error("STORE_ACCOUNT_ALREADY_EXISTS");
     }
+  };
+
+  const upsertPasswordAuthenticator = async (operatorUserId: string, passwordHash: string) => {
+    const existing = await db
+      .selectFrom("operator_authenticators")
+      .select("authenticator_id")
+      .where("operator_user_id", "=", operatorUserId)
+      .where("provider", "=", "legacy_password")
+      .where("revoked_at", "is", null)
+      .executeTakeFirst();
+
+    if (existing) {
+      await db
+        .updateTable("operator_authenticators")
+        .set({
+          password_hash: passwordHash,
+          updated_at: new Date().toISOString()
+        })
+        .where("authenticator_id", "=", existing.authenticator_id)
+        .execute();
+      return;
+    }
+
+    await db
+      .insertInto("operator_authenticators")
+      .values({
+        operator_user_id: operatorUserId,
+        kind: "password",
+        provider: "legacy_password",
+        issuer: null,
+        subject: null,
+        credential_id: null,
+        password_hash: passwordHash,
+        display_name: "Password",
+        metadata_json: {},
+        recovery_capable: true,
+        last_used_at: null,
+        revoked_at: null
+      })
+      .execute();
   };
 
   return {
@@ -1800,11 +2128,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
       });
     },
     async getUserById(userId) {
-      const row = await db
-        .selectFrom("identity_users")
-        .selectAll()
-        .where("user_id", "=", userId)
-        .executeTakeFirst();
+      const row = await db.selectFrom("identity_users").selectAll().where("user_id", "=", userId).executeTakeFirst();
 
       if (!row) {
         return undefined;
@@ -1901,16 +2225,8 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
     },
     async listAuthMethodsForUser(userId) {
       const [userRow, sessionRows] = await Promise.all([
-        db
-          .selectFrom("identity_users")
-          .select(["apple_sub"])
-          .where("user_id", "=", userId)
-          .executeTakeFirst(),
-        db
-          .selectFrom("identity_sessions")
-          .select(["auth_method"])
-          .where("user_id", "=", userId)
-          .execute()
+        db.selectFrom("identity_users").select(["apple_sub"]).where("user_id", "=", userId).executeTakeFirst(),
+        db.selectFrom("identity_sessions").select(["auth_method"]).where("user_id", "=", userId).execute()
       ]);
 
       const methods = new Set<CustomerAuthMethod>();
@@ -1942,9 +2258,9 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
       const session = authSessionSchema.parse({
         accessToken: persisted.access_token,
         refreshToken: persisted.refresh_token,
-            userId: persisted.user_id,
-            expiresAt: parseIsoDate(persisted.access_expires_at ?? persisted.expires_at)
-          });
+        userId: persisted.user_id,
+        expiresAt: parseIsoDate(persisted.access_expires_at ?? persisted.expires_at)
+      });
 
       if (!isAccessSessionActive(session, persisted.revoked_at ? parseIsoDate(persisted.revoked_at) : undefined)) {
         return undefined;
@@ -1975,7 +2291,12 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         createdAt: parseIsoDate(persisted.created_at)
       };
 
-      if (!isRefreshSessionActive(parseIsoDate(persisted.expires_at), persisted.revoked_at ? parseIsoDate(persisted.revoked_at) : undefined)) {
+      if (
+        !isRefreshSessionActive(
+          parseIsoDate(persisted.expires_at),
+          persisted.revoked_at ? parseIsoDate(persisted.revoked_at) : undefined
+        )
+      ) {
         return undefined;
       }
 
@@ -2143,9 +2464,12 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
     },
     async getOperatorUserByGoogleSub(googleSub) {
       const row = await db
-        .selectFrom("operator_users")
-        .selectAll()
-        .where("google_sub", "=", googleSub)
+        .selectFrom("operator_authenticators")
+        .innerJoin("operator_users", "operator_users.operator_user_id", "operator_authenticators.operator_user_id")
+        .selectAll("operator_users")
+        .where("operator_authenticators.issuer", "=", "https://accounts.google.com")
+        .where("operator_authenticators.subject", "=", googleSub)
+        .where("operator_authenticators.revoked_at", "is", null)
         .executeTakeFirst();
 
       if (!row) {
@@ -2155,104 +2479,243 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
       return hydrateOperatorUser(row as PersistedOperatorUserRow);
     },
     async resolveOperatorUserForGoogleSignIn(input) {
-      const normalizedEmail = input.email ? normalizeEmail(input.email) : undefined;
-      const now = new Date().toISOString();
-
-      const operatorUserId = await db.transaction().execute(async (trx) => {
-        const existingGoogle = await trx
-          .selectFrom("operator_users")
-          .selectAll()
-          .where("google_sub", "=", input.googleSub)
-          .executeTakeFirst();
-
-        if (existingGoogle) {
-          if (!existingGoogle.active) {
-            return undefined;
-          }
-
-          if (input.emailVerified && normalizedEmail && normalizedEmail !== existingGoogle.email) {
-            const conflicting = await trx
-              .selectFrom("operator_users")
-              .select("operator_user_id")
-              .where("email", "=", normalizedEmail)
-              .executeTakeFirst();
-
-            if (!conflicting || conflicting.operator_user_id === existingGoogle.operator_user_id) {
-              await trx
-                .updateTable("operator_users")
-                .set({
-                  email: normalizedEmail,
-                  updated_at: now
-                })
-                .where("operator_user_id", "=", existingGoogle.operator_user_id)
-                .execute();
-            }
-          }
-
-          const refreshed = await trx
-            .selectFrom("operator_users")
-            .select("operator_user_id")
-            .where("operator_user_id", "=", existingGoogle.operator_user_id)
-            .executeTakeFirstOrThrow();
-
-          return refreshed.operator_user_id;
-        }
-
-        if (!input.emailVerified || !normalizedEmail) {
-          return undefined;
-        }
-
-        const existingEmail = await trx
-          .selectFrom("operator_users")
-          .selectAll()
-          .where("email", "=", normalizedEmail)
-          .executeTakeFirst();
-
-        if (!existingEmail || !existingEmail.active) {
-          return undefined;
-        }
-
-        try {
-          await trx
-            .updateTable("operator_users")
-            .set({
-              google_sub: input.googleSub,
-              updated_at: now
-            })
-            .where("operator_user_id", "=", existingEmail.operator_user_id)
-            .execute();
-        } catch {
-          const concurrentGoogle = await trx
-            .selectFrom("operator_users")
-            .selectAll()
-            .where("google_sub", "=", input.googleSub)
-            .executeTakeFirst();
-
-          if (!concurrentGoogle || !concurrentGoogle.active) {
-            return undefined;
-          }
-
-          return concurrentGoogle.operator_user_id;
-        }
-
-        const updated = await trx
-          .selectFrom("operator_users")
-          .select("operator_user_id")
-          .where("operator_user_id", "=", existingEmail.operator_user_id)
-          .executeTakeFirstOrThrow();
-
-        return updated.operator_user_id;
-      });
-      if (!operatorUserId) {
+      const linked = await db
+        .selectFrom("operator_authenticators")
+        .innerJoin("operator_users", "operator_users.operator_user_id", "operator_authenticators.operator_user_id")
+        .selectAll("operator_users")
+        .where("operator_authenticators.issuer", "=", "https://accounts.google.com")
+        .where("operator_authenticators.subject", "=", input.googleSub)
+        .where("operator_authenticators.revoked_at", "is", null)
+        .where("operator_users.active", "=", true)
+        .executeTakeFirst();
+      if (!linked) {
         return undefined;
       }
-
-      const refreshed = await db
-        .selectFrom("operator_users")
+      await db
+        .updateTable("operator_authenticators")
+        .set({
+          last_used_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .where("issuer", "=", "https://accounts.google.com")
+        .where("subject", "=", input.googleSub)
+        .execute();
+      return hydrateOperatorUser(linked as PersistedOperatorUserRow);
+    },
+    async listOperatorAuthenticators(operatorUserId) {
+      const rows = await db
+        .selectFrom("operator_authenticators")
         .selectAll()
         .where("operator_user_id", "=", operatorUserId)
+        .where("revoked_at", "is", null)
+        .orderBy("created_at", "asc")
+        .execute();
+      return (rows as PersistedOperatorAuthenticatorRow[]).map(toOperatorAuthenticatorRecord);
+    },
+    async linkOperatorOAuthAuthenticator(input) {
+      assertOAuthProviderIssuer(input.provider, input.issuer);
+      const existingOperator = await db
+        .selectFrom("operator_users")
+        .select(["operator_user_id", "active"])
+        .where("operator_user_id", "=", input.operatorUserId)
         .executeTakeFirst();
-      return hydrateOperatorUser(refreshed as PersistedOperatorUserRow | undefined);
+      if (!existingOperator?.active) {
+        throw new Error("OPERATOR_NOT_FOUND");
+      }
+
+      const existingIdentity = await db
+        .selectFrom("operator_authenticators")
+        .selectAll()
+        .where("issuer", "=", input.issuer)
+        .where("subject", "=", input.subject)
+        .executeTakeFirst();
+      if (existingIdentity) {
+        if (existingIdentity.operator_user_id !== input.operatorUserId) {
+          throw new Error("AUTHENTICATOR_ALREADY_LINKED");
+        }
+        if (existingIdentity.revoked_at) {
+          const activeProvider = await db
+            .selectFrom("operator_authenticators")
+            .select("authenticator_id")
+            .where("operator_user_id", "=", input.operatorUserId)
+            .where("provider", "=", input.provider)
+            .where("revoked_at", "is", null)
+            .executeTakeFirst();
+          if (activeProvider) {
+            throw new Error("AUTHENTICATOR_PROVIDER_ALREADY_LINKED");
+          }
+          const now = new Date().toISOString();
+          const reactivated = await db
+            .updateTable("operator_authenticators")
+            .set({ revoked_at: null, updated_at: now })
+            .where("authenticator_id", "=", existingIdentity.authenticator_id)
+            .returningAll()
+            .executeTakeFirstOrThrow();
+          if (input.provider === "google") {
+            await db
+              .updateTable("operator_users")
+              .set({ google_sub: input.subject, updated_at: now })
+              .where("operator_user_id", "=", input.operatorUserId)
+              .execute();
+          }
+          return toOperatorAuthenticatorRecord(reactivated as PersistedOperatorAuthenticatorRow);
+        }
+        return toOperatorAuthenticatorRecord(existingIdentity as PersistedOperatorAuthenticatorRow);
+      }
+
+      const existingProvider = await db
+        .selectFrom("operator_authenticators")
+        .select("authenticator_id")
+        .where("operator_user_id", "=", input.operatorUserId)
+        .where("provider", "=", input.provider)
+        .where("revoked_at", "is", null)
+        .executeTakeFirst();
+      if (existingProvider) {
+        throw new Error("AUTHENTICATOR_PROVIDER_ALREADY_LINKED");
+      }
+
+      try {
+        const inserted = await db
+          .insertInto("operator_authenticators")
+          .values({
+            operator_user_id: input.operatorUserId,
+            kind: "oauth",
+            provider: input.provider,
+            issuer: input.issuer,
+            subject: input.subject,
+            credential_id: null,
+            password_hash: null,
+            display_name: input.displayName?.trim() || defaultAuthenticatorDisplayName(input.provider),
+            metadata_json: input.metadata ?? {},
+            recovery_capable: true,
+            last_used_at: null,
+            revoked_at: null
+          })
+          .returningAll()
+          .executeTakeFirstOrThrow();
+        if (input.provider === "google") {
+          await db
+            .updateTable("operator_users")
+            .set({
+              google_sub: input.subject,
+              updated_at: new Date().toISOString()
+            })
+            .where("operator_user_id", "=", input.operatorUserId)
+            .execute();
+        }
+        return toOperatorAuthenticatorRecord(inserted as PersistedOperatorAuthenticatorRow);
+      } catch (error) {
+        const conflict = await db
+          .selectFrom("operator_authenticators")
+          .select("operator_user_id")
+          .where("issuer", "=", input.issuer)
+          .where("subject", "=", input.subject)
+          .executeTakeFirst();
+        if (conflict) {
+          throw new Error("AUTHENTICATOR_ALREADY_LINKED");
+        }
+        throw error;
+      }
+    },
+    async addOperatorPasskeyAuthenticator(input) {
+      const existingOperator = await db
+        .selectFrom("operator_users")
+        .select(["operator_user_id", "active"])
+        .where("operator_user_id", "=", input.operatorUserId)
+        .executeTakeFirst();
+      if (!existingOperator?.active) {
+        throw new Error("OPERATOR_NOT_FOUND");
+      }
+      try {
+        const inserted = await db
+          .insertInto("operator_authenticators")
+          .values({
+            operator_user_id: input.operatorUserId,
+            kind: "passkey",
+            provider: "webauthn",
+            issuer: null,
+            subject: null,
+            credential_id: input.credentialId,
+            password_hash: null,
+            display_name: input.displayName?.trim() || "Passkey",
+            metadata_json: input.metadata ?? {},
+            recovery_capable: input.recoveryCapable,
+            last_used_at: null,
+            revoked_at: null
+          })
+          .returningAll()
+          .executeTakeFirstOrThrow();
+        return toOperatorAuthenticatorRecord(inserted as PersistedOperatorAuthenticatorRow);
+      } catch (error) {
+        const duplicate = await db
+          .selectFrom("operator_authenticators")
+          .select("authenticator_id")
+          .where("credential_id", "=", input.credentialId)
+          .executeTakeFirst();
+        if (duplicate) {
+          throw new Error("AUTHENTICATOR_ALREADY_LINKED");
+        }
+        throw error;
+      }
+    },
+    async revokeOperatorAuthenticator(input) {
+      return db.transaction().execute(async (trx) => {
+        const operator = await trx
+          .selectFrom("operator_users")
+          .select(["operator_user_id", "role"])
+          .where("operator_user_id", "=", input.operatorUserId)
+          .forUpdate()
+          .executeTakeFirst();
+        if (!operator) {
+          return undefined;
+        }
+        const target = await trx
+          .selectFrom("operator_authenticators")
+          .selectAll()
+          .where("authenticator_id", "=", input.authenticatorId)
+          .where("operator_user_id", "=", input.operatorUserId)
+          .where("revoked_at", "is", null)
+          .forUpdate()
+          .executeTakeFirst();
+        if (!target) {
+          return undefined;
+        }
+        const recoveryRows = await trx
+          .selectFrom("operator_authenticators")
+          .select("authenticator_id")
+          .where("operator_user_id", "=", input.operatorUserId)
+          .where("recovery_capable", "=", true)
+          .where("revoked_at", "is", null)
+          .where("authenticator_id", "!=", input.authenticatorId)
+          .execute();
+        if (target.recovery_capable && recoveryRows.length === 0) {
+          throw new Error("FINAL_RECOVERY_METHOD");
+        }
+        if (operator.role === "owner" && target.provider === "legacy_password" && recoveryRows.length < 2) {
+          throw new Error("OWNER_PASSWORD_REQUIRES_TWO_RECOVERY_METHODS");
+        }
+        const now = new Date().toISOString();
+        await trx
+          .updateTable("operator_authenticators")
+          .set({ revoked_at: now, updated_at: now })
+          .where("authenticator_id", "=", input.authenticatorId)
+          .execute();
+        if (target.provider === "legacy_password") {
+          await trx
+            .updateTable("operator_users")
+            .set({ password_hash: null, updated_at: now })
+            .where("operator_user_id", "=", input.operatorUserId)
+            .execute();
+        } else if (target.provider === "google") {
+          await trx
+            .updateTable("operator_users")
+            .set({ google_sub: null, updated_at: now })
+            .where("operator_user_id", "=", input.operatorUserId)
+            .where("google_sub", "=", target.subject)
+            .execute();
+        }
+        return toOperatorAuthenticatorRecord(target as PersistedOperatorAuthenticatorRow);
+      });
     },
     async verifyOperatorPassword(email, password) {
       const row = await db
@@ -2266,9 +2729,25 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
       }
 
       const persisted = row as PersistedOperatorUserRow;
-      if (!persisted.active || !verifyOperatorPasswordHash(password, persisted.password_hash)) {
+      const authenticator = await db
+        .selectFrom("operator_authenticators")
+        .select(["authenticator_id", "password_hash"])
+        .where("operator_user_id", "=", persisted.operator_user_id)
+        .where("provider", "=", "legacy_password")
+        .where("revoked_at", "is", null)
+        .executeTakeFirst();
+      if (!persisted.active || !authenticator || !verifyOperatorPasswordHash(password, authenticator.password_hash)) {
         return undefined;
       }
+
+      await db
+        .updateTable("operator_authenticators")
+        .set({
+          last_used_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .where("authenticator_id", "=", authenticator.authenticator_id)
+        .execute();
 
       return hydrateOperatorUser(persisted);
     },
@@ -2295,6 +2774,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
           })
           .execute();
         await grantOperatorLocationAccess(db, operatorUserId, input.locationId);
+        await upsertPasswordAuthenticator(operatorUserId, hashOperatorPassword(input.password));
       } catch {
         const existing = await db
           .selectFrom("operator_users")
@@ -2318,6 +2798,10 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
           .where("operator_user_id", "=", existing.operator_user_id)
           .execute();
         await grantOperatorLocationAccess(db, existing.operator_user_id, input.locationId);
+        await upsertPasswordAuthenticator(
+          existing.operator_user_id,
+          existing.password_hash ?? hashOperatorPassword(input.password)
+        );
 
         const updated = await db
           .selectFrom("operator_users")
@@ -2375,6 +2859,9 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         })
         .where("operator_user_id", "=", operatorUserId)
         .execute();
+      if (input.password) {
+        await upsertPasswordAuthenticator(operatorUserId, hashOperatorPassword(input.password));
+      }
 
       const updated = await db
         .selectFrom("operator_users")
@@ -2565,7 +3052,9 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         userId: session.operatorUserId
       });
 
-      if (!isAccessSessionActive(accessSession, persisted.revoked_at ? parseIsoDate(persisted.revoked_at) : undefined)) {
+      if (
+        !isAccessSessionActive(accessSession, persisted.revoked_at ? parseIsoDate(persisted.revoked_at) : undefined)
+      ) {
         return undefined;
       }
 
@@ -2583,7 +3072,12 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
       }
 
       const persisted = row as unknown as PersistedOperatorSessionRow;
-      if (!isRefreshSessionActive(parseIsoDate(persisted.expires_at), persisted.revoked_at ? parseIsoDate(persisted.revoked_at) : undefined)) {
+      if (
+        !isRefreshSessionActive(
+          parseIsoDate(persisted.expires_at),
+          persisted.revoked_at ? parseIsoDate(persisted.revoked_at) : undefined
+        )
+      ) {
         return undefined;
       }
 
@@ -2742,7 +3236,9 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         userId: session.internalAdminUserId
       });
 
-      if (!isAccessSessionActive(accessSession, persisted.revoked_at ? parseIsoDate(persisted.revoked_at) : undefined)) {
+      if (
+        !isAccessSessionActive(accessSession, persisted.revoked_at ? parseIsoDate(persisted.revoked_at) : undefined)
+      ) {
         return undefined;
       }
 
@@ -2760,7 +3256,12 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
       }
 
       const persisted = row as unknown as PersistedInternalAdminSessionRow;
-      if (!isRefreshSessionActive(parseIsoDate(persisted.expires_at), persisted.revoked_at ? parseIsoDate(persisted.revoked_at) : undefined)) {
+      if (
+        !isRefreshSessionActive(
+          parseIsoDate(persisted.expires_at),
+          persisted.revoked_at ? parseIsoDate(persisted.revoked_at) : undefined
+        )
+      ) {
         return undefined;
       }
 

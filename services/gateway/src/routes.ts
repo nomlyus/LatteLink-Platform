@@ -22,8 +22,12 @@ import {
   logoutRequestSchema,
   meResponseSchema,
   operatorAuthContract,
+  operatorAuthenticatorParamsSchema,
+  operatorAuthenticatorRevokeRequestSchema,
   operatorDevAccessRequestSchema,
   operatorGoogleExchangeRequestSchema,
+  operatorGoogleLinkExchangeRequestSchema,
+  operatorGoogleLinkStartRequestSchema,
   operatorInviteAcceptRequestSchema,
   operatorInviteAcceptResponseSchema,
   operatorInviteLookupResponseSchema,
@@ -2594,6 +2598,79 @@ export async function registerRoutes(app: FastifyInstance) {
         path: "/v1/operator/auth/google/exchange",
         body: input,
         responseSchema: operatorAuthContract.routes.googleExchange.response
+      });
+    }
+  );
+
+  app.get(
+    "/v1/operator/auth/authenticators",
+    { preHandler: [app.rateLimit(authReadRateLimit), requireBearerAuth] },
+    async (request, reply) =>
+      proxyUpstream({
+        request,
+        reply,
+        baseUrl: identityBaseUrl,
+        serviceLabel: "Identity",
+        method: "GET",
+        path: "/v1/operator/auth/authenticators",
+        responseSchema: operatorAuthContract.routes.authenticatorSummary.response
+      })
+  );
+
+  app.get(
+    "/v1/operator/auth/authenticators/google/start",
+    { preHandler: [app.rateLimit(authWriteRateLimit), requireBearerAuth] },
+    async (request, reply) => {
+      const input = operatorGoogleLinkStartRequestSchema.parse(request.query);
+      const search = new URLSearchParams({
+        redirectUri: input.redirectUri,
+        confirm: "true"
+      });
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: identityBaseUrl,
+        serviceLabel: "Identity",
+        method: "GET",
+        path: `/v1/operator/auth/authenticators/google/start?${search.toString()}`,
+        responseSchema: operatorAuthContract.routes.googleLinkStart.response
+      });
+    }
+  );
+
+  app.post(
+    "/v1/operator/auth/authenticators/google/exchange",
+    { preHandler: [app.rateLimit(authWriteRateLimit), requireBearerAuth] },
+    async (request, reply) => {
+      const input = operatorGoogleLinkExchangeRequestSchema.parse(request.body);
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: identityBaseUrl,
+        serviceLabel: "Identity",
+        method: "POST",
+        path: "/v1/operator/auth/authenticators/google/exchange",
+        body: input,
+        responseSchema: operatorAuthContract.routes.googleLinkExchange.response
+      });
+    }
+  );
+
+  app.post(
+    "/v1/operator/auth/authenticators/:authenticatorId/revoke",
+    { preHandler: [app.rateLimit(authWriteRateLimit), requireBearerAuth] },
+    async (request, reply) => {
+      const { authenticatorId } = operatorAuthenticatorParamsSchema.parse(request.params);
+      const input = operatorAuthenticatorRevokeRequestSchema.parse(request.body);
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: identityBaseUrl,
+        serviceLabel: "Identity",
+        method: "POST",
+        path: `/v1/operator/auth/authenticators/${encodeURIComponent(authenticatorId)}/revoke`,
+        body: input,
+        responseSchema: operatorAuthContract.routes.revokeAuthenticator.response
       });
     }
   );

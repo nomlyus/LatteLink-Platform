@@ -53,12 +53,18 @@ describe("operator Google SSO", () => {
 
   it("starts Google sign-in and exchanges a verified Google user into an operator session", async () => {
     const repository = createInMemoryIdentityRepository();
-    await provisionOwnerAccess(repository, {
+    const provisioned = await provisionOwnerAccess(repository, {
       allowInMemory: true,
       displayName: "Pilot Owner",
       email: "pilot.owner@example.com",
       locationId: "rawaqcoffee01",
       password: "PilotOwner123!"
+    });
+    await repository.linkOperatorOAuthAuthenticator({
+      operatorUserId: provisioned.operator.operatorUserId,
+      provider: "google",
+      issuer: "https://accounts.google.com",
+      subject: "google-user-123"
     });
     await provisionOwnerAccess(repository, {
       allowInMemory: true,
@@ -137,12 +143,18 @@ describe("operator Google SSO", () => {
 
   it("rejects Google sign-in when the requested location is not authorized", async () => {
     const repository = createInMemoryIdentityRepository();
-    await provisionOwnerAccess(repository, {
+    const provisioned = await provisionOwnerAccess(repository, {
       allowInMemory: true,
       displayName: "Pilot Owner",
       email: "pilot.owner@example.com",
       locationId: "pilot-01",
       password: "PilotOwner123!"
+    });
+    await repository.linkOperatorOAuthAuthenticator({
+      operatorUserId: provisioned.operator.operatorUserId,
+      provider: "google",
+      issuer: "https://accounts.google.com",
+      subject: "google-user-unauthorized-location"
     });
     const app = await buildApp({ repository });
 

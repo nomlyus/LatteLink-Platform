@@ -262,6 +262,24 @@ export interface OperatorLocationAccessTable {
   created_at: Generated<string>;
 }
 
+export interface OperatorAuthenticatorTable {
+  authenticator_id: Generated<string>;
+  operator_user_id: string;
+  kind: "password" | "oauth" | "passkey";
+  provider: "legacy_password" | "google" | "apple" | "webauthn";
+  issuer: string | null;
+  subject: string | null;
+  credential_id: string | null;
+  password_hash: string | null;
+  display_name: string | null;
+  metadata_json: unknown;
+  recovery_capable: boolean;
+  last_used_at: string | null;
+  revoked_at: string | null;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
 export interface OperatorSessionTable {
   access_token: string;
   refresh_token: string;
@@ -587,6 +605,7 @@ export interface PersistenceDatabase {
   identity_passkey_credentials: IdentityPasskeyCredentialTable;
   operator_users: OperatorUserTable;
   operator_location_access: OperatorLocationAccessTable;
+  operator_authenticators: OperatorAuthenticatorTable;
   operator_sessions: OperatorSessionTable;
   internal_admin_users: InternalAdminUserTable;
   internal_admin_sessions: InternalAdminSessionTable;

@@ -32,6 +32,7 @@ import * as migration0020 from "../src/migrations/0020_stripe_phase1_foundations
 import * as migration0035 from "../src/migrations/0035_onboarding_client_shells.js";
 import * as migration0036 from "../src/migrations/0036_backfill_onboarding_client_shells.js";
 import * as migration0038 from "../src/migrations/0038_mobile_experience_builder.js";
+import * as migration0045 from "../src/migrations/0045_operator_authenticators.js";
 import { resolveMigrationFolderPath } from "../src/migrate.js";
 
 describe("persistence", () => {
@@ -156,7 +157,8 @@ describe("persistence", () => {
       "0020_stripe_phase1_foundations": migration0020,
       "0035_onboarding_client_shells": migration0035,
       "0036_backfill_onboarding_client_shells": migration0036,
-      "0038_mobile_experience_builder": migration0038
+      "0038_mobile_experience_builder": migration0038,
+      "0045_operator_authenticators": migration0045
     };
 
     expect(basename(resolveMigrationFolderPath())).toBe("migrations");
@@ -183,7 +185,8 @@ describe("persistence", () => {
       "0020_stripe_phase1_foundations",
       "0035_onboarding_client_shells",
       "0036_backfill_onboarding_client_shells",
-      "0038_mobile_experience_builder"
+      "0038_mobile_experience_builder",
+      "0045_operator_authenticators"
     ]);
 
     for (const migration of Object.values(migrations)) {

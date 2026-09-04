@@ -30,6 +30,41 @@ export const operatorAuthProvidersSchema = z.object({
   })
 });
 
+export const operatorAuthenticatorKindSchema = z.enum(["password", "oauth", "passkey"]);
+export const operatorAuthenticatorProviderSchema = z.enum(["legacy_password", "google", "apple", "webauthn"]);
+
+export const operatorAuthenticatorSchema = z.object({
+  authenticatorId: z.string().uuid(),
+  kind: operatorAuthenticatorKindSchema,
+  provider: operatorAuthenticatorProviderSchema,
+  displayName: z.string().trim().min(1),
+  recoveryCapable: z.boolean(),
+  lastUsedAt: z.string().datetime().optional(),
+  createdAt: z.string().datetime()
+});
+
+export const operatorAuthenticatorSummarySchema = z.object({
+  authenticators: z.array(operatorAuthenticatorSchema),
+  recoveryCapableCount: z.number().int().nonnegative(),
+  canRemovePassword: z.boolean()
+});
+
+export const operatorGoogleLinkStartRequestSchema = googleOAuthStartRequestSchema.extend({
+  confirm: z.union([z.literal(true), z.literal("true")]).transform(() => true as const)
+});
+
+export const operatorGoogleLinkExchangeRequestSchema = operatorGoogleExchangeRequestSchema.extend({
+  confirm: z.literal(true)
+});
+
+export const operatorAuthenticatorParamsSchema = z.object({
+  authenticatorId: z.string().uuid()
+});
+
+export const operatorAuthenticatorRevokeRequestSchema = z.object({
+  confirm: z.literal(true)
+});
+
 export const passkeyChallengeRequestSchema = z.object({
   userId: z.string().uuid().optional()
 });
@@ -438,6 +473,30 @@ export const operatorAuthContract = {
       path: "/google/exchange",
       request: operatorGoogleExchangeRequestSchema,
       response: operatorSessionSchema
+    },
+    authenticatorSummary: {
+      method: "GET",
+      path: "/authenticators",
+      request: z.undefined(),
+      response: operatorAuthenticatorSummarySchema
+    },
+    googleLinkStart: {
+      method: "GET",
+      path: "/authenticators/google/start",
+      request: operatorGoogleLinkStartRequestSchema,
+      response: googleOAuthStartResponseSchema
+    },
+    googleLinkExchange: {
+      method: "POST",
+      path: "/authenticators/google/exchange",
+      request: operatorGoogleLinkExchangeRequestSchema,
+      response: operatorAuthenticatorSummarySchema
+    },
+    revokeAuthenticator: {
+      method: "POST",
+      path: "/authenticators/:authenticatorId/revoke",
+      request: operatorAuthenticatorRevokeRequestSchema,
+      response: operatorAuthenticatorSummarySchema
     },
     signIn: {
       method: "POST",

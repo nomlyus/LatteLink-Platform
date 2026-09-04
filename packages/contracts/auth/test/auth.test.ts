@@ -15,6 +15,8 @@ import {
   operatorInviteAcceptResponseSchema,
   operatorInviteLookupResponseSchema,
   operatorGoogleExchangeRequestSchema,
+  operatorAuthenticatorSummarySchema,
+  operatorGoogleLinkStartRequestSchema,
   operatorPasswordSignInSchema,
   operatorUserCreateSchema,
   passkeyVerifyRequestSchema,
@@ -57,6 +59,37 @@ describe("contracts-auth", () => {
 
     expect(data.code).toBe("google-auth-code");
     expect(data.state).toBe("signed-state");
+  });
+
+  it("requires explicit confirmation for provider linking and exposes only safe authenticator fields", () => {
+    expect(() =>
+      operatorGoogleLinkStartRequestSchema.parse({
+        redirectUri: "http://localhost:5173/?google_auth_callback=1"
+      })
+    ).toThrowError();
+    expect(
+      operatorGoogleLinkStartRequestSchema.parse({
+        redirectUri: "http://localhost:5173/?google_auth_callback=1",
+        confirm: "true"
+      }).confirm
+    ).toBe(true);
+
+    const summary = operatorAuthenticatorSummarySchema.parse({
+      authenticators: [
+        {
+          authenticatorId: "123e4567-e89b-12d3-a456-426614174000",
+          kind: "oauth",
+          provider: "apple",
+          displayName: "Apple",
+          recoveryCapable: true,
+          createdAt: "2026-04-01T00:00:00.000Z",
+          subject: "must-not-survive-parsing"
+        }
+      ],
+      recoveryCapableCount: 1,
+      canRemovePassword: false
+    });
+    expect(summary.authenticators[0]).not.toHaveProperty("subject");
   });
 
   it("accepts passkey register verify payload", () => {

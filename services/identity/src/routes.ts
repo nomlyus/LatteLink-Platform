@@ -25,8 +25,13 @@ import {
   logoutRequestSchema,
   meResponseSchema,
   operatorAuthProvidersSchema,
+  operatorAuthenticatorParamsSchema,
+  operatorAuthenticatorRevokeRequestSchema,
+  operatorAuthenticatorSummarySchema,
   operatorDevAccessRequestSchema,
   operatorGoogleExchangeRequestSchema,
+  operatorGoogleLinkExchangeRequestSchema,
+  operatorGoogleLinkStartRequestSchema,
   operatorInviteAcceptRequestSchema,
   operatorInviteAcceptResponseSchema,
   operatorInviteLookupResponseSchema,
@@ -146,16 +151,18 @@ function isPastAbsoluteSessionTtl(createdAt: string, absoluteTtlMs: number) {
 
 function buildCustomerMeResponse(input: {
   userId: string;
-  user: {
-    email?: string;
-    name?: string;
-    displayName?: string;
-    phoneNumber?: string;
-    birthday?: string;
-    profileCompletedAt?: string;
-    createdAt: string;
-    updatedAt: string;
-  } | undefined;
+  user:
+    | {
+        email?: string;
+        name?: string;
+        displayName?: string;
+        phoneNumber?: string;
+        birthday?: string;
+        profileCompletedAt?: string;
+        createdAt: string;
+        updatedAt: string;
+      }
+    | undefined;
   methods: Array<"apple" | "passkey">;
 }) {
   return meResponseSchema.parse({
@@ -245,8 +252,7 @@ type GoogleOAuthConfig = {
 function loadGoogleOperatorConfig(): GoogleOAuthConfig | undefined {
   const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID?.trim();
   const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET?.trim();
-  const stateSecret =
-    process.env.GOOGLE_OAUTH_STATE_SECRET?.trim() || process.env.JWT_SECRET?.trim() || undefined;
+  const stateSecret = process.env.GOOGLE_OAUTH_STATE_SECRET?.trim() || process.env.JWT_SECRET?.trim() || undefined;
 
   if (!clientId || !clientSecret || !stateSecret) {
     return undefined;
@@ -257,7 +263,8 @@ function loadGoogleOperatorConfig(): GoogleOAuthConfig | undefined {
     clientSecret,
     stateSecret,
     allowedRedirectUris: parseCommaSeparatedEnv(process.env.GOOGLE_OAUTH_ALLOWED_REDIRECT_URIS),
-    authorizeEndpoint: process.env.GOOGLE_OAUTH_AUTHORIZE_ENDPOINT?.trim() || "https://accounts.google.com/o/oauth2/v2/auth",
+    authorizeEndpoint:
+      process.env.GOOGLE_OAUTH_AUTHORIZE_ENDPOINT?.trim() || "https://accounts.google.com/o/oauth2/v2/auth",
     tokenEndpoint: process.env.GOOGLE_OAUTH_TOKEN_ENDPOINT?.trim() || "https://oauth2.googleapis.com/token",
     userInfoEndpoint:
       process.env.GOOGLE_OAUTH_USERINFO_ENDPOINT?.trim() || "https://openidconnect.googleapis.com/v1/userinfo",
@@ -269,11 +276,19 @@ function isAllowedGoogleRedirectUri(config: GoogleOAuthConfig, redirectUri: stri
   return config.allowedRedirectUris.length === 0 || config.allowedRedirectUris.includes(redirectUri);
 }
 
-function buildGoogleOAuthState(input: { redirectUri: string; stateSecret: string; locationId?: string }) {
+function buildGoogleOAuthState(input: {
+  redirectUri: string;
+  stateSecret: string;
+  locationId?: string;
+  intent?: "sign-in" | "link";
+  operatorUserId?: string;
+}) {
   const payload = Buffer.from(
     JSON.stringify({
       redirectUri: input.redirectUri,
       ...(input.locationId ? { locationId: input.locationId } : {}),
+      intent: input.intent ?? "sign-in",
+      ...(input.operatorUserId ? { operatorUserId: input.operatorUserId } : {}),
       issuedAt: Date.now()
     }),
     "utf8"
@@ -283,18 +298,21 @@ function buildGoogleOAuthState(input: { redirectUri: string; stateSecret: string
   return `${payload}.${signature}`;
 }
 
-function parseGoogleOAuthState(input: {
-  state: string;
-  stateSecret: string;
-  maxAgeMs: number;
-}): { redirectUri: string; locationId?: string } | undefined {
+function parseGoogleOAuthState(input: { state: string; stateSecret: string; maxAgeMs: number }):
+  | {
+      redirectUri: string;
+      locationId?: string;
+      intent: "sign-in" | "link";
+      operatorUserId?: string;
+    }
+  | undefined {
   const [payload, signature] = input.state.split(".");
   if (!payload || !signature) {
     return undefined;
   }
 
   const expectedSignature = createHmac("sha256", input.stateSecret).update(payload).digest("base64url");
-  if (signature !== expectedSignature) {
+  if (!secretsMatch(expectedSignature, signature)) {
     return undefined;
   }
 
@@ -303,8 +321,11 @@ function parseGoogleOAuthState(input: {
       .object({
         redirectUri: z.string().url(),
         locationId: z.string().trim().min(1).optional(),
+        intent: z.enum(["sign-in", "link"]).default("sign-in"),
+        operatorUserId: z.string().uuid().optional(),
         issuedAt: z.number().int().nonnegative()
       })
+      .refine((value) => value.intent !== "link" || value.operatorUserId !== undefined)
       .parse(JSON.parse(Buffer.from(payload, "base64url").toString("utf8")));
 
     if (Date.now() - parsed.issuedAt > input.maxAgeMs) {
@@ -313,7 +334,9 @@ function parseGoogleOAuthState(input: {
 
     return {
       redirectUri: parsed.redirectUri,
-      locationId: parsed.locationId
+      locationId: parsed.locationId,
+      intent: parsed.intent,
+      operatorUserId: parsed.operatorUserId
     };
   } catch {
     return undefined;
@@ -338,6 +361,80 @@ function normalizeGoogleEmailVerified(value: boolean | string | undefined) {
   }
 
   return typeof value === "string" ? value.toLowerCase() === "true" : false;
+}
+
+class GoogleOAuthExchangeError extends Error {
+  constructor(
+    readonly code: string,
+    message: string
+  ) {
+    super(message);
+  }
+}
+
+async function exchangeGoogleIdentity(input: {
+  config: GoogleOAuthConfig;
+  code: string;
+  redirectUri: string;
+}): Promise<z.infer<typeof googleUserInfoSchema>> {
+  let tokenResponse: Response;
+  try {
+    tokenResponse = await fetch(input.config.tokenEndpoint, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code: input.code,
+        client_id: input.config.clientId,
+        client_secret: input.config.clientSecret,
+        redirect_uri: input.redirectUri,
+        grant_type: "authorization_code"
+      })
+    });
+  } catch {
+    throw new GoogleOAuthExchangeError("GOOGLE_TOKEN_EXCHANGE_FAILED", "Google token exchange failed");
+  }
+
+  const parsedTokenBody = parseJsonSafely(await tokenResponse.text());
+  if (!tokenResponse.ok) {
+    throw new GoogleOAuthExchangeError("GOOGLE_TOKEN_EXCHANGE_FAILED", "Google token exchange failed");
+  }
+  const parsedToken = googleTokenResponseSchema.safeParse(parsedTokenBody);
+  if (!parsedToken.success) {
+    throw new GoogleOAuthExchangeError("GOOGLE_TOKEN_INVALID", "Google token response was invalid");
+  }
+
+  let userInfoResponse: Response;
+  try {
+    userInfoResponse = await fetch(input.config.userInfoEndpoint, {
+      method: "GET",
+      headers: { authorization: `Bearer ${parsedToken.data.access_token}` }
+    });
+  } catch {
+    throw new GoogleOAuthExchangeError("GOOGLE_USERINFO_FAILED", "Google user info lookup failed");
+  }
+
+  const parsedUserInfoBody = parseJsonSafely(await userInfoResponse.text());
+  if (!userInfoResponse.ok) {
+    throw new GoogleOAuthExchangeError("GOOGLE_USERINFO_FAILED", "Google user info lookup failed");
+  }
+  const parsedUserInfo = googleUserInfoSchema.safeParse(parsedUserInfoBody);
+  if (!parsedUserInfo.success) {
+    throw new GoogleOAuthExchangeError("GOOGLE_USERINFO_INVALID", "Google user info response was invalid");
+  }
+  return parsedUserInfo.data;
+}
+
+async function buildOperatorAuthenticatorSummary(
+  repository: IdentityRepository,
+  operator: { operatorUserId: string; role: "owner" | "manager" | "store" }
+) {
+  const authenticators = await repository.listOperatorAuthenticators(operator.operatorUserId);
+  const recoveryCapableCount = authenticators.filter((authenticator) => authenticator.recoveryCapable).length;
+  return operatorAuthenticatorSummarySchema.parse({
+    authenticators,
+    recoveryCapableCount,
+    canRemovePassword: recoveryCapableCount >= (operator.role === "owner" ? 3 : 2)
+  });
 }
 
 function isOperatorEmailConflictError(error: unknown) {
@@ -624,10 +721,7 @@ function resolveOperatorActiveLocation(
   };
 }
 
-function authorizeGatewayRequest(
-  request: { headers: unknown; id: string },
-  gatewayToken: string | undefined
-) {
+function authorizeGatewayRequest(request: { headers: unknown; id: string }, gatewayToken: string | undefined) {
   if (!gatewayToken) {
     return {
       ok: false as const,
@@ -654,7 +748,10 @@ function authorizeGatewayRequest(
 }
 
 function logIdentityMutation(
-  request: { id: string; log: { info(payload: Record<string, unknown>, message: string): void } },
+  request: {
+    id: string;
+    log: { info(payload: Record<string, unknown>, message: string): void };
+  },
   message: string,
   details: Record<string, unknown>
 ) {
@@ -668,7 +765,11 @@ function logIdentityMutation(
 }
 
 async function recordAuditLog(
-  request: { id: string; headers: unknown; log: { error(payload: Record<string, unknown>, message: string): void } },
+  request: {
+    id: string;
+    headers: unknown;
+    log: { error(payload: Record<string, unknown>, message: string): void };
+  },
   repository: IdentityRepository,
   entry: Parameters<IdentityRepository["writeAuditLog"]>[0]
 ) {
@@ -785,10 +886,7 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
     timeWindow: rateLimitWindowMs
   };
   const passkeyChallengeRateLimit = {
-    max: toPositiveInteger(
-      process.env.IDENTITY_RATE_LIMIT_PASSKEY_CHALLENGE_MAX,
-      defaultPasskeyChallengeRateLimitMax
-    ),
+    max: toPositiveInteger(process.env.IDENTITY_RATE_LIMIT_PASSKEY_CHALLENGE_MAX, defaultPasskeyChallengeRateLimitMax),
     timeWindow: rateLimitWindowMs
   };
   const passkeyVerifyRateLimit = {
@@ -802,14 +900,15 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
     toPositiveInteger(process.env.OPERATOR_SESSION_ABSOLUTE_TTL_DAYS, defaultOperatorAbsoluteSessionTtlDays)
   );
   const internalAdminAbsoluteSessionTtlMs = daysToMs(
-    toPositiveInteger(
-      process.env.INTERNAL_ADMIN_SESSION_ABSOLUTE_TTL_DAYS,
-      defaultInternalAdminAbsoluteSessionTtlDays
-    )
+    toPositiveInteger(process.env.INTERNAL_ADMIN_SESSION_ABSOLUTE_TTL_DAYS, defaultInternalAdminAbsoluteSessionTtlDays)
   );
 
   const requireCustomerAuth = async (request: FastifyRequest, reply: FastifyReply) => {
-    const session = await getAuthenticatedCustomerSession({ request, reply, repository });
+    const session = await getAuthenticatedCustomerSession({
+      request,
+      reply,
+      repository
+    });
     if (!session) {
       return;
     }
@@ -825,7 +924,12 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
   app.get("/ready", async (_request, reply) => {
     try {
       await repository.pingDb();
-      return { status: "ready", service: "identity", persistence: repository.backend, environment: getPersistenceReadinessMetadata() };
+      return {
+        status: "ready",
+        service: "identity",
+        persistence: repository.backend,
+        environment: getPersistenceReadinessMetadata()
+      };
     } catch {
       reply.status(503);
       return {
@@ -847,13 +951,15 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
       const input = appleExchangeRequestSchema.parse(request.body);
 
       if (!appleAuthConfig) {
-        return reply.status(503).send(
-          buildApiError(
-            request.id,
-            "APPLE_SIGN_IN_NOT_CONFIGURED",
-            "Apple Sign-In is not configured on the identity service"
-          )
-        );
+        return reply
+          .status(503)
+          .send(
+            buildApiError(
+              request.id,
+              "APPLE_SIGN_IN_NOT_CONFIGURED",
+              "Apple Sign-In is not configured on the identity service"
+            )
+          );
       }
 
       let verifiedIdentity: Awaited<ReturnType<typeof verifyAppleIdentityToken>>;
@@ -915,13 +1021,15 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
           },
           "Apple Sign-In did not produce a revocable refresh token"
         );
-        return reply.status(502).send(
-          buildApiError(
-            request.id,
-            "APPLE_REFRESH_TOKEN_UNAVAILABLE",
-            "Apple Sign-In could not establish a revocable session for this account"
-          )
-        );
+        return reply
+          .status(502)
+          .send(
+            buildApiError(
+              request.id,
+              "APPLE_REFRESH_TOKEN_UNAVAILABLE",
+              "Apple Sign-In could not establish a revocable session for this account"
+            )
+          );
       }
 
       return issueSession({
@@ -990,13 +1098,15 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
     async (request, reply) => {
       const input = passkeyVerifyRequestSchema.parse(request.body);
       if (!input.response.attestationObject) {
-        return reply.status(400).send(
-          buildApiError(
-            request.id,
-            "INVALID_PASSKEY_PAYLOAD",
-            "Register verification requires attestationObject in passkey response"
-          )
-        );
+        return reply
+          .status(400)
+          .send(
+            buildApiError(
+              request.id,
+              "INVALID_PASSKEY_PAYLOAD",
+              "Register verification requires attestationObject in passkey response"
+            )
+          );
       }
 
       const challengeValue = extractChallengeFromClientData(input.response.clientDataJSON);
@@ -1028,7 +1138,9 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
           },
           expectedChallenge: challenge.challenge,
           expectedOrigin:
-            passkeyConfig.expectedOrigins.length === 1 ? passkeyConfig.expectedOrigins[0] : passkeyConfig.expectedOrigins,
+            passkeyConfig.expectedOrigins.length === 1
+              ? passkeyConfig.expectedOrigins[0]
+              : passkeyConfig.expectedOrigins,
           expectedRPID: challenge.rpId,
           requireUserVerification: false
         });
@@ -1126,13 +1238,15 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
     async (request, reply) => {
       const input = passkeyVerifyRequestSchema.parse(request.body);
       if (!input.response.authenticatorData || !input.response.signature) {
-        return reply.status(400).send(
-          buildApiError(
-            request.id,
-            "INVALID_PASSKEY_PAYLOAD",
-            "Authentication verification requires authenticatorData and signature"
-          )
-        );
+        return reply
+          .status(400)
+          .send(
+            buildApiError(
+              request.id,
+              "INVALID_PASSKEY_PAYLOAD",
+              "Authentication verification requires authenticatorData and signature"
+            )
+          );
       }
 
       const challengeValue = extractChallengeFromClientData(input.response.clientDataJSON);
@@ -1178,7 +1292,9 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
           },
           expectedChallenge: challenge.challenge,
           expectedOrigin:
-            passkeyConfig.expectedOrigins.length === 1 ? passkeyConfig.expectedOrigins[0] : passkeyConfig.expectedOrigins,
+            passkeyConfig.expectedOrigins.length === 1
+              ? passkeyConfig.expectedOrigins[0]
+              : passkeyConfig.expectedOrigins,
           expectedRPID: challenge.rpId,
           credential: {
             id: credential.credentialId,
@@ -1192,7 +1308,9 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
         if (!verifiedAuthentication.verified || !verifiedAuthentication.authenticationInfo) {
           return reply
             .status(401)
-            .send(buildApiError(request.id, "PASSKEY_VERIFICATION_FAILED", "Passkey authentication verification failed"));
+            .send(
+              buildApiError(request.id, "PASSKEY_VERIFICATION_FAILED", "Passkey authentication verification failed")
+            );
         }
 
         await repository.updatePasskeyCredentialCounter(
@@ -1332,23 +1450,27 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
       const appleAccount = await repository.getAppleAccountForUser(session.userId);
       if (appleAccount?.appleSub) {
         if (!appleAuthConfig) {
-          return reply.status(503).send(
-            buildApiError(
-              request.id,
-              "APPLE_SIGN_IN_NOT_CONFIGURED",
-              "Apple Sign-In is not configured on the identity service"
-            )
-          );
+          return reply
+            .status(503)
+            .send(
+              buildApiError(
+                request.id,
+                "APPLE_SIGN_IN_NOT_CONFIGURED",
+                "Apple Sign-In is not configured on the identity service"
+              )
+            );
         }
 
         if (!appleAccount.refreshToken || !appleAccount.clientId) {
-          return reply.status(409).send(
-            buildApiError(
-              request.id,
-              "APPLE_REVOCATION_UNAVAILABLE",
-              "Apple Sign-In must be refreshed before this account can be deleted"
-            )
-          );
+          return reply
+            .status(409)
+            .send(
+              buildApiError(
+                request.id,
+                "APPLE_REVOCATION_UNAVAILABLE",
+                "Apple Sign-In must be refreshed before this account can be deleted"
+              )
+            );
         }
 
         try {
@@ -1475,7 +1597,9 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
       } catch {
         return reply
           .status(403)
-          .send(buildApiError(request.id, "OPERATOR_LOCATION_FORBIDDEN", "Operator does not have access to that location"));
+          .send(
+            buildApiError(request.id, "OPERATOR_LOCATION_FORBIDDEN", "Operator does not have access to that location")
+          );
       }
 
       const session = await issueOperatorSession({
@@ -1571,7 +1695,7 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
         stateSecret: config.stateSecret,
         maxAgeMs: config.stateTtlMs
       });
-      if (!parsedState || parsedState.redirectUri !== input.redirectUri) {
+      if (!parsedState || parsedState.redirectUri !== input.redirectUri || parsedState.intent !== "sign-in") {
         return reply
           .status(401)
           .send(buildApiError(request.id, "INVALID_GOOGLE_STATE", "Google Sign-In state is invalid or expired"));
@@ -1580,83 +1704,47 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
       if (input.locationId && parsedState.locationId && input.locationId !== parsedState.locationId) {
         return reply
           .status(401)
-          .send(buildApiError(request.id, "INVALID_GOOGLE_STATE", "Google Sign-In state does not match requested location"));
+          .send(
+            buildApiError(request.id, "INVALID_GOOGLE_STATE", "Google Sign-In state does not match requested location")
+          );
       }
 
-      let tokenResponse: Response;
+      let googleIdentity: z.infer<typeof googleUserInfoSchema>;
       try {
-        tokenResponse = await fetch(config.tokenEndpoint, {
-          method: "POST",
-          headers: {
-            "content-type": "application/x-www-form-urlencoded"
-          },
-          body: new URLSearchParams({
-            code: input.code,
-            client_id: config.clientId,
-            client_secret: config.clientSecret,
-            redirect_uri: input.redirectUri,
-            grant_type: "authorization_code"
-          })
+        googleIdentity = await exchangeGoogleIdentity({
+          config,
+          code: input.code,
+          redirectUri: input.redirectUri
         });
       } catch (error) {
-        request.log.error({ error, requestId: request.id }, "Google token exchange failed before response");
+        const oauthError = error instanceof GoogleOAuthExchangeError ? error : undefined;
+        request.log.error({ error, requestId: request.id }, "Google identity exchange failed");
         return reply
           .status(502)
-          .send(buildApiError(request.id, "GOOGLE_TOKEN_EXCHANGE_FAILED", "Google token exchange failed"));
-      }
-
-      const parsedTokenBody = parseJsonSafely(await tokenResponse.text());
-      if (!tokenResponse.ok) {
-        return reply.status(502).send(
-          buildApiError(request.id, "GOOGLE_TOKEN_EXCHANGE_FAILED", "Google token exchange failed")
-        );
-      }
-
-      const parsedToken = googleTokenResponseSchema.safeParse(parsedTokenBody);
-      if (!parsedToken.success) {
-        return reply
-          .status(502)
-          .send(buildApiError(request.id, "GOOGLE_TOKEN_INVALID", "Google token response was invalid"));
-      }
-
-      let userInfoResponse: Response;
-      try {
-        userInfoResponse = await fetch(config.userInfoEndpoint, {
-          method: "GET",
-          headers: {
-            authorization: `Bearer ${parsedToken.data.access_token}`
-          }
-        });
-      } catch (error) {
-        request.log.error({ error, requestId: request.id }, "Google userinfo request failed before response");
-        return reply
-          .status(502)
-          .send(buildApiError(request.id, "GOOGLE_USERINFO_FAILED", "Google user info lookup failed"));
-      }
-
-      const parsedUserInfoBody = parseJsonSafely(await userInfoResponse.text());
-      if (!userInfoResponse.ok) {
-        return reply
-          .status(502)
-          .send(buildApiError(request.id, "GOOGLE_USERINFO_FAILED", "Google user info lookup failed"));
-      }
-
-      const parsedUserInfo = googleUserInfoSchema.safeParse(parsedUserInfoBody);
-      if (!parsedUserInfo.success) {
-        return reply
-          .status(502)
-          .send(buildApiError(request.id, "GOOGLE_USERINFO_INVALID", "Google user info response was invalid"));
+          .send(
+            buildApiError(
+              request.id,
+              oauthError?.code ?? "GOOGLE_TOKEN_EXCHANGE_FAILED",
+              oauthError?.message ?? "Google token exchange failed"
+            )
+          );
       }
 
       const operator = await repository.resolveOperatorUserForGoogleSignIn({
-        googleSub: parsedUserInfo.data.sub,
-        email: parsedUserInfo.data.email,
-        emailVerified: normalizeGoogleEmailVerified(parsedUserInfo.data.email_verified)
+        googleSub: googleIdentity.sub,
+        email: googleIdentity.email,
+        emailVerified: normalizeGoogleEmailVerified(googleIdentity.email_verified)
       });
       if (!operator || !operator.active) {
         return reply
           .status(404)
-          .send(buildApiError(request.id, "OPERATOR_ACCESS_NOT_GRANTED", "No client dashboard access exists for this Google account"));
+          .send(
+            buildApiError(
+              request.id,
+              "OPERATOR_ACCESS_NOT_GRANTED",
+              "No client dashboard access exists for this Google account"
+            )
+          );
       }
 
       const requestedLocationId = input.locationId ?? parsedState.locationId;
@@ -1666,7 +1754,9 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
       } catch {
         return reply
           .status(403)
-          .send(buildApiError(request.id, "OPERATOR_LOCATION_FORBIDDEN", "Operator does not have access to that location"));
+          .send(
+            buildApiError(request.id, "OPERATOR_LOCATION_FORBIDDEN", "Operator does not have access to that location")
+          );
       }
 
       const session = await issueOperatorSession({
@@ -1686,6 +1776,249 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
     }
   );
 
+  app.get(
+    "/v1/operator/auth/authenticators",
+    { preHandler: app.rateLimit(authReadRateLimit) },
+    async (request, reply) => {
+      const operator = await resolveOperatorFromBearer({
+        repository,
+        authorizationHeader: request.headers.authorization
+      });
+      if (!operator) {
+        return reply.status(401).send(buildApiError(request.id, "UNAUTHORIZED", "Operator authentication is required"));
+      }
+      return buildOperatorAuthenticatorSummary(repository, operator);
+    }
+  );
+
+  app.get(
+    "/v1/operator/auth/authenticators/google/start",
+    { preHandler: app.rateLimit(authWriteRateLimit) },
+    async (request, reply) => {
+      const operator = await resolveOperatorFromBearer({
+        repository,
+        authorizationHeader: request.headers.authorization
+      });
+      if (!operator) {
+        return reply.status(401).send(buildApiError(request.id, "UNAUTHORIZED", "Operator authentication is required"));
+      }
+      const config = loadGoogleOperatorConfig();
+      if (!config) {
+        return reply
+          .status(503)
+          .send(buildApiError(request.id, "GOOGLE_SSO_NOT_CONFIGURED", "Google Sign-In is not configured"));
+      }
+      const parsedInput = operatorGoogleLinkStartRequestSchema.safeParse(request.query);
+      if (!parsedInput.success) {
+        return reply
+          .status(400)
+          .send(buildApiError(request.id, "EXPLICIT_CONFIRMATION_REQUIRED", "Confirm linking this Google account"));
+      }
+      const input = parsedInput.data;
+      if (!isAllowedGoogleRedirectUri(config, input.redirectUri)) {
+        return reply
+          .status(400)
+          .send(buildApiError(request.id, "INVALID_REDIRECT_URI", "Google redirect URI is not allowed"));
+      }
+      const state = buildGoogleOAuthState({
+        redirectUri: input.redirectUri,
+        locationId: operator.locationId,
+        intent: "link",
+        operatorUserId: operator.operatorUserId,
+        stateSecret: config.stateSecret
+      });
+      return googleOAuthStartResponseSchema.parse({
+        authorizeUrl: buildGoogleAuthorizeUrl({
+          config,
+          redirectUri: input.redirectUri,
+          state
+        }),
+        stateExpiresAt: new Date(Date.now() + config.stateTtlMs).toISOString()
+      });
+    }
+  );
+
+  app.post(
+    "/v1/operator/auth/authenticators/google/exchange",
+    { preHandler: app.rateLimit(authWriteRateLimit) },
+    async (request, reply) => {
+      const operator = await resolveOperatorFromBearer({
+        repository,
+        authorizationHeader: request.headers.authorization
+      });
+      if (!operator) {
+        return reply.status(401).send(buildApiError(request.id, "UNAUTHORIZED", "Operator authentication is required"));
+      }
+      const config = loadGoogleOperatorConfig();
+      if (!config) {
+        return reply
+          .status(503)
+          .send(buildApiError(request.id, "GOOGLE_SSO_NOT_CONFIGURED", "Google Sign-In is not configured"));
+      }
+      const parsedInput = operatorGoogleLinkExchangeRequestSchema.safeParse(request.body);
+      if (!parsedInput.success) {
+        return reply
+          .status(400)
+          .send(buildApiError(request.id, "EXPLICIT_CONFIRMATION_REQUIRED", "Confirm linking this Google account"));
+      }
+      const input = parsedInput.data;
+      const parsedState = parseGoogleOAuthState({
+        state: input.state,
+        stateSecret: config.stateSecret,
+        maxAgeMs: config.stateTtlMs
+      });
+      if (
+        !parsedState ||
+        parsedState.intent !== "link" ||
+        parsedState.operatorUserId !== operator.operatorUserId ||
+        parsedState.redirectUri !== input.redirectUri
+      ) {
+        await recordAuditLog(request, repository, {
+          locationId: operator.locationId,
+          actorId: operator.operatorUserId,
+          actorType: "operator",
+          action: "operator.authenticator.link_failed",
+          targetId: operator.operatorUserId,
+          targetType: "operator_user",
+          payload: { provider: "google", reason: "invalid_state" }
+        });
+        return reply
+          .status(401)
+          .send(buildApiError(request.id, "INVALID_GOOGLE_STATE", "Google linking state is invalid or expired"));
+      }
+
+      let googleIdentity: z.infer<typeof googleUserInfoSchema>;
+      try {
+        googleIdentity = await exchangeGoogleIdentity({
+          config,
+          code: input.code,
+          redirectUri: input.redirectUri
+        });
+      } catch (error) {
+        const oauthError = error instanceof GoogleOAuthExchangeError ? error : undefined;
+        await recordAuditLog(request, repository, {
+          locationId: operator.locationId,
+          actorId: operator.operatorUserId,
+          actorType: "operator",
+          action: "operator.authenticator.link_failed",
+          targetId: operator.operatorUserId,
+          targetType: "operator_user",
+          payload: {
+            provider: "google",
+            reason: oauthError?.code ?? "exchange_failed"
+          }
+        });
+        return reply
+          .status(502)
+          .send(
+            buildApiError(
+              request.id,
+              oauthError?.code ?? "GOOGLE_TOKEN_EXCHANGE_FAILED",
+              oauthError?.message ?? "Google token exchange failed"
+            )
+          );
+      }
+
+      try {
+        const authenticator = await repository.linkOperatorOAuthAuthenticator({
+          operatorUserId: operator.operatorUserId,
+          provider: "google",
+          issuer: "https://accounts.google.com",
+          subject: googleIdentity.sub,
+          displayName: "Google",
+          metadata: {
+            emailVerified: normalizeGoogleEmailVerified(googleIdentity.email_verified)
+          }
+        });
+        await recordAuditLog(request, repository, {
+          locationId: operator.locationId,
+          actorId: operator.operatorUserId,
+          actorType: "operator",
+          action: "operator.authenticator.linked",
+          targetId: authenticator.authenticatorId,
+          targetType: "operator_authenticator",
+          payload: { provider: "google" }
+        });
+        return buildOperatorAuthenticatorSummary(repository, operator);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "AUTHENTICATOR_LINK_FAILED";
+        await recordAuditLog(request, repository, {
+          locationId: operator.locationId,
+          actorId: operator.operatorUserId,
+          actorType: "operator",
+          action: "operator.authenticator.link_failed",
+          targetId: operator.operatorUserId,
+          targetType: "operator_user",
+          payload: { provider: "google", reason }
+        });
+        if (reason === "AUTHENTICATOR_ALREADY_LINKED" || reason === "AUTHENTICATOR_PROVIDER_ALREADY_LINKED") {
+          return reply.status(409).send(buildApiError(request.id, reason, "That Google account cannot be linked"));
+        }
+        throw error;
+      }
+    }
+  );
+
+  app.post(
+    "/v1/operator/auth/authenticators/:authenticatorId/revoke",
+    { preHandler: app.rateLimit(authWriteRateLimit) },
+    async (request, reply) => {
+      const operator = await resolveOperatorFromBearer({
+        repository,
+        authorizationHeader: request.headers.authorization
+      });
+      if (!operator) {
+        return reply.status(401).send(buildApiError(request.id, "UNAUTHORIZED", "Operator authentication is required"));
+      }
+      const parsedParams = operatorAuthenticatorParamsSchema.safeParse(request.params);
+      const parsedInput = operatorAuthenticatorRevokeRequestSchema.safeParse(request.body);
+      if (!parsedParams.success || !parsedInput.success) {
+        return reply
+          .status(400)
+          .send(buildApiError(request.id, "EXPLICIT_CONFIRMATION_REQUIRED", "Confirm removing this sign-in method"));
+      }
+      const { authenticatorId } = parsedParams.data;
+      try {
+        const revoked = await repository.revokeOperatorAuthenticator({
+          operatorUserId: operator.operatorUserId,
+          authenticatorId
+        });
+        if (!revoked) {
+          return reply
+            .status(404)
+            .send(buildApiError(request.id, "AUTHENTICATOR_NOT_FOUND", "Authenticator was not found"));
+        }
+        await recordAuditLog(request, repository, {
+          locationId: operator.locationId,
+          actorId: operator.operatorUserId,
+          actorType: "operator",
+          action: "operator.authenticator.revoked",
+          targetId: revoked.authenticatorId,
+          targetType: "operator_authenticator",
+          payload: { provider: revoked.provider }
+        });
+        return buildOperatorAuthenticatorSummary(repository, operator);
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "AUTHENTICATOR_REVOCATION_FAILED";
+        if (code === "FINAL_RECOVERY_METHOD" || code === "OWNER_PASSWORD_REQUIRES_TWO_RECOVERY_METHODS") {
+          await recordAuditLog(request, repository, {
+            locationId: operator.locationId,
+            actorId: operator.operatorUserId,
+            actorType: "operator",
+            action: "operator.authenticator.revocation_blocked",
+            targetId: authenticatorId,
+            targetType: "operator_authenticator",
+            payload: { reason: code }
+          });
+          return reply
+            .status(409)
+            .send(buildApiError(request.id, code, "This sign-in method is required for account recovery"));
+        }
+        throw error;
+      }
+    }
+  );
+
   app.post(
     "/v1/operator/auth/dev-access",
     {
@@ -1702,9 +2035,11 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
       const operator = await repository.getOperatorUserByEmail(input.email);
 
       if (!operator || !operator.active) {
-        return reply.status(404).send(
-          buildApiError(request.id, "OPERATOR_ACCESS_NOT_GRANTED", "No operator access exists for that email address")
-        );
+        return reply
+          .status(404)
+          .send(
+            buildApiError(request.id, "OPERATOR_ACCESS_NOT_GRANTED", "No operator access exists for that email address")
+          );
       }
 
       const session = await issueOperatorSession({
@@ -1858,10 +2193,7 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
         return;
       }
       const currentSession = await repository.getInternalAdminSessionByRefreshToken(input.refreshToken);
-      if (
-        currentSession &&
-        isPastAbsoluteSessionTtl(currentSession.createdAt, internalAdminAbsoluteSessionTtlMs)
-      ) {
+      if (currentSession && isPastAbsoluteSessionTtl(currentSession.createdAt, internalAdminAbsoluteSessionTtlMs)) {
         await repository.revokeInternalAdminByRefreshToken(input.refreshToken);
         return reply
           .status(401)
@@ -1958,7 +2290,9 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
       }
 
       if (!operator.capabilities.includes("team:read")) {
-        return reply.status(403).send(buildApiError(request.id, "FORBIDDEN", "Operator is missing required capability"));
+        return reply
+          .status(403)
+          .send(buildApiError(request.id, "FORBIDDEN", "Operator is missing required capability"));
       }
 
       let locationId: string;
@@ -1991,7 +2325,9 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
       }
 
       if (!operator.capabilities.includes("team:write")) {
-        return reply.status(403).send(buildApiError(request.id, "FORBIDDEN", "Operator is missing required capability"));
+        return reply
+          .status(403)
+          .send(buildApiError(request.id, "FORBIDDEN", "Operator is missing required capability"));
       }
 
       let locationId: string;
@@ -2005,14 +2341,22 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
       if (input.role === "owner") {
         return reply
           .status(403)
-          .send(buildApiError(request.id, "OWNER_ACCESS_RESTRICTED", "Owner access can only be configured from the admin dashboard"));
+          .send(
+            buildApiError(
+              request.id,
+              "OWNER_ACCESS_RESTRICTED",
+              "Owner access can only be configured from the admin dashboard"
+            )
+          );
       }
 
       const existing = await repository.getOperatorUserByEmail(input.email);
       if (existing) {
         return reply
           .status(409)
-          .send(buildApiError(request.id, "OPERATOR_EMAIL_ALREADY_EXISTS", "An operator with that email already exists"));
+          .send(
+            buildApiError(request.id, "OPERATOR_EMAIL_ALREADY_EXISTS", "An operator with that email already exists")
+          );
       }
 
       let created;
@@ -2025,7 +2369,13 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
         if (isStoreAccountConflictError(error)) {
           return reply
             .status(409)
-            .send(buildApiError(request.id, "STORE_ACCOUNT_ALREADY_EXISTS", "A store screen account already exists for this location"));
+            .send(
+              buildApiError(
+                request.id,
+                "STORE_ACCOUNT_ALREADY_EXISTS",
+                "A store screen account already exists for this location"
+              )
+            );
         }
 
         throw error;
@@ -2057,7 +2407,9 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
       }
 
       if (!operator.capabilities.includes("team:write")) {
-        return reply.status(403).send(buildApiError(request.id, "FORBIDDEN", "Operator is missing required capability"));
+        return reply
+          .status(403)
+          .send(buildApiError(request.id, "FORBIDDEN", "Operator is missing required capability"));
       }
 
       let locationId: string;
@@ -2072,11 +2424,19 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
       if (input.role === "owner") {
         return reply
           .status(403)
-          .send(buildApiError(request.id, "OWNER_ACCESS_RESTRICTED", "Owner access can only be configured from the admin dashboard"));
+          .send(
+            buildApiError(
+              request.id,
+              "OWNER_ACCESS_RESTRICTED",
+              "Owner access can only be configured from the admin dashboard"
+            )
+          );
       }
 
       if (operator.operatorUserId === operatorUserId && input.active === false) {
-        return reply.status(400).send(buildApiError(request.id, "INVALID_OPERATOR_UPDATE", "You cannot deactivate your own account"));
+        return reply
+          .status(400)
+          .send(buildApiError(request.id, "INVALID_OPERATOR_UPDATE", "You cannot deactivate your own account"));
       }
 
       const existingTarget = await repository.getOperatorUserById(operatorUserId);
@@ -2091,13 +2451,21 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
         if (isOperatorEmailConflictError(error)) {
           return reply
             .status(409)
-            .send(buildApiError(request.id, "OPERATOR_EMAIL_ALREADY_EXISTS", "An operator with that email already exists"));
+            .send(
+              buildApiError(request.id, "OPERATOR_EMAIL_ALREADY_EXISTS", "An operator with that email already exists")
+            );
         }
 
         if (isStoreAccountConflictError(error)) {
           return reply
             .status(409)
-            .send(buildApiError(request.id, "STORE_ACCOUNT_ALREADY_EXISTS", "A store screen account already exists for this location"));
+            .send(
+              buildApiError(
+                request.id,
+                "STORE_ACCOUNT_ALREADY_EXISTS",
+                "A store screen account already exists for this location"
+              )
+            );
         }
 
         throw error;
@@ -2134,7 +2502,9 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
       }
 
       if (operator.role !== "owner" || !operator.capabilities.includes("team:write")) {
-        return reply.status(403).send(buildApiError(request.id, "FORBIDDEN", "Only owners can delete operator accounts"));
+        return reply
+          .status(403)
+          .send(buildApiError(request.id, "FORBIDDEN", "Only owners can delete operator accounts"));
       }
 
       let locationId: string;
@@ -2146,7 +2516,9 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
 
       const { operatorUserId } = operatorUserParamsSchema.parse(request.params);
       if (operator.operatorUserId === operatorUserId) {
-        return reply.status(400).send(buildApiError(request.id, "INVALID_OPERATOR_DELETE", "You cannot delete your own account"));
+        return reply
+          .status(400)
+          .send(buildApiError(request.id, "INVALID_OPERATOR_DELETE", "You cannot delete your own account"));
       }
 
       const existingTarget = await repository.getOperatorUserById(operatorUserId);
@@ -2157,7 +2529,13 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
       if (existingTarget.role === "owner") {
         return reply
           .status(403)
-          .send(buildApiError(request.id, "OWNER_ACCESS_RESTRICTED", "Owner accounts can only be managed from the admin dashboard"));
+          .send(
+            buildApiError(
+              request.id,
+              "OWNER_ACCESS_RESTRICTED",
+              "Owner accounts can only be managed from the admin dashboard"
+            )
+          );
       }
 
       const deleted = await repository.deleteOperatorUser(operatorUserId);
