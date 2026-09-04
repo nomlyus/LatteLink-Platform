@@ -26,8 +26,8 @@
     "@lattelink/contracts-core": "workspace:*",
     "@lattelink/observability": "workspace:*",
     "@lattelink/persistence": "workspace:*",
-    "@simplewebauthn/server": "^13.2.2",
-    "fastify": "5.8.5",
+    "@simplewebauthn/server": "^13.3.2",
+    "fastify": "5.12.3",
     "pino-pretty": "^13.0.0",
     "zod": "^3.25.76"
   },
