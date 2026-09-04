@@ -1,6 +1,6 @@
 build:
   docker:
-    web: infra/heroku/Dockerfile
+    web: Dockerfile.heroku
 release:
   image: web
   command:
