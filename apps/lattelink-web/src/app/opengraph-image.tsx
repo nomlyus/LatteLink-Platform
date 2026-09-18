@@ -43,7 +43,7 @@ export default function OpenGraphImage() {
               boxShadow: "0 0 42px rgba(74,126,255,0.45)",
             }}
           />
-          LatteLink
+          Nomly
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 860 }}>
           <div style={{ fontSize: 74, lineHeight: 1.02, fontWeight: 800, letterSpacing: "-0.06em" }}>

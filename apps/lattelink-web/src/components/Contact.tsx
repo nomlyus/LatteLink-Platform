@@ -2,8 +2,6 @@
 
 import { Section, Heading, Lead } from "./Sections";
 import { LeadCapture } from "./LeadCapture";
-import { contactEmail } from "@/lib/site";
-import { TrackedAnchor } from "./TrackedAnchor";
 import { AnimateIn } from "./AnimateIn";
 
 export function Contact() {
@@ -31,36 +29,12 @@ export function Contact() {
           >
             Contact
           </div>
-          <Heading level={2}>Talk to the team building LatteLink.</Heading>
+          <Heading level={2}>Talk to the Nomly team.</Heading>
           <div style={{ marginTop: 20 }}>
             <Lead maxWidth={520}>
               Tell us about your shop. We reply within one business day to
               confirm fit and schedule a walkthrough.
             </Lead>
-          </div>
-          <div
-            style={{
-              marginTop: 36,
-              fontSize: 14,
-              color: "var(--color-text-muted)",
-            }}
-          >
-            Prefer email?{" "}
-            <TrackedAnchor
-              href={`mailto:${contactEmail}`}
-              style={{
-                color: "var(--color-text)",
-                textDecoration: "underline",
-                textUnderlineOffset: 3,
-              }}
-              eventName="email_contact_click"
-              eventProperties={{
-                placement: "contact_section",
-                destination: "email",
-              }}
-            >
-              {contactEmail}
-            </TrackedAnchor>
           </div>
         </AnimateIn>
 

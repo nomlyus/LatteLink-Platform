@@ -47,7 +47,7 @@ export function Hero() {
               background: "var(--color-text)",
             }}
           />
-          LatteLink by nomly
+          Nomly for independent coffee shops
         </motion.div>
 
         <motion.h1

@@ -41,7 +41,7 @@ const features = [
 const proofItems = [
   {
     title: "Coffee only",
-    desc: "LatteLink is built specifically for independent coffee shops, not every restaurant category at once.",
+    desc: "Nomly is built specifically for independent coffee shops, not every restaurant category at once.",
   },
   {
     title: "Pilot reality",
@@ -352,7 +352,7 @@ export function Logos() {
           </AnimateIn>
           <AnimateIn delay={0.05}>
             <SectionP>
-              LatteLink is early, but the footing is concrete: coffee-only
+              Nomly is early, but the footing is concrete: coffee-only
               focus, pilot-stage rollout discipline, shop-team tooling, and
               pricing that does not depend on skimming each order.
             </SectionP>

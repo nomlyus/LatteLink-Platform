@@ -27,7 +27,7 @@ export function NomlyMark({
   );
 }
 
-export function LatteLinkWordmark({
+export function NomlyWordmark({
   className,
   style,
   size = 18,
@@ -49,13 +49,13 @@ export function LatteLinkWordmark({
         ...style,
       }}
     >
-      LatteLink
+      Nomly
     </span>
   );
 }
 
-/** Backwards compatible re-exports for any older imports. */
-export const Wordmark = LatteLinkWordmark;
+/** Backwards compatible re-export for older imports. */
+export const Wordmark = NomlyWordmark;
 export function LogoIcon() {
   return null;
 }

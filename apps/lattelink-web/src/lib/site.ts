@@ -1,8 +1,8 @@
-export const siteName = "LatteLink";
-export const parentCompany = "nomly";
-export const productByline = "LatteLink by nomly";
+export const siteName = "Nomly";
+export const parentCompany = "Nomly";
+export const productByline = "Nomly";
 export const parentTagline =
-  "nomly builds infrastructure for modern local commerce.";
+  "Nomly builds infrastructure for modern local commerce.";
 export const siteUrl = "https://nomly.us";
 export const privacyPolicyPath = "/privacy-policy";
 export const privacyPolicyUrl = `${siteUrl}${privacyPolicyPath}`;
@@ -10,7 +10,6 @@ export const siteTitle =
   "Nomly — Create your own branded ordering app";
 export const siteDescription =
   "Nomly helps independent coffee shops create, launch, and operate branded mobile ordering apps without marketplace economics.";
-export const contactEmail = "hello@lattelink.app";
 export const termsOfServicePath = "/terms";
 export const termsOfServiceUrl = `${siteUrl}${termsOfServicePath}`;
 export const demoHref = "/#contact";

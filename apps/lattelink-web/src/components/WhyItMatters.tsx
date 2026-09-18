@@ -28,7 +28,7 @@ export function WhyItMatters() {
       <SectionHeader
         eyebrow="Why it matters"
         title="Independent coffee shops should not have to choose between marketplaces and DIY."
-        lead="LatteLink is built for the shops in between — the ones who care about brand, loyalty, and a direct customer relationship."
+        lead="Nomly is built for the shops in between — the ones who care about brand, loyalty, and a direct customer relationship."
       />
 
       <Stagger

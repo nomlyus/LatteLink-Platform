@@ -2,13 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Footer } from "@/components/About";
 import { Nav } from "@/components/Nav";
-import { contactEmail, privacyPolicyPath, siteName, termsOfServicePath, termsOfServiceUrl } from "@/lib/site";
+import { privacyPolicyPath, siteName, termsOfServicePath, termsOfServiceUrl } from "@/lib/site";
 
-const lastUpdated = "April 10, 2026";
+const lastUpdated = "September 18, 2026";
 
 const sections = [
   {
-    title: "About LatteLink",
+    title: "About Nomly",
     body: [
       `${siteName} provides branded mobile ordering, loyalty, and customer account tools for independent coffee shops. These Terms govern your use of any ${siteName}-powered ordering experience, the ${siteName} marketing website, and any related services (collectively, the "Service").`,
       `By creating an account or placing an order through a ${siteName}-powered experience, you agree to these Terms. If you do not agree, do not use the Service.`
@@ -26,10 +26,10 @@ const sections = [
   {
     title: "Orders and payments",
     body: [
-      "Orders placed through a LatteLink-powered experience are fulfilled by the coffee shop operating that experience, not by LatteLink directly.",
-      "Payments are processed through Clover, a third-party payment processor. By completing a payment you also agree to Clover's applicable terms and policies.",
-      "LatteLink does not store full payment card numbers. Payment tokens and transaction records are retained as described in the Privacy Policy.",
-      "Refunds and order disputes are subject to the refund policy of the coffee shop you ordered from. Contact the shop directly or reach us at the address below if you need assistance."
+      "Orders placed through a coffee shop's branded experience are fulfilled by the coffee shop operating that experience, not by Nomly directly.",
+      "Payments are processed through Stripe. Where available, Apple Pay is offered through Stripe. By completing a payment, you may also be subject to Stripe's and the applicable wallet provider's terms and policies.",
+      "Nomly does not store full payment card numbers. Payment tokens and transaction records are retained as described in the Privacy Policy.",
+      "Refunds and order disputes are subject to the refund policy of the coffee shop you ordered from. Contact the shop directly or use the Nomly contact form if you need assistance."
     ]
   },
   {
@@ -37,7 +37,7 @@ const sections = [
     body: [
       "Loyalty points and rewards are issued at the discretion of the coffee shop operating the branded experience.",
       "Points and rewards have no cash value and cannot be transferred, sold, or exchanged outside of the Service.",
-      "LatteLink and the coffee shop reserve the right to adjust, expire, or discontinue loyalty programs at any time with reasonable notice."
+      "Nomly and the coffee shop reserve the right to adjust, expire, or discontinue loyalty programs at any time with reasonable notice."
     ]
   },
   {
@@ -52,7 +52,7 @@ const sections = [
   {
     title: "Intellectual property",
     body: [
-      `The ${siteName} name, logo, and platform are owned by LatteLink. Nothing in these Terms grants you a right to use our trademarks or brand assets.`,
+      `The ${siteName} name, logo, and platform are owned by Nomly. Nothing in these Terms grants you a right to use our trademarks or brand assets.`,
       "Coffee shop branding displayed within a powered experience remains the property of the respective coffee shop."
     ]
   },
@@ -67,8 +67,8 @@ const sections = [
   {
     title: "Limitation of liability",
     body: [
-      "To the fullest extent permitted by applicable law, LatteLink and its affiliates will not be liable for any indirect, incidental, special, consequential, or punitive damages arising out of or related to your use of the Service.",
-      "Our total liability to you for any claim arising out of or related to these Terms or the Service will not exceed the greater of the amount you paid to LatteLink in the twelve months preceding the claim or $50 USD."
+      "To the fullest extent permitted by applicable law, Nomly and its affiliates will not be liable for any indirect, incidental, special, consequential, or punitive damages arising out of or related to your use of the Service.",
+      "Our total liability to you for any claim arising out of or related to these Terms or the Service will not exceed the greater of the amount you paid for the Service in the twelve months preceding the claim or $50 USD."
     ]
   },
   {
@@ -81,7 +81,7 @@ const sections = [
   {
     title: "Governing law",
     body: [
-      "These Terms are governed by the laws of the jurisdiction in which LatteLink operates, without regard to conflict of law principles.",
+      "These Terms are governed by the laws of the jurisdiction in which Nomly operates, without regard to conflict of law principles.",
       "Any disputes will be resolved in the courts of competent jurisdiction in that location."
     ]
   }
@@ -89,13 +89,13 @@ const sections = [
 
 export const metadata: Metadata = {
   title: `Terms of Service | ${siteName}`,
-  description: `Terms of Service for ${siteName} and LatteLink-powered ordering experiences.`,
+  description: `Terms of Service for ${siteName} and branded coffee-shop ordering experiences.`,
   alternates: {
     canonical: termsOfServicePath
   },
   openGraph: {
     title: `Terms of Service | ${siteName}`,
-    description: `Terms of Service for ${siteName} and LatteLink-powered ordering experiences.`,
+    description: `Terms of Service for ${siteName} and branded coffee-shop ordering experiences.`,
     url: termsOfServiceUrl
   }
 };
@@ -200,10 +200,10 @@ export default function TermsOfServicePage() {
 
         <div className="legal-shell">
           <div className="legal-kicker">Terms of Service</div>
-          <h1 className="legal-title">Terms for LatteLink-powered ordering.</h1>
+          <h1 className="legal-title">Terms for Nomly.</h1>
           <p className="legal-subtitle">
-            These Terms of Service govern your use of the LatteLink platform and any mobile ordering experience
-            powered by LatteLink. Please read them carefully before using the Service.
+            These Terms of Service govern your use of the Nomly platform and any branded mobile ordering experience
+            powered by Nomly. Please read them carefully before using the Service.
           </p>
           <div className="legal-meta">Last updated {lastUpdated}</div>
 
@@ -237,14 +237,14 @@ export default function TermsOfServicePage() {
           </div>
 
           <div className="legal-contact">
-            Questions about these Terms can be sent to{" "}
-            <a href={`mailto:${contactEmail}`}>{contactEmail}</a>. You can also review our{" "}
+            Questions about these Terms can be submitted through our{" "}
+            <Link href="/#contact" className="legal-home-link">contact form</Link>. You can also review our{" "}
             <Link href={privacyPolicyPath} className="legal-home-link">
               Privacy Policy
             </Link>{" "}
             or return to the{" "}
             <Link href="/" className="legal-home-link">
-              LatteLink homepage
+              Nomly homepage
             </Link>
             .
           </div>

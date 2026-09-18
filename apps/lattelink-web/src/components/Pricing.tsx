@@ -282,7 +282,7 @@ export function Pricing() {
           ))}
         </Stagger>
         <div className="pricing-note">
-          LatteLink pricing is flat. The platform does not take an extra cut on
+          Nomly pricing is flat. The platform does not take an extra cut on
           each order as your volume grows.
         </div>
       </div>

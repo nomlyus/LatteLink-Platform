@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Footer } from "@/components/About";
 import { Nav } from "@/components/Nav";
-import { contactEmail, privacyPolicyPath, privacyPolicyUrl, siteName } from "@/lib/site";
+import { privacyPolicyPath, privacyPolicyUrl, siteName } from "@/lib/site";
 
-const lastUpdated = "April 9, 2026";
+const lastUpdated = "September 18, 2026";
 
 const sections = [
   {
@@ -21,8 +21,8 @@ const sections = [
       "Order and loyalty data, such as items ordered, pickup timing, rewards balances, reward activity, and order history.",
       "Device and app information, such as push notification tokens, device identifiers needed for notifications, and technical session data.",
       "Payment and transaction information, such as payment status, payment tokens supplied by Apple Pay or other payment providers, transaction IDs, and refund records. We do not intend to store full payment card numbers in our ordering backend.",
-      "Website contact information, such as the details you submit through the LatteLink website contact form.",
-      "Website analytics information, such as page visits and interaction events on the LatteLink marketing site when analytics is enabled."
+      "Website contact information, such as the details you submit through the Nomly website contact form.",
+      "Website analytics information, such as page visits and interaction events on the Nomly marketing site when analytics is enabled."
     ]
   },
   {
@@ -31,8 +31,8 @@ const sections = [
       "To create and secure customer accounts.",
       "To process orders, loyalty activity, refunds, and account support requests.",
       "To send important account or order messages, including push notifications when enabled.",
-      "To operate, monitor, and improve the LatteLink platform and its reliability.",
-      "To respond to sales or pilot-intro inquiries submitted through the LatteLink website.",
+      "To operate, monitor, and improve the Nomly platform and its reliability.",
+      "To respond to sales or pilot-intro inquiries submitted through the Nomly website.",
       "To meet legal, security, fraud-prevention, bookkeeping, and compliance obligations."
     ]
   },
@@ -43,7 +43,7 @@ const sections = [
       "With service providers that help us host the product, deliver email, support analytics, or process payments.",
       "With payment providers involved in completing a transaction, such as Apple Pay wallet processing and downstream payment processors.",
       "When required by law, legal process, or a valid request from regulators or courts.",
-      "As part of a business transfer if LatteLink is reorganized, acquired, or sells assets, subject to applicable law."
+      "As part of a business transfer if Nomly is reorganized, acquired, or sells assets, subject to applicable law."
     ]
   },
   {
@@ -78,13 +78,13 @@ const sections = [
 
 export const metadata: Metadata = {
   title: `Privacy Policy | ${siteName}`,
-  description: `Privacy Policy for ${siteName} and LatteLink-powered ordering experiences.`,
+  description: `Privacy Policy for ${siteName} and branded coffee-shop ordering experiences.`,
   alternates: {
     canonical: privacyPolicyPath
   },
   openGraph: {
     title: `Privacy Policy | ${siteName}`,
-    description: `Privacy Policy for ${siteName} and LatteLink-powered ordering experiences.`,
+    description: `Privacy Policy for ${siteName} and branded coffee-shop ordering experiences.`,
     url: privacyPolicyUrl
   }
 };
@@ -189,10 +189,10 @@ export default function PrivacyPolicyPage() {
 
         <div className="legal-shell">
           <div className="legal-kicker">Privacy Policy</div>
-          <h1 className="legal-title">Privacy for LatteLink-powered ordering.</h1>
+          <h1 className="legal-title">Privacy for Nomly.</h1>
           <p className="legal-subtitle">
-            This page explains what information LatteLink may collect, how it is used, and what choices people have
-            when they use the LatteLink website or a branded mobile ordering experience powered by LatteLink.
+            This page explains what information Nomly may collect, how it is used, and what choices people have
+            when they use the Nomly website or a branded mobile ordering experience powered by Nomly.
           </p>
           <div className="legal-meta">Last updated {lastUpdated}</div>
 
@@ -225,10 +225,10 @@ export default function PrivacyPolicyPage() {
           </div>
 
           <div className="legal-contact">
-            Questions about this policy can be sent to{" "}
-            <a href={`mailto:${contactEmail}`}>{contactEmail}</a>. You can also return to the{" "}
+            Questions about this policy can be submitted through our{" "}
+            <Link href="/#contact" className="legal-home-link">contact form</Link>. You can also return to the{" "}
             <Link href="/" className="legal-home-link">
-              LatteLink homepage
+              Nomly homepage
             </Link>
             .
           </div>

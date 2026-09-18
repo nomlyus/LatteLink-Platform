@@ -1,4 +1,4 @@
-import { contactEmail, siteDescription, siteName, siteUrl } from "@/lib/site";
+import { siteDescription, siteName, siteUrl } from "@/lib/site";
 
 const structuredData = {
   "@context": "https://schema.org",
@@ -7,7 +7,6 @@ const structuredData = {
       "@type": "Organization",
       name: siteName,
       url: siteUrl,
-      email: contactEmail,
     },
     {
       "@type": "WebSite",

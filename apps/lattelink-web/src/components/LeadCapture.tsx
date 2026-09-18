@@ -1,9 +1,7 @@
 "use client";
 
 import { type FormEvent, useState, useTransition } from "react";
-import { contactEmail } from "@/lib/site";
 import { trackAnalyticsEvent } from "@/lib/analytics";
-import { TrackedAnchor } from "./TrackedAnchor";
 
 type LeadCaptureResult =
   | { status: "idle" }
@@ -51,7 +49,7 @@ export function LeadCapture() {
             status: "error",
             message:
               payload?.message ??
-              `Lead capture is unavailable right now. Email ${contactEmail} and we will take it from there.`,
+              "Lead capture is unavailable right now. Please try again later.",
           });
           return;
         }
@@ -75,7 +73,7 @@ export function LeadCapture() {
         });
         setResult({
           status: "error",
-          message: `Lead capture is unavailable right now. Email ${contactEmail} and we will take it from there.`,
+          message: "Lead capture is unavailable right now. Please try again later.",
         });
       }
     });
@@ -141,13 +139,13 @@ export function LeadCapture() {
           <textarea
             className="lead-input lead-textarea"
             name="orderingSetup"
-            placeholder="Clover only, Instagram DMs, third-party marketplace, no loyalty…"
+            placeholder="POS only, Instagram DMs, third-party marketplace, no loyalty…"
             maxLength={500}
             rows={3}
             required
           />
         </Field>
-        <Field label="What do you want LatteLink to fix first?" full>
+        <Field label="What do you want Nomly to fix first?" full>
           <textarea
             className="lead-input lead-textarea"
             name="goals"
@@ -185,20 +183,6 @@ export function LeadCapture() {
         {result.status === "idle"
           ? "We reply within one business day with next steps and a proposed walkthrough time."
           : result.message}
-      </div>
-
-      <div className="lead-footnote">
-        Prefer direct email?{" "}
-        <TrackedAnchor
-          href={`mailto:${contactEmail}`}
-          eventName="email_contact_click"
-          eventProperties={{
-            placement: "contact_form",
-            destination: "email",
-          }}
-        >
-          {contactEmail}
-        </TrackedAnchor>
       </div>
 
       <style jsx>{`

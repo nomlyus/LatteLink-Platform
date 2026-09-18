@@ -104,7 +104,7 @@ async function postWithResend(lead: PilotIntroLead & { submittedAt: string; sour
     body: JSON.stringify({
       from: emailFrom,
       to: [emailTo],
-      subject: `LatteLink intro request: ${lead.shopName}`,
+      subject: `Nomly intro request: ${lead.shopName}`,
       text: [
         `Submitted: ${lead.submittedAt}`,
         `Name: ${lead.fullName}`,
@@ -115,7 +115,7 @@ async function postWithResend(lead: PilotIntroLead & { submittedAt: string; sour
         "Current ordering setup:",
         lead.orderingSetup,
         "",
-        "What they want LatteLink to fix first:",
+        "What they want Nomly to fix first:",
         lead.goals,
       ].join("\n"),
     }),
@@ -160,14 +160,14 @@ export async function POST(request: Request) {
       process.env.NODE_ENV !== "production";
 
     if (deliveredViaDevLog) {
-      console.info("LatteLink intro request", lead);
+      console.info("Nomly intro request", lead);
     }
 
     if (!deliveredViaWebhook && !deliveredViaResend && !deliveredViaDevLog) {
       return NextResponse.json(
         {
           message:
-            "Lead capture is not configured in this environment yet. Email hello@lattelink.app and we will take it from there.",
+            "Lead capture is not configured in this environment yet. Please try again later.",
         },
         { status: 503 },
       );
@@ -179,12 +179,12 @@ export async function POST(request: Request) {
         "Intro request received. We will reply within one business day to confirm fit and schedule the walkthrough.",
     });
   } catch (error) {
-    console.error("Failed to deliver LatteLink intro request", error);
+    console.error("Failed to deliver Nomly intro request", error);
 
     return NextResponse.json(
       {
         message:
-          "We could not send your request right now. Email hello@lattelink.app and we will handle the intro manually.",
+          "We could not send your request right now. Please try again later.",
       },
       { status: 502 },
     );

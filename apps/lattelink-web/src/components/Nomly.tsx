@@ -26,7 +26,7 @@ export function Nomly() {
               color: "var(--color-text-invert-muted)",
             }}
           >
-            The company behind LatteLink
+            Nomly for independent coffee shops
           </div>
           <div
             style={{
@@ -52,10 +52,9 @@ export function Nomly() {
           <AnimateIn delay={0.05}>
             <div style={{ marginTop: 24 }}>
               <Lead invert maxWidth={640}>
-                nomly is a quiet, infrastructural company building the digital
+                Nomly is building the digital
                 surface area that small, independent operators need to compete
-                with the chains. LatteLink is the first product — purpose-built
-                for coffee shops — with more verticals to follow.
+                with the chains. We are purpose-built for coffee shops.
               </Lead>
             </div>
           </AnimateIn>
@@ -75,8 +74,8 @@ export function Nomly() {
               className="nomly-stats"
             >
               {[
-                { k: "Focus", v: "Local commerce infrastructure" },
-                { k: "First product", v: "LatteLink — coffee shops" },
+                { k: "Platform", v: "Local commerce infrastructure" },
+                { k: "Coffee focus", v: "Independent coffee shops" },
                 { k: "Stage", v: "Founder-led, pilot rollout" },
               ].map((s) => (
                 <li key={s.k}>
