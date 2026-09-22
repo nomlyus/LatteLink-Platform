@@ -4,6 +4,7 @@ import {
   changedConfigVars,
   collectConfigVars,
   herokuConfigKeys,
+  effectiveHerokuConfigEnv,
 } from "./heroku-sync-config.mjs";
 
 test("the Heroku config allowlist excludes platform-owned and deploy credentials", () => {
@@ -37,4 +38,22 @@ test("changedConfigVars only sends values that differ", () => {
     ),
     { APP_VERSION: "1.0.10" },
   );
+});
+
+test("dev config applies and validates shared pools even when an older workflow lacks them", () => {
+  const effective = effectiveHerokuConfigEnv({
+    DEPLOY_ENV: "dev",
+    PAYMENT_RECONCILER_ENABLED: "true",
+    POSTGRES_POOL_BUDGET_LIMIT: "30",
+    POSTGRES_POOL_HEADROOM_MIN: "10"
+  });
+  assert.equal(effective.POSTGRES_SHARED_POOL_ENABLED, "true");
+  assert.equal(effective.POSTGRES_SHARED_GENERAL_POOL_MAX, "4");
+  assert.equal(effective.POSTGRES_SHARED_CRITICAL_POOL_MAX, "4");
+  assert.equal(effective.POSTGRES_SHARED_RECONCILER_POOL_MAX, "1");
+});
+
+test("production config is passed through unchanged", () => {
+  const env = { DEPLOY_ENV: "production" };
+  assert.equal(effectiveHerokuConfigEnv(env), env);
 });

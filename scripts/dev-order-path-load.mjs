@@ -54,6 +54,10 @@ function percentile(values, percent) {
 async function main() {
   const ready = await request("/../ready");
   if (ready.body?.status !== "ready") throw new Error("Dev gateway is not ready");
+  let previousQueuedByGroup = Object.fromEntries((ready.body.upstream ?? []).map((upstream) => [
+    upstream.body?.environment?.database?.pool?.group ?? upstream.service,
+    upstream.body?.environment?.database?.pool?.queuedAcquires ?? 0
+  ]));
   const menu = (await request(`/menu?locationId=${encodeURIComponent(locationId)}`)).body;
   const item = menu.categories?.flatMap((category) => category.items ?? [])
     .find((candidate) => candidate.visible !== false);
@@ -120,6 +124,22 @@ async function main() {
         return [step, { median: percentile(values, 50), p95: percentile(values, 95), max: values.length ? Math.max(...values) : null }];
       }))
     };
+    const afterReady = await request("/../ready");
+    stage.pools = Object.fromEntries(
+      (afterReady.body.upstream ?? []).map((upstream) => [
+        upstream.service,
+        upstream.body?.environment?.database?.pool ?? null
+      ])
+    );
+    const currentQueuedByGroup = Object.fromEntries(Object.entries(stage.pools).map(([service, pool]) => [
+      pool?.group ?? service,
+      pool?.queuedAcquires ?? 0
+    ]));
+    stage.newQueuedAcquires = Object.fromEntries(Object.entries(currentQueuedByGroup).map(([group, count]) => [
+      group,
+      count - (previousQueuedByGroup[group] ?? 0)
+    ]));
+    previousQueuedByGroup = currentQueuedByGroup;
     results.push(stage);
     console.log(JSON.stringify(stage));
     await new Promise((resolve) => setTimeout(resolve, 2_000));

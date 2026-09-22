@@ -1,6 +1,30 @@
 #!/usr/bin/env node
 
 import { pathToFileURL } from "node:url";
+import { calculateDevHerokuPoolBudget } from "./check-heroku-pool-budget.mjs";
+
+const legacyServicePoolKeys = [
+  "IDENTITY_POSTGRES_POOL_MAX",
+  "ORDERS_POSTGRES_POOL_MAX",
+  "CATALOG_POSTGRES_POOL_MAX",
+  "PAYMENTS_POSTGRES_POOL_MAX",
+  "LOYALTY_POSTGRES_POOL_MAX",
+  "NOTIFICATIONS_POSTGRES_POOL_MAX",
+  "PAYMENT_RECONCILER_POSTGRES_POOL_MAX",
+];
+
+export function effectiveHerokuConfigEnv(env) {
+  if (env.DEPLOY_ENV !== "dev") return env;
+  const configured = {
+    ...env,
+    POSTGRES_SHARED_POOL_ENABLED: "true",
+    POSTGRES_SHARED_GENERAL_POOL_MAX: "4",
+    POSTGRES_SHARED_CRITICAL_POOL_MAX: "4",
+    POSTGRES_SHARED_RECONCILER_POOL_MAX: "1",
+  };
+  calculateDevHerokuPoolBudget(configured);
+  return configured;
+}
 
 export const herokuConfigKeys = [
   "NODE_ENV",
@@ -148,8 +172,17 @@ export async function syncHerokuConfig(env = process.env) {
 
   const appPath = `/apps/${encodeURIComponent(appName)}/config-vars`;
   const current = await herokuRequest(appPath);
-  const desired = collectConfigVars(env);
+  const desiredEnv = effectiveHerokuConfigEnv(env);
+  const desired = collectConfigVars(desiredEnv);
+  if (env.DEPLOY_ENV === "dev") {
+    for (const key of legacyServicePoolKeys) delete desired[key];
+  }
   const changes = changedConfigVars(current, desired);
+  if (env.DEPLOY_ENV === "dev") {
+    for (const key of legacyServicePoolKeys) {
+      if (key in current) changes[key] = null;
+    }
+  }
   const keys = Object.keys(changes).sort();
 
   if (keys.length === 0) {
