@@ -154,18 +154,31 @@ Never share the same database or payment credentials between `dev` and
 - `production` must point at the production Supabase database via `DATABASE_URL`
 - `dev` must point at a separate dev Supabase database via `DATABASE_URL`
 - deployed environments must not synthesize a bundled Droplet Postgres URL
-- Heroku uses the external Supabase shared pooler in session mode on port `5432`
-  because Heroku's Common Runtime is IPv4 and Supabase direct endpoints are IPv6
-  unless the project has the IPv4 add-on
+- Live dev Heroku uses the external Supabase shared pooler in session mode on
+  port `5432`; the production endpoint remains to be verified during release
+  readiness. The pooler supports Heroku's IPv4 runtime, whereas Supabase direct
+  endpoints require IPv6 unless the project has the IPv4 add-on.
 - the bundled `postgres` service in [`infra/free/docker-compose.yml`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/infra/free/docker-compose.yml) remains local-only
 
 Backup and restore operations are covered in [`database-backup-restore.md`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/database-backup-restore.md).
 
 ## Postgres Pool Budget
 
-The deployed stack uses external Supabase Postgres through `DATABASE_URL`; the Compose `postgres` service is not part of dev or production. Pool sizing is configured per process so production can scale write-heavy services without exhausting the Supabase connection budget.
+The Heroku backend is a single process with seven internal services and an
+embedded payment reconciler. Each creates a separate `pg.Pool`, but all read
+the same `POSTGRES_POOL_MAX` (default `2`). Thus a single live-dev web dyno has
+an effective maximum of **8 × 2 = 16** client connections, not the old sum of
+the per-service variables. Pools open connections lazily, so 16 is a ceiling,
+not the number continuously in use. One release migration process can
+temporarily add another pool while the web dyno runs. The production Heroku
+runtime has the same code path, but its live settings and provider allocation
+have not been verified for 1.2.0.
 
-Dev remains conservative:
+The tables below are retained only for the separate Compose deployment path;
+they are **not** the effective Heroku allocation. Compose currently does not
+include reporting, while Heroku does.
+
+Compose dev example:
 
 | Process                     | Pool max |
 | --------------------------- | -------: |
@@ -178,7 +191,7 @@ Dev remains conservative:
 | worker-payment-reconciler   |        1 |
 | **Total app-side capacity** |   **13** |
 
-Production starts with this explicit budget:
+Compose production example:
 
 | Process                     | Pool max |
 | --------------------------- | -------: |
@@ -191,7 +204,11 @@ Production starts with this explicit budget:
 | worker-payment-reconciler   |        1 |
 | **Total app-side capacity** |   **27** |
 
-The current production gate assumes the Supabase pooler limit is at least `60` connections and keeps at least `20` connections of headroom for migrations, backups, Supabase/admin tooling, and emergency sessions. Confirm the actual project pooler limit in the Supabase dashboard before raising any `*_POSTGRES_POOL_MAX` value.
+The Compose production gate is a configured assumption, not a verified
+production Supabase pooler limit. Confirm the actual project allocation in the
+Supabase dashboard before raising any pool size. The live dev database reports
+`max_connections = 60`, but that PostgreSQL backend ceiling is **not** the
+Supavisor session pool size or a guarantee that all 60 slots belong to Nomly.
 
 Deploy scripts write and validate:
 
@@ -205,7 +222,13 @@ Deploy scripts write and validate:
 - `NOTIFICATIONS_POSTGRES_POOL_MAX`
 - `PAYMENT_RECONCILER_POSTGRES_POOL_MAX`
 
-Run `infra/free/bin/check-postgres-pool-budget.sh infra/free/.env.example` locally, or review the deploy log line `[check-postgres-pool-budget] total app-side pool capacity=...`, before promoting a production pool change. Service `/ready` responses include non-secret persistence metadata with the effective `database.pool.max`.
+Run `infra/free/bin/check-postgres-pool-budget.sh infra/free/.env.example`
+locally for a **Compose** pool change. This check does not run in the Heroku
+deployment workflows and does not validate Heroku's eight pools. Service
+`/ready` responses include non-secret persistence metadata with the effective
+`database.pool.max`. See
+[`live-dev-database-pooling.md`](live-dev-database-pooling.md) before changing
+the Heroku capacity plan.
 
 ## Deploy Sequencing
 

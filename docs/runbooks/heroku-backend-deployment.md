@@ -1,6 +1,6 @@
 # Heroku Backend Deployment
 
-Last reviewed: `2026-09-03`
+Last reviewed: `2026-09-22` (live dev only; production remains unverified for 1.2.0)
 
 ## Topology
 
@@ -9,8 +9,10 @@ Last reviewed: `2026-09-03`
 | dev         | `nomly-api-dev`  | Eco web   | `api-dev.nomly.us` | external Supabase dev        |
 | production  | `nomly-api-prod` | Basic web | `api.nomly.us`     | external Supabase production |
 
-Heroku does not own Nomly's merchant data. `DATABASE_URL` points to the matching
-Supabase shared session pooler on port `5432`. `EXPECTED_SUPABASE_PROJECT_REF`
+Heroku does not own Nomly's merchant data. The live dev `DATABASE_URL` was
+verified on 2026-09-22 to use Supabase's shared session pooler on port `5432`.
+The production database path in this runbook is a historical/configured intent,
+not an independently verified 1.2.0 observation. `EXPECTED_SUPABASE_PROJECT_REF`
 causes startup and release migrations to fail if an environment points at the
 wrong project.
 
@@ -24,8 +26,9 @@ wrong project.
 4. payments;
 5. loyalty;
 6. notifications;
-7. public gateway;
-8. embedded workers.
+7. reporting;
+8. public gateway;
+9. embedded workers.
 
 Only the gateway binds `0.0.0.0:$PORT`. Internal services bind stable loopback
 ports. Shutdown stops workers, closes worker resources, then closes Fastify apps
@@ -60,6 +63,14 @@ postgresql://postgres.<project-ref>:<password>@aws-1-<region>.pooler.supabase.co
 
 The exact host comes from Supabase Dashboard > Connect > Session pooler. Keep a
 direct IPv6 URL separately for backup tooling that runs on an IPv6-capable host.
+
+The live dev connection and capacity audit is in
+[`live-dev-database-pooling.md`](live-dev-database-pooling.md). In the Heroku
+single-process runtime, `POSTGRES_POOL_MAX` controls each database pool.
+The `IDENTITY_*`, `ORDERS_*`, and other per-service pool variables in the
+deployment workflow currently do **not** change those pools; they are used by
+the separate Compose deployment path. Do not treat their sum as Heroku's
+effective connection budget.
 
 ## Deployment
 

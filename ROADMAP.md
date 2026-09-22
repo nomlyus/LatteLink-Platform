@@ -139,7 +139,8 @@ The rule is simple: do not start Gate 3 work just because there is time. Start i
 
 #### Later Scale Hardening
 - managed containers
-- PgBouncer / connection pooling
+- capacity-driven database pooling review (live dev already uses Supabase
+  Supavisor session pooling; PgBouncer is not a current requirement)
 - SaaS billing
 - RBAC
 - richer support tooling
