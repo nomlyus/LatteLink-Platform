@@ -10,23 +10,23 @@ import { useLoyaltyLedgerQuery, useOrderHistoryQuery } from "../../src/account/d
 import { useAuthSession } from "../../src/auth/session";
 import { GlassActionPill } from "../../src/cart/GlassActionPill";
 import { formatUsd, resolveMenuData, resolveMenuImageUrl, useMenuQuery, type MenuItem } from "../../src/menu/catalog";
-import { findRefundEntriesForOrder, formatOrderStatus } from "../../src/orders/history";
+import { findLoyaltyReversalEntriesForOrder, formatOrderStatus } from "../../src/orders/history";
 import { Button, ScreenScroll, uiPalette, uiTypography } from "../../src/ui/system";
 
 function sumReturnedPoints(entries: LoyaltyLedgerEntry[]) {
   return entries.reduce((sum, entry) => sum + entry.points, 0);
 }
 
-function buildHeadline(order: OrderHistoryEntry, refundEntries: LoyaltyLedgerEntry[]) {
-  if (refundEntries.length > 0) {
+function buildHeadline(order: OrderHistoryEntry, loyaltyReversalEntries: LoyaltyLedgerEntry[]) {
+  if (order.status === "CANCELED") {
     return {
-      title: "Refund Posted"
+      title: "Canceled Order"
     };
   }
 
-  if (order.status === "CANCELED") {
+  if (loyaltyReversalEntries.length > 0) {
     return {
-      title: "Order Canceled"
+      title: "Loyalty Points Returned"
     };
   }
 
@@ -195,10 +195,10 @@ export default function RefundDetailScreen() {
   );
 
   const order = (ordersQuery.data ?? []).find((entry) => entry.id === orderId);
-  const refundEntries = orderId ? findRefundEntriesForOrder(orderId, loyaltyLedgerQuery.data ?? []) : [];
+  const loyaltyReversalEntries = orderId ? findLoyaltyReversalEntriesForOrder(orderId, loyaltyLedgerQuery.data ?? []) : [];
 
-  const headline = order ? buildHeadline(order, refundEntries) : null;
-  const returnedPoints = useMemo(() => sumReturnedPoints(refundEntries), [refundEntries]);
+  const headline = order ? buildHeadline(order, loyaltyReversalEntries) : null;
+  const returnedPoints = useMemo(() => sumReturnedPoints(loyaltyReversalEntries), [loyaltyReversalEntries]);
 
   function goBackToOrders() {
     if (router.canGoBack()) {
@@ -267,8 +267,15 @@ export default function RefundDetailScreen() {
           <View style={styles.summarySection}>
             <SummaryRow label="Status" value={<SummaryStatusPill status={order.status} />} />
             <SummaryRow label="Total" value={formatUsd(order.total.amountCents)} emphasized />
-            <SummaryRow label="Points Returned" value={returnedPoints > 0 ? `${returnedPoints} pts` : "--"} emphasized />
+            <SummaryRow label="Loyalty points returned" value={returnedPoints > 0 ? `${returnedPoints} pts` : "--"} emphasized />
           </View>
+
+          {order.status === "CANCELED" ? (
+            <View style={styles.paymentSupportSection}>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.paymentSupportLabel}>Payment support</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.paymentSupportCopy}>If you were charged, contact the shop for help with your payment.</Text>
+            </View>
+          ) : null}
         </View>
 
         <View style={[styles.footerContent, { paddingBottom: Math.max(insets.bottom, 12) }]}>
@@ -412,6 +419,26 @@ const styles = StyleSheet.create({
     gap: 16
   },
   summaryLabel: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: uiPalette.textSecondary
+  },
+  paymentSupportSection: {
+    marginTop: 20,
+    paddingTop: 18,
+    borderTopWidth: 1,
+    borderTopColor: uiPalette.border
+  },
+  paymentSupportLabel: {
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 1.1,
+    textTransform: "uppercase",
+    color: uiPalette.textMuted,
+    fontWeight: "700"
+  },
+  paymentSupportCopy: {
+    marginTop: 8,
     fontSize: 14,
     lineHeight: 20,
     color: uiPalette.textSecondary

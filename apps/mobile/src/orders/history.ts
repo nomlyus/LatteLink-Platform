@@ -64,10 +64,10 @@ export function findLatestOrderTime(order: OrderHistoryEntry) {
   return order.timeline[order.timeline.length - 1]?.occurredAt ?? "";
 }
 
-export function findRefundEntriesForOrder(orderId: string, loyaltyLedger: LoyaltyLedgerEntry[]) {
+export function findLoyaltyReversalEntriesForOrder(orderId: string, loyaltyLedger: LoyaltyLedgerEntry[]) {
   return loyaltyLedger.filter((entry) => entry.type === "REFUND" && entry.orderId === orderId);
 }
 
-export function hasRefundActivity(order: OrderHistoryEntry, loyaltyLedger: LoyaltyLedgerEntry[]) {
-  return order.status === "CANCELED" || findRefundEntriesForOrder(order.id, loyaltyLedger).length > 0;
+export function hasLoyaltyReversalActivity(order: OrderHistoryEntry, loyaltyLedger: LoyaltyLedgerEntry[]) {
+  return findLoyaltyReversalEntriesForOrder(order.id, loyaltyLedger).length > 0;
 }

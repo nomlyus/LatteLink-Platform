@@ -9,7 +9,7 @@ import { useAuthSession } from "../../src/auth/session";
 import { formatUsd } from "../../src/menu/catalog";
 import {
   findLatestOrderTime,
-  findRefundEntriesForOrder,
+  findLoyaltyReversalEntriesForOrder,
   formatOrderDateTime,
   formatOrderReference,
   formatOrderStatus,
@@ -98,12 +98,12 @@ export default function OrderDetailRoute() {
     () => (orderId ? (ordersQuery.data ?? []).find((entry) => entry.id === orderId) ?? null : null),
     [orderId, ordersQuery.data]
   );
-  const refundEntries = useMemo(
-    () => (orderId ? findRefundEntriesForOrder(orderId, loyaltyLedgerQuery.data ?? []) : []),
+  const loyaltyReversalEntries = useMemo(
+    () => (orderId ? findLoyaltyReversalEntriesForOrder(orderId, loyaltyLedgerQuery.data ?? []) : []),
     [loyaltyLedgerQuery.data, orderId]
   );
-  const returnedPoints = useMemo(() => sumReturnedPoints(refundEntries), [refundEntries]);
-  const hasRefundDetails = refundEntries.length > 0 || order?.status === "CANCELED";
+  const returnedPoints = useMemo(() => sumReturnedPoints(loyaltyReversalEntries), [loyaltyReversalEntries]);
+  const hasLoyaltyReturn = loyaltyReversalEntries.length > 0;
 
   function goBackToOrders() {
     if (router.canGoBack()) {
@@ -194,27 +194,28 @@ export default function OrderDetailRoute() {
           </View>
         </View>
 
-        {hasRefundDetails ? (
+        {order.status === "CANCELED" ? (
           <View style={styles.section}>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionLabel}>Refund details</Text>
-            {refundEntries.length > 0 ? (
-              <>
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.note}>{returnedPoints > 0 ? `${returnedPoints} points returned to the account.` : "Refund activity recorded."}</Text>
-                <View style={styles.refundList}>
-                  {refundEntries.map((entry) => (
-                    <View key={entry.id} style={styles.refundRow}>
-                      <View style={styles.refundCopy}>
-                        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.refundTitle}>Refund posted</Text>
-                        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.refundMeta}>{formatOrderDateTime(entry.createdAt)}</Text>
-                      </View>
-                      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.refundPoints}>{`${entry.points > 0 ? "+" : ""}${entry.points} pts`}</Text>
-                    </View>
-                  ))}
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionLabel}>Canceled order</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.note}>This order was canceled. If you were charged, contact the shop for help with your payment.</Text>
+          </View>
+        ) : null}
+
+        {hasLoyaltyReturn ? (
+          <View style={styles.section}>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionLabel}>Loyalty returned</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.note}>{returnedPoints > 0 ? `${returnedPoints} points returned to the account.` : "Loyalty activity recorded."}</Text>
+            <View style={styles.refundList}>
+              {loyaltyReversalEntries.map((entry) => (
+                <View key={entry.id} style={styles.refundRow}>
+                  <View style={styles.refundCopy}>
+                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.refundTitle}>Points returned</Text>
+                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.refundMeta}>{formatOrderDateTime(entry.createdAt)}</Text>
+                  </View>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.refundPoints}>{`${entry.points > 0 ? "+" : ""}${entry.points} pts`}</Text>
                 </View>
-              </>
-            ) : (
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.note}>Refund activity will appear here once it is posted.</Text>
-            )}
+              ))}
+            </View>
           </View>
         ) : null}
       </ScrollView>
