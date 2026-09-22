@@ -1,4 +1,5 @@
 import type { ExpoConfig } from "expo/config";
+import { resolveDisplayName } from "./src/brand";
 
 type AppVariant = "beta" | "production";
 const DEFAULT_APP_VARIANT: AppVariant = "beta";
@@ -15,14 +16,15 @@ function resolveAppVariant(): AppVariant {
   return DEFAULT_APP_VARIANT;
 }
 
-function resolveDisplayName(variant: AppVariant) {
-  const baseName = process.env.APP_DISPLAY_NAME_BASE ?? "LatteLink";
+function resolveAppDisplayName(variant: AppVariant) {
+  const baseName = resolveDisplayName(process.env.APP_DISPLAY_NAME_BASE);
+  const configuredDisplayName = process.env.APP_DISPLAY_NAME?.trim();
   switch (variant) {
     case "production":
-      return process.env.APP_DISPLAY_NAME ?? baseName;
+      return configuredDisplayName || baseName;
     case "beta":
     default:
-      return process.env.APP_DISPLAY_NAME ?? `${baseName} Beta`;
+      return configuredDisplayName || `${baseName} Beta`;
   }
 }
 
@@ -97,7 +99,7 @@ const sentryPlugin =
     : null;
 
 const config: ExpoConfig = {
-  name: resolveDisplayName(variant),
+  name: resolveAppDisplayName(variant),
   slug: process.env.EXPO_SLUG ?? "lattelink-mobile",
   scheme: process.env.EXPO_SCHEME ?? "lattelink",
   version: process.env.APP_VERSION ?? "1.0.10",

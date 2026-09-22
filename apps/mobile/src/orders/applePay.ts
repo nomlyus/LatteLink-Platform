@@ -1,5 +1,6 @@
 import Constants from "expo-constants";
 import { NativeModules, Platform } from "react-native";
+import { resolveDisplayName } from "../brand";
 import { extractApplePayWalletPayload, type ApplePayWalletPayload } from "./applePayPayload";
 
 export type { ApplePayWalletPayload } from "./applePayPayload";
@@ -96,7 +97,7 @@ export async function requestNativeApplePayWallet(input: {
     amountCents: input.amountCents,
     currencyCode,
     countryCode,
-    label: input.label ?? process.env.EXPO_PUBLIC_BRAND_NAME ?? "LatteLink",
+    label: resolveDisplayName(input.label, process.env.EXPO_PUBLIC_BRAND_NAME),
     merchantIdentifier,
     supportedNetworks
   });
