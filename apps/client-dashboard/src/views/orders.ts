@@ -233,7 +233,7 @@ function renderCancelButton(order: OperatorOrder) {
   }
   return `
     <button class="button button--ghost" type="button" data-action="cancel-order" data-order-id="${order.id}" ${disabled}>
-      ${actionLabel}
+      ${state.busyOrderId === order.id ? `<span class="spinner"></span> ${isUnpaid ? "Canceling order…" : "Canceling and refunding…"}` : actionLabel}
     </button>
   `;
 }
@@ -268,7 +268,7 @@ function renderOrderDetail(order: OperatorOrder, appConfig: AppConfig | null) {
           data-order-note="${escapeHtml(action.note ?? "")}"
           ${state.busyOrderId === order.id ? "disabled" : ""}
         >
-          ${escapeHtml(action.label)}
+          ${state.busyOrderId === order.id ? '<span class="spinner"></span> Updating order…' : escapeHtml(action.label)}
         </button>
       `
     )
@@ -365,7 +365,7 @@ function renderStoreTicket(order: OperatorOrder, appConfig: AppConfig | null) {
             data-order-note="${escapeHtml(nextAction.note ?? "")}"
             ${state.busyOrderId === order.id ? "disabled" : ""}
           >
-            ${escapeHtml(nextAction.label)}
+            ${state.busyOrderId === order.id ? '<span class="spinner"></span> Updating order…' : escapeHtml(nextAction.label)}
           </button>
         `
       : "",

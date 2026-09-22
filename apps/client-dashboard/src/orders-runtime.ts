@@ -1,6 +1,6 @@
 import { state, ordersRefreshIntervalMs, cancelConfirmTimeoutMs } from "./state";
 import { subscribeToAdminOrderStream, type AdminOrderStreamEvent } from "./api";
-import { canAccessCapability, filterOrdersByView, isActiveOrder, isStoreOperator } from "./model";
+import { canAccessCapability, filterOrdersByView, isActiveOrder, isStoreOperator, type OperatorOrder } from "./model";
 import { alertForNewOrders, resetNewOrderAlert } from "./order-alert";
 import { render } from "./render";
 
@@ -69,15 +69,8 @@ export function startAutoRefresh(loadDashboard: (options?: { silent?: boolean })
         reconcileSelectedOrder();
         render();
       } else if (event.type === "order_update") {
-        const idx = state.orders.findIndex((o) => o.id === event.order.id);
-        if (idx >= 0) {
-          state.orders = [...state.orders.slice(0, idx), event.order, ...state.orders.slice(idx + 1)];
-        } else {
-          state.orders = [event.order, ...state.orders];
-        }
+        applyUpdatedOrder(event.order);
         alertForCurrentOrders();
-        state.lastRefreshedAt = Date.now();
-        reconcileSelectedOrder();
         render();
       }
     },
@@ -94,6 +87,18 @@ export function startAutoRefresh(loadDashboard: (options?: { silent?: boolean })
       }
     }
   });
+}
+
+export function applyUpdatedOrder(updatedOrder: OperatorOrder) {
+  const existingOrder = state.orders.find((order) => order.id === updatedOrder.id);
+  const nextOrder = existingOrder
+    ? { ...existingOrder, ...updatedOrder, customer: updatedOrder.customer ?? existingOrder.customer }
+    : updatedOrder;
+  state.orders = existingOrder
+    ? state.orders.map((order) => order.id === updatedOrder.id ? nextOrder : order)
+    : [nextOrder, ...state.orders];
+  state.lastRefreshedAt = Date.now();
+  reconcileSelectedOrder();
 }
 
 export function clearPendingCancel() {

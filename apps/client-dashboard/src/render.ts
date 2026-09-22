@@ -44,6 +44,18 @@ export function render() {
     nextSidebar.replaceWith(previousSidebar);
     previousSidebar.querySelectorAll<HTMLElement>(".dash-nav-item").forEach((item) => {
       item.classList.toggle("dash-nav-item--active", item.dataset.section === state.section);
+      const nextItem = nextSidebar.querySelector<HTMLElement>(
+        `.dash-nav-item[data-section="${item.dataset.section}"]`
+      );
+      const currentBadge = item.querySelector<HTMLElement>(".dash-nav-badge");
+      const nextBadge = nextItem?.querySelector<HTMLElement>(".dash-nav-badge");
+      if (currentBadge && nextBadge) {
+        currentBadge.textContent = nextBadge.textContent;
+      } else if (currentBadge) {
+        currentBadge.remove();
+      } else if (nextBadge) {
+        item.appendChild(nextBadge.cloneNode(true));
+      }
     });
   }
 

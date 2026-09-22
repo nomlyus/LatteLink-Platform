@@ -6,8 +6,8 @@ import {
   getOrderCancelUnavailableMessage,
   getOrderControlUnavailableMessage
 } from "../model";
-import { handleOperatorActionError, loadDashboard } from "../lifecycle";
-import { clearPendingCancel } from "../orders-runtime";
+import { handleOperatorActionError } from "../lifecycle";
+import { applyUpdatedOrder, clearPendingCancel } from "../orders-runtime";
 import { render } from "../render";
 
 export async function handleOrderAdvance(
@@ -35,13 +35,13 @@ export async function handleOrderAdvance(
     clearPendingCancel();
     setError(null);
     render();
-    await updateOperatorOrderStatus(
+    const updatedOrder = await updateOperatorOrderStatus(
       state.session,
       state.selectedLocationId === "all" ? null : state.selectedLocationId,
       orderId,
       { status, note }
     );
-    await loadDashboard();
+    applyUpdatedOrder(updatedOrder);
   } catch (error) {
     await handleOperatorActionError(error, "Unable to update order.");
   } finally {
@@ -77,13 +77,13 @@ export async function handleOrderCancel(orderId: string, reason: string) {
     clearPendingCancel();
     setError(null);
     render();
-    await cancelAndRefundOperatorOrder(
+    const updatedOrder = await cancelAndRefundOperatorOrder(
       state.session,
       state.selectedLocationId === "all" ? null : state.selectedLocationId,
       orderId,
       { reason: normalizedReason }
     );
-    await loadDashboard();
+    applyUpdatedOrder(updatedOrder);
   } catch (error) {
     await handleOperatorActionError(error, "Unable to cancel and refund order.");
   } finally {
