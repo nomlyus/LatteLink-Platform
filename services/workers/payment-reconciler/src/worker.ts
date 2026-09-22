@@ -402,7 +402,7 @@ export async function createPaymentReconcilerRuntime(
   config: PaymentReconcilerConfig,
   logger: Logger = console
 ): Promise<PaymentReconcilerRuntime> {
-  const db = createPostgresDb(config.databaseUrl);
+  const db = createPostgresDb(config.databaseUrl, "reconciler");
   await runMigrations(db);
   const stripeClient = new Stripe(config.stripeSecretKey);
 

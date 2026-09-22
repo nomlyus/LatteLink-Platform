@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { Kysely, PostgresDialect } from "kysely";
 import type { Generated } from "kysely";
-import { Pool, type PoolConfig } from "pg";
+import { Client, Pool, type PoolConfig } from "pg";
 
 export { runMigrations } from "./migrate.js";
 export { sql } from "kysely";
@@ -666,6 +666,50 @@ const defaultPostgresPoolMax = 2;
 const defaultPostgresConnectionTimeoutMs = 5_000;
 const defaultPostgresIdleTimeoutMs = 10_000;
 
+export type PostgresPoolGroup = "general" | "critical" | "reconciler";
+
+type SharedPoolEntry = {
+  pool: Pool;
+  references: number;
+  queuedAcquires: number;
+  peakWaiting: number;
+  maxAcquireWaitMs: number;
+};
+
+const sharedPostgresPools = new Map<string, SharedPoolEntry>();
+
+function sharedPoolEnabled(env: NodeJS.ProcessEnv) {
+  return env.DEPLOY_ENV === "dev" && env.POSTGRES_SHARED_POOL_ENABLED === "true";
+}
+
+function sharedPoolMax(group: PostgresPoolGroup, env: NodeJS.ProcessEnv) {
+  const key = {
+    general: "POSTGRES_SHARED_GENERAL_POOL_MAX",
+    critical: "POSTGRES_SHARED_CRITICAL_POOL_MAX",
+    reconciler: "POSTGRES_SHARED_RECONCILER_POOL_MAX"
+  }[group];
+  const fallback = group === "reconciler" ? 1 : 4;
+  return toPositiveInteger(env[key], fallback);
+}
+
+function sharedPoolKey(connectionString: string, group: PostgresPoolGroup) {
+  return `${group}\u0000${connectionString}`;
+}
+
+function sharedPoolReadiness(connectionString: string, group: PostgresPoolGroup) {
+  const entry = sharedPostgresPools.get(sharedPoolKey(connectionString, group));
+  return {
+    group,
+    shared: true,
+    total: entry?.pool.totalCount ?? 0,
+    idle: entry?.pool.idleCount ?? 0,
+    waiting: entry?.pool.waitingCount ?? 0,
+    queuedAcquires: entry?.queuedAcquires ?? 0,
+    peakWaiting: entry?.peakWaiting ?? 0,
+    maxAcquireWaitMs: entry?.maxAcquireWaitMs ?? 0
+  };
+}
+
 function toPositiveInteger(value: string | undefined, fallback: number) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -690,7 +734,64 @@ export function getPostgresPoolConfig(
   };
 }
 
-export function createPostgresDb(connectionString: string): PersistenceDb {
+export function createPostgresDb(
+  connectionString: string,
+  group: PostgresPoolGroup = "general"
+): PersistenceDb {
+  if (sharedPoolEnabled(process.env)) {
+    const key = sharedPoolKey(connectionString, group);
+    return new Kysely<PersistenceDatabase>({
+      dialect: new PostgresDialect({
+        controlClient: Client,
+        pool: async () => {
+          let entry = sharedPostgresPools.get(key);
+          if (!entry) {
+            const config = getPostgresPoolConfig(connectionString);
+            entry = {
+              pool: new Pool({ ...config, max: sharedPoolMax(group, process.env) }),
+              references: 0,
+              queuedAcquires: 0,
+              peakWaiting: 0,
+              maxAcquireWaitMs: 0
+            };
+            sharedPostgresPools.set(key, entry);
+          }
+          entry.references += 1;
+          const shared = entry;
+          let released = false;
+          return {
+            options: shared.pool.options,
+            connect: async () => {
+              const startedAt = performance.now();
+              const pending = shared.pool.connect();
+              const waiting = shared.pool.waitingCount;
+              if (waiting > 0) {
+                shared.queuedAcquires += 1;
+                shared.peakWaiting = Math.max(shared.peakWaiting, waiting);
+              }
+              try {
+                return await pending;
+              } finally {
+                shared.maxAcquireWaitMs = Math.max(
+                  shared.maxAcquireWaitMs,
+                  Math.round(performance.now() - startedAt)
+                );
+              }
+            },
+            end: async () => {
+              if (released) return;
+              released = true;
+              shared.references -= 1;
+              if (shared.references === 0) {
+                sharedPostgresPools.delete(key);
+                await shared.pool.end();
+              }
+            }
+          };
+        }
+      })
+    });
+  }
   return new Kysely<PersistenceDatabase>({
     dialect: new PostgresDialect({
       pool: new Pool(getPostgresPoolConfig(connectionString))
@@ -770,7 +871,10 @@ export function assertExpectedDatabaseTarget(connectionString: string, env: Node
   throw error;
 }
 
-export function getPersistenceReadinessMetadata(env: NodeJS.ProcessEnv = process.env) {
+export function getPersistenceReadinessMetadata(
+  env: NodeJS.ProcessEnv = process.env,
+  group: PostgresPoolGroup = "general"
+) {
   const databaseUrl = trimToUndefined(env.DATABASE_URL);
   const databaseTarget = getDatabaseTargetMetadata(databaseUrl);
   const expectedSupabaseProjectRef = trimToUndefined(env.EXPECTED_SUPABASE_PROJECT_REF);
@@ -790,7 +894,8 @@ export function getPersistenceReadinessMetadata(env: NodeJS.ProcessEnv = process
           : undefined,
       pool: poolConfig
         ? {
-            max: poolConfig.max,
+            max: sharedPoolEnabled(env) ? sharedPoolMax(group, env) : poolConfig.max,
+            ...(sharedPoolEnabled(env) ? sharedPoolReadiness(databaseUrl!, group) : {}),
             connectionTimeoutMs: poolConfig.connectionTimeoutMillis,
             idleTimeoutMs: poolConfig.idleTimeoutMillis
           }

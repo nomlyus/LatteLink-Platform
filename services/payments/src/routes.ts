@@ -420,7 +420,7 @@ function createInMemoryRepository(): PaymentsRepository {
 }
 
 async function createPostgresRepository(connectionString: string): Promise<PaymentsRepository> {
-  const db = createPostgresDb(connectionString);
+  const db = createPostgresDb(connectionString, "critical");
   await runMigrations(db);
 
   return {
@@ -2186,7 +2186,7 @@ export async function registerRoutes(app: FastifyInstance) {
     status: "ready",
     service: "payments",
     persistence: repository.backend,
-    environment: getPersistenceReadinessMetadata(),
+    environment: getPersistenceReadinessMetadata(process.env, "critical"),
     stripe: stripeRuntime
   }));
 

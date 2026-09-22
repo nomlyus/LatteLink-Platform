@@ -942,7 +942,7 @@ async function createPostgresRepository(
   connectionString: string,
   logger: FastifyBaseLogger
 ): Promise<OrdersRepository> {
-  const db = createPostgresDb(connectionString);
+  const db = createPostgresDb(connectionString, "critical");
   await runMigrations(db);
 
   async function getPersistedOrder(orderId: string): Promise<PersistedOrderRow | undefined> {

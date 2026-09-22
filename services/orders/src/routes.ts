@@ -506,14 +506,14 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get("/ready", async (_request, reply) => {
     try {
       await repository.pingDb();
-      return { status: "ready", service: "orders", persistence: repository.backend, environment: getPersistenceReadinessMetadata() };
+      return { status: "ready", service: "orders", persistence: repository.backend, environment: getPersistenceReadinessMetadata(process.env, "critical") };
     } catch {
       reply.status(503);
       return {
         status: "unavailable",
         service: "orders",
         error: "Database unavailable",
-        environment: getPersistenceReadinessMetadata()
+        environment: getPersistenceReadinessMetadata(process.env, "critical")
       };
     }
   });

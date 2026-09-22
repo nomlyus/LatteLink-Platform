@@ -146,13 +146,10 @@ jobs:
           POSTGRES_IDLE_TIMEOUT_MS: "10000"
           POSTGRES_POOL_BUDGET_LIMIT: "30"
           POSTGRES_POOL_HEADROOM_MIN: "10"
-          IDENTITY_POSTGRES_POOL_MAX: "2"
-          ORDERS_POSTGRES_POOL_MAX: "2"
-          CATALOG_POSTGRES_POOL_MAX: "2"
-          PAYMENTS_POSTGRES_POOL_MAX: "2"
-          LOYALTY_POSTGRES_POOL_MAX: "2"
-          NOTIFICATIONS_POSTGRES_POOL_MAX: "2"
-          PAYMENT_RECONCILER_POSTGRES_POOL_MAX: "1"
+          POSTGRES_SHARED_POOL_ENABLED: "true"
+          POSTGRES_SHARED_GENERAL_POOL_MAX: "4"
+          POSTGRES_SHARED_CRITICAL_POOL_MAX: "4"
+          POSTGRES_SHARED_RECONCILER_POOL_MAX: "1"
           GATEWAY_INTERNAL_API_TOKEN: ${{ secrets.GATEWAY_INTERNAL_API_TOKEN }}
           ORDERS_INTERNAL_API_TOKEN: ${{ secrets.ORDERS_INTERNAL_API_TOKEN }}
           LOYALTY_INTERNAL_API_TOKEN: ${{ secrets.LOYALTY_INTERNAL_API_TOKEN }}
@@ -221,7 +218,9 @@ jobs:
           PAYMENT_RECONCILER_INTERVAL_MS: "300000"
           PAYMENT_RECONCILER_STALE_THRESHOLD_MS: "600000"
           PAYMENT_RECONCILER_BATCH_SIZE: "50"
-        run: node scripts/heroku-sync-config.mjs
+        run: |
+          node scripts/check-heroku-pool-budget.mjs
+          node scripts/heroku-sync-config.mjs
 
       - name: Deploy source to Heroku
         env:
