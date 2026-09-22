@@ -662,6 +662,7 @@ let previousFreeClientDashboardDomain: string | undefined;
             capabilities: [
               "orders:read",
               "orders:write",
+              "payments:refund",
               "menu:read",
               "menu:write",
               "menu:visibility",
@@ -681,7 +682,7 @@ let previousFreeClientDashboardDomain: string | undefined;
             locationId: "flagship-01",
             locationIds: ["flagship-01"],
             active: true,
-            capabilities: ["orders:read", "orders:write", "menu:read", "menu:write", "menu:visibility", "store:read", "team:read"],
+            capabilities: ["orders:read", "orders:write", "payments:refund", "menu:read", "menu:write", "menu:visibility", "store:read", "team:read"],
             createdAt: "2026-03-20T00:00:00.000Z",
             updatedAt: "2026-03-20T00:00:00.000Z"
           },
@@ -708,6 +709,7 @@ let previousFreeClientDashboardDomain: string | undefined;
             capabilities: [
               "orders:read",
               "orders:write",
+              "payments:refund",
               "menu:read",
               "menu:write",
               "menu:visibility",
@@ -4304,35 +4306,79 @@ let previousFreeClientDashboardDomain: string | undefined;
     await app.close();
   });
 
-  it("routes admin cancellations through the refund-aware cancel endpoint", async () => {
+  it("allows only owners and managers to cancel and refund through the dedicated endpoint", async () => {
     const app = await buildApp();
     const orderId = "123e4567-e89b-12d3-a456-426614174115";
+    for (const [headers, actorId] of [
+      [ownerOperatorHeaders, "123e4567-e89b-12d3-a456-426614174999"],
+      [managerOperatorHeaders, "123e4567-e89b-12d3-a456-426614174998"]
+    ] as const) {
+      const response = await app.inject({
+        method: "POST",
+        url: `/v1/admin/orders/${orderId}/cancel-and-refund`,
+        headers,
+        payload: { reason: "Espresso machine issue" }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ id: orderId, status: "CANCELED" });
+
+      const cancelCall = fetchMock.mock.calls.at(-1);
+      expect(cancelCall).toBeDefined();
+      if (cancelCall) {
+        const upstreamHeaders = new Headers((cancelCall[1]?.headers ?? {}) as HeadersInit);
+        expect((typeof cancelCall[0] === "string" ? cancelCall[0] : cancelCall[0].url)).toBe(
+          `http://orders.internal/v1/orders/${orderId}/cancel`
+        );
+        expect(upstreamHeaders.get("x-gateway-token")).toBe("gateway-test-token");
+        expect(upstreamHeaders.get("x-order-cancel-source")).toBe("staff");
+        expect(upstreamHeaders.get("x-user-id")).toBe(actorId);
+        expect(upstreamHeaders.get("x-operator-location-id")).toBe("flagship-01");
+        expect(JSON.parse(String(cancelCall[1]?.body ?? "{}"))).toEqual({ reason: "Espresso machine issue" });
+      }
+    }
+
+    await app.close();
+  });
+
+  it("prevents store operators from initiating cancel-and-refund", async () => {
+    const app = await buildApp();
+    const orderId = "123e4567-e89b-12d3-a456-426614174117";
+    const response = await app.inject({
+      method: "POST",
+      url: `/v1/admin/orders/${orderId}/cancel-and-refund`,
+      headers: storeOperatorHeaders,
+      payload: { reason: "Espresso machine issue" }
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({ code: "FORBIDDEN" });
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        (typeof input === "string" ? input : input.url).endsWith(`/v1/orders/${orderId}/cancel`)
+      )
+    ).toBe(false);
+
+    await app.close();
+  });
+
+  it("rejects canceled as an ordinary operator status update", async () => {
+    const app = await buildApp();
+    const orderId = "123e4567-e89b-12d3-a456-426614174118";
     const response = await app.inject({
       method: "POST",
       url: `/v1/admin/orders/${orderId}/status`,
       headers: storeOperatorHeaders,
-      payload: {
-        status: "CANCELED",
-        note: "Espresso machine issue"
-      }
+      payload: { status: "CANCELED", note: "Espresso machine issue" }
     });
 
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ id: orderId, status: "CANCELED" });
-
-    const cancelCall = fetchMock.mock.calls.find(([input]) =>
-      (typeof input === "string" ? input : input.url).endsWith(`/v1/orders/${orderId}/cancel`)
-    );
-    expect(cancelCall).toBeDefined();
-    if (cancelCall) {
-      const upstreamHeaders = new Headers((cancelCall[1]?.headers ?? {}) as HeadersInit);
-      expect(upstreamHeaders.get("x-gateway-token")).toBe("gateway-test-token");
-      expect(upstreamHeaders.get("x-order-cancel-source")).toBe("staff");
-      expect(upstreamHeaders.get("x-operator-location-id")).toBe("flagship-01");
-      expect(JSON.parse(String(cancelCall[1]?.body ?? "{}"))).toEqual({
-        reason: "Espresso machine issue"
-      });
-    }
+    expect(response.statusCode).toBe(400);
+    expect(
+      fetchMock.mock.calls.some(([input]) => {
+        const url = typeof input === "string" ? input : input.url;
+        return url.startsWith("http://orders.internal/v1/orders/");
+      })
+    ).toBe(false);
 
     await app.close();
   });

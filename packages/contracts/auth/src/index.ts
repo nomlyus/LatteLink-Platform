@@ -147,6 +147,7 @@ export const operatorRoleSchema = z.enum(["owner", "manager", "store"]);
 export const operatorCapabilitySchema = z.enum([
   "orders:read",
   "orders:write",
+  "payments:refund",
   "menu:read",
   "menu:write",
   "menu:visibility",
@@ -160,6 +161,7 @@ export const operatorCapabilitiesByRole = {
   owner: [
     "orders:read",
     "orders:write",
+    "payments:refund",
     "menu:read",
     "menu:write",
     "menu:visibility",
@@ -171,6 +173,7 @@ export const operatorCapabilitiesByRole = {
   manager: [
     "orders:read",
     "orders:write",
+    "payments:refund",
     "menu:read",
     "menu:write",
     "menu:visibility",

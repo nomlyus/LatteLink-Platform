@@ -181,7 +181,7 @@ const supportManualReviewRequestSchema = z.object({
   reason: z.string().min(1)
 });
 const adminOrderStatusUpdateSchema = z.object({
-  status: z.enum(["IN_PREP", "READY", "COMPLETED", "CANCELED"]),
+  status: z.enum(["IN_PREP", "READY", "COMPLETED"]),
   note: z.string().min(1).optional()
 });
 
@@ -3698,45 +3698,6 @@ export async function registerRoutes(app: FastifyInstance) {
         return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
       }
 
-      if (input.status === "CANCELED") {
-        const cancelPayload = cancelOrderRequestSchema.parse({
-          reason: input.note ?? "Canceled in store"
-        });
-
-        return proxyUpstream({
-          request,
-          reply,
-          baseUrl: ordersBaseUrl,
-          serviceLabel: "Orders",
-          method: "POST",
-          path: `/v1/orders/${orderId}/cancel`,
-          body: cancelPayload,
-          additionalHeaders: {
-            "x-gateway-token": gatewayInternalApiToken,
-            "x-order-cancel-source": "staff",
-            ...operatorActorHeader(request),
-            ...operatorLocationHeader(locationContext.locationId)
-          },
-          forwardUserIdHeader: false,
-          responseSchema: orderSchema,
-          onSuccess: (response) => {
-            request.log.info(
-              {
-                service: "gateway",
-                event: "order.canceled",
-                timestamp: new Date().toISOString(),
-                requestId: request.id,
-                orderId: response.id,
-                locationId: response.locationId,
-                status: response.status,
-                cancelSource: "staff"
-              },
-              "order canceled by staff"
-            );
-          }
-        });
-      }
-
       return proxyUpstream({
         request,
         reply,
@@ -3764,6 +3725,54 @@ export async function registerRoutes(app: FastifyInstance) {
               status: response.status
             },
             "order status advanced"
+          );
+        }
+      });
+    }
+  );
+
+  app.post(
+    "/v1/admin/orders/:orderId/cancel-and-refund",
+    {
+      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("payments:refund")]
+    },
+    async (request, reply) => {
+      const { orderId } = orderIdParamsSchema.parse(request.params);
+      const input = cancelOrderRequestSchema.parse(request.body);
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: ordersBaseUrl,
+        serviceLabel: "Orders",
+        method: "POST",
+        path: `/v1/orders/${orderId}/cancel`,
+        body: input,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken,
+          "x-order-cancel-source": "staff",
+          ...operatorActorHeader(request),
+          ...operatorLocationHeader(locationContext.locationId)
+        },
+        forwardUserIdHeader: false,
+        responseSchema: orderSchema,
+        onSuccess: (response) => {
+          request.log.info(
+            {
+              service: "gateway",
+              event: "order.cancel_and_refund",
+              timestamp: new Date().toISOString(),
+              requestId: request.id,
+              orderId: response.id,
+              locationId: response.locationId,
+              status: response.status,
+              cancelSource: "staff"
+            },
+            "order canceled and refunded by authorized operator"
           );
         }
       });

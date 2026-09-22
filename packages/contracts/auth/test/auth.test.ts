@@ -19,6 +19,7 @@ import {
   operatorGoogleLinkStartRequestSchema,
   operatorPasswordSignInSchema,
   operatorUserCreateSchema,
+  resolveOperatorCapabilities,
   passkeyVerifyRequestSchema,
   refreshRequestSchema
 } from "../src";
@@ -156,6 +157,12 @@ describe("contracts-auth", () => {
   it("normalizes the legacy staff operator role to store", () => {
     expect(normalizeOperatorRole("staff")).toBe("store");
     expect(normalizeOperatorRole("manager")).toBe("manager");
+  });
+
+  it("grants refund authority to owners and managers, never store operators", () => {
+    expect(resolveOperatorCapabilities("owner")).toContain("payments:refund");
+    expect(resolveOperatorCapabilities("manager")).toContain("payments:refund");
+    expect(resolveOperatorCapabilities("store")).not.toContain("payments:refund");
   });
 
   it("accepts me responses with optional customer profile fields", () => {
