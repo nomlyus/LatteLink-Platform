@@ -27,6 +27,10 @@ jobs:
           const fs = require('node:fs');
 
           const audit = JSON.parse(fs.readFileSync('audit.json', 'utf8'));
+          // Existing temporary Metro build-time exception: image-size processes
+          // repository-controlled mobile assets, not customer-supplied images.
+          // Owner: Security & QA. Review by 2026-10-22; remove when a patched
+          // image-size or Metro dependency is available. Do not broaden this set.
           const allowedNoPatchAdvisories = new Set([
             'GHSA-w3rx-r6r6-pgpr',
             'GHSA-5p2g-fcmc-qvqq',
