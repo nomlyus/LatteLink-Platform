@@ -2,8 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const storage = new Map<string, string>();
 
-function mockLocalStorage() {
+function mockLocalStorage(hostname = "localhost") {
   vi.stubGlobal("window", {
+    location: { hostname },
     localStorage: {
       getItem: (key: string) => storage.get(key) ?? null,
       setItem: (key: string, value: string) => storage.set(key, value),
@@ -38,6 +39,24 @@ describe("client dashboard storage", () => {
 
     expect(loadStoredApiBaseUrl()).toBe("https://api-dev.nomly.us/v1");
     expect(storage.has("lattelink.operator.api-base-url.v2")).toBe(false);
+  });
+
+  it("uses the dev API on the canonical dev dashboard when the build env is missing", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "");
+    mockLocalStorage("app-dev.nomly.us");
+
+    const { loadStoredApiBaseUrl } = await import("../src/storage");
+
+    expect(loadStoredApiBaseUrl()).toBe("https://api-dev.nomly.us/v1");
+  });
+
+  it("does not infer an API URL for other deployed hosts", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "");
+    mockLocalStorage("app.nomly.us");
+
+    const { loadStoredApiBaseUrl } = await import("../src/storage");
+
+    expect(loadStoredApiBaseUrl()).toBe("");
   });
 
   it("migrates the legacy setup section to settings", async () => {

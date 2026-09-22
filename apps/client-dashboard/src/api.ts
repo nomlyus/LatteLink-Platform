@@ -181,7 +181,18 @@ export function normalizeApiBaseUrl(input: string) {
 }
 
 export function resolveDefaultApiBaseUrl() {
-  return normalizeApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL ?? "");
+  const configuredApiBaseUrl = normalizeApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL ?? "");
+  if (configuredApiBaseUrl) {
+    return configuredApiBaseUrl;
+  }
+
+  // Keep the canonical dev dashboard usable if its Vercel preview env is omitted.
+  // Never infer a production API endpoint from the browser hostname.
+  if (typeof window !== "undefined" && window.location.hostname === "app-dev.nomly.us") {
+    return "https://api-dev.nomly.us/v1";
+  }
+
+  return "";
 }
 
 export function buildOperatorHeaders(accessToken: string, includeJsonContentType = false): Record<string, string> {
