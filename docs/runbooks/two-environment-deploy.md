@@ -165,14 +165,14 @@ Backup and restore operations are covered in [`database-backup-restore.md`](/Use
 ## Postgres Pool Budget
 
 The Heroku backend is a single process with seven internal services and an
-embedded payment reconciler. Each creates a separate `pg.Pool`, but all read
-the same `POSTGRES_POOL_MAX` (default `2`). Thus a single live-dev web dyno has
-an effective maximum of **8 × 2 = 16** client connections, not the old sum of
-the per-service variables. Pools open connections lazily, so 16 is a ceiling,
-not the number continuously in use. One release migration process can
-temporarily add another pool while the web dyno runs. The production Heroku
-runtime has the same code path, but its live settings and provider allocation
-have not been verified for 1.2.0.
+embedded payment reconciler. Live dev uses three shared-pool groups: general
+max `4`, orders/payments max `4`, and enabled reconciler max `1`, for **9**
+app-side connections per web dyno. Production remains on the pre-existing
+independent-pool code path and has not been verified or changed for 1.2.0.
+Pools open connections lazily, so these are ceilings rather than continuously
+occupied connections. A release migration process can temporarily add another
+pool while the web dyno runs. See
+[`live-dev-database-pooling.md`](live-dev-database-pooling.md).
 
 The tables below are retained only for the separate Compose deployment path;
 they are **not** the effective Heroku allocation. Compose currently does not
@@ -223,9 +223,9 @@ Deploy scripts write and validate:
 - `PAYMENT_RECONCILER_POSTGRES_POOL_MAX`
 
 Run `infra/free/bin/check-postgres-pool-budget.sh infra/free/.env.example`
-locally for a **Compose** pool change. This check does not run in the Heroku
-deployment workflows and does not validate Heroku's eight pools. Service
-`/ready` responses include non-secret persistence metadata with the effective
+locally for a **Compose** pool change. Dev Heroku's `scripts/heroku-sync-config.mjs`
+instead validates the actual three-group budget before it writes config.
+Service `/ready` responses include non-secret persistence metadata with the effective
 `database.pool.max`. See
 [`live-dev-database-pooling.md`](live-dev-database-pooling.md) before changing
 the Heroku capacity plan.

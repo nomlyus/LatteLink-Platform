@@ -65,12 +65,12 @@ The exact host comes from Supabase Dashboard > Connect > Session pooler. Keep a
 direct IPv6 URL separately for backup tooling that runs on an IPv6-capable host.
 
 The live dev connection and capacity audit is in
-[`live-dev-database-pooling.md`](live-dev-database-pooling.md). In the Heroku
-single-process runtime, `POSTGRES_POOL_MAX` controls each database pool.
-The `IDENTITY_*`, `ORDERS_*`, and other per-service pool variables in the
-deployment workflow currently do **not** change those pools; they are used by
-the separate Compose deployment path. Do not treat their sum as Heroku's
-effective connection budget.
+[`live-dev-database-pooling.md`](live-dev-database-pooling.md). Live dev now
+shares a four-connection general pool, a separate four-connection order/payment
+pool, and a one-connection reconciler pool. The old per-service variables were
+removed from dev Heroku config; they apply only to the separate Compose path.
+Production still uses the pre-existing independent-pool code path and has not
+been inspected or changed for 1.2.0.
 
 ## Deployment
 
