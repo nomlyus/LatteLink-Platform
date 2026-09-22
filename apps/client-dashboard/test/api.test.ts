@@ -3,6 +3,7 @@ import {
   ApiRequestError,
   buildOperatorHeaders,
   acceptOperatorInvite,
+  cancelAndRefundOperatorOrder,
   createMerchantLaunch,
   createOperatorStripeDashboardLink,
   createOperatorStripeOnboardingLink,
@@ -942,6 +943,34 @@ describe("client dashboard api helpers", () => {
         null,
         "order-1",
         { status: "READY" }
+      )
+    ).toThrow("Choose a specific location before managing store settings.");
+  });
+
+  it("requires a specific location before canceling and refunding an order", async () => {
+    expect(() =>
+      cancelAndRefundOperatorOrder(
+        {
+          accessToken: "access-token",
+          refreshToken: "refresh-token",
+          apiBaseUrl: "https://api.nomly.us/v1",
+          expiresAt: "2026-04-23T23:00:00.000Z",
+          operator: {
+            operatorUserId: "11111111-1111-4111-8111-111111111111",
+            displayName: "Avery Quinn",
+            email: "avery@store.com",
+            role: "manager",
+            locationId: "flagship-01",
+            locationIds: ["flagship-01", "northside-01"],
+            active: true,
+            capabilities: ["orders:write", "payments:refund"],
+            createdAt: "2026-04-23T20:00:00.000Z",
+            updatedAt: "2026-04-23T20:00:00.000Z"
+          }
+        },
+        null,
+        "order-1",
+        { reason: "Item unavailable" }
       )
     ).toThrow("Choose a specific location before managing store settings.");
   });

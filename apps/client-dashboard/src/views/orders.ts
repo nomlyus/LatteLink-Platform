@@ -211,28 +211,37 @@ function renderCancelButton(order: OperatorOrder) {
     return "";
   }
   const disabled = state.busyOrderId === order.id ? "disabled" : "";
+  const isUnpaid = order.status === "PENDING_PAYMENT";
+  const actionLabel = isUnpaid ? "Cancel unpaid order" : "Cancel and refund";
   if (state.pendingCancelOrderId === order.id) {
+    const confirmationCopy = isUnpaid
+      ? "This order has not been paid. No refund will be issued."
+      : `This cancels the order and refunds ${formatMoney(order.total.amountCents)} to the original payment method.`;
     return `
-      <div class="confirm-row">
-        <button class="button button--danger" type="button" data-action="confirm-cancel-order" data-order-id="${order.id}" ${disabled}>
-          Confirm cancel
+      <form class="confirm-row" data-form="cancel-order" data-order-id="${order.id}">
+        <p class="muted-copy">${escapeHtml(confirmationCopy)}</p>
+        <label class="field-label" for="cancel-reason-${order.id}">Reason</label>
+        <input class="field-input" id="cancel-reason-${order.id}" name="reason" type="text" maxlength="240" required placeholder="For example, item unavailable" ${disabled} />
+        <button class="button button--danger" type="submit" ${disabled}>
+          ${isUnpaid ? "Confirm cancel" : `Confirm cancel and refund ${formatMoney(order.total.amountCents)}`}
         </button>
         <button class="button button--ghost" type="button" data-action="dismiss-cancel-order" data-order-id="${order.id}" ${disabled}>
           Back
         </button>
-      </div>
+      </form>
     `;
   }
   return `
     <button class="button button--ghost" type="button" data-action="cancel-order" data-order-id="${order.id}" ${disabled}>
-      Cancel order
+      ${actionLabel}
     </button>
   `;
 }
 
 function renderOrderDetail(order: OperatorOrder, appConfig: AppConfig | null) {
-  const manualStatusControlsEnabled = canAdvanceOrderStatus(state.session?.operator ?? null, appConfig);
-  const cancelControlsEnabled = canCancelOrder(state.session?.operator ?? null, appConfig, order);
+  const specificLocationSelected = !isAllLocationsSelected();
+  const manualStatusControlsEnabled = specificLocationSelected && canAdvanceOrderStatus(state.session?.operator ?? null, appConfig);
+  const cancelControlsEnabled = specificLocationSelected && canCancelOrder(state.session?.operator ?? null, appConfig, order);
   const fulfillmentMode = resolveAppConfigFulfillmentMode(appConfig);
   const actions = getOrderActions(order, fulfillmentMode);
   const timeline = order.timeline
@@ -303,7 +312,9 @@ function renderOrderDetail(order: OperatorOrder, appConfig: AppConfig | null) {
       controlButtons
         ? `<div class="button-row">${controlButtons}</div>`
         : `<p class="muted-copy">${escapeHtml(
-            getOrderDetailActionUnavailableMessage(state.session?.operator ?? null, appConfig, order)
+            specificLocationSelected
+              ? getOrderDetailActionUnavailableMessage(state.session?.operator ?? null, appConfig, order)
+              : "Choose a specific location before taking order actions."
           )}</p>`
     }
     <div class="dash-detail-block">
@@ -333,8 +344,9 @@ function renderQueueRows(orders: readonly OperatorOrder[], selectedOrderId: stri
 }
 
 function renderStoreTicket(order: OperatorOrder, appConfig: AppConfig | null) {
-  const manualStatusControlsEnabled = canAdvanceOrderStatus(state.session?.operator ?? null, appConfig);
-  const cancelControlsEnabled = canCancelOrder(state.session?.operator ?? null, appConfig, order);
+  const specificLocationSelected = !isAllLocationsSelected();
+  const manualStatusControlsEnabled = specificLocationSelected && canAdvanceOrderStatus(state.session?.operator ?? null, appConfig);
+  const cancelControlsEnabled = specificLocationSelected && canCancelOrder(state.session?.operator ?? null, appConfig, order);
   const nextAction = getOrderActions(order, resolveAppConfigFulfillmentMode(appConfig))[0];
   const noteMarkup = getOrderNotes(order)
     .map((note) => `<div class="dash-ticket-callout">${escapeHtml(note)}</div>`)

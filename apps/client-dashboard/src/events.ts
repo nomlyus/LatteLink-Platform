@@ -54,7 +54,7 @@ import {
   handleMobileExperienceSubmit
 } from "./controllers/experience";
 import { handleTeamCreateSubmit, handleTeamUserDelete, handleTeamUserSubmit } from "./controllers/team";
-import { handleOrderAdvance } from "./controllers/orders";
+import { handleOrderAdvance, handleOrderCancel } from "./controllers/orders";
 import {
   handleOnboardingBusinessProfileSubmit,
   handleOnboardingAppIdentitySubmit,
@@ -151,6 +151,14 @@ export function registerEvents() {
       case "team-user":
         void handleTeamUserSubmit(target);
         return;
+      case "cancel-order": {
+        const orderId = target.dataset.orderId;
+        const reason = String(new FormData(target).get("reason") ?? "");
+        if (orderId) {
+          void handleOrderCancel(orderId, reason);
+        }
+        return;
+      }
     }
   });
 
@@ -408,7 +416,7 @@ export function registerEvents() {
       const note = actionElement.dataset.orderNote;
       if (
         orderId &&
-        (status === "IN_PREP" || status === "READY" || status === "COMPLETED" || status === "CANCELED")
+        (status === "IN_PREP" || status === "READY" || status === "COMPLETED")
       ) {
         void handleOrderAdvance(orderId, status, note);
       }
@@ -427,14 +435,6 @@ export function registerEvents() {
     if (action === "dismiss-cancel-order") {
       clearPendingCancel();
       render();
-      return;
-    }
-
-    if (action === "confirm-cancel-order") {
-      const orderId = actionElement.dataset.orderId;
-      if (orderId) {
-        void handleOrderAdvance(orderId, "CANCELED", "Canceled in store");
-      }
       return;
     }
 

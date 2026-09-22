@@ -309,6 +309,10 @@ export function canCancelOrder(
     return false;
   }
 
+  if (!canAccessCapability(operator, "payments:refund")) {
+    return false;
+  }
+
   return order.status === "PENDING_PAYMENT" || canManageOrderStatus(config);
 }
 
@@ -342,6 +346,10 @@ export function getOrderCancelUnavailableMessage(
 
   if (!canAccessCapability(operator, "orders:write")) {
     return "You have read-only access to live orders for this store.";
+  }
+
+  if (!canAccessCapability(operator, "payments:refund")) {
+    return "Only an owner or manager can cancel an order or issue a refund.";
   }
 
   if (order.status === "PENDING_PAYMENT") {

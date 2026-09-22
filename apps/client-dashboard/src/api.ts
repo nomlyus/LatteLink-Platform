@@ -839,7 +839,7 @@ export function updateOperatorOrderStatus(
   locationId: string | null,
   orderId: string,
   input: {
-    status: "IN_PREP" | "READY" | "COMPLETED" | "CANCELED";
+    status: "IN_PREP" | "READY" | "COMPLETED";
     note?: string;
   }
 ) {
@@ -853,6 +853,23 @@ export function updateOperatorOrderStatus(
       status: input.status,
       ...(trimToUndefined(input.note) ? { note: trimToUndefined(input.note) } : {})
     },
+    schema: orderSchema
+  });
+}
+
+export function cancelAndRefundOperatorOrder(
+  session: OperatorSession,
+  locationId: string | null,
+  orderId: string,
+  input: { reason: string }
+) {
+  return requestJson({
+    apiBaseUrl: session.apiBaseUrl,
+    accessToken: session.accessToken,
+    path: `/admin/orders/${orderId}/cancel-and-refund`,
+    query: { locationId: requireSelectedLocationId(locationId) },
+    method: "POST",
+    body: { reason: input.reason.trim() },
     schema: orderSchema
   });
 }

@@ -125,7 +125,7 @@ const sampleOperator: OperatorUser = {
   locationId: "flagship-01",
   locationIds: ["flagship-01", "northside-01"],
   active: true,
-  capabilities: ["orders:read", "orders:write", "menu:read", "menu:visibility", "store:read", "team:read"],
+  capabilities: ["orders:read", "orders:write", "payments:refund", "menu:read", "menu:visibility", "store:read", "team:read"],
   createdAt: "2026-03-20T00:00:00.000Z",
   updatedAt: "2026-03-20T00:00:00.000Z"
 };
@@ -194,7 +194,7 @@ describe("client dashboard model", () => {
     ]);
   });
 
-  it("allows canceling unpaid orders even when manual staff fulfillment is disabled", () => {
+  it("allows an owner or manager to cancel an unpaid order even when manual staff fulfillment is disabled", () => {
     const timeBasedConfig = {
       ...sampleAppConfig,
       storeCapabilities: {
@@ -212,6 +212,21 @@ describe("client dashboard model", () => {
     expect(getOrderCancelUnavailableMessage(sampleOperator, timeBasedConfig, sampleOrder)).toBe(
       "Time-based fulfillment is active, so manual order controls are disabled."
     );
+  });
+
+  it("requires refund authority before a paid order can be canceled", () => {
+    const storeOperator = {
+      ...sampleOperator,
+      role: "store" as const,
+      capabilities: ["orders:read", "orders:write"] as OperatorUser["capabilities"]
+    };
+
+    expect(canCancelOrder(storeOperator, sampleAppConfig, sampleOrder)).toBe(false);
+    expect(getOrderCancelUnavailableMessage(storeOperator, sampleAppConfig, sampleOrder)).toBe(
+      "Only an owner or manager can cancel an order or issue a refund."
+    );
+    expect(canCancelOrder(storeOperator, sampleAppConfig, { ...sampleOrder, status: "PENDING_PAYMENT" })).toBe(false);
+    expect(canCancelOrder(sampleOperator, sampleAppConfig, sampleOrder)).toBe(true);
   });
 
   it("filters orders by active, completed, and all views", () => {
