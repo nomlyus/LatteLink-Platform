@@ -1,5 +1,4 @@
 import type { ExpoConfig } from "expo/config";
-import { resolveDisplayName } from "./src/brand";
 
 type AppVariant = "beta" | "production";
 const DEFAULT_APP_VARIANT: AppVariant = "beta";
@@ -17,7 +16,8 @@ function resolveAppVariant(): AppVariant {
 }
 
 function resolveAppDisplayName(variant: AppVariant) {
-  const baseName = resolveDisplayName(process.env.APP_DISPLAY_NAME_BASE);
+  // Expo evaluates this config outside the app's TypeScript module loader.
+  const baseName = process.env.APP_DISPLAY_NAME_BASE?.trim() || "Nomly";
   const configuredDisplayName = process.env.APP_DISPLAY_NAME?.trim();
   switch (variant) {
     case "production":
