@@ -618,11 +618,25 @@ describe.sequential("orders + payments e2e", () => {
     expect(paidOrderResponse.statusCode).toBe(200);
     expect(paidOrderResponse.json()).toMatchObject({ accepted: true, orderStatus: "PAID" });
 
-    const rejectedRefundCancel = await ordersApp.inject({
+    const customerCancel = await ordersApp.inject({
       method: "POST",
       url: `/v1/orders/${order.id}/cancel`,
       headers: {
         "x-user-id": defaultOrderUserId
+      },
+      payload: {
+        reason: "customer changed mind"
+      }
+    });
+    expect(customerCancel.statusCode).toBe(409);
+    expect(customerCancel.json()).toMatchObject({ code: "ORDER_NOT_CANCELABLE" });
+
+    const rejectedRefundCancel = await ordersApp.inject({
+      method: "POST",
+      url: `/v1/orders/${order.id}/cancel`,
+      headers: {
+        "x-user-id": defaultOrderUserId,
+        "x-order-cancel-source": "staff"
       },
       payload: {
         reason: "please reject this refund"
@@ -642,10 +656,11 @@ describe.sequential("orders + payments e2e", () => {
       method: "POST",
       url: `/v1/orders/${order.id}/cancel`,
       headers: {
-        "x-user-id": defaultOrderUserId
+        "x-user-id": defaultOrderUserId,
+        "x-order-cancel-source": "staff"
       },
       payload: {
-        reason: "customer changed mind"
+        reason: "staff canceled after refund recovery"
       }
     });
     expect(recoveredCancel.statusCode).toBe(200);
@@ -657,10 +672,11 @@ describe.sequential("orders + payments e2e", () => {
       method: "POST",
       url: `/v1/orders/${order.id}/cancel`,
       headers: {
-        "x-user-id": defaultOrderUserId
+        "x-user-id": defaultOrderUserId,
+        "x-order-cancel-source": "staff"
       },
       payload: {
-        reason: "customer changed mind"
+        reason: "staff canceled after refund recovery"
       }
     });
     expect(repeatedCancel.statusCode).toBe(200);
@@ -708,10 +724,11 @@ describe.sequential("orders + payments e2e", () => {
       method: "POST",
       url: `/v1/orders/${order.id}/cancel`,
       headers: {
-        "x-user-id": userId
+        "x-user-id": userId,
+        "x-order-cancel-source": "staff"
       },
       payload: {
-        reason: "customer canceled paid order"
+        reason: "staff canceled paid order"
       }
     });
     expect(cancelResponse.statusCode).toBe(200);
@@ -774,10 +791,11 @@ describe.sequential("orders + payments e2e", () => {
       method: "POST",
       url: `/v1/orders/${order.id}/cancel`,
       headers: {
-        "x-user-id": userId
+        "x-user-id": userId,
+        "x-order-cancel-source": "staff"
       },
       payload: {
-        reason: "customer changed mind"
+        reason: "staff canceled paid order"
       }
     });
     expect(cancelResponse.statusCode).toBe(200);
@@ -786,10 +804,11 @@ describe.sequential("orders + payments e2e", () => {
       method: "POST",
       url: `/v1/orders/${order.id}/cancel`,
       headers: {
-        "x-user-id": userId
+        "x-user-id": userId,
+        "x-order-cancel-source": "staff"
       },
       payload: {
-        reason: "customer changed mind"
+        reason: "staff canceled paid order"
       }
     });
     expect(repeatedCancel.statusCode).toBe(200);

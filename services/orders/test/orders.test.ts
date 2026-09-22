@@ -988,7 +988,10 @@ describe("orders service", () => {
     const cancelResponse = await app.inject({
       method: "POST",
       url: `/v1/orders/${order.id}/cancel`,
-      headers: customerHeaders(),
+      headers: {
+        ...customerHeaders(),
+        "x-order-cancel-source": "staff"
+      },
       payload: { reason: "changed mind" }
     });
     expect(cancelResponse.statusCode).toBe(200);
@@ -1310,7 +1313,10 @@ describe("orders service", () => {
     const successfulCancel = await app.inject({
       method: "POST",
       url: `/v1/orders/${paidOrderCandidate.id}/cancel`,
-      headers: customerHeaders(),
+      headers: {
+        ...customerHeaders(),
+        "x-order-cancel-source": "staff"
+      },
       payload: { reason: "changed mind" }
     });
     expect(successfulCancel.statusCode).toBe(200);
@@ -1367,7 +1373,10 @@ describe("orders service", () => {
     const rejectedCancel = await app.inject({
       method: "POST",
       url: `/v1/orders/${rejectedOrder.id}/cancel`,
-      headers: customerHeaders(),
+      headers: {
+        ...customerHeaders(),
+        "x-order-cancel-source": "staff"
+      },
       payload: { reason: "please reject refund" }
     });
     expect(rejectedCancel.statusCode).toBe(409);
@@ -1411,7 +1420,10 @@ describe("orders service", () => {
     const firstCancel = await app.inject({
       method: "POST",
       url: `/v1/orders/${createdOrder.id}/cancel`,
-      headers: customerHeaders(),
+      headers: {
+        ...customerHeaders(),
+        "x-order-cancel-source": "staff"
+      },
       payload: { reason: "changed mind" }
     });
     expect(firstCancel.statusCode).toBe(200);
@@ -1419,7 +1431,10 @@ describe("orders service", () => {
     const repeatedCancel = await app.inject({
       method: "POST",
       url: `/v1/orders/${createdOrder.id}/cancel`,
-      headers: customerHeaders(),
+      headers: {
+        ...customerHeaders(),
+        "x-order-cancel-source": "staff"
+      },
       payload: { reason: "still changed mind" }
     });
     expect(repeatedCancel.statusCode).toBe(200);

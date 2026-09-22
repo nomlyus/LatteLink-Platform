@@ -422,6 +422,50 @@ describe("orders service layer", () => {
     });
   });
 
+  it("rejects customer cancellation of a paid order before attempting a refund", async () => {
+    const userId = "123e4567-e89b-12d3-a456-426614174506";
+    const { deps } = await createTestDeps(repositories);
+    const { order } = await createQuotedOrder(deps, { userId });
+
+    const paidResult = await reconcilePaymentWebhook({
+      input: {
+        eventId: "evt-customer-paid-cancel-guard",
+        provider: "STRIPE",
+        kind: "CHARGE",
+        orderId: order.id,
+        paymentId: "123e4567-e89b-12d3-a456-426614174100",
+        status: "SUCCEEDED",
+        amountCents: order.total.amountCents,
+        currency: "USD",
+        occurredAt: "2026-03-10T00:00:00.000Z"
+      },
+      requestId: "service-customer-paid-cancel-guard-pay",
+      deps
+    });
+    expect("error" in paidResult).toBe(false);
+    const paidOrder = await deps.repository.getOrder(order.id);
+    expect(paidOrder?.status).toBe("PAID");
+
+    const cancelResult = await cancelOrder({
+      orderId: order.id,
+      input: { reason: "changed mind" },
+      cancelSource: "customer",
+      requestId: "service-customer-paid-cancel-guard",
+      requestUserContext: { userId },
+      deps
+    });
+
+    expect(cancelResult).toMatchObject({
+      error: { statusCode: 409, code: "ORDER_NOT_CANCELABLE" }
+    });
+    expect(await deps.repository.getOrder(order.id)).toEqual(paidOrder);
+    expect(await deps.repository.getSuccessfulRefund(order.id)).toBeUndefined();
+    const refundCalls = fetchMock.mock.calls.filter(([input]) =>
+      (typeof input === "string" ? input : input.toString()).endsWith("/v1/payments/refunds")
+    );
+    expect(refundCalls).toHaveLength(0);
+  });
+
   it("applies a discount code before loyalty, reserves it at order creation, and redeems it on payment success", async () => {
     const userId = "123e4567-e89b-12d3-a456-426614174551";
     const { deps } = await createTestDeps(repositories);
@@ -777,7 +821,7 @@ describe("orders service layer", () => {
     const cancelResult = await cancelOrder({
       orderId: order.id,
       input: { reason: "changed mind" },
-      cancelSource: "customer",
+      cancelSource: "staff",
       requestId: "service-paid-cancel",
       requestUserContext: { userId },
       deps
@@ -1233,7 +1277,7 @@ describe("orders service layer", () => {
     const cancelResult = await cancelOrder({
       orderId: order.id,
       input: { reason: "please reject refund" },
-      cancelSource: "customer",
+      cancelSource: "staff",
       requestId: "service-paid-reject-refund",
       requestUserContext: { userId },
       deps

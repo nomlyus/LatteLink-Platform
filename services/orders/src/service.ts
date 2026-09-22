@@ -1866,6 +1866,17 @@ export async function cancelOrder(params: {
     return { order: existingOrder };
   }
 
+  if (cancelSource === "customer" && existingOrder.status !== "PENDING_PAYMENT") {
+    return {
+      error: buildServiceError({
+        statusCode: 409,
+        code: "ORDER_NOT_CANCELABLE",
+        message: "Only unpaid orders can be canceled by customers",
+        details: { orderId, status: existingOrder.status }
+      })
+    };
+  }
+
   const fulfillmentConfig = await deps.getFulfillmentConfig(existingOrder.locationId);
   if (cancelSource === "staff" && existingOrder.status !== "PENDING_PAYMENT" && fulfillmentConfig.mode !== "staff") {
     return {
