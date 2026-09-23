@@ -182,6 +182,17 @@ export async function buildApp(options: { allowDeferredFeatureTestRoutes?: boole
     reply.send(error);
   });
 
+  // Fastify's default 404 body echoes the requested URL. Unknown invite URLs
+  // can contain legacy credentials, so keep the public error and its logs
+  // independent of caller-controlled path/query material.
+  app.setNotFoundHandler((request, reply) => {
+    reply.status(404).send({
+      code: "ROUTE_NOT_FOUND",
+      message: "The requested route was not found.",
+      requestId: request.id
+    });
+  });
+
   app.addHook("onRequest", async (request, reply) => {
     reply.header("x-request-id", request.id);
   });
