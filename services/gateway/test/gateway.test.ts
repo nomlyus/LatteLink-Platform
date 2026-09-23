@@ -5863,6 +5863,31 @@ let previousFreeClientDashboardDomain: string | undefined;
     }
   });
 
+  it("uses only the Heroku router-appended client IP for protected buckets", async () => {
+    vi.stubEnv("GATEWAY_PROXY_MODE", "heroku-common");
+    vi.stubEnv("DYNO", "web.1");
+    vi.stubEnv("PORT", "8080");
+    vi.stubEnv("GATEWAY_RATE_LIMIT_PROTECTED_PRE_AUTH_MAX", "2");
+    const app = await buildApp();
+    const url = "/v1/admin/orders?locationId=flagship-01";
+    const from = (client: string, claimed = "192.0.2.99", token = "Bearer invalid") => app.inject({
+      method: "GET", url, remoteAddress: "172.20.0.1",
+      headers: { authorization: token, "x-forwarded-for": `${claimed}, ${client}` }
+    });
+
+    try {
+      expect((await from("198.51.100.10")).statusCode).toBe(401);
+      expect((await from("198.51.100.10", "192.0.2.98")).statusCode).toBe(401);
+      expect((await from("198.51.100.10", "192.0.2.97")).statusCode).toBe(429);
+      expect((await from("198.51.100.11", "192.0.2.99", ownerOperatorHeaders.authorization)).statusCode).toBe(200);
+      expect((await from("198.51.100.11", "192.0.2.99", managerOperatorHeaders.authorization)).statusCode).toBe(200);
+      expect((await from("198.51.100.12", "192.0.2.99")).statusCode).toBe(401);
+    } finally {
+      vi.unstubAllEnvs();
+      await app.close();
+    }
+  });
+
   it("limits public auth writes by peer IP and records a non-sensitive abuse counter", async () => {
     vi.stubEnv("GATEWAY_RATE_LIMIT_AUTH_WRITE_MAX", "1");
     vi.stubEnv("GATEWAY_RATE_LIMIT_WINDOW_MS", "60000");

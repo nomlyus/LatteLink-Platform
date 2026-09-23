@@ -96,12 +96,23 @@ export async function buildApp() {
   const allowedCorsOrigins = resolveAllowedCorsOrigins();
   const allowedCorsOriginHostSuffixes = resolveAllowedCorsOriginHostSuffixes();
   const trustedProxyAddress = process.env.GATEWAY_TRUSTED_PROXY_ADDRESS?.trim();
+  const proxyMode = process.env.GATEWAY_PROXY_MODE?.trim();
   if (trustedProxyAddress && !isIP(trustedProxyAddress)) {
     throw new Error("GATEWAY_TRUSTED_PROXY_ADDRESS must be one IP address");
   }
+  if (proxyMode && proxyMode !== "heroku-common") {
+    throw new Error("GATEWAY_PROXY_MODE must be heroku-common");
+  }
+  if (proxyMode && (trustedProxyAddress || !process.env.DYNO || !process.env.PORT)) {
+    throw new Error("heroku-common proxy mode requires a Heroku dyno and cannot be combined with an exact trusted proxy");
+  }
   const app = Fastify({
     logger: buildFastifyLoggerOptions(serviceName),
-    trustProxy: trustedProxyAddress ? (address) => address === trustedProxyAddress : false,
+    // Common Runtime only exposes $PORT through the Heroku router. Its rightmost
+    // X-Forwarded-For entry is router-appended; earlier entries are caller input.
+    trustProxy: proxyMode === "heroku-common"
+      ? (_address, hop) => hop === 0
+      : trustedProxyAddress ? (address) => address === trustedProxyAddress : false,
     genReqId: (req) => (req.headers["x-request-id"] as string | undefined) ?? randomUUID()
   });
   registerSentryErrorHook(app, serviceName);

@@ -34,6 +34,19 @@ Only the gateway binds `0.0.0.0:$PORT`. Internal services bind stable loopback
 ports. Shutdown stops workers, closes worker resources, then closes Fastify apps
 in reverse order.
 
+Set `GATEWAY_PROXY_MODE=heroku-common` in the Heroku environment config for
+Common Runtime apps. This trusts exactly the socket's Heroku router hop for
+client IP rate limits. Heroku appends its observed client IP to the right of
+any incoming `X-Forwarded-For` values; earlier values remain untrusted.
+Common Runtime allows inbound traffic to `$PORT` only through its router.
+Do not enable this mode in Private Spaces or a runtime where callers can
+connect directly to the gateway. Keep `GATEWAY_TRUSTED_PROXY_ADDRESS` for the
+isolated Caddy Compose topology only. Before releasing, confirm the running
+Heroku config includes this mode and verify distinct clients through live dev.
+
+Heroku routing and network guarantees: [HTTP Routing](https://devcenter.heroku.com/articles/http-routing),
+[Networking](https://devcenter.heroku.com/articles/networking).
+
 ## One-Time Provisioning
 
 ```bash
