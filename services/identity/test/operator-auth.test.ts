@@ -767,6 +767,7 @@ describe("operator auth", () => {
     expect(invite.operator.active).toBe(false);
     expect(invite.invite.inviteUrl).toContain("/invites/");
     const token = invite.invite.inviteUrl!.split("#")[1]!;
+    expect(app.printRoutes()).not.toContain("/operator/invites/:token");
 
     const pendingOwnerSummaryResponse = await app.inject({
       method: "GET",
@@ -784,10 +785,12 @@ describe("operator auth", () => {
     });
 
     const lookupResponse = await app.inject({
-      method: "GET",
-      url: `/v1/operator/invites/${token}`
+      method: "POST",
+      url: "/v1/operator/invites/lookup",
+      payload: { token }
     });
     expect(lookupResponse.statusCode).toBe(200);
+    expect(lookupResponse.headers["cache-control"]).toBe("no-store");
     expect(operatorInviteLookupResponseSchema.parse(lookupResponse.json())).toMatchObject({
       operator: {
         email: "pilot.owner@example.com",
@@ -807,12 +810,14 @@ describe("operator auth", () => {
 
     const acceptResponse = await app.inject({
       method: "POST",
-      url: `/v1/operator/invites/${token}/accept`,
+      url: "/v1/operator/invites/accept",
       payload: {
+        token,
         password: "AcceptedPassword123!"
       }
     });
     expect(acceptResponse.statusCode).toBe(200);
+    expect(acceptResponse.headers["cache-control"]).toBe("no-store");
     expect(operatorInviteAcceptResponseSchema.parse(acceptResponse.json())).toMatchObject({
       operator: {
         email: "pilot.owner@example.com",
@@ -840,8 +845,9 @@ describe("operator auth", () => {
 
     const reuseResponse = await app.inject({
       method: "POST",
-      url: `/v1/operator/invites/${token}/accept`,
+      url: "/v1/operator/invites/accept",
       payload: {
+        token,
         password: "AcceptedPassword123!"
       }
     });

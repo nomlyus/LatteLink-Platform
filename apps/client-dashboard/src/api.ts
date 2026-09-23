@@ -418,7 +418,9 @@ export async function requestOperatorDevAccess(params: { apiBaseUrl: string; ema
 export function lookupOperatorInvite(params: { apiBaseUrl: string; token: string }) {
   return requestJson({
     apiBaseUrl: params.apiBaseUrl,
-    path: `/operator/invites/${encodeURIComponent(params.token)}`,
+    path: "/operator/invites/lookup",
+    method: "POST",
+    body: { token: params.token },
     schema: operatorInviteLookupResponseSchema
   });
 }
@@ -426,9 +428,10 @@ export function lookupOperatorInvite(params: { apiBaseUrl: string; token: string
 export function acceptOperatorInvite(params: { apiBaseUrl: string; token: string; password: string }) {
   return requestJson({
     apiBaseUrl: params.apiBaseUrl,
-    path: `/operator/invites/${encodeURIComponent(params.token)}/accept`,
+    path: "/operator/invites/accept",
     method: "POST",
     body: operatorInviteAcceptRequestSchema.parse({
+      token: params.token,
       password: params.password
     }),
     schema: operatorInviteAcceptResponseSchema

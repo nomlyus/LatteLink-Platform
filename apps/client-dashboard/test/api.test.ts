@@ -183,9 +183,10 @@ describe("client dashboard api helpers", () => {
 
     expect(invite.operator.email).toBe("owner@northside.com");
     expect(fetchSpy).toHaveBeenCalledWith(
-      "https://api.nomly.us/v1/operator/invites/owner-invite-token-1234567890",
+      "https://api.nomly.us/v1/operator/invites/lookup",
       expect.objectContaining({
-        method: "GET"
+        method: "POST",
+        body: JSON.stringify({ token: "owner-invite-token-1234567890" })
       })
     );
   });
@@ -241,13 +242,14 @@ describe("client dashboard api helpers", () => {
 
     expect(accepted.invite.status).toBe("consumed");
     expect(fetchSpy).toHaveBeenCalledWith(
-      "https://api.nomly.us/v1/operator/invites/owner-invite-token-1234567890/accept",
+      "https://api.nomly.us/v1/operator/invites/accept",
       expect.objectContaining({
         method: "POST",
         headers: {
           "content-type": "application/json"
         },
         body: JSON.stringify({
+          token: "owner-invite-token-1234567890",
           password: "AcceptedPassword123!"
         })
       })

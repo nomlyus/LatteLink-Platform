@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sanitizeRequestUrl } from "../src/index.js";
+import { sanitizeRequestUrl, scrubSensitiveTelemetry } from "../src/index.js";
 
 describe("observability helpers", () => {
   it("removes query strings from logged request URLs", () => {
@@ -24,5 +24,21 @@ describe("observability helpers", () => {
       "https://client.example.com/invites/[redacted]"
     );
     expect(sanitizeRequestUrl("/v1/operator/invites?inviteToken=query-secret")).toBe("/v1/operator/invites");
+  });
+
+  it("scrubs invite secrets across nested Sentry request, breadcrumb, extra, and exception fields", () => {
+    const event = scrubSensitiveTelemetry({
+      request: {
+        url: "https://api.example.com/v1/operator/invites/synthetic-secret?inviteToken=synthetic-secret",
+        data: { token: "synthetic-secret", password: "temporary-password" }
+      },
+      breadcrumbs: [{ data: { url: "/invites/synthetic-secret", body: { inviteToken: "synthetic-secret" } } }],
+      extra: { retryPath: "/v1/operator/invites/synthetic-secret/accept" },
+      exception: { values: [{ value: "failed at /v1/operator/invites/synthetic-secret/accept" }] }
+    });
+
+    expect(JSON.stringify(event)).not.toContain("synthetic-secret");
+    expect(JSON.stringify(event)).not.toContain("temporary-password");
+    expect(event.request.url).toBe("https://api.example.com/v1/operator/invites/[redacted]");
   });
 });

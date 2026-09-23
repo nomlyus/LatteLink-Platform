@@ -341,7 +341,7 @@ export const internalOwnerInviteResponseSchema = z.object({
   action: z.enum(["created", "updated", "resent"])
 });
 
-export const operatorInviteTokenParamsSchema = z.object({
+export const operatorInviteLookupRequestSchema = z.object({
   token: z.string().trim().min(20)
 });
 
@@ -356,6 +356,7 @@ export const operatorInviteLookupResponseSchema = z.object({
 });
 
 export const operatorInviteAcceptRequestSchema = z.object({
+  token: z.string().trim().min(20),
   password: operatorPasswordSchema
 });
 
@@ -578,6 +579,7 @@ export type InternalOwnerInviteRequest = z.output<typeof internalOwnerInviteRequ
 export type InternalOwnerInviteResponse = z.output<typeof internalOwnerInviteResponseSchema>;
 export type OwnerInvite = z.output<typeof ownerInviteSchema>;
 export type OperatorInviteLookupResponse = z.output<typeof operatorInviteLookupResponseSchema>;
+export type OperatorInviteLookupRequest = z.output<typeof operatorInviteLookupRequestSchema>;
 export type OperatorInviteAcceptRequest = z.output<typeof operatorInviteAcceptRequestSchema>;
 export type OperatorInviteAcceptResponse = z.output<typeof operatorInviteAcceptResponseSchema>;
 export type InternalOwnerSummary = z.output<typeof internalOwnerSummarySchema>;

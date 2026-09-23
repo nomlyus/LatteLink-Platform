@@ -404,7 +404,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
-      if (url.endsWith("/v1/operator/invites/owner-invite-token-1234567890") && method === "GET") {
+      if (url.endsWith("/v1/operator/invites/lookup") && method === "POST") {
         return new Response(
           JSON.stringify({
             invite: {
@@ -428,9 +428,9 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
-      if (url.endsWith("/v1/operator/invites/owner-invite-token-1234567890/accept") && method === "POST") {
-        const body = JSON.parse(String(init?.body ?? "{}")) as { password?: string };
-        if (body.password !== "AcceptedPassword123!") {
+      if (url.endsWith("/v1/operator/invites/accept") && method === "POST") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { password?: string; token?: string };
+        if (body.password !== "AcceptedPassword123!" || body.token !== "owner-invite-token-1234567890") {
           return new Response(
             JSON.stringify({
               code: "BAD_REQUEST",
@@ -2278,7 +2278,7 @@ let previousFreeClientDashboardDomain: string | undefined;
               email: body.email ?? "owner@northside.com",
               status: "pending",
               expiresAt: "2026-05-13T12:00:00.000Z",
-              inviteUrl: "https://client.example.com/invites/test-token",
+              inviteUrl: "https://client.example.com/invites/#test-token",
               createdAt: "2026-05-06T12:00:00.000Z",
               updatedAt: "2026-05-06T12:00:00.000Z"
             },
@@ -2966,11 +2966,15 @@ let previousFreeClientDashboardDomain: string | undefined;
     await app.close();
   });
 
-  it("forwards owner invite lookup and acceptance to identity", async () => {
+  it("forwards owner invite tokens in request bodies and keeps them out of request URLs", async () => {
     const app = await buildApp();
+    expect(app.printRoutes()).not.toContain("/operator/invites/:token");
+    expect(app.printRoutes()).toContain("lookup (POST)");
+    expect(app.printRoutes()).toContain("accept (POST)");
     const lookupResponse = await app.inject({
-      method: "GET",
-      url: "/v1/operator/invites/owner-invite-token-1234567890"
+      method: "POST",
+      url: "/v1/operator/invites/lookup",
+      payload: { token: "owner-invite-token-1234567890" }
     });
 
     expect(lookupResponse.statusCode, lookupResponse.body).toBe(200);
@@ -2987,8 +2991,9 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const acceptResponse = await app.inject({
       method: "POST",
-      url: "/v1/operator/invites/owner-invite-token-1234567890/accept",
+      url: "/v1/operator/invites/accept",
       payload: {
+        token: "owner-invite-token-1234567890",
         password: "AcceptedPassword123!"
       }
     });
@@ -3006,17 +3011,24 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const lookupCall = fetchMock.mock.calls.find(([input]) => {
       const url = typeof input === "string" ? input : input.url;
-      return url === "http://identity.internal/v1/operator/invites/owner-invite-token-1234567890";
+      return url === "http://identity.internal/v1/operator/invites/lookup";
     });
     expect(lookupCall).toBeDefined();
 
     const acceptCall = fetchMock.mock.calls.find(([input]) => {
       const url = typeof input === "string" ? input : input.url;
-      return url === "http://identity.internal/v1/operator/invites/owner-invite-token-1234567890/accept";
+      return url === "http://identity.internal/v1/operator/invites/accept";
     });
     expect(acceptCall).toBeDefined();
+    expect(fetchMock.mock.calls.every(([input]) => {
+      const url = typeof input === "string" ? input : input.url;
+      return !url.includes("owner-invite-token-1234567890");
+    })).toBe(true);
+    expect(lookupResponse.headers["cache-control"]).toBe("no-store");
+    expect(acceptResponse.headers["cache-control"]).toBe("no-store");
     if (acceptCall) {
       expect(JSON.parse(String(acceptCall[1]?.body ?? "{}"))).toEqual({
+        token: "owner-invite-token-1234567890",
         password: "AcceptedPassword123!"
       });
     }
