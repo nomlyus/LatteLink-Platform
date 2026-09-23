@@ -23,6 +23,13 @@ import {
   type AuditLogEntry
 } from "@lattelink/persistence";
 import { z } from "zod";
+import {
+  createAppleRefreshTokenCipher,
+  digestSessionToken,
+  isLegacySecretCutoverEnabled,
+  isEncryptedAppleRefreshToken,
+  sessionTokenLookupValues
+} from "./secret-storage.js";
 
 type AuthSession = z.output<typeof authSessionSchema>;
 
@@ -56,6 +63,9 @@ type StoredSession = AuthSession & {
   createdAt: string;
 };
 
+type CustomerAccessSession = Pick<AuthSession, "userId" | "expiresAt">;
+type CustomerRefreshSession = Pick<StoredSession, "userId" | "createdAt" | "refreshExpiresAt">;
+
 type StoredOperatorSession = {
   accessToken: string;
   refreshToken: string;
@@ -66,6 +76,8 @@ type StoredOperatorSession = {
   createdAt: string;
 };
 
+type OperatorLookupSession = Pick<StoredOperatorSession, "operatorUserId" | "activeLocationId" | "createdAt">;
+
 type StoredInternalAdminSession = {
   accessToken: string;
   refreshToken: string;
@@ -74,6 +86,8 @@ type StoredInternalAdminSession = {
   refreshExpiresAt: string;
   createdAt: string;
 };
+
+type InternalAdminLookupSession = Pick<StoredInternalAdminSession, "internalAdminUserId" | "createdAt">;
 
 type PersistedPasskeyChallengeRow = {
   challenge: string;
@@ -265,8 +279,8 @@ export type IdentityRepository = {
     createNextSession: (userId: string) => StoredSession,
     authMethod: "refresh"
   ): Promise<AuthSession | undefined>;
-  getSessionByAccessToken(accessToken: string): Promise<AuthSession | undefined>;
-  getSessionByRefreshToken(refreshToken: string): Promise<StoredSession | undefined>;
+  getSessionByAccessToken(accessToken: string): Promise<CustomerAccessSession | undefined>;
+  getSessionByRefreshToken(refreshToken: string): Promise<CustomerRefreshSession | undefined>;
   revokeByRefreshToken(refreshToken: string): Promise<void>;
   savePasskeyChallenge(input: PasskeyChallengeRecord): Promise<void>;
   getPasskeyChallenge(flow: "register" | "auth", challenge: string): Promise<PasskeyChallengeRecord | undefined>;
@@ -340,8 +354,8 @@ export type IdentityRepository = {
     createNextSession: (operatorUserId: string, activeLocationId?: string) => StoredOperatorSession,
     authMethod: "refresh"
   ): Promise<StoredOperatorSession | undefined>;
-  getOperatorSessionByAccessToken(accessToken: string): Promise<StoredOperatorSession | undefined>;
-  getOperatorSessionByRefreshToken(refreshToken: string): Promise<StoredOperatorSession | undefined>;
+  getOperatorSessionByAccessToken(accessToken: string): Promise<OperatorLookupSession | undefined>;
+  getOperatorSessionByRefreshToken(refreshToken: string): Promise<OperatorLookupSession | undefined>;
   revokeOperatorByRefreshToken(refreshToken: string): Promise<void>;
   getInternalAdminUserById(internalAdminUserId: string): Promise<InternalAdminUserRecord | undefined>;
   getInternalAdminUserByEmail(email: string): Promise<InternalAdminUserRecord | undefined>;
@@ -352,8 +366,8 @@ export type IdentityRepository = {
     createNextSession: (internalAdminUserId: string) => StoredInternalAdminSession,
     authMethod: "refresh"
   ): Promise<StoredInternalAdminSession | undefined>;
-  getInternalAdminSessionByAccessToken(accessToken: string): Promise<StoredInternalAdminSession | undefined>;
-  getInternalAdminSessionByRefreshToken(refreshToken: string): Promise<StoredInternalAdminSession | undefined>;
+  getInternalAdminSessionByAccessToken(accessToken: string): Promise<InternalAdminLookupSession | undefined>;
+  getInternalAdminSessionByRefreshToken(refreshToken: string): Promise<InternalAdminLookupSession | undefined>;
   revokeInternalAdminByRefreshToken(refreshToken: string): Promise<void>;
   writeAuditLog(entry: AuditLogEntry): Promise<void>;
   pingDb(): Promise<void>;
@@ -385,7 +399,7 @@ function parseDbDate(value: unknown) {
   return rawValue.slice(0, 10);
 }
 
-function isAccessSessionActive(session: AuthSession, revokedAt: string | undefined) {
+function isAccessSessionActive(session: Pick<AuthSession, "expiresAt">, revokedAt: string | undefined) {
   if (revokedAt) {
     return false;
   }
@@ -677,29 +691,6 @@ function toInternalAdminUserRecord(row: PersistedInternalAdminUserRow): Internal
     capabilities: resolveInternalAdminCapabilities(row.role),
     createdAt: parseIsoDate(row.created_at),
     updatedAt: parseIsoDate(row.updated_at)
-  };
-}
-
-function toStoredOperatorSession(row: PersistedOperatorSessionRow): StoredOperatorSession {
-  return {
-    accessToken: row.access_token,
-    refreshToken: row.refresh_token,
-    operatorUserId: row.operator_user_id,
-    activeLocationId: row.active_location_id ?? undefined,
-    expiresAt: parseIsoDate(row.access_expires_at ?? row.expires_at),
-    refreshExpiresAt: parseIsoDate(row.expires_at),
-    createdAt: parseIsoDate(row.created_at)
-  };
-}
-
-function toStoredInternalAdminSession(row: PersistedInternalAdminSessionRow): StoredInternalAdminSession {
-  return {
-    accessToken: row.access_token,
-    refreshToken: row.refresh_token,
-    internalAdminUserId: row.internal_admin_user_id,
-    expiresAt: parseIsoDate(row.access_expires_at ?? row.expires_at),
-    refreshExpiresAt: parseIsoDate(row.expires_at),
-    createdAt: parseIsoDate(row.created_at)
   };
 }
 
@@ -1693,7 +1684,10 @@ async function ensureBootstrapInternalAdminUsers(db: ReturnType<typeof createPos
   }
 }
 
-async function createPostgresRepository(connectionString: string): Promise<IdentityRepository> {
+async function createPostgresRepository(
+  connectionString: string,
+  appleTokenCipher: ReturnType<typeof createAppleRefreshTokenCipher>
+): Promise<IdentityRepository> {
   const db = createPostgresDb(connectionString);
   await runMigrations(db);
   await ensureBootstrapInternalAdminUsers(db);
@@ -1814,8 +1808,8 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         await db
           .insertInto("identity_sessions")
           .values({
-            access_token: session.accessToken,
-            refresh_token: session.refreshToken,
+            access_token: digestSessionToken(session.accessToken),
+            refresh_token: digestSessionToken(session.refreshToken),
             user_id: session.userId,
             access_expires_at: session.expiresAt,
             expires_at: session.refreshExpiresAt,
@@ -1829,7 +1823,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         await db
           .updateTable("identity_sessions")
           .set({
-            refresh_token: session.refreshToken,
+            refresh_token: digestSessionToken(session.refreshToken),
             user_id: session.userId,
             access_expires_at: session.expiresAt,
             expires_at: session.refreshExpiresAt,
@@ -1838,7 +1832,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
             created_at: session.createdAt,
             updated_at: new Date().toISOString()
           } as never)
-          .where("access_token", "=", session.accessToken)
+          .where("access_token", "=", digestSessionToken(session.accessToken))
           .execute();
       }
     },
@@ -1869,7 +1863,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
                   ...(input.refreshToken
                     ? {
                         apple_client_id: input.clientId,
-                        apple_refresh_token: input.refreshToken
+                        apple_refresh_token: appleTokenCipher.encrypt(input.refreshToken, existingAppleRow.user_id)
                       }
                     : {}),
                   updated_at: now
@@ -1884,7 +1878,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
                 ...(input.refreshToken
                   ? {
                       apple_client_id: input.clientId,
-                      apple_refresh_token: input.refreshToken
+                      apple_refresh_token: appleTokenCipher.encrypt(input.refreshToken, existingAppleRow.user_id)
                     }
                   : {}),
                 updated_at: now
@@ -1914,7 +1908,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
                 ...(input.refreshToken
                   ? {
                       apple_client_id: input.clientId,
-                      apple_refresh_token: input.refreshToken
+                      apple_refresh_token: appleTokenCipher.encrypt(input.refreshToken, existingEmailRow.user_id)
                     }
                   : {}),
                 updated_at: now
@@ -1938,7 +1932,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
               user_id: userId,
               apple_sub: input.appleSub,
               apple_client_id: input.refreshToken ? input.clientId : null,
-              apple_refresh_token: input.refreshToken ?? null,
+              apple_refresh_token: input.refreshToken ? appleTokenCipher.encrypt(input.refreshToken, userId) : null,
               email: normalizedEmail ?? null
             })
             .execute();
@@ -1959,7 +1953,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
                 .updateTable("identity_users")
                 .set({
                   apple_client_id: input.clientId,
-                  apple_refresh_token: input.refreshToken,
+                  apple_refresh_token: appleTokenCipher.encrypt(input.refreshToken, concurrentAppleRow.user_id),
                   updated_at: now
                 })
                 .where("user_id", "=", concurrentAppleRow.user_id)
@@ -1987,7 +1981,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
                   ...(input.refreshToken
                     ? {
                         apple_client_id: input.clientId,
-                        apple_refresh_token: input.refreshToken
+                        apple_refresh_token: appleTokenCipher.encrypt(input.refreshToken, concurrentEmailRow.user_id)
                       }
                     : {}),
                   updated_at: now
@@ -2020,7 +2014,15 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
       return {
         appleSub: row.apple_sub,
         clientId: row.apple_client_id ?? undefined,
-        refreshToken: row.apple_refresh_token ?? undefined
+        refreshToken: row.apple_refresh_token
+          ? isEncryptedAppleRefreshToken(row.apple_refresh_token)
+            ? appleTokenCipher.decrypt(row.apple_refresh_token, userId)
+            : isLegacySecretCutoverEnabled()
+              ? row.apple_refresh_token
+              : (() => {
+                  throw new Error("Apple refresh token is not encrypted");
+                })()
+          : undefined
       };
     },
     async findOrCreateUserByEmail(email) {
@@ -2086,7 +2088,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         const row = await trx
           .selectFrom("identity_sessions")
           .selectAll()
-          .where("refresh_token", "=", refreshToken)
+          .where("refresh_token", "in", sessionTokenLookupValues(refreshToken))
           .forUpdate()
           .executeTakeFirst();
 
@@ -2113,8 +2115,8 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         await trx
           .insertInto("identity_sessions")
           .values({
-            access_token: nextSession.accessToken,
-            refresh_token: nextSession.refreshToken,
+            access_token: digestSessionToken(nextSession.accessToken),
+            refresh_token: digestSessionToken(nextSession.refreshToken),
             user_id: nextSession.userId,
             access_expires_at: nextSession.expiresAt,
             expires_at: nextSession.refreshExpiresAt,
@@ -2247,7 +2249,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
       const row = await db
         .selectFrom("identity_sessions")
         .selectAll()
-        .where("access_token", "=", accessToken)
+        .where("access_token", "in", sessionTokenLookupValues(accessToken))
         .executeTakeFirst();
 
       if (!row) {
@@ -2255,12 +2257,10 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
       }
 
       const persisted = row as unknown as PersistedSessionRow;
-      const session = authSessionSchema.parse({
-        accessToken: persisted.access_token,
-        refreshToken: persisted.refresh_token,
+      const session: CustomerAccessSession = {
         userId: persisted.user_id,
         expiresAt: parseIsoDate(persisted.access_expires_at ?? persisted.expires_at)
-      });
+      };
 
       if (!isAccessSessionActive(session, persisted.revoked_at ? parseIsoDate(persisted.revoked_at) : undefined)) {
         return undefined;
@@ -2272,7 +2272,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
       const row = await db
         .selectFrom("identity_sessions")
         .selectAll()
-        .where("refresh_token", "=", refreshToken)
+        .where("refresh_token", "in", sessionTokenLookupValues(refreshToken))
         .executeTakeFirst();
 
       if (!row) {
@@ -2280,13 +2280,8 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
       }
 
       const persisted = row as unknown as PersistedSessionRow;
-      const session: StoredSession = {
-        ...authSessionSchema.parse({
-          accessToken: persisted.access_token,
-          refreshToken: persisted.refresh_token,
-          userId: persisted.user_id,
-          expiresAt: parseIsoDate(persisted.access_expires_at ?? persisted.expires_at)
-        }),
+      const session: CustomerRefreshSession = {
+        userId: persisted.user_id,
         refreshExpiresAt: parseIsoDate(persisted.expires_at),
         createdAt: parseIsoDate(persisted.created_at)
       };
@@ -2309,7 +2304,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
           revoked_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
-        .where("refresh_token", "=", refreshToken)
+        .where("refresh_token", "in", sessionTokenLookupValues(refreshToken))
         .execute();
     },
     async savePasskeyChallenge(input) {
@@ -2959,8 +2954,8 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         await db
           .insertInto("operator_sessions")
           .values({
-            access_token: session.accessToken,
-            refresh_token: session.refreshToken,
+            access_token: digestSessionToken(session.accessToken),
+            refresh_token: digestSessionToken(session.refreshToken),
             operator_user_id: session.operatorUserId,
             active_location_id: session.activeLocationId ?? null,
             access_expires_at: session.expiresAt,
@@ -2975,7 +2970,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         await db
           .updateTable("operator_sessions")
           .set({
-            refresh_token: session.refreshToken,
+            refresh_token: digestSessionToken(session.refreshToken),
             operator_user_id: session.operatorUserId,
             active_location_id: session.activeLocationId ?? null,
             access_expires_at: session.expiresAt,
@@ -2985,7 +2980,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
             created_at: session.createdAt,
             updated_at: new Date().toISOString()
           })
-          .where("access_token", "=", session.accessToken)
+          .where("access_token", "=", digestSessionToken(session.accessToken))
           .execute();
       }
     },
@@ -2994,7 +2989,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         const row = await trx
           .selectFrom("operator_sessions")
           .selectAll()
-          .where("refresh_token", "=", refreshToken)
+          .where("refresh_token", "in", sessionTokenLookupValues(refreshToken))
           .forUpdate()
           .executeTakeFirst();
 
@@ -3021,8 +3016,8 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         await trx
           .insertInto("operator_sessions")
           .values({
-            access_token: nextSession.accessToken,
-            refresh_token: nextSession.refreshToken,
+            access_token: digestSessionToken(nextSession.accessToken),
+            refresh_token: digestSessionToken(nextSession.refreshToken),
             operator_user_id: nextSession.operatorUserId,
             active_location_id: nextSession.activeLocationId ?? null,
             access_expires_at: nextSession.expiresAt,
@@ -3040,7 +3035,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
       const row = await db
         .selectFrom("operator_sessions")
         .selectAll()
-        .where("access_token", "=", accessToken)
+        .where("access_token", "in", sessionTokenLookupValues(accessToken))
         .executeTakeFirst();
 
       if (!row) {
@@ -3048,13 +3043,9 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
       }
 
       const persisted = row as unknown as PersistedOperatorSessionRow;
-      const session = toStoredOperatorSession(persisted);
-      const accessSession = authSessionSchema.parse({
-        accessToken: session.accessToken,
-        refreshToken: session.refreshToken,
-        expiresAt: session.expiresAt,
-        userId: session.operatorUserId
-      });
+      const accessSession = {
+        expiresAt: parseIsoDate(persisted.access_expires_at ?? persisted.expires_at)
+      };
 
       if (
         !isAccessSessionActive(accessSession, persisted.revoked_at ? parseIsoDate(persisted.revoked_at) : undefined)
@@ -3062,13 +3053,17 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         return undefined;
       }
 
-      return session;
+      return {
+        operatorUserId: persisted.operator_user_id,
+        activeLocationId: persisted.active_location_id ?? undefined,
+        createdAt: parseIsoDate(persisted.created_at)
+      };
     },
     async getOperatorSessionByRefreshToken(refreshToken) {
       const row = await db
         .selectFrom("operator_sessions")
         .selectAll()
-        .where("refresh_token", "=", refreshToken)
+        .where("refresh_token", "in", sessionTokenLookupValues(refreshToken))
         .executeTakeFirst();
 
       if (!row) {
@@ -3085,7 +3080,11 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         return undefined;
       }
 
-      return toStoredOperatorSession(persisted);
+      return {
+        operatorUserId: persisted.operator_user_id,
+        activeLocationId: persisted.active_location_id ?? undefined,
+        createdAt: parseIsoDate(persisted.created_at)
+      };
     },
     async revokeOperatorByRefreshToken(refreshToken) {
       await db
@@ -3094,7 +3093,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
           revoked_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
-        .where("refresh_token", "=", refreshToken)
+        .where("refresh_token", "in", sessionTokenLookupValues(refreshToken))
         .execute();
     },
     async getInternalAdminUserById(internalAdminUserId) {
@@ -3146,8 +3145,8 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         await db
           .insertInto("internal_admin_sessions")
           .values({
-            access_token: session.accessToken,
-            refresh_token: session.refreshToken,
+            access_token: digestSessionToken(session.accessToken),
+            refresh_token: digestSessionToken(session.refreshToken),
             internal_admin_user_id: session.internalAdminUserId,
             access_expires_at: session.expiresAt,
             expires_at: session.refreshExpiresAt,
@@ -3161,7 +3160,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         await db
           .updateTable("internal_admin_sessions")
           .set({
-            refresh_token: session.refreshToken,
+            refresh_token: digestSessionToken(session.refreshToken),
             internal_admin_user_id: session.internalAdminUserId,
             access_expires_at: session.expiresAt,
             expires_at: session.refreshExpiresAt,
@@ -3170,7 +3169,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
             created_at: session.createdAt,
             updated_at: new Date().toISOString()
           })
-          .where("access_token", "=", session.accessToken)
+          .where("access_token", "=", digestSessionToken(session.accessToken))
           .execute();
       }
     },
@@ -3179,7 +3178,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         const row = await trx
           .selectFrom("internal_admin_sessions")
           .selectAll()
-          .where("refresh_token", "=", refreshToken)
+          .where("refresh_token", "in", sessionTokenLookupValues(refreshToken))
           .forUpdate()
           .executeTakeFirst();
 
@@ -3206,8 +3205,8 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         await trx
           .insertInto("internal_admin_sessions")
           .values({
-            access_token: nextSession.accessToken,
-            refresh_token: nextSession.refreshToken,
+            access_token: digestSessionToken(nextSession.accessToken),
+            refresh_token: digestSessionToken(nextSession.refreshToken),
             internal_admin_user_id: nextSession.internalAdminUserId,
             access_expires_at: nextSession.expiresAt,
             expires_at: nextSession.refreshExpiresAt,
@@ -3224,7 +3223,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
       const row = await db
         .selectFrom("internal_admin_sessions")
         .selectAll()
-        .where("access_token", "=", accessToken)
+        .where("access_token", "in", sessionTokenLookupValues(accessToken))
         .executeTakeFirst();
 
       if (!row) {
@@ -3232,13 +3231,9 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
       }
 
       const persisted = row as unknown as PersistedInternalAdminSessionRow;
-      const session = toStoredInternalAdminSession(persisted);
-      const accessSession = authSessionSchema.parse({
-        accessToken: session.accessToken,
-        refreshToken: session.refreshToken,
-        expiresAt: session.expiresAt,
-        userId: session.internalAdminUserId
-      });
+      const accessSession = {
+        expiresAt: parseIsoDate(persisted.access_expires_at ?? persisted.expires_at)
+      };
 
       if (
         !isAccessSessionActive(accessSession, persisted.revoked_at ? parseIsoDate(persisted.revoked_at) : undefined)
@@ -3246,13 +3241,16 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         return undefined;
       }
 
-      return session;
+      return {
+        internalAdminUserId: persisted.internal_admin_user_id,
+        createdAt: parseIsoDate(persisted.created_at)
+      };
     },
     async getInternalAdminSessionByRefreshToken(refreshToken) {
       const row = await db
         .selectFrom("internal_admin_sessions")
         .selectAll()
-        .where("refresh_token", "=", refreshToken)
+        .where("refresh_token", "in", sessionTokenLookupValues(refreshToken))
         .executeTakeFirst();
 
       if (!row) {
@@ -3269,7 +3267,10 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         return undefined;
       }
 
-      return toStoredInternalAdminSession(persisted);
+      return {
+        internalAdminUserId: persisted.internal_admin_user_id,
+        createdAt: parseIsoDate(persisted.created_at)
+      };
     },
     async revokeInternalAdminByRefreshToken(refreshToken) {
       await db
@@ -3278,7 +3279,7 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
           revoked_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
-        .where("refresh_token", "=", refreshToken)
+        .where("refresh_token", "in", sessionTokenLookupValues(refreshToken))
         .execute();
     },
     async writeAuditLog(entry) {
@@ -3308,8 +3309,16 @@ export async function createIdentityRepository(logger: FastifyBaseLogger): Promi
     return createInMemoryIdentityRepository();
   }
 
+  // Validate this security-critical configuration before the DB-init fallback
+  // boundary. An explicit in-memory dev fallback must not mask missing or
+  // malformed encryption keys when a persistent database is configured.
+  const appleTokenCipher = createAppleRefreshTokenCipher(
+    process.env.IDENTITY_APPLE_TOKEN_ENCRYPTION_KEYS,
+    process.env.IDENTITY_APPLE_TOKEN_ENCRYPTION_ACTIVE_KEY_ID
+  );
+
   try {
-    const repository = await createPostgresRepository(databaseUrl);
+    const repository = await createPostgresRepository(databaseUrl, appleTokenCipher);
     logger.info({ backend: "postgres" }, "identity persistence backend selected");
     return repository;
   } catch (error) {
