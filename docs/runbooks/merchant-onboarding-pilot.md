@@ -107,9 +107,11 @@ curl -X POST "$API_BASE_URL/v1/internal/locations/$LOCATION_ID/owner/invite/rese
 Verification:
 
 - Owner summary shows a pending invite before acceptance.
-- Owner opens `/invites/:token`, sets their password, and lands in the client dashboard.
+- Owner opens the token-free `/invites/#<invite-token>` link from the email. The dashboard reads the token from the URL fragment and submits it in the invite lookup and acceptance POST request bodies; it is never part of an API URL.
 - Owner summary shows an active owner after acceptance.
 - Owner cannot access another location.
+
+Operator note for dev rollout: revoke and resend any outstanding invitations issued with the legacy `/invites/:token` path format before rollout. Use the admin console's resend action or the owner invite resend API; replacement invites revoke prior pending invites for that owner and location. Do not copy real invite tokens into logs or tickets.
 
 ## Step 3: Client Dashboard Setup
 
