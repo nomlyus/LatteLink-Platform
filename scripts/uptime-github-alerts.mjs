@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { readFile } from "node:fs/promises";
+import { safeMarkdownText, safeRequestId, safeTargetKey, safeTargetUrl } from "./uptime-monitor-utils.mjs";
 
 const token = process.env.GITHUB_TOKEN;
 const repository = process.env.GITHUB_REPOSITORY;
@@ -59,7 +60,7 @@ async function ensureLabel(name, color, description) {
 }
 
 function markerFor(key) {
-  return `${issueMarkerPrefix} ${key} -->`;
+  return `${issueMarkerPrefix} ${safeTargetKey(key)} -->`;
 }
 
 function renderFailureBody(result) {
@@ -68,17 +69,18 @@ function renderFailureBody(result) {
     "",
     "External uptime monitoring detected a failing target.",
     "",
-    `- Target: ${result.name}`,
-    `- URL: ${result.url}`,
+    `- Target: ${safeMarkdownText(result.name)}`,
+    `- URL: ${safeTargetUrl(result.url)}`,
     `- Critical: ${result.critical ? "yes" : "no"}`,
     `- Checked at: ${result.checkedAt}`,
     `- HTTP status: ${result.status ?? "n/a"}`,
+    safeRequestId(result.requestId) ? `- Request ID: ${safeRequestId(result.requestId)}` : undefined,
     `- Response time: ${result.responseTimeMs}ms`,
-    `- Error: ${result.error ?? "unknown"}`,
+    `- Error: ${safeMarkdownText(result.error ?? "unknown")}`,
     "",
     "Runbook: docs/runbooks/pilot-uptime-monitoring.md",
     "Incident playbook: docs/runbooks/pilot-incident-response.md"
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 function renderFailureComment(result) {
@@ -87,9 +89,10 @@ function renderFailureComment(result) {
     "",
     `- Checked at: ${result.checkedAt}`,
     `- HTTP status: ${result.status ?? "n/a"}`,
+    safeRequestId(result.requestId) ? `- Request ID: ${safeRequestId(result.requestId)}` : undefined,
     `- Response time: ${result.responseTimeMs}ms`,
-    `- Error: ${result.error ?? "unknown"}`
-  ].join("\n");
+    `- Error: ${safeMarkdownText(result.error ?? "unknown")}`
+  ].filter(Boolean).join("\n");
 }
 
 function renderRecoveryComment(result) {
@@ -98,8 +101,9 @@ function renderRecoveryComment(result) {
     "",
     `- Checked at: ${result.checkedAt}`,
     `- HTTP status: ${result.status ?? "n/a"}`,
+    safeRequestId(result.requestId) ? `- Request ID: ${safeRequestId(result.requestId)}` : undefined,
     `- Response time: ${result.responseTimeMs}ms`
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 async function sendWebhook(payload) {
@@ -154,7 +158,7 @@ for (const result of failures) {
   }
 
   await github("POST", `/repos/${owner}/${repo}/issues`, {
-    title: `[Uptime] ${result.name} is failing`,
+    title: `[Uptime] ${safeMarkdownText(result.name)} is failing`,
     body: renderFailureBody(result),
     labels: ["uptime", "status:degraded", "p1", "gate:1", "area:infra"]
   });

@@ -25,6 +25,9 @@ jobs:
     timeout-minutes: 5
     env:
       UPTIME_TIMEOUT_MS: "10000"
+      # Dev runs on Heroku Eco. Give a sleeping dyno time to wake before treating
+      # health/readiness as unavailable; this incident produced 10s false alerts.
+      UPTIME_DEV_API_TIMEOUT_MS: "45000"
       UPTIME_TARGETS_JSON: ${{ inputs.targets_json || vars.UPTIME_TARGETS_JSON }}
       UPTIME_WEBHOOK_URL: ${{ secrets.UPTIME_WEBHOOK_URL }}
     steps:
