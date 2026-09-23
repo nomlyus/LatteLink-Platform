@@ -87,6 +87,17 @@ describe("identity service", () => {
     await app.close();
   });
 
+  it("does not expose passkey enrollment outside the isolated test harness", async () => {
+    vi.stubEnv("VITEST", "false");
+    const app = await buildApp();
+    for (const url of ["/v1/auth/passkey/register/challenge", "/v1/auth/passkey/register/verify"]) {
+      const response = await app.inject({ method: "POST", url, payload: { userId: "customer-1" } });
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toMatchObject({ code: "FEATURE_NOT_AVAILABLE" });
+    }
+    await app.close();
+  });
+
   it("fails startup when DATABASE_URL is missing outside explicit in-memory mode", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("DATABASE_URL", "");

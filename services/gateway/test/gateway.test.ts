@@ -2653,6 +2653,30 @@ let previousFreeClientDashboardDomain: string | undefined;
     await app.close();
   });
 
+  it("contains passkey enrollment and Clover OAuth outside the isolated test harness", async () => {
+    const previousVitest = process.env.VITEST;
+    process.env.VITEST = "false";
+    try {
+      const app = await buildApp();
+      for (const [method, url] of [
+        ["POST", "/v1/auth/passkey/register/challenge"],
+        ["POST", "/v1/auth/passkey/register/verify"],
+        ["GET", "/v1/payments/clover/oauth/connect"],
+        ["GET", "/v1/payments/clover/oauth/callback"],
+        ["POST", "/v1/payments/clover/oauth/refresh"]
+      ] as const) {
+        const response = await app.inject({ method, url, payload: method === "POST" ? {} : undefined });
+        expect(response.statusCode).toBe(404);
+        expect(response.json()).toMatchObject({ code: "FEATURE_NOT_AVAILABLE" });
+      }
+      await app.close();
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      if (previousVitest === undefined) delete process.env.VITEST;
+      else process.env.VITEST = previousVitest;
+    }
+  });
+
   it("allows the default client dashboard origin through CORS", async () => {
     const app = await buildApp();
     const response = await app.inject({

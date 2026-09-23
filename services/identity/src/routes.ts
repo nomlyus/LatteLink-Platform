@@ -869,6 +869,12 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
   const repository = options.repository ?? (await createIdentityRepository(app.log));
   const gatewayApiToken = process.env.GATEWAY_INTERNAL_API_TOKEN?.trim() || undefined;
   const passkeyConfig = loadPasskeyConfig();
+  // Registration has no authenticated account binding yet. Keep the legacy flow
+  // available only to the isolated test harness until that boundary is repaired.
+  const requireSafePasskeyEnrollment = async (request: FastifyRequest, reply: FastifyReply) => {
+    if (process.env.NODE_ENV === "test" && process.env.VITEST === "true") return;
+    return reply.status(404).send(buildApiError(request.id, "FEATURE_NOT_AVAILABLE", "Passkey enrollment is not available"));
+  };
   const rateLimitWindowMs = toPositiveInteger(process.env.IDENTITY_RATE_LIMIT_WINDOW_MS, defaultRateLimitWindowMs);
   const allowDevCustomerAccess =
     options.allowDevCustomerAccess ??
@@ -1063,7 +1069,7 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
   app.post(
     "/v1/auth/passkey/register/challenge",
     {
-      preHandler: app.rateLimit(passkeyChallengeRateLimit)
+      preHandler: [app.rateLimit(passkeyChallengeRateLimit), requireSafePasskeyEnrollment]
     },
     async (request, reply) => {
       const input = passkeyChallengeRequestSchema.parse(request.body ?? {});
@@ -1113,7 +1119,7 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
   app.post(
     "/v1/auth/passkey/register/verify",
     {
-      preHandler: app.rateLimit(passkeyVerifyRateLimit)
+      preHandler: [app.rateLimit(passkeyVerifyRateLimit), requireSafePasskeyEnrollment]
     },
     async (request, reply) => {
       const input = passkeyVerifyRequestSchema.parse(request.body);
