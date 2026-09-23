@@ -59,7 +59,7 @@ export async function up(db: MigrationDb): Promise<void> {
     !isLocalDevelopment
   ) {
     throw new Error(
-      "Migration 0049 is limited to dev/test; production Data API access requires a separate explicit review.",
+      "Migration 0051 is limited to dev/test; production Data API access requires a separate explicit review.",
     );
   }
 

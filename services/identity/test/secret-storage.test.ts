@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { up as applyDevDataApiLockdown } from "../../../packages/persistence/src/migrations/0049_restrict_public_data_api_access.js";
+import { up as applyDevDataApiLockdown } from "../../../packages/persistence/src/migrations/0051_restrict_public_data_api_access.js";
 import { backfillIdentitySecretStorage } from "../src/backfill-secret-storage.js";
 import { createIdentityRepository } from "../src/repository.js";
 import {
@@ -28,7 +28,7 @@ describe("identity secret storage", () => {
     vi.stubEnv("DEPLOY_ENV", "production");
 
     await expect(applyDevDataApiLockdown({} as never)).rejects.toThrow(
-      "Migration 0049 is limited to dev/test",
+      "Migration 0051 is limited to dev/test",
     );
   });
 

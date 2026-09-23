@@ -197,38 +197,38 @@ describeWithLocalPostgres(
         .execute(adminDb);
 
       const futureObjectPrivileges = await sql<{
-        anon_table: boolean;
-        authenticated_table: boolean;
-        service_role_table: boolean;
-        anon_sequence: boolean;
-        authenticated_sequence: boolean;
-        service_role_sequence: boolean;
-        anon_function: boolean;
-        authenticated_function: boolean;
-        service_role_function: boolean;
+        anon_table_reachable: boolean;
+        authenticated_table_reachable: boolean;
+        service_role_table_reachable: boolean;
+        anon_sequence_reachable: boolean;
+        authenticated_sequence_reachable: boolean;
+        service_role_sequence_reachable: boolean;
+        anon_function_reachable: boolean;
+        authenticated_function_reachable: boolean;
+        service_role_function_reachable: boolean;
       }>`
         SELECT
-          has_table_privilege('anon', ${`${schema}.api_default_table_probe`}, 'SELECT') AS anon_table,
-          has_table_privilege('authenticated', ${`${schema}.api_default_table_probe`}, 'SELECT') AS authenticated_table,
-          has_table_privilege('service_role', ${`${schema}.api_default_table_probe`}, 'SELECT') AS service_role_table,
-          has_sequence_privilege('anon', ${`${schema}.api_default_sequence_probe`}, 'USAGE') AS anon_sequence,
-          has_sequence_privilege('authenticated', ${`${schema}.api_default_sequence_probe`}, 'USAGE') AS authenticated_sequence,
-          has_sequence_privilege('service_role', ${`${schema}.api_default_sequence_probe`}, 'USAGE') AS service_role_sequence,
-          has_function_privilege('anon', ${`${schema}.api_default_function_probe()`}, 'EXECUTE') AS anon_function,
-          has_function_privilege('authenticated', ${`${schema}.api_default_function_probe()`}, 'EXECUTE') AS authenticated_function,
-          has_function_privilege('service_role', ${`${schema}.api_default_function_probe()`}, 'EXECUTE') AS service_role_function
+          has_schema_privilege('anon', ${schema}, 'USAGE') AND has_table_privilege('anon', ${`${schema}.api_default_table_probe`}, 'SELECT') AS anon_table_reachable,
+          has_schema_privilege('authenticated', ${schema}, 'USAGE') AND has_table_privilege('authenticated', ${`${schema}.api_default_table_probe`}, 'SELECT') AS authenticated_table_reachable,
+          has_schema_privilege('service_role', ${schema}, 'USAGE') AND has_table_privilege('service_role', ${`${schema}.api_default_table_probe`}, 'SELECT') AS service_role_table_reachable,
+          has_schema_privilege('anon', ${schema}, 'USAGE') AND has_sequence_privilege('anon', ${`${schema}.api_default_sequence_probe`}, 'USAGE') AS anon_sequence_reachable,
+          has_schema_privilege('authenticated', ${schema}, 'USAGE') AND has_sequence_privilege('authenticated', ${`${schema}.api_default_sequence_probe`}, 'USAGE') AS authenticated_sequence_reachable,
+          has_schema_privilege('service_role', ${schema}, 'USAGE') AND has_sequence_privilege('service_role', ${`${schema}.api_default_sequence_probe`}, 'USAGE') AS service_role_sequence_reachable,
+          has_schema_privilege('anon', ${schema}, 'USAGE') AND has_function_privilege('anon', ${`${schema}.api_default_function_probe()`}, 'EXECUTE') AS anon_function_reachable,
+          has_schema_privilege('authenticated', ${schema}, 'USAGE') AND has_function_privilege('authenticated', ${`${schema}.api_default_function_probe()`}, 'EXECUTE') AS authenticated_function_reachable,
+          has_schema_privilege('service_role', ${schema}, 'USAGE') AND has_function_privilege('service_role', ${`${schema}.api_default_function_probe()`}, 'EXECUTE') AS service_role_function_reachable
       `.execute(inspectDb);
 
       expect(futureObjectPrivileges.rows[0]).toEqual({
-        anon_table: false,
-        authenticated_table: false,
-        service_role_table: false,
-        anon_sequence: false,
-        authenticated_sequence: false,
-        service_role_sequence: false,
-        anon_function: false,
-        authenticated_function: false,
-        service_role_function: false,
+        anon_table_reachable: false,
+        authenticated_table_reachable: false,
+        service_role_table_reachable: false,
+        anon_sequence_reachable: false,
+        authenticated_sequence_reachable: false,
+        service_role_sequence_reachable: false,
+        anon_function_reachable: false,
+        authenticated_function_reachable: false,
+        service_role_function_reachable: false,
       });
 
       // Supabase-managed owners may retain broad object default ACLs that the
