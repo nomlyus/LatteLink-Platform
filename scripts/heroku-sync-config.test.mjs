@@ -6,6 +6,7 @@ import {
   herokuConfigKeys,
   effectiveHerokuConfigEnv,
   syncHerokuConfig,
+  validateDevDatabaseUrl,
 } from "./heroku-sync-config.mjs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -36,6 +37,39 @@ test("the Heroku config allowlist excludes platform-owned and deploy credentials
 
 const syntheticKeyRing = JSON.stringify({
   active: Buffer.alloc(32, 37).toString("base64"),
+});
+
+const secureDevDatabaseUrl =
+  "postgresql://postgres.wdlyegrmosuhrrbbmnrb:test-only-password@aws-1-us-west-2.pooler.supabase.com:5432/postgres?sslmode=require";
+
+test("dev database URL requires the expected Supabase session pooler and TLS without exposing credentials", () => {
+  const result = validateDevDatabaseUrl({
+    DATABASE_URL: secureDevDatabaseUrl,
+    EXPECTED_SUPABASE_PROJECT_REF: "wdlyegrmosuhrrbbmnrb",
+  });
+
+  assert.deepEqual(result, {
+    targetProjectRef: "wdlyegrmosuhrrbbmnrb",
+    connectionMode: "session-pooler",
+    tlsRequired: true,
+  });
+  assert.equal(JSON.stringify(result).includes("test-only-password"), false);
+  assert.throws(
+    () =>
+      validateDevDatabaseUrl({
+        DATABASE_URL: secureDevDatabaseUrl.replace("sslmode=require", "sslmode=prefer"),
+        EXPECTED_SUPABASE_PROJECT_REF: "wdlyegrmosuhrrbbmnrb",
+      }),
+    /sslmode=require/,
+  );
+  assert.throws(
+    () =>
+      validateDevDatabaseUrl({
+        DATABASE_URL: secureDevDatabaseUrl.replace("wdlyegrmosuhrrbbmnrb", "wrong-project"),
+        EXPECTED_SUPABASE_PROJECT_REF: "wdlyegrmosuhrrbbmnrb",
+      }),
+    /expected Supabase session pooler/,
+  );
 });
 
 test("identity key preflight accepts only a valid active external keyring without returning key material", () => {
@@ -152,6 +186,8 @@ test("dev Heroku sync forwards key settings without logging values and clears an
       DEPLOY_ENV: "dev",
       HEROKU_APP_NAME: "nomly-api-dev",
       PAYMENT_RECONCILER_ENABLED: "false",
+      DATABASE_URL: secureDevDatabaseUrl,
+      EXPECTED_SUPABASE_PROJECT_REF: "wdlyegrmosuhrrbbmnrb",
       IDENTITY_APPLE_TOKEN_ENCRYPTION_KEYS: syntheticKeyRing,
       IDENTITY_APPLE_TOKEN_ENCRYPTION_ACTIVE_KEY_ID: "active",
       IDENTITY_ALLOW_LEGACY_SECRETS: "",
