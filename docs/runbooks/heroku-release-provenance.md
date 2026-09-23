@@ -1,8 +1,19 @@
 # Heroku release provenance (#471)
 
-Status: implementation candidate, 2026-09-22. Dev deployment verification is
-required before closing #471; production must not be exercised until its
+Status: live-dev verified, 2026-09-22. Production remains unverified until its
 separately authorized release.
+
+The first complete dev verification was Heroku release v32, source commit
+`8e0e605ad752fc31e2f0a5492be9461569c63b07`. CI, dev smoke, and deployed
+checkout E2E passed. The authorized verifier read the current release and
+reported `0047_backfill_refund_allocations` as latest applied migration, 48
+applied, zero pending, with notification dispatch and payment reconciliation
+`started` and menu sync `disabled`. Public `/ready` reported all seven upstream
+services ready and did not expose either provenance record. The release was
+correlated by Heroku's unique generated short-commit description plus the
+exact selected source SHA; container releases did not expose slug metadata.
+This record is historical evidence, not a claim that v32 remains current after
+subsequent dev deploys.
 
 ## Evidence chain
 
