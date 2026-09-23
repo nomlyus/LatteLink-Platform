@@ -321,6 +321,7 @@ describe("contracts-auth", () => {
       }
     });
     const acceptRequest = operatorInviteAcceptRequestSchema.parse({
+      token: "synthetic-invite-token",
       password: "Password123!"
     });
     const acceptResponse = operatorInviteAcceptResponseSchema.parse({
@@ -339,6 +340,7 @@ describe("contracts-auth", () => {
     expect(response.invite.inviteUrl).toContain("/invites/");
     expect(lookup.operator.role).toBe("owner");
     expect(acceptRequest.password).toBe("Password123!");
+    expect(acceptRequest.token).toBe("synthetic-invite-token");
     expect(acceptResponse.operator.active).toBe(true);
   });
 });

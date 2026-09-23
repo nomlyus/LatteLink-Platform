@@ -1460,7 +1460,7 @@ export function createInMemoryIdentityRepository(): IdentityRepository {
     },
     async markOwnerInviteConsumed(inviteId) {
       const invite = ownerInvitesById.get(inviteId);
-      if (!invite) {
+      if (!invite || resolveOwnerInviteStatus(invite) !== "pending") {
         return undefined;
       }
       const now = new Date().toISOString();
@@ -2927,13 +2927,17 @@ async function createPostgresRepository(connectionString: string): Promise<Ident
         .execute();
     },
     async markOwnerInviteConsumed(inviteId) {
+      const now = new Date().toISOString();
       const updated = await db
         .updateTable("operator_owner_invites")
         .set({
-          consumed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          consumed_at: now,
+          updated_at: now
         })
         .where("invite_id", "=", inviteId)
+        .where("consumed_at", "is", null)
+        .where("revoked_at", "is", null)
+        .where("expires_at", ">", now)
         .returningAll()
         .executeTakeFirst();
       return updated ? toOwnerInviteRecord(updated as PersistedOwnerInviteRow) : undefined;

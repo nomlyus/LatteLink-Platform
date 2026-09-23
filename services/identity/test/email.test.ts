@@ -12,7 +12,7 @@ describe("identity email provider", () => {
     vi.unstubAllGlobals();
   });
 
-  it("uses the console provider as a local/dev fallback", async () => {
+  it("uses the console provider without logging the one-time invite URL", async () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const provider = createEmailProvider({ EMAIL_PROVIDER: "console" });
 
@@ -23,13 +23,12 @@ describe("identity email provider", () => {
       locationId: "pilot-01"
     });
 
-    expect(info).toHaveBeenCalledWith(
-      "[identity-email] owner invite",
-      expect.objectContaining({
-        to: "owner@example.com",
-        inviteUrl: "https://client.example.com/invites/token"
-      })
-    );
+    expect(info).toHaveBeenCalledWith("[identity-email] owner invite", {
+      to: "owner@example.com",
+      displayName: "Pilot Owner",
+      locationId: "pilot-01"
+    });
+    expect(JSON.stringify(info.mock.calls)).not.toContain("https://client.example.com/invites/token");
   });
 
   it("requires production Resend configuration", () => {

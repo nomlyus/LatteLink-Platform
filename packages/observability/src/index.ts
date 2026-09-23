@@ -21,6 +21,30 @@ type LoggerOptions = {
 };
 
 let sentryInitialized = false;
+const sensitiveFieldPattern = /(token|password|secret|authorization|cookie|api[_-]?key)/i;
+
+function sanitizeSensitiveString(value: string) {
+  return value
+    .replace(/((?:^|\/)invites?\/)[^/?#\s]+/gi, "$1[redacted]")
+    .replace(/((?:^|\/)invites?\/)(#[^\s]*)/gi, "$1")
+    .replace(/([?&](?:inviteToken|invite|token)=)[^&#\s]+/gi, "$1[redacted]");
+}
+
+export function scrubSensitiveTelemetry<T>(value: T): T {
+  const scrub = (current: unknown, key?: string): unknown => {
+    if (key && sensitiveFieldPattern.test(key)) return "[redacted]";
+    if (typeof current === "string" && key && /(url|uri|path|referer)/i.test(key)) {
+      return sanitizeRequestUrl(current);
+    }
+    if (typeof current === "string") return sanitizeSensitiveString(current);
+    if (Array.isArray(current)) return current.map((entry) => scrub(entry));
+    if (current && typeof current === "object") {
+      return Object.fromEntries(Object.entries(current).map(([entryKey, entryValue]) => [entryKey, scrub(entryValue, entryKey)]));
+    }
+    return current;
+  };
+  return scrub(value) as T;
+}
 
 function isClientValidationError(error: Error) {
   return error.name === "ZodError" && Array.isArray((error as { issues?: unknown }).issues);
@@ -60,11 +84,12 @@ export function sanitizeRequestUrl(url: string | undefined) {
   }
 
   const queryStart = url.indexOf("?");
-  if (queryStart === -1) {
-    return url;
-  }
-
-  return url.slice(0, queryStart) || "/";
+  const fragmentStart = url.indexOf("#");
+  const cutAt = [queryStart, fragmentStart]
+    .filter((index) => index >= 0)
+    .reduce((min, index) => Math.min(min, index), url.length);
+  const path = url.slice(0, cutAt) || "/";
+  return path.replace(/((?:^|\/)invites?\/)[^/?#]+/gi, "$1[redacted]");
 }
 
 export function buildFastifyLoggerOptions(service: string, env: NodeJS.ProcessEnv = process.env): LoggerOptions {
@@ -134,7 +159,7 @@ export function initializeSentry(input: {
         return null;
       }
 
-      return event;
+      return scrubSensitiveTelemetry(event);
     },
     initialScope: {
       tags: {
@@ -200,7 +225,7 @@ export function captureOperationalError(input: {
     }
 
     if (input.context) {
-      scope.setContext(input.event, input.context);
+      scope.setContext(input.event, scrubSensitiveTelemetry(input.context));
     }
 
     if (input.fingerprint) {

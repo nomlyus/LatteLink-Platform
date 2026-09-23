@@ -15,7 +15,7 @@ Use owner invites as the default first-time access path:
 1. Internal admin creates a client shell from the admin console.
 2. The system generates `tenantId`, `brandId`, and `locationId`.
 3. Internal admin sends an owner invite for the generated `locationId`.
-4. Owner opens `/invites/:token`.
+4. Owner opens the emailed `/invites/` link; the token is carried in the URL fragment and submitted to lookup/accept APIs in request bodies.
 5. Owner sets their password.
 6. Owner signs into the client dashboard and completes the Setup wizard.
 
@@ -90,8 +90,10 @@ The owner invite flow:
 
 - creates or updates the operator user as role `owner`
 - keeps the owner inactive until invite acceptance
-- stores a hashed one-time invite token
+- stores only a hash of the one-time invite token (currently valid for seven days)
 - sends the invite email when email delivery is configured
+- places the token in the URL fragment so browsers and hosting access logs do not receive it
+- submits the token only in lookup/accept request bodies; API URLs stay token-free and telemetry redacts sensitive fields and invite URLs as defense in depth
 - activates the owner and stores the chosen password only after acceptance
 
 ## First-Time Owner Handoff

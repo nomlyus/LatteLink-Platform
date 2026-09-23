@@ -137,11 +137,14 @@ describe("owner provisioning", () => {
       dashboardUrl: "https://client.example.com"
     });
 
-    expect(result.invite.inviteUrl).toContain("/invites/");
+    const generatedInviteUrl = new URL(result.invite.inviteUrl!);
+    expect(generatedInviteUrl.pathname).toBe("/invites/");
+    expect(generatedInviteUrl.hash.slice(1)).toBe(result.token);
+    expect(generatedInviteUrl.pathname).not.toContain(result.token);
     expect(result.operator.active).toBe(false);
     await expect(repository.verifyOperatorPassword("avery@store.com", "AcceptedPassword123!")).resolves.toBeUndefined();
 
-    const token = result.invite.inviteUrl?.split("/invites/")[1];
+    const token = result.invite.inviteUrl?.split("#")[1];
     expect(token).toBeTruthy();
     const lookup = await lookupOwnerInvite(repository, token!);
     expect(lookup.operator.email).toBe("avery@store.com");
@@ -192,6 +195,27 @@ describe("owner provisioning", () => {
     await repository.close();
   });
 
+  it("allows only one acceptance when the same invite is replayed concurrently", async () => {
+    const repository = createInMemoryIdentityRepository();
+    const invite = await createOwnerInvite(repository, {
+      displayName: "Concurrent Owner",
+      email: "concurrent@store.com",
+      locationId: "concurrent-01"
+    });
+
+    const results = await Promise.allSettled([
+      acceptOwnerInvite(repository, invite.token, { password: "FirstPassword123!" }),
+      acceptOwnerInvite(repository, invite.token, { password: "SecondPassword123!" })
+    ]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    const firstPasswordWorks = await repository.verifyOperatorPassword("concurrent@store.com", "FirstPassword123!");
+    const secondPasswordWorks = await repository.verifyOperatorPassword("concurrent@store.com", "SecondPassword123!");
+    expect(Boolean(firstPasswordWorks) !== Boolean(secondPasswordWorks)).toBe(true);
+    await repository.close();
+  });
+
   it("rejects invalid, expired, and revoked owner invites", async () => {
     const repository = createInMemoryIdentityRepository();
     await expect(lookupOwnerInvite(repository, "missing-token-value-1234567890")).rejects.toBeInstanceOf(OwnerInviteError);
@@ -222,7 +246,7 @@ describe("owner provisioning", () => {
       locationId: "revoked-01",
       email: "revoked@store.com"
     });
-    const revokedToken = revoked.invite.inviteUrl?.split("/invites/")[1] ?? revoked.token;
+    const revokedToken = revoked.invite.inviteUrl?.split("#")[1] ?? revoked.token;
     await expect(lookupOwnerInvite(repository, revokedToken)).rejects.toMatchObject({
       code: "INVITE_REVOKED"
     });

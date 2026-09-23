@@ -34,8 +34,8 @@ import {
   operatorGoogleLinkStartRequestSchema,
   operatorInviteAcceptRequestSchema,
   operatorInviteAcceptResponseSchema,
+  operatorInviteLookupRequestSchema,
   operatorInviteLookupResponseSchema,
-  operatorInviteTokenParamsSchema,
   operatorMeResponseSchema,
   operatorPasswordSignInSchema,
   operatorSessionSchema,
@@ -659,16 +659,8 @@ function parseSessionTokenRequest(
   return parsed.data;
 }
 
-function ownerInviteErrorStatus(error: OwnerInviteError) {
-  switch (error.code) {
-    case "INVITE_NOT_FOUND":
-    case "OPERATOR_NOT_FOUND":
-      return 404;
-    case "INVITE_EXPIRED":
-    case "INVITE_CONSUMED":
-    case "INVITE_REVOKED":
-      return 410;
-  }
+function ownerInviteUnavailable(requestId: string) {
+  return buildApiError(requestId, "INVITE_UNAVAILABLE", "This invite cannot be used. Ask Nomly to resend it.");
 }
 
 async function sendOwnerInviteEmail(input: {
@@ -2757,18 +2749,19 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
   );
 
   // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
-  app.get(
-    "/v1/operator/invites/:token",
+  app.post(
+    "/v1/operator/invites/lookup",
     {
       preHandler: app.rateLimit(authReadRateLimit)
     },
     async (request, reply) => {
-      const { token } = operatorInviteTokenParamsSchema.parse(request.params);
+      const { token } = operatorInviteLookupRequestSchema.parse(request.body);
+      reply.header("cache-control", "no-store");
       try {
         return operatorInviteLookupResponseSchema.parse(await lookupOwnerInvite(repository, token));
       } catch (error) {
         if (error instanceof OwnerInviteError) {
-          return reply.status(ownerInviteErrorStatus(error)).send(buildApiError(request.id, error.code, error.message));
+          return reply.status(410).send(ownerInviteUnavailable(request.id));
         }
 
         throw error;
@@ -2778,18 +2771,18 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
 
   // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
   app.post(
-    "/v1/operator/invites/:token/accept",
+    "/v1/operator/invites/accept",
     {
       preHandler: app.rateLimit(authWriteRateLimit)
     },
     async (request, reply) => {
-      const { token } = operatorInviteTokenParamsSchema.parse(request.params);
       const input = operatorInviteAcceptRequestSchema.parse(request.body);
+      reply.header("cache-control", "no-store");
       try {
-        return operatorInviteAcceptResponseSchema.parse(await acceptOwnerInvite(repository, token, input));
+        return operatorInviteAcceptResponseSchema.parse(await acceptOwnerInvite(repository, input.token, input));
       } catch (error) {
         if (error instanceof OwnerInviteError) {
-          return reply.status(ownerInviteErrorStatus(error)).send(buildApiError(request.id, error.code, error.message));
+          return reply.status(410).send(ownerInviteUnavailable(request.id));
         }
 
         throw error;

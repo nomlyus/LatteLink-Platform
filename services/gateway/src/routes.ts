@@ -30,8 +30,8 @@ import {
   operatorGoogleLinkStartRequestSchema,
   operatorInviteAcceptRequestSchema,
   operatorInviteAcceptResponseSchema,
+  operatorInviteLookupRequestSchema,
   operatorInviteLookupResponseSchema,
-  operatorInviteTokenParamsSchema,
   operatorMeResponseSchema,
   operatorPasswordSignInSchema,
   operatorUserCreateSchema,
@@ -124,7 +124,7 @@ import {
   pushTokenUpsertSchema
 } from "@lattelink/contracts-notifications";
 import { reportingQueryRequestSchema, reportingResponseSchema } from "@lattelink/contracts-reporting";
-import { captureOperationalError } from "@lattelink/observability";
+import { captureOperationalError, sanitizeRequestUrl } from "@lattelink/observability";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -205,8 +205,8 @@ function captureGatewayUpstreamOperationalError(input: {
       timeoutMs: input.timeoutMs
     },
     context: {
-      path: input.path,
-      url: input.request.url
+      path: sanitizeRequestUrl(input.path),
+      url: sanitizeRequestUrl(input.request.url)
     },
     fingerprint: ["gateway", input.event, input.upstream, input.method]
   });
@@ -1034,7 +1034,7 @@ async function proxyUpstream<TResponse>(params: {
           requestId: request.id,
           upstream: serviceLabel,
           method,
-          path,
+          path: sanitizeRequestUrl(path),
           timeoutMs
         },
         "upstream request timed out"
@@ -1066,7 +1066,7 @@ async function proxyUpstream<TResponse>(params: {
         requestId: request.id,
         upstream: serviceLabel,
         method,
-        path
+        path: sanitizeRequestUrl(path)
       },
       "upstream request failed before response"
     );
@@ -1095,7 +1095,7 @@ async function proxyUpstream<TResponse>(params: {
         requestId: request.id,
         upstream: serviceLabel,
         method,
-        path,
+        path: sanitizeRequestUrl(path),
         status: upstreamResponse.status
       },
       "upstream request returned error response"
@@ -1126,7 +1126,7 @@ async function proxyUpstream<TResponse>(params: {
         requestId: request.id,
         upstream: serviceLabel,
         method,
-        path,
+        path: sanitizeRequestUrl(path),
         status: upstreamResponse.status
       },
       "upstream response did not match contract"
@@ -1228,7 +1228,7 @@ async function proxyOpaqueUpstream(params: {
         timeoutMs
       });
       request.log.warn(
-        { requestId: request.id, serviceLabel, method, path, timeoutMs },
+        { requestId: request.id, serviceLabel, method, path: sanitizeRequestUrl(path), timeoutMs },
         "opaque upstream request timed out"
       );
       return reply.status(504).send(
@@ -1250,7 +1250,7 @@ async function proxyOpaqueUpstream(params: {
       timeoutMs
     });
     request.log.error(
-      { error, requestId: request.id, serviceLabel, method, path },
+      { error, requestId: request.id, serviceLabel, method, path: sanitizeRequestUrl(path) },
       "opaque upstream request failed before response"
     );
     return reply.status(503).send(
@@ -2533,34 +2533,17 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
     }
   );
 
-  app.get(
-    "/v1/operator/invites/:token",
-    {
-      preHandler: app.rateLimit(authReadRateLimit)
-    },
-    async (request, reply) => {
-      const { token } = operatorInviteTokenParamsSchema.parse(request.params);
-
-      return proxyUpstream({
-        request,
-        reply,
-        baseUrl: identityBaseUrl,
-        serviceLabel: "Identity",
-        method: "GET",
-        path: `/v1/operator/invites/${encodeURIComponent(token)}`,
-        responseSchema: operatorInviteLookupResponseSchema
-      });
-    }
-  );
-
   app.post(
-    "/v1/operator/invites/:token/accept",
+    "/v1/operator/invites/lookup",
     {
-      preHandler: app.rateLimit(authWriteRateLimit)
+      preHandler: app.rateLimit(authReadRateLimit),
+      schema: {
+        body: { type: "object", required: ["token"], properties: { token: { type: "string", minLength: 20 } } }
+      }
     },
     async (request, reply) => {
-      const { token } = operatorInviteTokenParamsSchema.parse(request.params);
-      const input = operatorInviteAcceptRequestSchema.parse(request.body);
+      const input = operatorInviteLookupRequestSchema.parse(request.body);
+      reply.header("cache-control", "no-store");
 
       return proxyUpstream({
         request,
@@ -2568,7 +2551,36 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
         baseUrl: identityBaseUrl,
         serviceLabel: "Identity",
         method: "POST",
-        path: `/v1/operator/invites/${encodeURIComponent(token)}/accept`,
+        path: "/v1/operator/invites/lookup",
+        body: input,
+        responseSchema: operatorInviteLookupResponseSchema
+      });
+    }
+  );
+
+  app.post(
+    "/v1/operator/invites/accept",
+    {
+      preHandler: app.rateLimit(authWriteRateLimit),
+      schema: {
+        body: {
+          type: "object",
+          required: ["token", "password"],
+          properties: { token: { type: "string", minLength: 20 }, password: { type: "string" } }
+        }
+      }
+    },
+    async (request, reply) => {
+      const input = operatorInviteAcceptRequestSchema.parse(request.body);
+      reply.header("cache-control", "no-store");
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: identityBaseUrl,
+        serviceLabel: "Identity",
+        method: "POST",
+        path: "/v1/operator/invites/accept",
         body: input,
         responseSchema: operatorInviteAcceptResponseSchema,
         onSuccess: async (response) => {

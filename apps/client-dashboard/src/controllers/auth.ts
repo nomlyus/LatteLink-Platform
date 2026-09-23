@@ -12,6 +12,8 @@ import { setError, state } from "../state";
 import { clearStoredSession, persistApiBaseUrl } from "../storage";
 import { applyVerifiedSession } from "../lifecycle";
 import { render } from "../render";
+import { readOwnerInviteTokenFromUrl } from "./invite-url";
+export { readOwnerInviteTokenFromUrl } from "./invite-url";
 import {
   clearGoogleCallbackParams,
   getGoogleCallbackRedirectUri,
@@ -20,32 +22,6 @@ import {
 
 function isGoogleSignInConfigured() {
   return state.authProviders?.google.configured === true;
-}
-
-export function readOwnerInviteTokenFromUrl() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const inviteQueryToken =
-    window.location.search.length > 0
-      ? new URLSearchParams(window.location.search).get("inviteToken") ??
-        new URLSearchParams(window.location.search).get("invite")
-      : null;
-  if (inviteQueryToken?.trim()) {
-    return inviteQueryToken.trim();
-  }
-
-  const match = window.location.pathname.match(/^\/invites\/([^/?#]+)\/?$/);
-  if (!match?.[1]) {
-    return null;
-  }
-
-  try {
-    return decodeURIComponent(match[1]).trim() || null;
-  } catch {
-    return match[1].trim() || null;
-  }
 }
 
 function clearInviteUrl() {
@@ -81,6 +57,9 @@ export async function handleOwnerInviteFromUrl() {
   if (!token) {
     return false;
   }
+
+  // The token is now held only in memory and the address bar no longer carries it.
+  clearInviteUrl();
 
   clearStoredSession();
   state.session = null;
