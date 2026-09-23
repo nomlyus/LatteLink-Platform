@@ -62,6 +62,19 @@ function markerFor(key) {
   return `${issueMarkerPrefix} ${key} -->`;
 }
 
+function safeTargetUrl(value) {
+  try {
+    const url = new URL(value);
+    url.username = "";
+    url.password = "";
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return "<invalid target URL>";
+  }
+}
+
 function renderFailureBody(result) {
   return [
     markerFor(result.key),
@@ -69,16 +82,17 @@ function renderFailureBody(result) {
     "External uptime monitoring detected a failing target.",
     "",
     `- Target: ${result.name}`,
-    `- URL: ${result.url}`,
+    `- URL: ${safeTargetUrl(result.url)}`,
     `- Critical: ${result.critical ? "yes" : "no"}`,
     `- Checked at: ${result.checkedAt}`,
     `- HTTP status: ${result.status ?? "n/a"}`,
+    result.requestId ? `- Request ID: ${result.requestId}` : undefined,
     `- Response time: ${result.responseTimeMs}ms`,
     `- Error: ${result.error ?? "unknown"}`,
     "",
     "Runbook: docs/runbooks/pilot-uptime-monitoring.md",
     "Incident playbook: docs/runbooks/pilot-incident-response.md"
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 function renderFailureComment(result) {
@@ -87,9 +101,10 @@ function renderFailureComment(result) {
     "",
     `- Checked at: ${result.checkedAt}`,
     `- HTTP status: ${result.status ?? "n/a"}`,
+    result.requestId ? `- Request ID: ${result.requestId}` : undefined,
     `- Response time: ${result.responseTimeMs}ms`,
     `- Error: ${result.error ?? "unknown"}`
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 function renderRecoveryComment(result) {
@@ -98,8 +113,9 @@ function renderRecoveryComment(result) {
     "",
     `- Checked at: ${result.checkedAt}`,
     `- HTTP status: ${result.status ?? "n/a"}`,
+    result.requestId ? `- Request ID: ${result.requestId}` : undefined,
     `- Response time: ${result.responseTimeMs}ms`
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 async function sendWebhook(payload) {
