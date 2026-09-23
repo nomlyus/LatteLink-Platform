@@ -134,7 +134,10 @@ export function createPostgresReportingRepository(db: PersistenceDb): ReportingR
             0::bigint, 0::bigint, 0::bigint, 0::bigint,
             r.amount_cents::bigint AS refunds,
             CASE
+              WHEN (r.allocation_json ->> 'merchandiseAmountCents') ~ '^[0-9]+$'
+              THEN (r.allocation_json ->> 'merchandiseAmountCents')::bigint
               WHEN o.successful_refund_json ->> 'refundId' = r.refund_id::text
+                AND (o.successful_refund_json ->> 'amountCents')::integer = r.amount_cents
                 AND (o.successful_refund_json -> 'allocation' ->> 'merchandiseAmountCents') ~ '^[0-9]+$'
               THEN (o.successful_refund_json -> 'allocation' ->> 'merchandiseAmountCents')::bigint
               WHEN q.quote_id IS NOT NULL
@@ -144,7 +147,10 @@ export function createPostgresReportingRepository(db: PersistenceDb): ReportingR
             END AS merchandise_refunds,
             0::bigint, 0::bigint,
             CASE
+              WHEN (r.allocation_json ->> 'merchandiseAmountCents') ~ '^[0-9]+$'
+              THEN 0::bigint
               WHEN o.successful_refund_json ->> 'refundId' = r.refund_id::text
+                AND (o.successful_refund_json ->> 'amountCents')::integer = r.amount_cents
                 AND (o.successful_refund_json -> 'allocation' ->> 'merchandiseAmountCents') ~ '^[0-9]+$'
               THEN 0::bigint
               WHEN q.quote_id IS NULL
@@ -155,6 +161,7 @@ export function createPostgresReportingRepository(db: PersistenceDb): ReportingR
           JOIN orders o ON o.order_id = r.order_id
           LEFT JOIN orders_quotes q ON q.quote_id = o.quote_id
           WHERE r.status = 'REFUNDED'
+            AND r.source <> 'LEGACY_SIMULATED'
             AND r.occurred_at >= ${input.bounds.previousStart}::timestamptz
             AND r.occurred_at < ${input.bounds.currentEnd}::timestamptz
             AND (o.order_json ->> 'locationId') IN (${sql.join(input.locationIds)})
@@ -193,11 +200,13 @@ export function createPostgresReportingRepository(db: PersistenceDb): ReportingR
               SELECT 1 FROM payments_refunds r
               WHERE r.order_id = o.order_id AND r.status = 'REFUNDED'
             )
+        ), bucketed_events AS (
+          SELECT events.*, ${bucket} AS bucket_start FROM events
         )
         SELECT
           location_id,
           CASE WHEN occurred_at >= ${input.bounds.currentStart}::timestamptz THEN 'current' ELSE 'previous' END AS period,
-          ${bucket} AS bucket_start,
+          bucket_start,
           SUM(COALESCE(gross_sales, 0))::bigint AS gross_sales,
           SUM(COALESCE(discounts, 0))::bigint AS discounts,
           SUM(COALESCE(tax, 0))::bigint AS tax,
@@ -207,8 +216,8 @@ export function createPostgresReportingRepository(db: PersistenceDb): ReportingR
           SUM(paid_orders)::bigint AS paid_orders,
           SUM(missing_quote_paid_orders)::bigint AS missing_quote_paid_orders,
           SUM(unallocatable_refunds)::bigint AS unallocatable_refunds
-        FROM events
-        GROUP BY location_id, period, ${bucket}
+        FROM bucketed_events
+        GROUP BY location_id, period, bucket_start
         ORDER BY bucket_start ASC, location_id ASC
       `.execute(db);
       return rows.rows;

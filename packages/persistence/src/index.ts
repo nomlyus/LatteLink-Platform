@@ -33,6 +33,11 @@ export interface PaymentsRefundTable {
   currency: "USD";
   occurred_at: string;
   message: string | null;
+  stripe_account_id: Generated<string | null>;
+  provider_refund_id: Generated<string | null>;
+  source: Generated<"LEGACY_UNVERIFIED" | "LEGACY_SIMULATED" | "STRIPE_VERIFIED">;
+  provider_status: Generated<string | null>;
+  allocation_json: Generated<unknown | null>;
   created_at: Generated<string>;
 }
 

@@ -601,7 +601,11 @@ export async function registerRoutes(app: FastifyInstance) {
 
       const input = supportLookupQuerySchema.parse(request.query);
       const results = await repository.lookupSupportOrders(input);
-      return supportOrderLookupResponseSchema.parse({ results });
+      const summaries = await repository.getRefundSummaries(results.map((result) => result.order));
+      return supportOrderLookupResponseSchema.parse({ results: results.map((result) => ({
+        ...result,
+        order: { ...result.order, refundSummary: summaries.get(result.order.id) }
+      })) });
     }
   );
 

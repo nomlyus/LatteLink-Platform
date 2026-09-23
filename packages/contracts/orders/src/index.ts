@@ -94,7 +94,15 @@ export const orderSchema = z.object({
   total: moneySchema,
   pickupCode: z.string(),
   timeline: z.array(orderTimelineEntrySchema),
-  customer: orderCustomerSchema.optional()
+  customer: orderCustomerSchema.optional(),
+  refundSummary: z.object({
+    state: z.enum(["NONE", "PARTIAL", "FULL"]),
+    settledAmountCents: z.number().int().nonnegative(),
+    remainingPaidAmountCents: z.number().int().nonnegative(),
+    settledRefundCount: z.number().int().nonnegative(),
+    allocationQuality: z.enum(["NONE", "COMPLETE", "UNALLOCATED"]),
+    unverifiedRefundCount: z.number().int().nonnegative()
+  }).optional()
 });
 
 export const quoteRequestItemSchema = z.object({
@@ -364,11 +372,15 @@ export const paymentRefundReconciliationSchema = z.object({
   orderId: z.string().uuid(),
   paymentId: z.string().min(1),
   refundId: z.string().min(1).optional(),
+  providerRefundIds: z.array(z.string().min(1)).min(1).optional(),
   status: z.enum(["REFUNDED", "REJECTED"]),
   occurredAt: z.string().datetime(),
   message: z.string().optional(),
   amountCents: z.number().int().positive().optional(),
   currency: z.literal("USD").optional()
+}).refine((refund) => !(refund.refundId && (refund.providerRefundIds?.length ?? 0) > 1), {
+  message: "Cumulative refund reconciliation must not identify one refund as the aggregate",
+  path: ["refundId"]
 });
 
 export const ordersPaymentReconciliationSchema = z.union([

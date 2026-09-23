@@ -36,6 +36,14 @@ const orderSchema = z.object({
     currency: z.literal("USD"),
     amountCents: z.number().int().nonnegative()
   }),
+  refundSummary: z.object({
+    state: z.enum(["NONE", "PARTIAL", "FULL"]),
+    settledAmountCents: z.number().int().nonnegative(),
+    remainingPaidAmountCents: z.number().int().nonnegative(),
+    settledRefundCount: z.number().int().nonnegative(),
+    allocationQuality: z.enum(["NONE", "COMPLETE", "UNALLOCATED"]),
+    unverifiedRefundCount: z.number().int().nonnegative()
+  }).optional(),
   timeline: z.array(
     z.object({
       status: orderStatusSchema,

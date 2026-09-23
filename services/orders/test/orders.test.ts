@@ -506,6 +506,21 @@ describe("orders service", () => {
     });
     expect(checkoutPaymentConfirmationResponseSchema.parse(repeatedConfirmation.json()).applied).toBe(false);
 
+    const conflictingConfirmation = await app.inject({
+      method: "POST",
+      url: "/v1/orders/internal/checkouts/confirm-payment",
+      headers: { "x-internal-token": "orders-internal-token" },
+      payload: {
+        checkoutId: checkout.checkoutId,
+        paymentId: "pi_checkout_other_payment",
+        occurredAt: "2026-03-10T00:00:01.000Z",
+        amountCents: checkout.total.amountCents,
+        currency: "USD"
+      }
+    });
+    expect(conflictingConfirmation.statusCode).toBe(409);
+    expect(conflictingConfirmation.json()).toMatchObject({ code: "CHECKOUT_PAYMENT_CONFLICT" });
+
     const afterPayment = await app.inject({ method: "GET", url: "/v1/orders", headers: customerHeaders(userId) });
     expect(orderSchema.array().parse(afterPayment.json())).toHaveLength(1);
     await app.close();

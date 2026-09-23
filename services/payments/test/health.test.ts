@@ -25,6 +25,20 @@ function stripeWebhookHeaders(payload: string, extraHeaders?: Record<string, str
   };
 }
 
+async function recordedStripePayment(paymentIntentId: string, orderId: string, amountCents: number, locationId = "flagship-01") {
+  const repository = createInMemoryRepository();
+  await repository.saveStripePaymentIntent({
+    paymentIntentId,
+    orderId,
+    locationId,
+    stripeAccountId: "acct_123456789",
+    amountCents,
+    currency: "USD",
+    status: "requires_payment_method"
+  });
+  return repository;
+}
+
 async function connectCloverOauth(app: Awaited<ReturnType<typeof buildApp>>, merchantId = "merchant-oauth-1", locationId?: string) {
   const connectResponse = await app.inject({
     method: "GET",
@@ -435,11 +449,13 @@ describe("payments service", () => {
     const stripeRetrieveSpy = vi.spyOn(Object.getPrototypeOf(stripe.paymentIntents), "retrieve").mockResolvedValue({
       id: "pi_finalize_123",
       object: "payment_intent",
+      livemode: false,
       amount: 1295,
       amount_received: 1295,
       currency: "usd",
       metadata: {
-        checkoutId
+        checkoutId,
+        locationId: "flagship-01"
       },
       status: "succeeded"
     } as unknown as Stripe.PaymentIntent);
@@ -547,7 +563,7 @@ describe("payments service", () => {
       throw new Error(`unexpected Stripe mobile finalize URL: ${url}`);
     });
 
-    const app = await buildApp();
+    const app = await buildApp({ repository: await recordedStripePayment("pi_finalize_123", checkoutId, 1295) });
     const response = await app.inject({
       method: "POST",
       url: "/v1/payments/stripe/mobile-session/finalize",
@@ -588,11 +604,13 @@ describe("payments service", () => {
     const stripeRetrieveSpy = vi.spyOn(Object.getPrototypeOf(stripe.paymentIntents), "retrieve").mockResolvedValue({
       id: "pi_canceled_123",
       object: "payment_intent",
+      livemode: false,
       amount: 1295,
       amount_received: 0,
       currency: "usd",
       metadata: {
-        checkoutId
+        checkoutId,
+        locationId: "flagship-01"
       },
       status: "canceled"
     } as unknown as Stripe.PaymentIntent);
@@ -669,7 +687,7 @@ describe("payments service", () => {
       throw new Error(`unexpected Stripe canceled finalize URL: ${url}`);
     });
 
-    const app = await buildApp();
+    const app = await buildApp({ repository: await recordedStripePayment("pi_canceled_123", checkoutId, 1295) });
     const response = await app.inject({
       method: "POST",
       url: "/v1/payments/stripe/mobile-session/finalize",
@@ -1436,7 +1454,7 @@ describe("payments service", () => {
       throw new Error(`unexpected Stripe webhook dispatch URL: ${url}`);
     });
 
-    const app = await buildApp();
+    const app = await buildApp({ repository: await recordedStripePayment("pi_test_valid", orderId, 975) });
     const payload = JSON.stringify({
       id: "evt_test_valid_signature",
       object: "event",
@@ -1451,7 +1469,8 @@ describe("payments service", () => {
           amount_received: 975,
           currency: "usd",
           metadata: {
-            orderId
+            orderId,
+            locationId: "flagship-01"
           }
         }
       }
@@ -1525,7 +1544,7 @@ describe("payments service", () => {
       throw new Error(`unexpected Stripe webhook dispatch URL: ${url}`);
     });
 
-    const app = await buildApp();
+    const app = await buildApp({ repository: await recordedStripePayment("pi_test_retry", orderId, 825) });
     const payload = JSON.stringify({
       id: "evt_test_retry_signature",
       object: "event",
@@ -1539,7 +1558,8 @@ describe("payments service", () => {
           amount: 825,
           currency: "usd",
           metadata: {
-            orderId
+            orderId,
+            locationId: "flagship-01"
           },
           last_payment_error: {
             code: "card_declined",
@@ -1576,10 +1596,51 @@ describe("payments service", () => {
     await app.close();
   });
 
+  it("rejects signed Stripe events with the wrong account, mode, location, or unrecorded intent", async () => {
+    const orderId = "123e4567-e89b-12d3-a456-426614174444";
+    const repository = await recordedStripePayment("pi_bound", orderId, 975);
+    const app = await buildApp({ repository });
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetchMock);
+    for (const [index, override] of [
+      { account: "acct_other" },
+      { livemode: true },
+      { locationId: "other-location" },
+      { paymentIntentId: "pi_unrecorded" },
+      { amount: 976 }
+    ].entries()) {
+      const payload = JSON.stringify({
+        id: `evt_binding_${index}`,
+        object: "event",
+        type: "payment_intent.succeeded",
+        account: override.account ?? "acct_123456789",
+        created: 1776829450,
+        livemode: override.livemode ?? false,
+        data: { object: {
+          id: override.paymentIntentId ?? "pi_bound",
+          amount: override.amount ?? 975,
+          amount_received: 975,
+          currency: "usd",
+          metadata: { orderId, locationId: override.locationId ?? "flagship-01" }
+        } }
+      });
+      const response = await app.inject({ method: "POST", url: "/v1/payments/webhooks/stripe", headers: stripeWebhookHeaders(payload), payload });
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({ code: "STRIPE_PAYMENT_BINDING_MISMATCH" });
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+    await app.close();
+  });
+
   it("reconciles a signed Stripe refund webhook", async () => {
     const fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal("fetch", fetchMock);
+    const stripeRefundCreateSpy = vi.spyOn(Object.getPrototypeOf(stripe.refunds), "create").mockRejectedValue(new Error("unexpected Stripe refund creation"));
     const orderId = "123e4567-e89b-12d3-a456-426614174403";
+    const retrieveSpy = vi.spyOn(Object.getPrototypeOf(stripe.paymentIntents), "retrieve").mockResolvedValue({
+      id: "pi_test_refund", amount: 650, currency: "usd", livemode: false,
+      metadata: { orderId, locationId: "flagship-01" }
+    } as Stripe.PaymentIntent);
     fetchMock.mockImplementation(async (input, init) => {
       const url = typeof input === "string" ? input : input.toString();
       if (url === "http://127.0.0.1:3001/v1/orders/internal/payments/reconcile") {
@@ -1607,7 +1668,12 @@ describe("payments service", () => {
       throw new Error(`unexpected Stripe refund dispatch URL: ${url}`);
     });
 
-    const app = await buildApp();
+    const repository = await recordedStripePayment("pi_test_refund", orderId, 650);
+    await repository.saveRefund({
+      request: { orderId, paymentId: "pi_test_refund", amountCents: 650, currency: "USD", reason: "historical test", idempotencyKey: "historical-test", locationId: "flagship-01" },
+      response: { refundId: "123e4567-e89b-42d3-a456-426614174403", provider: "STRIPE", orderId, paymentId: "pi_test_refund", status: "REFUNDED", amountCents: 650, currency: "USD", occurredAt: "2026-09-22T20:00:00.000Z", message: "Simulated Stripe refund succeeded" }
+    });
+    const app = await buildApp({ repository });
     const payload = JSON.stringify({
       id: "evt_test_refund_signature",
       object: "event",
@@ -1628,7 +1694,10 @@ describe("payments service", () => {
           refunds: {
             data: [
               {
-                id: "re_test_refund"
+                id: "re_failed_earlier", status: "failed", amount: 650, created: 1_790_121_600
+              },
+              {
+                id: "re_test_refund", status: "succeeded", amount: 650, created: 1_790_121_600
               }
             ]
           }
@@ -1651,7 +1720,108 @@ describe("payments service", () => {
       duplicate: false
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(await repository.findLatestRefundForOrderAndPayment(orderId, "pi_test_refund")).toMatchObject({
+      message: "Stripe refund re_test_refund succeeded"
+    });
+    const recoveredHistoricalRetry = await app.inject({
+      method: "POST",
+      url: "/v1/payments/refunds",
+      headers: internalHeaders(),
+      payload: {
+        orderId,
+        paymentId: "pi_test_refund",
+        amountCents: 650,
+        currency: "USD",
+        reason: "historical test",
+        idempotencyKey: "historical-test",
+        locationId: "flagship-01"
+      }
+    });
+    expect(recoveredHistoricalRetry.statusCode).toBe(409);
+    expect(recoveredHistoricalRetry.json()).toMatchObject({ code: "STRIPE_REFUND_ALREADY_RECORDED" });
+    expect(stripeRefundCreateSpy).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    stripeRefundCreateSpy.mockRestore();
+    retrieveSpy.mockRestore();
     await app.close();
+  });
+
+  it("records a partial Stripe refund without inventing item allocation", async () => {
+    const orderId = "123e4567-e89b-12d3-a456-426614174405";
+    const retrieveSpy = vi.spyOn(Object.getPrototypeOf(stripe.paymentIntents), "retrieve").mockResolvedValue({
+      id: "pi_partial_refund", amount: 650, currency: "usd", livemode: false,
+      metadata: { orderId, locationId: "flagship-01" }
+    } as Stripe.PaymentIntent);
+    const repository = await recordedStripePayment("pi_partial_refund", orderId, 650);
+    const app = await buildApp({ repository });
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetchMock);
+    const payload = JSON.stringify({
+      id: "evt_partial_refund",
+      object: "event",
+      type: "charge.refunded",
+      account: "acct_123456789",
+      created: 1776829570,
+      livemode: false,
+      data: { object: {
+        id: "ch_partial_refund",
+        payment_intent: "pi_partial_refund",
+        amount: 650,
+        amount_refunded: 200,
+        currency: "usd",
+        metadata: { orderId },
+        refunds: { data: [{ id: "re_partial_refund", status: "succeeded", amount: 200, created: 1_790_121_600 }] }
+      } }
+    });
+    const response = await app.inject({ method: "POST", url: "/v1/payments/webhooks/stripe", headers: stripeWebhookHeaders(payload), payload });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ accepted: true });
+    expect(await repository.findVerifiedRefundForOrderAndPayment(orderId, "pi_partial_refund")).toMatchObject({
+      amountCents: 200,
+      status: "REFUNDED"
+    });
+    const replay = await app.inject({ method: "POST", url: "/v1/payments/webhooks/stripe", headers: stripeWebhookHeaders(payload), payload });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json()).toMatchObject({ duplicate: true });
+    const listSpy = vi.spyOn(Object.getPrototypeOf(stripe.refunds), "list").mockImplementation(() => ({
+      async *[Symbol.asyncIterator]() {
+        yield { id: "re_partial_refund", status: "succeeded", amount: 200, created: 1_790_121_600 };
+        yield { id: "re_partial_refund_second", status: "succeeded", amount: 250, created: 1_790_122_600 };
+      }
+    }) as ReturnType<typeof stripe.refunds.list>);
+    const laterPayload = payload.replace('"evt_partial_refund"', '"evt_partial_refund_later"')
+      .replace('"amount_refunded":200', '"amount_refunded":450')
+      .replace('"refunds":{"data":', '"refunds":{"has_more":true,"data":');
+    const later = await app.inject({ method: "POST", url: "/v1/payments/webhooks/stripe", headers: stripeWebhookHeaders(laterPayload), payload: laterPayload });
+    expect(later.statusCode).toBe(200);
+    expect(await repository.findLatestRefundForOrderAndPayment(orderId, "pi_partial_refund")).toMatchObject({ amountCents: 250 });
+    const olderPayload = payload.replace('"evt_partial_refund"', '"evt_partial_refund_older_replay"');
+    const older = await app.inject({ method: "POST", url: "/v1/payments/webhooks/stripe", headers: stripeWebhookHeaders(olderPayload), payload: olderPayload });
+    expect(older.statusCode).toBe(200);
+    expect(await repository.findLatestRefundForOrderAndPayment(orderId, "pi_partial_refund")).toMatchObject({ amountCents: 250 });
+    expect(listSpy).toHaveBeenCalledOnce();
+    expect(fetchMock).not.toHaveBeenCalled();
+    listSpy.mockRestore();
+    retrieveSpy.mockRestore();
+    await app.close();
+  });
+
+  it("keeps one provider refund identity under concurrent webhook ledger writes", async () => {
+    const repository = createInMemoryRepository();
+    const input = {
+      providerRefundId: "re_concurrent",
+      stripeAccountId: "acct_123456789",
+      orderId: "123e4567-e89b-12d3-a456-426614174406",
+      paymentId: "pi_concurrent",
+      amountCents: 200,
+      currency: "USD" as const,
+      occurredAt: "2026-09-23T00:00:00.000Z",
+      providerStatus: "succeeded"
+    };
+    const results = await Promise.all(Array.from({ length: 8 }, () => repository.saveVerifiedStripeRefund(input)));
+    expect(new Set(results.map((result) => result.refundId)).size).toBe(1);
+    await expect(repository.saveVerifiedStripeRefund({ ...input, amountCents: 201 }))
+      .rejects.toThrow("Stripe refund identity binding cannot change");
   });
 
   it("generates a Clover OAuth authorize URL when app credentials are configured", async () => {
@@ -1774,7 +1944,7 @@ describe("payments service", () => {
     await app.close();
   });
 
-  it("treats refund requests as idempotent", async () => {
+  it("does not simulate refunds without a location", async () => {
     const app = await buildApp();
     const orderId = "123e4567-e89b-12d3-a456-426614174023";
 
@@ -1805,14 +1975,14 @@ describe("payments service", () => {
       }
     });
 
-    expect(firstRefund.statusCode).toBe(200);
-    expect(secondRefund.statusCode).toBe(200);
-    expect(secondRefund.json()).toMatchObject({ refundId: firstRefund.json().refundId, status: "REFUNDED" });
+    expect(firstRefund.statusCode).toBe(409);
+    expect(secondRefund.statusCode).toBe(409);
+    expect(secondRefund.json()).toMatchObject({ code: "LOCATION_REQUIRED" });
 
     await app.close();
   });
 
-  it("supports refund rejection path", async () => {
+  it("does not simulate a rejected refund from its reason", async () => {
     const app = await buildApp();
     const orderId = "123e4567-e89b-12d3-a456-426614174024";
 
@@ -1830,8 +2000,8 @@ describe("payments service", () => {
       }
     });
 
-    expect(refund.statusCode).toBe(200);
-    expect(refund.json()).toMatchObject({ status: "REJECTED", provider: "STRIPE" });
+    expect(refund.statusCode).toBe(409);
+    expect(refund.json()).toMatchObject({ code: "LOCATION_REQUIRED" });
     await app.close();
   });
 
@@ -1859,7 +2029,7 @@ describe("payments service", () => {
     await app.close();
   });
 
-  it("rejects refund idempotency key reuse when the payload changes", async () => {
+  it("rejects unscoped refund requests before idempotency lookup", async () => {
     const app = await buildApp();
     const orderId = "123e4567-e89b-12d3-a456-426614174099";
 
@@ -1876,7 +2046,7 @@ describe("payments service", () => {
         idempotencyKey: "refund-key-reuse"
       }
     });
-    expect(firstRefund.statusCode).toBe(200);
+    expect(firstRefund.statusCode).toBe(409);
 
     const conflictingRefund = await app.inject({
       method: "POST",
@@ -1893,9 +2063,7 @@ describe("payments service", () => {
     });
 
     expect(conflictingRefund.statusCode).toBe(409);
-    expect(conflictingRefund.json()).toMatchObject({
-      code: "IDEMPOTENCY_KEY_REUSE"
-    });
+    expect(conflictingRefund.json()).toMatchObject({ code: "LOCATION_REQUIRED" });
     await app.close();
   });
 
@@ -1919,7 +2087,7 @@ describe("payments service", () => {
       }
     });
 
-    expect(refund.statusCode).toBe(200);
+    expect(refund.statusCode).toBe(409);
     expect(refund.headers["x-request-id"]).toBe(requestId);
 
     const metricsResponse = await app.inject({ method: "GET", url: "/metrics" });
@@ -1934,18 +2102,50 @@ describe("payments service", () => {
       })
     });
     expect(metricsResponse.json().requests.total).toBeGreaterThanOrEqual(1);
-    expect(metricsResponse.json().requests.status2xx).toBeGreaterThanOrEqual(1);
+    expect(metricsResponse.json().requests.status4xx).toBeGreaterThanOrEqual(1);
 
     await app.close();
   });
 
-  it("supports live Stripe refunds via a configured location payment profile", async () => {
-    vi.stubEnv("PAYMENTS_PROVIDER_MODE", "live");
+  it("rejects operator partial refund requests before provider lookups or Stripe calls", async () => {
+    vi.stubEnv("PAYMENTS_PROVIDER_MODE", "simulated");
+    vi.stubEnv("PAYMENTS_TEST_SIMULATE_STRIPE_REFUNDS", "false");
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetchMock);
+    const stripeRefundCreateSpy = vi.spyOn(Object.getPrototypeOf(stripe.refunds), "create").mockRejectedValue(new Error("unexpected Stripe refund creation"));
+    const orderId = "123e4567-e89b-12d3-a456-426614174045";
+    const app = await buildApp({ repository: await recordedStripePayment("pi_partial_operator", orderId, 650) });
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/payments/refunds",
+      headers: internalHeaders(),
+      payload: {
+        orderId,
+        paymentId: "pi_partial_operator",
+        amountCents: 200,
+        currency: "USD",
+        reason: "customer cancellation",
+        idempotencyKey: "partial-operator-attempt",
+        locationId: "flagship-01"
+      }
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ code: "STRIPE_PAYMENT_BINDING_MISMATCH" });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(stripeRefundCreateSpy).not.toHaveBeenCalled();
+    stripeRefundCreateSpy.mockRestore();
+    await app.close();
+  });
+
+  it("calls Stripe for a recorded payment even when Clover mode is simulated", async () => {
+    vi.stubEnv("PAYMENTS_PROVIDER_MODE", "simulated");
 
     const fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal("fetch", fetchMock);
     const stripeRefundCreateSpy = vi.spyOn(Object.getPrototypeOf(stripe.refunds), "create").mockResolvedValue({
-      id: "re_live_refund_1"
+      id: "re_live_refund_1",
+      status: "succeeded"
     } as Stripe.Refund);
     fetchMock.mockImplementation(async (input, init) => {
       const url = typeof input === "string" ? input : input.toString();
@@ -2002,7 +2202,7 @@ describe("payments service", () => {
       throw new Error(`unexpected Stripe refund URL: ${url}`);
     });
 
-    const app = await buildApp();
+    const app = await buildApp({ repository: await recordedStripePayment("pi_live_refund_1", "123e4567-e89b-12d3-a456-426614174030", 650) });
     const response = await app.inject({
       method: "POST",
       url: "/v1/payments/refunds",
@@ -2025,6 +2225,22 @@ describe("payments service", () => {
       orderId: "123e4567-e89b-12d3-a456-426614174030",
       paymentId: "pi_live_refund_1"
     });
+    const replay = await app.inject({
+      method: "POST",
+      url: "/v1/payments/refunds",
+      headers: internalHeaders(),
+      payload: {
+        orderId: "123e4567-e89b-12d3-a456-426614174030",
+        paymentId: "pi_live_refund_1",
+        amountCents: 650,
+        currency: "USD",
+        reason: "store canceled order",
+        idempotencyKey: "live-refund-1",
+        locationId: "flagship-01"
+      }
+    });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json().refundId).toBe(response.json().refundId);
     expect(stripeRefundCreateSpy).toHaveBeenCalledWith(
       {
         payment_intent: "pi_live_refund_1",
@@ -2035,6 +2251,7 @@ describe("payments service", () => {
         idempotencyKey: "live-refund-1"
       }
     );
+    expect(stripeRefundCreateSpy).toHaveBeenCalledTimes(1);
 
     stripeRefundCreateSpy.mockRestore();
     await app.close();
@@ -2059,7 +2276,7 @@ describe("payments service", () => {
           idempotencyKey: "rate-limit-refund-1"
         }
       });
-      expect(firstRefund.statusCode).toBe(200);
+      expect(firstRefund.statusCode).toBe(409);
 
       const secondRefund = await app.inject({
         method: "POST",

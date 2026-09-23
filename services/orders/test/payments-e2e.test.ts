@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
 import Fastify, { type FastifyInstance } from "fastify";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { orderQuoteSchema, orderSchema } from "@lattelink/contracts-orders";
 import { buildApp as buildOrdersApp } from "../src/app.js";
 import { buildApp as buildPaymentsApp } from "../../payments/src/app.js";
+import { createInMemoryRepository } from "../../payments/src/routes.js";
 
 const sampleQuotePayload = {
   locationId: "flagship-01",
@@ -27,6 +29,18 @@ const sampleQuotePayload = {
 
 const defaultOrderUserId = "123e4567-e89b-12d3-a456-426614174000";
 const internalPaymentsToken = "orders-internal-token";
+const stripeWebhookSecret = "whsec_orders_payments_e2e";
+// Reuse the Stripe SDK dependency owned by payments without adding it to orders.
+const paymentsStripeModule = createRequire(new URL("../../payments/package.json", import.meta.url))("stripe");
+const PaymentsStripe = paymentsStripeModule.default ?? paymentsStripeModule;
+const stripe = new PaymentsStripe("sk_test_orders_payments_e2e");
+
+function stripeWebhookHeaders(payload: string) {
+  return {
+    "content-type": "application/json",
+    "stripe-signature": stripe.webhooks.generateTestHeaderString({ payload, secret: stripeWebhookSecret })
+  };
+}
 
 type LoyaltyBalance = {
   userId: string;
@@ -256,6 +270,7 @@ function buildCatalogHarnessApp() {
 describe.sequential("orders + payments e2e", () => {
   let ordersApp: FastifyInstance | undefined;
   let paymentsApp: FastifyInstance | undefined;
+  let paymentsRepository: ReturnType<typeof createInMemoryRepository> | undefined;
   let loyaltyApp: FastifyInstance | undefined;
   let notificationsApp: FastifyInstance | undefined;
   let previousPaymentsBaseUrl: string | undefined;
@@ -265,6 +280,12 @@ describe.sequential("orders + payments e2e", () => {
   let previousOrdersInternalToken: string | undefined;
   let previousAllowUnauthenticatedGateway: string | undefined;
   let previousAllowUnauthenticatedInternal: string | undefined;
+  let previousStripeRefundSimulation: string | undefined;
+  let previousOrdersServiceBaseUrl: string | undefined;
+  let previousStripeSecretKey: string | undefined;
+  let previousStripePublishableKey: string | undefined;
+  let previousStripeWebhookSecret: string | undefined;
+  let previousPaymentsProviderMode: string | undefined;
   let catalogApp: FastifyInstance | undefined;
 
   async function createOrder(input?: { pointsToRedeem?: number; userId?: string }) {
@@ -336,11 +357,19 @@ describe.sequential("orders + payments e2e", () => {
     previousOrdersInternalToken = process.env.ORDERS_INTERNAL_API_TOKEN;
     previousAllowUnauthenticatedGateway = process.env.ALLOW_UNAUTHENTICATED_ORDERS_GATEWAY;
     previousAllowUnauthenticatedInternal = process.env.ALLOW_UNAUTHENTICATED_ORDERS_INTERNAL;
+    previousStripeRefundSimulation = process.env.PAYMENTS_TEST_SIMULATE_STRIPE_REFUNDS;
+    previousOrdersServiceBaseUrl = process.env.ORDERS_SERVICE_BASE_URL;
+    previousStripeSecretKey = process.env.STRIPE_SECRET_KEY;
+    previousStripePublishableKey = process.env.STRIPE_PUBLISHABLE_KEY;
+    previousStripeWebhookSecret = process.env.STRIPE_CONNECT_WEBHOOK_SECRET;
+    previousPaymentsProviderMode = process.env.PAYMENTS_PROVIDER_MODE;
 
     process.env.ORDERS_INTERNAL_API_TOKEN = internalPaymentsToken;
     process.env.ALLOW_UNAUTHENTICATED_ORDERS_GATEWAY = "true";
     process.env.ALLOW_UNAUTHENTICATED_ORDERS_INTERNAL = "true";
-    paymentsApp = await buildPaymentsApp({ allowDeferredFeatureTestRoutes: true });
+    process.env.PAYMENTS_TEST_SIMULATE_STRIPE_REFUNDS = "true";
+    paymentsRepository = createInMemoryRepository();
+    paymentsApp = await buildPaymentsApp({ allowDeferredFeatureTestRoutes: true, repository: paymentsRepository });
     await paymentsApp.listen({ host: "127.0.0.1", port: 0 });
     const paymentsAddress = paymentsApp.server.address() as AddressInfo | null;
     if (!paymentsAddress || typeof paymentsAddress.port !== "number") {
@@ -384,6 +413,10 @@ describe.sequential("orders + payments e2e", () => {
     if (paymentsApp) {
       await paymentsApp.close();
       paymentsApp = undefined;
+    }
+    if (paymentsRepository) {
+      await paymentsRepository.close();
+      paymentsRepository = undefined;
     }
 
     if (loyaltyApp) {
@@ -442,6 +475,22 @@ describe.sequential("orders + payments e2e", () => {
     } else {
       process.env.ALLOW_UNAUTHENTICATED_ORDERS_INTERNAL = previousAllowUnauthenticatedInternal;
     }
+    if (previousStripeRefundSimulation === undefined) {
+      delete process.env.PAYMENTS_TEST_SIMULATE_STRIPE_REFUNDS;
+    } else {
+      process.env.PAYMENTS_TEST_SIMULATE_STRIPE_REFUNDS = previousStripeRefundSimulation;
+    }
+    if (previousOrdersServiceBaseUrl === undefined) delete process.env.ORDERS_SERVICE_BASE_URL;
+    else process.env.ORDERS_SERVICE_BASE_URL = previousOrdersServiceBaseUrl;
+    if (previousStripeSecretKey === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = previousStripeSecretKey;
+    if (previousStripePublishableKey === undefined) delete process.env.STRIPE_PUBLISHABLE_KEY;
+    else process.env.STRIPE_PUBLISHABLE_KEY = previousStripePublishableKey;
+    if (previousStripeWebhookSecret === undefined) delete process.env.STRIPE_CONNECT_WEBHOOK_SECRET;
+    else process.env.STRIPE_CONNECT_WEBHOOK_SECRET = previousStripeWebhookSecret;
+    if (previousPaymentsProviderMode === undefined) delete process.env.PAYMENTS_PROVIDER_MODE;
+    else process.env.PAYMENTS_PROVIDER_MODE = previousPaymentsProviderMode;
+    vi.restoreAllMocks();
   });
 
   it("leaves orders pending on timeout reconciliation until a later success arrives", async () => {
@@ -606,6 +655,116 @@ describe.sequential("orders + payments e2e", () => {
       id: order.id,
       status: "PAID"
     });
+  });
+
+  it("keeps a cumulative Stripe refund snapshot separate from its individual provider refund IDs", async () => {
+    const order = await createOrder();
+    const paymentId = `pi-multiple-refunds-${order.id}`;
+    const stripeAccountId = "acct_refund_e2e";
+
+    const paid = await reconcileCharge({
+      orderId: order.id,
+      eventId: `evt_paid_before_refund_${order.id}`,
+      paymentId
+    });
+    expect(paid.statusCode).toBe(200);
+    expect(paid.json()).toMatchObject({ accepted: true, applied: true, orderStatus: "PAID" });
+
+    if (!ordersApp || !paymentsApp || !paymentsRepository) {
+      throw new Error("Orders and payments apps must be initialized");
+    }
+
+    await ordersApp.listen({ host: "127.0.0.1", port: 0 });
+    const ordersAddress = ordersApp.server.address() as AddressInfo | null;
+    if (!ordersAddress || typeof ordersAddress.port !== "number") {
+      throw new Error("Failed to resolve orders test port");
+    }
+
+    await paymentsApp.close();
+    paymentsApp = undefined;
+    process.env.ORDERS_SERVICE_BASE_URL = `http://127.0.0.1:${ordersAddress.port}`;
+    process.env.STRIPE_SECRET_KEY = "sk_test_orders_payments_e2e";
+    process.env.STRIPE_PUBLISHABLE_KEY = "pk_test_orders_payments_e2e";
+    process.env.STRIPE_CONNECT_WEBHOOK_SECRET = stripeWebhookSecret;
+    paymentsApp = await buildPaymentsApp({ allowDeferredFeatureTestRoutes: true, repository: paymentsRepository, stripeClient: stripe });
+    await paymentsApp.listen({ host: "127.0.0.1", port: 0 });
+
+    await paymentsRepository.saveStripePaymentIntent({
+      paymentIntentId: paymentId,
+      orderId: order.id,
+      locationId: order.locationId,
+      stripeAccountId,
+      amountCents: order.total.amountCents,
+      currency: "USD",
+      status: "succeeded"
+    });
+
+    const retrieveSpy = vi.spyOn(stripe.paymentIntents, "retrieve").mockResolvedValue({
+      id: paymentId,
+      amount: order.total.amountCents,
+      amount_received: order.total.amountCents,
+      currency: "usd",
+      livemode: false,
+      metadata: { orderId: order.id, locationId: order.locationId },
+      status: "succeeded"
+    } as never);
+
+    const firstRefundAmount = Math.floor(order.total.amountCents / 2);
+    const secondRefundAmount = order.total.amountCents - firstRefundAmount;
+    const payload = JSON.stringify({
+      id: `evt_refunded_twice_${order.id}`,
+      object: "event",
+      type: "charge.refunded",
+      account: stripeAccountId,
+      created: 1_790_121_600,
+      livemode: false,
+      data: {
+        object: {
+          id: `ch_refunded_twice_${order.id}`,
+          payment_intent: paymentId,
+          amount: order.total.amountCents,
+          amount_refunded: order.total.amountCents,
+          currency: "usd",
+          metadata: { orderId: order.id, locationId: order.locationId },
+          refunds: {
+            has_more: false,
+            data: [
+              { id: `re_first_${order.id}`, status: "succeeded", amount: firstRefundAmount, created: 1_790_121_600 },
+              { id: `re_second_${order.id}`, status: "succeeded", amount: secondRefundAmount, created: 1_790_122_600 }
+            ]
+          }
+        }
+      }
+    });
+
+    const webhook = await paymentsApp.inject({
+      method: "POST",
+      url: "/v1/payments/webhooks/stripe",
+      headers: stripeWebhookHeaders(payload),
+      payload
+    });
+    expect(webhook.statusCode, JSON.stringify(webhook.json())).toBe(200);
+    expect(webhook.json()).toMatchObject({ accepted: true, eventType: "charge.refunded" });
+    expect(retrieveSpy).toHaveBeenCalledOnce();
+
+    const supportLookup = await ordersApp.inject({
+      method: "GET",
+      url: `/v1/orders/internal/support/lookup?query=${encodeURIComponent(order.id)}`,
+      headers: { "x-internal-token": internalPaymentsToken }
+    });
+    expect(supportLookup.statusCode).toBe(200);
+    const result = supportLookup.json().results[0];
+    expect(result.order.status).toBe("CANCELED");
+    expect(result.successfulRefund, JSON.stringify(result.successfulRefund)).toMatchObject({
+      provider: "STRIPE",
+      orderId: order.id,
+      paymentId,
+      status: "REFUNDED",
+      amountCents: order.total.amountCents,
+      providerRefundIds: [`re_first_${order.id}`, `re_second_${order.id}`],
+      message: "Stripe refund total reconciled from 2 provider refunds"
+    });
+    expect(result.successfulRefund).not.toHaveProperty("refundId");
   });
 
   it("supports refund failure recovery on cancel retry", async () => {

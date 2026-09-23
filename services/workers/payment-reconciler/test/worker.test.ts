@@ -86,8 +86,10 @@ function buildPaymentIntent(overrides: Partial<ReconcilerPaymentIntent> = {}): R
     amount: 500,
     amount_received: 500,
     currency: "usd",
+    livemode: false,
     metadata: {
-      orderId
+      orderId,
+      locationId
     },
     last_payment_error: null,
     ...overrides
@@ -187,7 +189,8 @@ describe("payment reconciler worker", () => {
       retrievePaymentIntent: vi.fn(async () =>
         buildPaymentIntent({
           metadata: {
-            checkoutId: orderId
+            checkoutId: orderId,
+            locationId
           }
         })
       )
@@ -208,7 +211,8 @@ describe("payment reconciler worker", () => {
       paymentIntent: expect.objectContaining({
         id: paymentIntentId,
         metadata: {
-          checkoutId: orderId
+          checkoutId: orderId,
+          locationId
         }
       }),
       referenceType: "CHECKOUT"
@@ -242,7 +246,7 @@ describe("payment reconciler worker", () => {
       listStalePendingPaymentIntents: vi.fn(async () => [buildCandidate({ referenceType: "CHECKOUT", orderJson: checkoutQuoteJson })]),
       retrievePaymentIntent: vi.fn(async () => buildPaymentIntent({
         status: "requires_payment_method",
-        metadata: { checkoutId: orderId }
+        metadata: { checkoutId: orderId, locationId }
       }))
     });
 
@@ -294,6 +298,16 @@ describe("payment reconciler worker", () => {
       failed: 1
     });
     expect(runtime.reconcileSucceededPayment).not.toHaveBeenCalled();
+  });
+
+  it("does not settle a Stripe intent with a different identity or mode", async () => {
+    for (const paymentIntent of [buildPaymentIntent({ id: "pi_other" }), buildPaymentIntent({ livemode: true })]) {
+      const runtime = buildRuntime({ retrievePaymentIntent: vi.fn(async () => paymentIntent) });
+      const result = await processStalePaymentsBatch(baseConfig, runtime);
+      expect(result.failed).toBe(1);
+      expect(runtime.reconcileSucceededPayment).not.toHaveBeenCalled();
+      expect(runtime.updatePaymentIntentStatus).not.toHaveBeenCalled();
+    }
   });
 
   it("stops the loop without scheduling another cycle", async () => {

@@ -88,8 +88,9 @@ const paymentsRefundRequestSchema = z.object({
   locationId: z.string().min(1).optional()
 });
 
-const paymentsRefundResponseSchema = z.object({
-  refundId: z.string().min(1),
+const paymentsRefundSnapshotBaseSchema = z.object({
+  refundId: z.string().min(1).optional(),
+  providerRefundIds: z.array(z.string().min(1)).min(1).optional(),
   provider: paymentsProviderSchema,
   orderId: z.string().uuid(),
   paymentId: z.string().min(1),
@@ -98,6 +99,10 @@ const paymentsRefundResponseSchema = z.object({
   currency: z.literal("USD"),
   occurredAt: z.string().datetime(),
   message: z.string().optional()
+});
+
+const paymentsRefundResponseSchema = paymentsRefundSnapshotBaseSchema.extend({
+  refundId: z.string().min(1)
 });
 
 const loyaltyBalanceSchema = z.object({
@@ -363,7 +368,7 @@ const refundAllocationSchema = z.object({
   })).min(1)
 });
 
-const persistedRefundSnapshotSchema = paymentsRefundResponseSchema.extend({
+const persistedRefundSnapshotSchema = paymentsRefundSnapshotBaseSchema.extend({
   allocation: refundAllocationSchema.optional()
 });
 
@@ -408,7 +413,7 @@ function buildFullRefundAllocation(quote: OrderQuote) {
   });
 }
 
-function attachRefundAllocation(response: PaymentsRefundResponse, quote: OrderQuote): PersistedRefundSnapshot {
+function attachRefundAllocation(response: z.output<typeof paymentsRefundSnapshotBaseSchema>, quote: OrderQuote): PersistedRefundSnapshot {
   return persistedRefundSnapshotSchema.parse({
     ...response,
     allocation: buildFullRefundAllocation(quote)
@@ -1182,7 +1187,9 @@ export async function confirmCheckoutPayment(params: {
   }
   const existingOrder = await deps.repository.getOrder(input.checkoutId);
   if (existingOrder) {
-    await recordSuccessfulCheckoutPayment({ order: existingOrder, input, repository: deps.repository });
+    if (!await recordSuccessfulCheckoutPayment({ order: existingOrder, input, repository: deps.repository })) {
+      return { error: buildServiceError({ statusCode: 409, code: "CHECKOUT_PAYMENT_CONFLICT", message: "Checkout already has a different settled payment" }) };
+    }
     return { result: checkoutPaymentConfirmationResponseSchema.parse({ accepted: true, applied: false, order: existingOrder }) };
   }
   const quote = await deps.repository.getQuote(draft.quoteId);
@@ -1232,7 +1239,9 @@ export async function confirmCheckoutPayment(params: {
     quoteId: draft.quoteId,
     userId: draft.userId
   });
-  await recordSuccessfulCheckoutPayment({ order: promotion.order, input, repository: deps.repository });
+  if (!await recordSuccessfulCheckoutPayment({ order: promotion.order, input, repository: deps.repository })) {
+    return { error: buildServiceError({ statusCode: 409, code: "CHECKOUT_PAYMENT_CONFLICT", message: "Checkout already has a different settled payment" }) };
+  }
   if (promotion.created) {
     await sendOrderStateNotification({ requestId, deps, userId: draft.userId, order: promotion.order });
   }
@@ -1246,7 +1255,7 @@ async function recordSuccessfulCheckoutPayment(params: {
   input: z.output<typeof checkoutPaymentConfirmationSchema>;
   repository: OrdersRepository;
 }) {
-  await params.repository.setPaymentId(params.order.id, params.input.paymentId);
+  if (!await params.repository.claimCheckoutPaymentId(params.order.id, params.input.paymentId)) return false;
   await params.repository.setSuccessfulCharge(params.order.id, {
     paymentId: params.input.paymentId,
     provider: "STRIPE",
@@ -1257,6 +1266,7 @@ async function recordSuccessfulCheckoutPayment(params: {
     currency: params.input.currency,
     occurredAt: params.input.occurredAt
   });
+  return true;
 }
 
 export async function expireCheckoutDraft(params: { checkoutId: string; deps: OrderServiceDeps }) {
@@ -1770,8 +1780,10 @@ export async function listOrdersForRead(params: {
     orders: reconciledOrders,
     deps: params.deps
   });
-
-  return { orders: z.array(orderSchema).parse(hydratedOrders) };
+  const refundSummaries = await params.deps.repository.getRefundSummaries(hydratedOrders);
+  return { orders: z.array(orderSchema).parse(hydratedOrders.map((order) => ({
+    ...order, refundSummary: refundSummaries.get(order.id)
+  }))) };
 }
 
 export async function getOrderForRead(params: {
@@ -1813,7 +1825,8 @@ export async function getOrderForRead(params: {
     order: reconciledOrder,
     deps: params.deps
   });
-  return { order: orderSchema.parse(hydratedOrder) };
+  const refundSummaries = await params.deps.repository.getRefundSummaries([hydratedOrder]);
+  return { order: orderSchema.parse({ ...hydratedOrder, refundSummary: refundSummaries.get(hydratedOrder.id) }) };
 }
 
 export async function cancelOrder(params: {
@@ -2009,7 +2022,12 @@ export async function cancelOrder(params: {
       orderQuote.pointsToRedeem > 0 ? `refunded ${orderQuote.pointsToRedeem} redeemed points` : undefined
     ].filter((value): value is string => Boolean(value));
 
-    refundNote = ` Refund submitted: ${successfulRefund.refundId}.${
+    const refundConfirmation = successfulRefund.refundId
+      ? `Refund submitted: ${successfulRefund.refundId}.`
+      : successfulRefund.providerRefundIds?.length
+        ? `Refund verified across ${successfulRefund.providerRefundIds.length} Stripe refund records.`
+        : "Refund confirmed.";
+    refundNote = ` ${refundConfirmation}${
       loyaltyReversalParts.length > 0 ? ` Loyalty updated: ${loyaltyReversalParts.join("; ")}.` : ""
     }`;
   }
@@ -2224,10 +2242,17 @@ export async function reconcilePaymentWebhook(params: {
 
   const existingPersistedRefund = await deps.repository.getSuccessfulRefund(input.orderId);
   const parsedPersistedRefund =
-    existingPersistedRefund === undefined ? undefined : paymentsRefundResponseSchema.safeParse(existingPersistedRefund);
+    existingPersistedRefund === undefined ? undefined : persistedRefundSnapshotSchema.safeParse(existingPersistedRefund);
   const refundIdFromStore = parsedPersistedRefund?.success ? parsedPersistedRefund.data.refundId : undefined;
-  const refundSnapshot = paymentsRefundResponseSchema.parse({
-    refundId: input.refundId ?? refundIdFromStore ?? randomUUID(),
+  const aggregateRefundIds = input.providerRefundIds?.length && input.providerRefundIds.length > 1
+    ? input.providerRefundIds
+    : undefined;
+  const refundId = aggregateRefundIds
+    ? undefined
+    : input.refundId ?? refundIdFromStore ?? randomUUID();
+  const refundSnapshot = persistedRefundSnapshotSchema.parse({
+    ...(refundId ? { refundId } : {}),
+    providerRefundIds: input.providerRefundIds,
     provider: input.provider,
     orderId: input.orderId,
     paymentId: input.paymentId,

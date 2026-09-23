@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import Fastify from "fastify";
 import rateLimit from "@fastify/rate-limit";
+import type Stripe from "stripe";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import {
@@ -10,9 +11,13 @@ import {
   initializeSentry,
   registerSentryErrorHook
 } from "@lattelink/observability";
-import { registerRoutes } from "./routes.js";
+import { registerRoutes, type PaymentsRepository } from "./routes.js";
 
-export async function buildApp(options: { allowDeferredFeatureTestRoutes?: boolean } = {}) {
+export async function buildApp(options: {
+  allowDeferredFeatureTestRoutes?: boolean;
+  repository?: PaymentsRepository;
+  stripeClient?: Stripe;
+} = {}) {
   const serviceName = "payments";
   initializeSentry({ service: serviceName });
   const app = Fastify({
