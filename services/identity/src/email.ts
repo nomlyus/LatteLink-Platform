@@ -37,8 +37,7 @@ class ConsoleEmailProvider implements EmailProvider {
     console.info("[identity-email] owner invite", {
       to: input.to,
       displayName: input.displayName,
-      locationId: input.locationId,
-      inviteUrl: input.inviteUrl
+      locationId: input.locationId
     });
   }
 }

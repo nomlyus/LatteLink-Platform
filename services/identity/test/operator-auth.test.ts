@@ -766,7 +766,7 @@ describe("operator auth", () => {
     const invite = internalOwnerInviteResponseSchema.parse(inviteResponse.json());
     expect(invite.operator.active).toBe(false);
     expect(invite.invite.inviteUrl).toContain("/invites/");
-    const token = invite.invite.inviteUrl!.split("/invites/")[1]!;
+    const token = invite.invite.inviteUrl!.split("#")[1]!;
 
     const pendingOwnerSummaryResponse = await app.inject({
       method: "GET",
@@ -847,7 +847,8 @@ describe("operator auth", () => {
     });
     expect(reuseResponse.statusCode).toBe(410);
     expect(reuseResponse.json()).toMatchObject({
-      code: "INVITE_CONSUMED"
+      code: "INVITE_UNAVAILABLE",
+      message: "This invite cannot be used. Ask Nomly to resend it."
     });
 
     const signInAfterAcceptance = await app.inject({

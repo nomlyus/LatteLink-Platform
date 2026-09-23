@@ -38,7 +38,16 @@ export function readOwnerInviteTokenFromUrl() {
 
   const match = window.location.pathname.match(/^\/invites\/([^/?#]+)\/?$/);
   if (!match?.[1]) {
-    return null;
+    if (!/^\/invites\/?$/.test(window.location.pathname)) {
+      return null;
+    }
+    const fragmentToken = window.location.hash.slice(1).trim();
+    if (!fragmentToken) return null;
+    try {
+      return decodeURIComponent(fragmentToken);
+    } catch {
+      return fragmentToken;
+    }
   }
 
   try {
@@ -81,6 +90,9 @@ export async function handleOwnerInviteFromUrl() {
   if (!token) {
     return false;
   }
+
+  // The token is now held only in memory and the address bar no longer carries it.
+  clearInviteUrl();
 
   clearStoredSession();
   state.session = null;

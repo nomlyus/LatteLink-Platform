@@ -75,7 +75,7 @@ CLIENT_DASHBOARD_BASE_URL=http://127.0.0.1:4173
 EMAIL_PROVIDER=console
 ```
 
-With that setup, owner invite creation logs the one-time setup URL instead of sending real email. For production delivery set `EMAIL_PROVIDER=resend`, `OWNER_INVITE_EMAIL_FROM`, and `RESEND_API_KEY`.
+With that setup, owner invite creation logs only recipient and location metadata; it never prints the one-time setup URL. Copy the link from the admin console response when testing locally. For email delivery set `EMAIL_PROVIDER=resend`, `OWNER_INVITE_EMAIL_FROM`, and `RESEND_API_KEY`.
 
 ### LAN Mode (Physical Device)
 

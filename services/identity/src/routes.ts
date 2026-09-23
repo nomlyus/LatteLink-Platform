@@ -659,16 +659,8 @@ function parseSessionTokenRequest(
   return parsed.data;
 }
 
-function ownerInviteErrorStatus(error: OwnerInviteError) {
-  switch (error.code) {
-    case "INVITE_NOT_FOUND":
-    case "OPERATOR_NOT_FOUND":
-      return 404;
-    case "INVITE_EXPIRED":
-    case "INVITE_CONSUMED":
-    case "INVITE_REVOKED":
-      return 410;
-  }
+function ownerInviteUnavailable(requestId: string) {
+  return buildApiError(requestId, "INVITE_UNAVAILABLE", "This invite cannot be used. Ask Nomly to resend it.");
 }
 
 async function sendOwnerInviteEmail(input: {
@@ -2761,7 +2753,7 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
         return operatorInviteLookupResponseSchema.parse(await lookupOwnerInvite(repository, token));
       } catch (error) {
         if (error instanceof OwnerInviteError) {
-          return reply.status(ownerInviteErrorStatus(error)).send(buildApiError(request.id, error.code, error.message));
+          return reply.status(410).send(ownerInviteUnavailable(request.id));
         }
 
         throw error;
@@ -2782,7 +2774,7 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
         return operatorInviteAcceptResponseSchema.parse(await acceptOwnerInvite(repository, token, input));
       } catch (error) {
         if (error instanceof OwnerInviteError) {
-          return reply.status(ownerInviteErrorStatus(error)).send(buildApiError(request.id, error.code, error.message));
+          return reply.status(410).send(ownerInviteUnavailable(request.id));
         }
 
         throw error;

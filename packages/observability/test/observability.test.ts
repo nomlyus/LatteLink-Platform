@@ -15,4 +15,14 @@ describe("observability helpers", () => {
     expect(sanitizeRequestUrl("/ready")).toBe("/ready");
     expect(sanitizeRequestUrl(undefined)).toBeUndefined();
   });
+
+  it("redacts invite tokens in paths and removes query and fragment material", () => {
+    expect(sanitizeRequestUrl("/v1/operator/invites/secret-token-123/accept?debug=1")).toBe(
+      "/v1/operator/invites/[redacted]/accept"
+    );
+    expect(sanitizeRequestUrl("https://client.example.com/invites/secret-token#secret-token")).toBe(
+      "https://client.example.com/invites/[redacted]"
+    );
+    expect(sanitizeRequestUrl("/v1/operator/invites?inviteToken=query-secret")).toBe("/v1/operator/invites");
+  });
 });

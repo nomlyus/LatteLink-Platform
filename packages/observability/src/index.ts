@@ -60,11 +60,12 @@ export function sanitizeRequestUrl(url: string | undefined) {
   }
 
   const queryStart = url.indexOf("?");
-  if (queryStart === -1) {
-    return url;
-  }
-
-  return url.slice(0, queryStart) || "/";
+  const fragmentStart = url.indexOf("#");
+  const cutAt = [queryStart, fragmentStart]
+    .filter((index) => index >= 0)
+    .reduce((min, index) => Math.min(min, index), url.length);
+  const path = url.slice(0, cutAt) || "/";
+  return path.replace(/((?:^|\/)invites?\/)[^/?#]+/gi, "$1[redacted]");
 }
 
 export function buildFastifyLoggerOptions(service: string, env: NodeJS.ProcessEnv = process.env): LoggerOptions {

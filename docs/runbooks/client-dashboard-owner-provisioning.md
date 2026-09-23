@@ -90,8 +90,9 @@ The owner invite flow:
 
 - creates or updates the operator user as role `owner`
 - keeps the owner inactive until invite acceptance
-- stores a hashed one-time invite token
+- stores only a hash of the one-time invite token (currently valid for seven days)
 - sends the invite email when email delivery is configured
+- places the token in the URL fragment so browsers and hosting access logs do not receive it; application request and error telemetry also redacts invite path/query material
 - activates the owner and stores the chosen password only after acceptance
 
 ## First-Time Owner Handoff

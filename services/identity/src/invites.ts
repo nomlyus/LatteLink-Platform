@@ -42,7 +42,10 @@ export function buildOwnerInviteUrl(baseUrl: string | undefined, token: string) 
     return undefined;
   }
 
-  return new URL(`/invites/${encodeURIComponent(token)}`, resolvedBaseUrl).toString();
+  const inviteUrl = new URL("/invites/", resolvedBaseUrl);
+  // Fragments are not sent in HTTP requests, referrers, or hosting access logs.
+  inviteUrl.hash = token;
+  return inviteUrl.toString();
 }
 
 function assertInviteUsable(invite: OwnerInviteRecord | undefined): asserts invite is OwnerInviteRecord {
@@ -156,6 +159,12 @@ export async function acceptOwnerInvite(
 ): Promise<OperatorInviteAcceptResponse> {
   const invite = await repository.getOwnerInviteByTokenHash(hashOwnerInviteToken(token));
   assertInviteUsable(invite);
+  // Claim the invite atomically before changing the operator password so only one
+  // concurrent acceptance can proceed past this point.
+  const consumedInvite = await repository.markOwnerInviteConsumed(invite.inviteId);
+  if (!consumedInvite) {
+    throw new OwnerInviteError("INVITE_CONSUMED", "Invite has already been accepted");
+  }
   const operator = await repository.updateOperatorUser(invite.operatorUserId, {
     active: true,
     password: input.password
@@ -163,14 +172,8 @@ export async function acceptOwnerInvite(
   if (!operator) {
     throw new OwnerInviteError("OPERATOR_NOT_FOUND", "Invited operator was not found");
   }
-  const consumedInvite = await repository.markOwnerInviteConsumed(invite.inviteId);
-
   return operatorInviteAcceptResponseSchema.parse({
     operator: operator as OperatorUserRecord,
-    invite: consumedInvite ?? {
-      ...invite,
-      status: "consumed",
-      consumedAt: new Date().toISOString()
-    }
+    invite: consumedInvite
   });
 }
