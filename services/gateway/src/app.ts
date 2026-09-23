@@ -104,7 +104,9 @@ export async function buildApp() {
     total: 0,
     status2xx: 0,
     status4xx: 0,
-    status5xx: 0
+    status5xx: 0,
+    rateLimited: 0,
+    authRateLimited: 0
   };
 
   await app.register(cors, {
@@ -182,6 +184,17 @@ export async function buildApp() {
   });
   app.addHook("onResponse", async (request, reply) => {
     requestMetrics.total += 1;
+
+    if (reply.statusCode === 429) {
+      requestMetrics.rateLimited += 1;
+      if (
+        request.url.startsWith("/v1/auth/") ||
+        request.url.startsWith("/v1/operator/auth/") ||
+        request.url.startsWith("/v1/internal-admin/auth/")
+      ) {
+        requestMetrics.authRateLimited += 1;
+      }
+    }
 
     if (reply.statusCode >= 500) {
       requestMetrics.status5xx += 1;

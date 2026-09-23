@@ -5759,6 +5759,116 @@ let previousFreeClientDashboardDomain: string | undefined;
     }
   });
 
+  it("keeps public requests on the peer-IP bucket despite forged user headers", async () => {
+    vi.stubEnv("GATEWAY_RATE_LIMIT_CATALOG_READ_MAX", "1");
+    vi.stubEnv("GATEWAY_RATE_LIMIT_WINDOW_MS", "60000");
+    const app = await buildApp();
+
+    try {
+      const first = await app.inject({
+        method: "GET",
+        url: "/v1/menu",
+        headers: { "x-user-id": "forged-first-user" }
+      });
+      const second = await app.inject({
+        method: "GET",
+        url: "/v1/menu",
+        headers: { "x-user-id": "forged-second-user" }
+      });
+
+      expect(first.statusCode).toBe(200);
+      expect(second.statusCode).toBe(429);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect((await app.inject({ method: "GET", url: "/metrics" })).json().requests).toMatchObject({
+        rateLimited: 1,
+        authRateLimited: 0
+      });
+    } finally {
+      vi.unstubAllEnvs();
+      await app.close();
+    }
+  });
+
+  it("uses verified operator identities after auth so one shared IP does not exhaust another operator", async () => {
+    vi.stubEnv("GATEWAY_RATE_LIMIT_STAFF_READ_MAX", "1");
+    vi.stubEnv("GATEWAY_RATE_LIMIT_WINDOW_MS", "60000");
+    const app = await buildApp();
+    const url = "/v1/admin/orders?locationId=flagship-01";
+
+    try {
+      const ownerFirst = await app.inject({ method: "GET", url, headers: ownerOperatorHeaders });
+      const ownerSecond = await app.inject({
+        method: "GET",
+        url,
+        headers: { ...ownerOperatorHeaders, "x-user-id": "forged-new-bucket" }
+      });
+      const managerFirst = await app.inject({ method: "GET", url, headers: managerOperatorHeaders });
+
+      expect(ownerFirst.statusCode).toBe(200);
+      expect(ownerSecond.statusCode).toBe(429);
+      expect(managerFirst.statusCode).toBe(200);
+    } finally {
+      vi.unstubAllEnvs();
+      await app.close();
+    }
+  });
+
+  it("caps forged unauthenticated requests before repeated identity lookups", async () => {
+    vi.stubEnv("GATEWAY_RATE_LIMIT_PROTECTED_PRE_AUTH_MAX", "2");
+    vi.stubEnv("GATEWAY_RATE_LIMIT_WINDOW_MS", "60000");
+    const app = await buildApp();
+
+    try {
+      const request = (claimedUser: string) => app.inject({
+        method: "GET",
+        url: "/v1/admin/orders?locationId=flagship-01",
+        headers: { authorization: "Bearer invalid-operator-token", "x-user-id": claimedUser }
+      });
+      const first = await request("claimed-a");
+      const second = await request("claimed-b");
+      const third = await request("claimed-c");
+
+      expect(first.statusCode).toBe(401);
+      expect(second.statusCode).toBe(401);
+      expect(third.statusCode).toBe(429);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.unstubAllEnvs();
+      await app.close();
+    }
+  });
+
+  it("limits public auth writes by peer IP and records a non-sensitive abuse counter", async () => {
+    vi.stubEnv("GATEWAY_RATE_LIMIT_AUTH_WRITE_MAX", "1");
+    vi.stubEnv("GATEWAY_RATE_LIMIT_WINDOW_MS", "60000");
+    const app = await buildApp();
+
+    try {
+      const first = await app.inject({
+        method: "POST",
+        url: "/v1/auth/dev-access",
+        headers: { "x-user-id": "claimed-a" },
+        payload: { email: "owner@gazellecoffee.com" }
+      });
+      const second = await app.inject({
+        method: "POST",
+        url: "/v1/auth/dev-access",
+        headers: { "x-user-id": "claimed-b" },
+        payload: { email: "owner@gazellecoffee.com" }
+      });
+
+      expect(first.statusCode).toBe(200);
+      expect(second.statusCode).toBe(429);
+      expect((await app.inject({ method: "GET", url: "/metrics" })).json().requests).toMatchObject({
+        rateLimited: 1,
+        authRateLimited: 1
+      });
+    } finally {
+      vi.unstubAllEnvs();
+      await app.close();
+    }
+  });
+
   it("rate limits order write endpoints when configured threshold is reached", async () => {
     vi.stubEnv("GATEWAY_RATE_LIMIT_ORDERS_WRITE_MAX", "1");
     vi.stubEnv("GATEWAY_RATE_LIMIT_WINDOW_MS", "60000");
