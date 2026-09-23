@@ -137,6 +137,7 @@ export function createPostgresReportingRepository(db: PersistenceDb): ReportingR
               WHEN (r.allocation_json ->> 'merchandiseAmountCents') ~ '^[0-9]+$'
               THEN (r.allocation_json ->> 'merchandiseAmountCents')::bigint
               WHEN o.successful_refund_json ->> 'refundId' = r.refund_id::text
+                AND (o.successful_refund_json ->> 'amountCents')::integer = r.amount_cents
                 AND (o.successful_refund_json -> 'allocation' ->> 'merchandiseAmountCents') ~ '^[0-9]+$'
               THEN (o.successful_refund_json -> 'allocation' ->> 'merchandiseAmountCents')::bigint
               WHEN q.quote_id IS NOT NULL
@@ -149,6 +150,7 @@ export function createPostgresReportingRepository(db: PersistenceDb): ReportingR
               WHEN (r.allocation_json ->> 'merchandiseAmountCents') ~ '^[0-9]+$'
               THEN 0::bigint
               WHEN o.successful_refund_json ->> 'refundId' = r.refund_id::text
+                AND (o.successful_refund_json ->> 'amountCents')::integer = r.amount_cents
                 AND (o.successful_refund_json -> 'allocation' ->> 'merchandiseAmountCents') ~ '^[0-9]+$'
               THEN 0::bigint
               WHEN q.quote_id IS NULL
