@@ -92,10 +92,10 @@ Location: `services/loyalty/src/routes.ts`
 Description: The earn/redeem rate is hardcoded (1 point per 1 cent, 1 point = 1 cent redemption value). Merchants cannot set their own loyalty program parameters.  
 Resolution: Create `loyalty_programs` table per merchant. See ROADMAP Gate 3.
 
-**TD-16** — Passkey UI missing on mobile (server is ready)  
+**TD-16** — Passkey enrollment deferred pending secure account binding
 Location: `apps/mobile/app/auth.tsx`  
-Description: Passkey (WebAuthn) registration and authentication is fully implemented in the identity service, but the mobile app has no UI to trigger it. Customers cannot register or use passkeys.  
-Resolution: Add passkey register/auth flow to the mobile auth screen. See ROADMAP Gate 2.
+Description: The identity service contains WebAuthn routes, but customer enrollment is blocked in Nomly 1.2.0 because registration is not safely bound to the authenticated customer account. The mobile app also has no UI. Authentication-route availability is not a promise that passkeys are a supported customer feature.
+Resolution: Revisit account binding and obtain independent security review before exposing registration or adding customer UI.
 
 **TD-17** — Admin console owner page has copy for reset flows not implemented  
 Location: `apps/admin-console/src/`  

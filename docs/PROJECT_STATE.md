@@ -41,7 +41,7 @@ Nomly is a quiet, infrastructural company building the digital surface area that
 | `services/identity` | Customer auth, operator auth, internal admin auth, profile management, sessions, and owner provisioning. | Fastify, TypeScript, Zod, SimpleWebAuthn, shared persistence |
 | `services/catalog` | Menu, app config, store config, home/news cards, internal location bootstrap, and payment profile storage. | Fastify, TypeScript, Zod, shared persistence |
 | `services/orders` | Quotes, orders, payment state, cancelation, and status progression. | Fastify, TypeScript, Zod, shared persistence |
-| `services/payments` | Clover charging/refunds/OAuth/webhooks plus Stripe mobile checkout and Stripe Connect onboarding/dashboard links. | Fastify, TypeScript, Zod, Stripe SDK, shared persistence |
+| `services/payments` | Stripe mobile checkout and Stripe Connect onboarding/dashboard links; legacy Clover charging/refund/OAuth code remains but is unavailable in Nomly 1.2.0. | Fastify, TypeScript, Zod, Stripe SDK, shared persistence |
 | `services/loyalty` | Loyalty balance and ledger logic. | Fastify, TypeScript, Zod, shared persistence |
 | `services/notifications` | Push-token registration, order-state enqueueing, and outbox processing. | Fastify, TypeScript, Zod, shared persistence |
 
@@ -167,9 +167,9 @@ Code that exists but is incomplete, stubbed, or fallback-heavy:
   - Still carries fallback app config, store config, menu, and card data in code.
 
 Known issues or gaps visible from code:
-- Passkey auth exists in backend contracts and services, but the mobile app still does not expose a passkey registration or sign-in UI.
+- WebAuthn route code exists, but customer passkey enrollment is blocked in Nomly 1.2.0 pending secure authenticated account binding and independent security review; the mobile app has no passkey UI.
 - `/account/alerts` is a profile editor, not an alerts/preferences surface.
-- The app still depends on runtime config for payment readiness; misconfigured Stripe/Clover states surface as unavailability.
+- The app still depends on runtime config for Stripe payment readiness. Legacy Clover connection/order paths are deferred and unavailable in Nomly 1.2.0.
 - Native beta defaults are now generic (`LatteLink Beta`, `com.lattelink.mobile.beta`, `merchant.com.lattelink.mobile.beta`), but production tenant-specific mobile build configuration is still env-driven rather than dynamically provisioned.
 
 ### 3.3 Backend Services
@@ -180,6 +180,8 @@ What they are and who uses them:
 - Workers are background jobs rather than user-facing surfaces.
 
 #### Gateway (`services/gateway`)
+
+The route inventory below reflects paths present in source, not necessarily features available to clients. In Nomly 1.2.0, passkey registration and Clover OAuth connect/callback/refresh are blocked with `FEATURE_NOT_AVAILABLE`; see `docs/runbooks/g1-deferred-features-420.md`.
 
 Routes:
 - `GET /health`
@@ -302,7 +304,7 @@ Routes:
 
 Known issues or gaps:
 - Refresh rotation currently behaves as idle-timeout rotation; the code does not enforce a separate absolute-session lifetime policy.
-- Customer passkeys are fully supported server-side, but mobile still lacks a passkey UI/client integration.
+- Customer passkey enrollment is intentionally unavailable pending secure account binding and security review; mobile also lacks passkey UI/client integration.
 
 #### Catalog (`services/catalog`)
 
@@ -359,6 +361,8 @@ Known issues or gaps:
 - Full behavior depends on catalog, payments, loyalty, and notifications being correctly configured.
 
 #### Payments (`services/payments`)
+
+The route inventory below includes legacy paths registered in source. In Nomly 1.2.0, Clover OAuth connect/callback/refresh and the legacy Clover order-submit endpoint are unavailable; they do not participate in customer checkout or order fulfillment. Clover's intended future role is read-only full-day reporting, which is not implemented yet.
 
 Routes:
 - `GET /health`
@@ -637,7 +641,7 @@ Major schema areas visible in code:
   - charge rows
   - refund rows
   - webhook event tables
-  - Clover OAuth connections
+  - Clover OAuth connections (legacy/deferred; not exposed for 1.2.0)
 - Identity:
   - customer users
   - customer sessions
@@ -738,7 +742,8 @@ Active-tenant conclusion:
 ## 6. What Is Deferred / Not Yet Built
 
 Items explicitly visible from code:
-- Mobile customer auth still does not expose passkey registration or sign-in.
+- Customer passkey enrollment is blocked pending secure account binding and security review; mobile does not expose passkeys.
+- Clover OAuth and legacy POS order submission are unavailable in 1.2.0. Future Clover reporting is read-only and not implemented.
 - Operator Apple SSO UI is present but disabled with `Coming soon`.
 - Landing-page components `About`, `Features`, `Pricing`, `Analytics`, `LeadCapture`, and `StructuredData` exist but are not mounted on the live home page.
 - `packages/persistence/src/index.ts` still contains deprecated table-bootstrap code alongside migrations.

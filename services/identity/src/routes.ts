@@ -862,6 +862,7 @@ async function resolveInternalAdminFromBearer(params: {
 export type RegisterRoutesOptions = {
   allowDevCustomerAccess?: boolean;
   allowDevOperatorAccess?: boolean;
+  allowDeferredFeatureTestRoutes?: boolean;
   repository?: IdentityRepository;
 };
 
@@ -870,9 +871,9 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
   const gatewayApiToken = process.env.GATEWAY_INTERNAL_API_TOKEN?.trim() || undefined;
   const passkeyConfig = loadPasskeyConfig();
   // Registration has no authenticated account binding yet. Keep the legacy flow
-  // available only to the isolated test harness until that boundary is repaired.
+  // available only when an isolated test explicitly requests it.
   const requireSafePasskeyEnrollment = async (request: FastifyRequest, reply: FastifyReply) => {
-    if (process.env.NODE_ENV === "test" && process.env.VITEST === "true") return;
+    if (options.allowDeferredFeatureTestRoutes === true) return;
     return reply.status(404).send(buildApiError(request.id, "FEATURE_NOT_AVAILABLE", "Passkey enrollment is not available"));
   };
   const rateLimitWindowMs = toPositiveInteger(process.env.IDENTITY_RATE_LIMIT_WINDOW_MS, defaultRateLimitWindowMs);

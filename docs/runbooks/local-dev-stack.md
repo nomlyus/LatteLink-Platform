@@ -184,4 +184,4 @@ If unreachable:
 - Local environments default to simulated Clover mode unless live Clover credentials are configured.
 - Native Apple Pay requires iOS device support + correct app entitlements; fallback token mode remains available for local dev.
 - Passkey endpoints enforce real WebAuthn verification; manual/demo payload entry fails by design.
-- If passkey UI is re-enabled, Expo Go is not sufficient and requires a custom dev client build.
+- Passkey enrollment is intentionally unavailable in Nomly 1.2.0 pending secure account binding and security review. If a future approved passkey UI is built, Expo Go is not sufficient and requires a custom dev client build.

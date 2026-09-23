@@ -15,13 +15,15 @@ export async function getAdapter(params: {
   oauthConfig: CloverOAuthConfig;
   locationId?: string;
   requestId: string;
+  allowDeferredFeatureTestRoutes?: boolean;
 }) {
   const runtimeCredentials = await resolveRuntimeCloverCredentials({
     logger: params.logger,
     repository: params.repository,
     providerConfig: params.providerConfig,
     oauthConfig: params.oauthConfig,
-    locationId: params.locationId
+    locationId: params.locationId,
+    allowDeferredFeatureTestRoutes: params.allowDeferredFeatureTestRoutes
   });
   if (isCloverCredentialsUnavailableError(runtimeCredentials)) {
     const error = Object.assign(new Error(runtimeCredentials.error.message), runtimeCredentials.error);

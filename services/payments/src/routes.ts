@@ -1502,9 +1502,10 @@ export async function resolveRuntimeCloverCredentials(params: {
   oauthConfig: CloverOAuthConfig;
   locationId?: string;
   allowRefresh?: boolean;
+  allowDeferredFeatureTestRoutes?: boolean;
 }): Promise<CloverRuntimeCredentials | CloverCredentialsUnavailableError | undefined> {
-  const { logger, repository, providerConfig, oauthConfig, locationId, allowRefresh = true } = params;
-  if (process.env.NODE_ENV !== "test" || process.env.VITEST !== "true") {
+  const { logger, repository, providerConfig, oauthConfig, locationId, allowRefresh = true, allowDeferredFeatureTestRoutes = false } = params;
+  if (!allowDeferredFeatureTestRoutes) {
     return buildCloverCredentialsUnavailableError();
   }
   if (providerConfig.mode !== "live") {
@@ -2111,10 +2112,10 @@ function isStripeAccountUnavailableForActiveCredentialsError(error: unknown) {
   return false;
 }
 
-export async function registerRoutes(app: FastifyInstance) {
+export async function registerRoutes(app: FastifyInstance, options: { allowDeferredFeatureTestRoutes?: boolean } = {}) {
   const repository = await createPaymentsRepository(app.log);
   const requireDeferredCloverTestHarness = async (request: FastifyRequest, reply: FastifyReply) => {
-    if (process.env.NODE_ENV === "test" && process.env.VITEST === "true") return;
+    if (options.allowDeferredFeatureTestRoutes === true) return;
     return reply.status(404).send(serviceErrorSchema.parse({
       code: "FEATURE_NOT_AVAILABLE",
       message: "Clover integration is not available",
@@ -2164,7 +2165,8 @@ export async function registerRoutes(app: FastifyInstance) {
       providerConfig: cloverProvider,
       oauthConfig: cloverOAuthConfig,
       locationId,
-      allowRefresh: false
+      allowRefresh: false,
+      allowDeferredFeatureTestRoutes: options.allowDeferredFeatureTestRoutes
     });
     const resolvedCredentials = isCloverCredentialsUnavailableError(runtimeCredentials) ? undefined : runtimeCredentials;
 
@@ -3260,7 +3262,8 @@ export async function registerRoutes(app: FastifyInstance) {
         providerConfig: cloverProvider,
         oauthConfig: cloverOAuthConfig,
         locationId: order.locationId,
-        requestId: request.id
+        requestId: request.id,
+        allowDeferredFeatureTestRoutes: options.allowDeferredFeatureTestRoutes
       });
       await adapter.submitOrder(order);
       const latestConnection = await repository.findLatestCloverConnection(order.locationId);

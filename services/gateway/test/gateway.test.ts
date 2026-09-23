@@ -2653,9 +2653,10 @@ let previousFreeClientDashboardDomain: string | undefined;
     await app.close();
   });
 
-  it("contains passkey enrollment and Clover OAuth outside the isolated test harness", async () => {
+  it("does not enable passkey enrollment or Clover OAuth from process environment", async () => {
     const previousVitest = process.env.VITEST;
-    process.env.VITEST = "false";
+    process.env.NODE_ENV = "test";
+    process.env.VITEST = "true";
     try {
       const app = await buildApp();
       for (const [method, url] of [
@@ -5565,7 +5566,7 @@ let previousFreeClientDashboardDomain: string | undefined;
   });
 
   it("preserves Clover OAuth callback redirects through the gateway", async () => {
-    const app = await buildApp();
+    const app = await buildApp({ allowDeferredFeatureTestRoutes: true });
     const response = await app.inject({
       method: "GET",
       url: "/v1/payments/clover/oauth/callback?merchant_id=test-merchant-123"
@@ -5632,7 +5633,7 @@ let previousFreeClientDashboardDomain: string | undefined;
   it("rate limits Clover OAuth refresh writes when configured threshold is reached", async () => {
     vi.stubEnv("GATEWAY_RATE_LIMIT_PAYMENTS_WRITE_MAX", "1");
     vi.stubEnv("GATEWAY_RATE_LIMIT_WINDOW_MS", "60000");
-    const app = await buildApp();
+    const app = await buildApp({ allowDeferredFeatureTestRoutes: true });
 
     try {
       const firstResponse = await app.inject({

@@ -87,8 +87,9 @@ describe("payments service", () => {
     await app.close();
   });
 
-  it("contains legacy Clover connection and order submission outside the isolated test harness", async () => {
-    vi.stubEnv("VITEST", "false");
+  it("does not enable legacy Clover connection or order submission from process environment", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("VITEST", "true");
     const app = await buildApp();
     for (const [method, url] of [
       ["GET", "/v1/payments/clover/oauth/connect"],
@@ -1328,7 +1329,7 @@ describe("payments service", () => {
       throw new Error(`unexpected Clover URL: ${url}`);
     });
 
-    const app = await buildApp();
+    const app = await buildApp({ allowDeferredFeatureTestRoutes: true });
     await connectCloverOauth(app, "merchant-ready-1");
     const ready = await app.inject({ method: "GET", url: "/ready" });
 
@@ -1658,7 +1659,7 @@ describe("payments service", () => {
     vi.stubEnv("CLOVER_APP_SECRET", "clover-app-secret");
     vi.stubEnv("CLOVER_OAUTH_REDIRECT_URI", "https://example.test/v1/payments/clover/oauth/callback");
 
-    const app = await buildApp();
+    const app = await buildApp({ allowDeferredFeatureTestRoutes: true });
     const response = await app.inject({
       method: "GET",
       url: "/v1/payments/clover/oauth/connect"
@@ -1688,7 +1689,7 @@ describe("payments service", () => {
     vi.stubEnv("CLOVER_APP_SECRET", "clover-app-secret");
     vi.stubEnv("CLOVER_OAUTH_REDIRECT_URI", "https://example.test/v1/payments/clover/oauth/callback");
 
-    const app = await buildApp();
+    const app = await buildApp({ allowDeferredFeatureTestRoutes: true });
 
     const response = await app.inject({
       method: "GET",
@@ -2138,7 +2139,7 @@ describe("payments service", () => {
       throw new Error(`unexpected live Clover URL: ${url}`);
     });
 
-    const app = await buildApp();
+    const app = await buildApp({ allowDeferredFeatureTestRoutes: true });
     await connectCloverOauth(app, "merchant-sbx", "flagship-01");
     const response = await app.inject({
       method: "POST",

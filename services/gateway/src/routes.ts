@@ -1694,9 +1694,9 @@ async function requireAuthenticatedCustomer(params: {
   return undefined;
 }
 
-export async function registerRoutes(app: FastifyInstance) {
+export async function registerRoutes(app: FastifyInstance, options: { allowDeferredFeatureTestRoutes?: boolean } = {}) {
   const requireDeferredFeatureTestHarness = async (request: FastifyRequest, reply: FastifyReply) => {
-    if (process.env.NODE_ENV === "test" && process.env.VITEST === "true") return;
+    if (options.allowDeferredFeatureTestRoutes === true) return;
     return reply.status(404).send(apiErrorSchema.parse({
       code: "FEATURE_NOT_AVAILABLE",
       message: "This feature is not available",
