@@ -29,6 +29,13 @@ export type IdentitySecretStorageBackfillResult = {
   operatorSessions: number;
   internalAdminSessions: number;
   appleRefreshTokens: number;
+  unresolved: {
+    appleRefreshTokens: number;
+  };
+  scanned: {
+    appleRefreshTokens: number;
+  };
+  nextCursor: string | null;
   remaining: {
     customerSessions: number;
     operatorSessions: number;
@@ -59,8 +66,12 @@ export async function backfillIdentitySecretStorageBatch(
   db: PersistenceDb,
   cipher: AppleRefreshTokenCipher,
   requestedBatchSize = maximumBatchSize,
+  afterCursor?: string,
 ): Promise<IdentitySecretStorageBackfillResult> {
   const batchSize = positiveBatchSize(requestedBatchSize);
+  const afterUserId = afterCursor
+    ? cipher.decodeBackfillCursor(afterCursor)
+    : undefined;
 
   return db.transaction().execute(async (trx) => {
     const result: IdentitySecretStorageBackfillResult = {
@@ -68,6 +79,13 @@ export async function backfillIdentitySecretStorageBatch(
       operatorSessions: 0,
       internalAdminSessions: 0,
       appleRefreshTokens: 0,
+      unresolved: {
+        appleRefreshTokens: 0,
+      },
+      scanned: {
+        appleRefreshTokens: 0,
+      },
+      nextCursor: null,
       remaining: {
         customerSessions: 0,
         operatorSessions: 0,
@@ -150,62 +168,100 @@ export async function backfillIdentitySecretStorageBatch(
       ] = Number(remaining.rows[0]?.count ?? 0);
     }
 
-    const appleCandidate = sql<boolean>`
-      apple_refresh_token !~ ${supportedAppleCipherPattern}
-      OR split_part(apple_refresh_token, ':', 3) <> ${cipher.activeKeyId}
-    `;
-    const appleRows = await sql<{
-      user_id: string;
-      apple_refresh_token: string;
-    }>`
-      SELECT user_id, apple_refresh_token
-      FROM identity_users
-      WHERE apple_refresh_token IS NOT NULL
-        AND ${appleCandidate}
-      ORDER BY created_at ASC, user_id ASC
-      LIMIT ${batchSize}
-      FOR UPDATE SKIP LOCKED
-    `.execute(trx);
+    const appleRows = afterUserId
+      ? await sql<{
+          user_id: string;
+          apple_refresh_token: string;
+        }>`
+          SELECT user_id::text AS user_id, apple_refresh_token
+          FROM identity_users
+          WHERE apple_refresh_token IS NOT NULL
+            AND user_id::text > ${afterUserId}
+          ORDER BY user_id::text ASC
+          LIMIT ${batchSize}
+        `.execute(trx)
+      : await sql<{
+          user_id: string;
+          apple_refresh_token: string;
+        }>`
+          SELECT user_id::text AS user_id, apple_refresh_token
+          FROM identity_users
+          WHERE apple_refresh_token IS NOT NULL
+          ORDER BY user_id::text ASC
+          LIMIT ${batchSize}
+        `.execute(trx);
+
+    result.scanned.appleRefreshTokens = appleRows.rows.length;
 
     for (const row of appleRows.rows) {
       const currentValue = row.apple_refresh_token;
-      let plaintext: string;
+      let plaintext: string | undefined;
+      let needsReencryption = false;
+
       if (isEncryptedAppleRefreshToken(currentValue)) {
-        if (!cipher.keyId(currentValue)) {
-          throw new Error(
-            "Apple refresh token ciphertext has an unsupported format",
-          );
+        const keyId = cipher.keyId(currentValue);
+        if (!keyId || !isSupportedAppleCiphertext(currentValue)) {
+          result.unresolved.appleRefreshTokens += 1;
+          result.remaining.appleRefreshTokens += 1;
+          continue;
         }
-        // Decrypting and re-encrypting retains integrity and user-bound AAD
-        // while allowing a key-ID rotation without logging provider material.
-        plaintext = cipher.decrypt(currentValue, row.user_id);
+
+        try {
+          // Validate the tag and user-bound AAD even for rows already using
+          // the active key. Ciphertext format alone is not verification.
+          plaintext = cipher.decrypt(currentValue, row.user_id);
+        } catch {
+          result.unresolved.appleRefreshTokens += 1;
+          result.remaining.appleRefreshTokens += 1;
+          continue;
+        }
+        needsReencryption = keyId !== cipher.activeKeyId;
       } else {
+        // Unknown/reserved markers must never be reinterpreted as plaintext.
+        if (currentValue.startsWith("aes256gcm:")) {
+          result.unresolved.appleRefreshTokens += 1;
+          result.remaining.appleRefreshTokens += 1;
+          continue;
+        }
         plaintext = currentValue;
+        needsReencryption = true;
       }
 
+      if (!needsReencryption) continue;
+      if (plaintext === undefined) {
+        result.unresolved.appleRefreshTokens += 1;
+        result.remaining.appleRefreshTokens += 1;
+        continue;
+      }
       const replacement = cipher.encrypt(plaintext, row.user_id);
-      if (replacement === currentValue) continue;
-      await sql`
+      const updated = await sql<{ user_id: string }>`
         UPDATE identity_users
         SET apple_refresh_token = ${replacement}, updated_at = NOW()
         WHERE user_id = ${row.user_id}
           AND apple_refresh_token = ${currentValue}
+        RETURNING user_id::text AS user_id
       `.execute(trx);
+      if (updated.rows.length === 0) {
+        // A concurrent identity operation won the race. Leave a conservative
+        // remaining count so the next run will validate the current value.
+        result.remaining.appleRefreshTokens += 1;
+        continue;
+      }
+
       result.appleRefreshTokens += 1;
     }
 
-    const remainingApple = await sql<{ count: string }>`
-      SELECT COUNT(*)::text AS count
-      FROM identity_users
-      WHERE apple_refresh_token IS NOT NULL
-        AND ${appleCandidate}
-    `.execute(trx);
-    result.remaining.appleRefreshTokens = Number(
-      remainingApple.rows[0]?.count ?? 0,
-    );
-
+    if (appleRows.rows.length === batchSize) {
+      const lastUserId = appleRows.rows[appleRows.rows.length - 1]?.user_id;
+      if (lastUserId)
+        result.nextCursor = cipher.encodeBackfillCursor(lastUserId);
+    }
     return result;
   });
+}
+
+function isSupportedAppleCiphertext(value: string) {
+  return new RegExp(supportedAppleCipherPattern).test(value);
 }
 
 /** Explicit dev-only cutover. Never use this entrypoint against a live DB from an agent run. */
@@ -249,9 +305,16 @@ export async function backfillIdentitySecretStorage(): Promise<IdentitySecretSto
     process.env.IDENTITY_APPLE_TOKEN_ENCRYPTION_KEYS,
     process.env.IDENTITY_APPLE_TOKEN_ENCRYPTION_ACTIVE_KEY_ID,
   );
+  const afterCursor = process.env.IDENTITY_SECRET_BACKFILL_CURSOR?.trim();
+  if (afterCursor) cipher.decodeBackfillCursor(afterCursor);
   const db = createPostgresDb(databaseUrl);
   try {
-    return await backfillIdentitySecretStorageBatch(db, cipher);
+    return await backfillIdentitySecretStorageBatch(
+      db,
+      cipher,
+      maximumBatchSize,
+      afterCursor,
+    );
   } finally {
     await db.destroy();
   }

@@ -2,13 +2,17 @@ import {
   createCipheriv,
   createDecipheriv,
   createHash,
+  hkdfSync,
   randomBytes,
 } from "node:crypto";
 
 const sessionDigestPrefix = "sha256:v1:";
 const appleCipherPrefix = "aes256gcm:v1:";
 const appleCipherMarker = "aes256gcm:";
+const backfillCursorPrefix = "nomly-backfill:v1:";
 const appleKeyIdPattern = /^[A-Za-z0-9_-]{1,32}$/;
+const userIdPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Session bearer tokens contain 256 random bits, so one-way SHA-256 digests are safe lookup keys. */
 export function digestSessionToken(token: string): string {
@@ -41,6 +45,8 @@ export type AppleRefreshTokenCipher = {
   encrypt(token: string, userId: string): string;
   decrypt(value: string, userId: string): string;
   keyId(value: string): string | undefined;
+  encodeBackfillCursor(userId: string): string;
+  decodeBackfillCursor(cursor: string): string;
 };
 
 function parseAppleKeyRing(
@@ -114,6 +120,19 @@ export function createAppleRefreshTokenCipher(
     return key;
   };
 
+  const cursorKey = (keyId: string) =>
+    Buffer.from(
+      hkdfSync(
+        "sha256",
+        requireKey(keyId),
+        "nomly-identity-secret-storage-v1",
+        "apple-backfill-cursor-v1",
+        32,
+      ),
+    );
+  const cursorAad = (keyId: string) =>
+    Buffer.from(`${backfillCursorPrefix}${keyId}`, "utf8");
+
   const keyIdFromValue = (value: string) => {
     const match = value.match(
       /^aes256gcm:v1:([A-Za-z0-9_-]{1,32}):([A-Za-z0-9_-]+)$/,
@@ -172,6 +191,65 @@ export function createAppleRefreshTokenCipher(
       ]).toString("utf8");
     },
     keyId: keyIdFromValue,
+    encodeBackfillCursor(userId) {
+      if (!userIdPattern.test(userId)) {
+        throw new Error("Identity secret backfill cursor user ID is invalid");
+      }
+      const nonce = randomBytes(12);
+      const cursorCipher = createCipheriv(
+        "aes-256-gcm",
+        cursorKey(currentKeyId),
+        nonce,
+      );
+      cursorCipher.setAAD(cursorAad(currentKeyId));
+      const ciphertext = Buffer.concat([
+        cursorCipher.update(userId, "utf8"),
+        cursorCipher.final(),
+      ]);
+      const encoded = Buffer.concat([
+        nonce,
+        cursorCipher.getAuthTag(),
+        ciphertext,
+      ]).toString("base64url");
+      return `${backfillCursorPrefix}${currentKeyId}:${encoded}`;
+    },
+    decodeBackfillCursor(cursor) {
+      const match = cursor.match(
+        /^nomly-backfill:v1:([A-Za-z0-9_-]{1,32}):([A-Za-z0-9_-]+)$/,
+      );
+      const keyId = match?.[1];
+      const encoded = match?.[2];
+      if (!keyId || !encoded) {
+        throw new Error(
+          "Identity secret backfill cursor is invalid or unavailable",
+        );
+      }
+
+      try {
+        const payload = Buffer.from(encoded, "base64url");
+        if (payload.toString("base64url") !== encoded || payload.length < 29) {
+          throw new Error("invalid cursor payload");
+        }
+        const cursorDecipher = createDecipheriv(
+          "aes-256-gcm",
+          cursorKey(keyId),
+          payload.subarray(0, 12),
+        );
+        cursorDecipher.setAAD(cursorAad(keyId));
+        cursorDecipher.setAuthTag(payload.subarray(12, 28));
+        const userId = Buffer.concat([
+          cursorDecipher.update(payload.subarray(28)),
+          cursorDecipher.final(),
+        ]).toString("utf8");
+        if (!userIdPattern.test(userId))
+          throw new Error("invalid cursor user ID");
+        return userId;
+      } catch {
+        throw new Error(
+          "Identity secret backfill cursor is invalid or unavailable",
+        );
+      }
+    },
   };
 }
 

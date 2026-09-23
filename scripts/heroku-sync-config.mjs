@@ -2,6 +2,7 @@
 
 import { pathToFileURL } from "node:url";
 import { calculateDevHerokuPoolBudget } from "./check-heroku-pool-budget.mjs";
+import { validateIdentitySecretStorageConfig } from "./identity-secret-storage-config.mjs";
 
 const legacyServicePoolKeys = [
   "IDENTITY_POSTGRES_POOL_MAX",
@@ -76,6 +77,9 @@ export const herokuConfigKeys = [
   "APPLE_KEY_ID",
   "APPLE_PRIVATE_KEY",
   "APPLE_ALLOWED_CLIENT_IDS",
+  "IDENTITY_APPLE_TOKEN_ENCRYPTION_KEYS",
+  "IDENTITY_APPLE_TOKEN_ENCRYPTION_ACTIVE_KEY_ID",
+  "IDENTITY_ALLOW_LEGACY_SECRETS",
   "GOOGLE_OAUTH_CLIENT_ID",
   "GOOGLE_OAUTH_CLIENT_SECRET",
   "GOOGLE_OAUTH_STATE_SECRET",
@@ -173,6 +177,10 @@ export async function syncHerokuConfig(env = process.env) {
     throw new Error("HEROKU_APP_NAME is required");
   }
 
+  if (env.DEPLOY_ENV === "dev") {
+    validateIdentitySecretStorageConfig(env);
+  }
+
   const appPath = `/apps/${encodeURIComponent(appName)}/config-vars`;
   const current = await herokuRequest(appPath);
   const desiredEnv = effectiveHerokuConfigEnv(env);
@@ -184,6 +192,12 @@ export async function syncHerokuConfig(env = process.env) {
   if (env.DEPLOY_ENV === "dev") {
     for (const key of legacyServicePoolKeys) {
       if (key in current) changes[key] = null;
+    }
+    if (
+      !desired.IDENTITY_ALLOW_LEGACY_SECRETS &&
+      "IDENTITY_ALLOW_LEGACY_SECRETS" in current
+    ) {
+      changes.IDENTITY_ALLOW_LEGACY_SECRETS = null;
     }
   }
   const keys = Object.keys(changes).sort();

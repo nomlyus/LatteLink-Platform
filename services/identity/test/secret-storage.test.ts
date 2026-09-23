@@ -103,6 +103,38 @@ describe("identity secret storage", () => {
     ).toThrow(/key is unavailable/);
   });
 
+  it("uses authenticated opaque cursors for bounded Apple backfill pages", () => {
+    const keyRing = createKeyRing();
+    const cipher = createAppleRefreshTokenCipher(
+      JSON.stringify(keyRing),
+      "active",
+    );
+    const userId = "037dcb74-e957-4c8e-85e4-8270eb027d2c";
+    const cursor = cipher.encodeBackfillCursor(userId);
+
+    expect(cursor).toMatch(/^nomly-backfill:v1:active:/);
+    expect(cursor).not.toContain(userId);
+    expect(cipher.decodeBackfillCursor(cursor)).toBe(userId);
+    expect(
+      createAppleRefreshTokenCipher(
+        JSON.stringify(keyRing),
+        "old",
+      ).decodeBackfillCursor(cursor),
+    ).toBe(userId);
+    expect(() => cipher.decodeBackfillCursor(`${cursor}tampered`)).toThrow(
+      /cursor is invalid or unavailable/,
+    );
+    expect(() =>
+      createAppleRefreshTokenCipher(
+        JSON.stringify({ active: randomBytes(32).toString("base64") }),
+        "active",
+      ).decodeBackfillCursor(cursor),
+    ).toThrow(/cursor is invalid or unavailable/);
+    expect(() => cipher.encodeBackfillCursor("not-a-user-id")).toThrow(
+      /cursor user ID is invalid/,
+    );
+  });
+
   it("fails closed on malformed or unknown ciphertext markers instead of treating them as plaintext", () => {
     const cipher = createAppleRefreshTokenCipher(
       JSON.stringify({ active: randomBytes(32).toString("base64") }),
@@ -162,12 +194,19 @@ describe("identity secret storage", () => {
   it("requires explicit dev confirmation and an expected Supabase dev project before backfill", async () => {
     vi.stubEnv("DEPLOY_ENV", "prod");
     vi.stubEnv("IDENTITY_SECRET_BACKFILL_CONFIRM", "dev-only");
-    await expect(backfillIdentitySecretStorage()).rejects.toThrow(/restricted to explicitly confirmed dev/);
+    await expect(backfillIdentitySecretStorage()).rejects.toThrow(
+      /restricted to explicitly confirmed dev/,
+    );
 
     vi.stubEnv("DEPLOY_ENV", "dev");
-    vi.stubEnv("DATABASE_URL", "postgres://test:test@127.0.0.1:1/identity_secret_test");
+    vi.stubEnv(
+      "DATABASE_URL",
+      "postgres://test:test@127.0.0.1:1/identity_secret_test",
+    );
     vi.stubEnv("EXPECTED_SUPABASE_PROJECT_REF", "devref");
     vi.stubEnv("IDENTITY_SECRET_BACKFILL_DEV_PROJECT_REF", "devref");
-    await expect(backfillIdentitySecretStorage()).rejects.toThrow(/Supabase project ref mismatch/);
+    await expect(backfillIdentitySecretStorage()).rejects.toThrow(
+      /Supabase project ref mismatch/,
+    );
   });
 });

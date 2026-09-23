@@ -431,6 +431,28 @@ describeWithLocalPostgres(
       )
     `.execute(inspectDb);
 
+      const invalidActiveCipherRows = [
+        {
+          userId: randomUUID(),
+          subject: `apple-sub-${randomUUID()}`,
+          ciphertext: cipher.encrypt(
+            `wrong-aad-${randomBytes(16).toString("hex")}`,
+            "different-user-id",
+          ),
+        },
+        {
+          userId: randomUUID(),
+          subject: `apple-sub-${randomUUID()}`,
+          ciphertext: `aes256gcm:v1:active:${randomBytes(60).toString("base64url")}`,
+        },
+      ];
+      for (const row of invalidActiveCipherRows) {
+        await sql`
+        INSERT INTO identity_users (user_id, apple_sub, apple_client_id, apple_refresh_token)
+        VALUES (${row.userId}, ${row.subject}, 'client-test', ${row.ciphertext})
+      `.execute(inspectDb);
+      }
+
       vi.stubEnv("DEPLOY_ENV", "dev");
       vi.stubEnv("IDENTITY_ALLOW_LEGACY_SECRETS", "dev-cutover");
       expect(
@@ -446,53 +468,106 @@ describeWithLocalPostgres(
         refreshToken: legacyApple[0]!.refreshToken,
       });
 
-      const firstBatch = await backfillIdentitySecretStorageBatch(
-        inspectDb,
-        cipher,
-        1,
-      );
-      expect(firstBatch).toMatchObject({
-        customerSessions: 1,
-        operatorSessions: 1,
-        internalAdminSessions: 1,
-        appleRefreshTokens: 1,
-        remaining: {
-          customerSessions: 1,
-          operatorSessions: 1,
-          internalAdminSessions: 1,
-          appleRefreshTokens: 2,
+      const scanBackfillPages = async () => {
+        let cursor: string | undefined;
+        let pages = 0;
+        const summary = {
+          customerSessions: 0,
+          operatorSessions: 0,
+          internalAdminSessions: 0,
+          appleRefreshTokens: 0,
+          appleUnresolved: 0,
+          appleRemaining: 0,
+          appleRowsScanned: 0,
+          finalRemaining: {
+            customerSessions: 0,
+            operatorSessions: 0,
+            internalAdminSessions: 0,
+            appleRefreshTokens: 0,
+          },
+        };
+
+        while (true) {
+          const page = await backfillIdentitySecretStorageBatch(
+            inspectDb,
+            cipher,
+            1,
+            cursor,
+          );
+          pages += 1;
+          expect(page.scanned.appleRefreshTokens).toBeLessThanOrEqual(1);
+          summary.customerSessions += page.customerSessions;
+          summary.operatorSessions += page.operatorSessions;
+          summary.internalAdminSessions += page.internalAdminSessions;
+          summary.appleRefreshTokens += page.appleRefreshTokens;
+          summary.appleUnresolved += page.unresolved.appleRefreshTokens;
+          summary.appleRemaining += page.remaining.appleRefreshTokens;
+          summary.appleRowsScanned += page.scanned.appleRefreshTokens;
+          summary.finalRemaining = page.remaining;
+
+          if (pages === 1 && page.nextCursor) {
+            const retry = await backfillIdentitySecretStorageBatch(
+              inspectDb,
+              cipher,
+              1,
+            );
+            expect(retry.appleRefreshTokens).toBe(0);
+            expect(retry.nextCursor).not.toBeNull();
+            expect(cipher.decodeBackfillCursor(retry.nextCursor!)).toBe(
+              cipher.decodeBackfillCursor(page.nextCursor),
+            );
+          }
+
+          if (!page.nextCursor) break;
+          cursor = page.nextCursor;
+        }
+
+        expect(pages).toBeGreaterThan(1);
+        return summary;
+      };
+
+      const migrationPass = await scanBackfillPages();
+      expect(migrationPass).toMatchObject({
+        customerSessions: 2,
+        operatorSessions: 2,
+        internalAdminSessions: 2,
+        appleRefreshTokens: 3,
+        appleUnresolved: 2,
+        appleRemaining: 2,
+        finalRemaining: {
+          customerSessions: 0,
+          operatorSessions: 0,
+          internalAdminSessions: 0,
+          appleRefreshTokens: 0,
         },
       });
-      const secondBatch = await backfillIdentitySecretStorageBatch(
-        inspectDb,
-        cipher,
-        1,
-      );
-      expect(secondBatch.remaining).toEqual({
-        customerSessions: 0,
-        operatorSessions: 0,
-        internalAdminSessions: 0,
-        appleRefreshTokens: 1,
-      });
-      const thirdBatch = await backfillIdentitySecretStorageBatch(
-        inspectDb,
-        cipher,
-        1,
-      );
-      expect(thirdBatch.remaining).toEqual({
-        customerSessions: 0,
-        operatorSessions: 0,
-        internalAdminSessions: 0,
+      expect(migrationPass.appleRowsScanned).toBeGreaterThanOrEqual(5);
+
+      const verificationPass = await scanBackfillPages();
+      expect(verificationPass).toMatchObject({
         appleRefreshTokens: 0,
+        appleUnresolved: 2,
+        appleRemaining: 2,
       });
-      expect(
-        await backfillIdentitySecretStorageBatch(inspectDb, cipher, 1),
-      ).toMatchObject({
-        customerSessions: 0,
-        operatorSessions: 0,
-        internalAdminSessions: 0,
+      expect(JSON.stringify(verificationPass)).not.toContain(
+        invalidActiveCipherRows[0]!.ciphertext,
+      );
+      expect(JSON.stringify(verificationPass)).not.toContain(
+        invalidActiveCipherRows[1]!.ciphertext,
+      );
+
+      for (const row of invalidActiveCipherRows) {
+        await sql`
+          UPDATE identity_users
+          SET apple_refresh_token = ${cipher.encrypt(`repaired-${randomUUID()}`, row.userId)}
+          WHERE user_id = ${row.userId}
+        `.execute(inspectDb);
+      }
+      expect(await scanBackfillPages()).toMatchObject({
         appleRefreshTokens: 0,
-        remaining: {
+        appleUnresolved: 0,
+        appleRemaining: 0,
+        finalRemaining: {
           customerSessions: 0,
           operatorSessions: 0,
           internalAdminSessions: 0,
