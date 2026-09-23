@@ -18,6 +18,7 @@ type Logger = Pick<Console, "info" | "warn" | "error">;
 
 export type NotificationsDispatchRuntime = {
   processOutbox: (baseUrl: string, batchSize: number, internalApiToken: string) => Promise<NotificationsDispatchResult>;
+  processReceipts: (baseUrl: string, batchSize: number, internalApiToken: string) => Promise<{ processed: number; providerAccepted: number; failed: number; expired: number; unresolved: number }>;
   logger: Logger;
   setTimeoutFn: (callback: () => void, delayMs: number) => ReturnType<typeof setTimeout>;
   clearTimeoutFn: (handle: ReturnType<typeof setTimeout>) => void;
@@ -109,6 +110,15 @@ export function createNotificationsDispatchRuntime(
       const payload = await response.json();
       return outboxProcessResponseSchema.parse(payload);
     },
+    processReceipts: async (baseUrl, batchSize, internalApiToken) => {
+      const response = await fetch(`${baseUrl}/v1/notifications/internal/receipts/process`, {
+        method: "POST", headers: { "content-type": "application/json", "x-internal-token": internalApiToken },
+        body: JSON.stringify({ batchSize })
+      });
+      if (!response.ok) throw new Error(`notifications receipt process request failed with status ${response.status}`);
+      return z.object({ processed: z.number(), providerAccepted: z.number(), failed: z.number(),
+        expired: z.number(), unresolved: z.number() }).parse(await response.json());
+    },
     logger,
     setTimeoutFn: (callback, delayMs) => setTimeout(callback, delayMs),
     clearTimeoutFn: (handle) => clearTimeout(handle)
@@ -177,6 +187,8 @@ export function startNotificationsDispatchWorker(
     runCycle: async () => {
       try {
         await processOutboxBatch(config, runtime);
+        const receipts = await runtime.processReceipts(config.notificationsBaseUrl, config.batchSize, config.internalApiToken);
+        runtime.logger.info(`[notifications-dispatch] receipts processed=${receipts.processed} providerAccepted=${receipts.providerAccepted} failed=${receipts.failed} expired=${receipts.expired} unresolved=${receipts.unresolved}`);
       } catch (error) {
         runtime.logger.error("[notifications-dispatch] cycle failed", error);
       }
