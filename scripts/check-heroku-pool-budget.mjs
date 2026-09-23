@@ -35,8 +35,8 @@ export function calculateDevHerokuPoolBudget(env) {
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
   try {
     const result = calculateDevHerokuPoolBudget(process.env);
-    console.info(`[heroku-pool-budget] app maximum=${result.maximum} (general=${result.general}, critical=${result.critical}, reconciler=${result.reconciler}); planning budget=${result.budget}, reserve=${result.reserved}`);
-    console.info("[heroku-pool-budget] This is not a verified Supavisor allocation.");
+    console.info(`[heroku-pool-budget] app maximum=${result.maximum} (general=${result.general}, critical=${result.critical}, reconciler=${result.reconciler}); configured pooler limit=${result.budget}, reserve=${result.reserved}`);
+    console.info("[heroku-pool-budget] Confirm this limit still matches dev Supavisor settings before raising it.");
   } catch (error) {
     console.error(`[heroku-pool-budget] ${error.message}`);
     process.exitCode = 1;

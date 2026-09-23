@@ -51,6 +51,8 @@ test("dev config applies and validates shared pools even when an older workflow 
   assert.equal(effective.POSTGRES_SHARED_GENERAL_POOL_MAX, "4");
   assert.equal(effective.POSTGRES_SHARED_CRITICAL_POOL_MAX, "4");
   assert.equal(effective.POSTGRES_SHARED_RECONCILER_POOL_MAX, "1");
+  assert.equal(effective.POSTGRES_POOL_BUDGET_LIMIT, "15");
+  assert.equal(effective.POSTGRES_POOL_HEADROOM_MIN, "6");
 });
 
 test("production config is passed through unchanged", () => {

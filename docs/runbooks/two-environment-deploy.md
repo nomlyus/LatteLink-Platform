@@ -206,9 +206,12 @@ Compose production example:
 
 The Compose production gate is a configured assumption, not a verified
 production Supabase pooler limit. Confirm the actual project allocation in the
-Supabase dashboard before raising any pool size. The live dev database reports
-`max_connections = 60`, but that PostgreSQL backend ceiling is **not** the
-Supavisor session pool size or a guarantee that all 60 slots belong to Nomly.
+Supabase dashboard before raising any pool size. The live dev project's
+Supavisor pool size is **15** per user/database/mode combination and its max
+client connections is **200**, according to the user-provided Database Settings
+screenshot on 2026-09-22. The dev database separately reports
+`max_connections = 60`; that PostgreSQL-wide ceiling is **not** the Nomly
+session-pool allocation or a guarantee that all 60 slots belong to Nomly.
 
 Deploy scripts write and validate:
 

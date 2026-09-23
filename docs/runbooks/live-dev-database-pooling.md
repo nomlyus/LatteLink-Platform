@@ -53,9 +53,12 @@ query was found to require service-specific session state. Kysely owns each
 transaction's acquired connection and releases it after completion.
 
 The dev configuration sync validates `general + critical + enabled reconciler
-+ reserved <= planning budget` before changing Heroku config. Current values
-are `4 + 4 + 1 + 10 <= 30`. The `30` is an application planning limit, **not**
-a verified provider allocation. The sync also removes the seven ignored
++ reserved <= configured Supavisor session pool size` before changing Heroku
+config. Current values are `4 + 4 + 1 + 6 = 15`. The `15` comes from the
+dev project's database settings screenshot supplied by the user on
+2026-09-22. The six-slot reserve includes release-migration and other
+same-user/database/session-mode clients; it is not a measured minimum.
+The sync also removes the seven ignored
 per-service variables from the dev Heroku app. GitHub `workflow_run` executes
 the workflow definition from `main` even when it checks out a `develop`
 commit, so this validation lives in the checked-out sync script as well as in
@@ -68,17 +71,25 @@ A read-only query through the dev session pooler reported PostgreSQL
 `9` idle) at one sample on 2026-09-22. This gives **42 slots below the raw
 PostgreSQL ceiling at that instant**, not 42 guaranteed Nomly slots. Supabase
 services, migrations, admin sessions, backups, and other clients share the
-database limit. The project-specific Supavisor pool-size setting and maximum
-client allocation were **not accessible** from the current Heroku/database
-credentials; confirm them in Supabase Dashboard > Database > Settings before
-declaring the provider-side headroom known.
+database limit. The user supplied a screenshot of **LatteLink-Dev** Database >
+Settings on 2026-09-22 showing **connection pool size 15** and **max client
+connections 200** on Nano compute. The former caps Supavisor backend
+connections per user/database/mode combination; the latter caps clients
+connected to the pooler and does **not** mean 200 concurrent database queries.
+Nomly's single-process maximum of nine leaves **six configured pool slots**
+for release migrations and other clients of this same combination. A
+release-phase migration can temporarily use two more, leaving four. These
+are configured ceilings, not observed spare connections at peak load; other
+clients may use them. The raw PostgreSQL limit of 60 remains a distinct
+database-wide ceiling shared with Supabase services.
 
 Session pooling keeps a backend connection assigned for a client session. It
 does not multiplex idle application clients into fewer backend connections.
-The new per-process ceiling is nine; two identical processes would be 18, but
-Eco and the present in-process worker/event setup are not ready for horizontal
-scaling. This is a connection-budget illustration, not a recommendation to add
-dynos before the other architecture gates.
+The new per-process ceiling is nine; two identical processes would be 18,
+**exceeding the current 15-connection session pool setting** before migration
+headroom. Eco and the present in-process worker/event setup are also not ready
+for horizontal scaling. Do not add a second dyno without revisiting these
+architecture and connection-budget gates.
 
 ## Migrations
 
@@ -123,15 +134,16 @@ this probe cannot uniquely apportion CPU/network/provider time.
 
 For merchant #2, this setup is **provisionally sufficient for the tested
 12-buyer burst**, without a connection-limit error. This is not a final
-capacity approval: merchant #2's peak order rate, a sustained test, paid-order
-webhook/settlement concurrency, and the actual Supavisor allocation are still
-unknown. Do not raise pool sizes or add dynos on this evidence alone.
+capacity approval: merchant #2's peak order rate, a sustained test, and
+paid-order webhook/settlement concurrency are still unknown. The provider
+allocation is now known, but peak use is not. Do not raise pool sizes or add
+dynos on this evidence alone.
 
 ## Follow-up and boundaries
 
-- Read the actual Supavisor session pool size and client limit from the dev
-  project dashboard, then compare peak database and pooler metrics with this
-  app-side ceiling. A single snapshot does not establish peak headroom.
+- Compare peak database and shared-pooler metrics with the 15-connection
+  session allocation and nine-connection app ceiling; one snapshot does not
+  establish peak headroom.
 - Repeat a sustained order-path test and include card confirmation, webhook
   settlement, reporting and notification traffic before setting a client-#2
   peak-throughput target. Do not bypass rate limits merely to pass a test.

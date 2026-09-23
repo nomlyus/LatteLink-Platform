@@ -9,8 +9,8 @@ const base = {
   POSTGRES_SHARED_CRITICAL_POOL_MAX: "4",
   POSTGRES_SHARED_RECONCILER_POOL_MAX: "1",
   PAYMENT_RECONCILER_ENABLED: "true",
-  POSTGRES_POOL_BUDGET_LIMIT: "30",
-  POSTGRES_POOL_HEADROOM_MIN: "10"
+  POSTGRES_POOL_BUDGET_LIMIT: "15",
+  POSTGRES_POOL_HEADROOM_MIN: "6"
 };
 
 test("counts the two shared pools and enabled reconciler", () => {
@@ -23,7 +23,7 @@ test("excludes a disabled reconciler", () => {
 
 test("blocks over-budget changes", () => {
   assert.throws(
-    () => calculateDevHerokuPoolBudget({ ...base, POSTGRES_SHARED_CRITICAL_POOL_MAX: "17" }),
+    () => calculateDevHerokuPoolBudget({ ...base, POSTGRES_SHARED_CRITICAL_POOL_MAX: "5" }),
     /exceeds planning budget/
   );
 });

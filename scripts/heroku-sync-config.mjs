@@ -21,6 +21,8 @@ export function effectiveHerokuConfigEnv(env) {
     POSTGRES_SHARED_GENERAL_POOL_MAX: "4",
     POSTGRES_SHARED_CRITICAL_POOL_MAX: "4",
     POSTGRES_SHARED_RECONCILER_POOL_MAX: "1",
+    POSTGRES_POOL_BUDGET_LIMIT: "15",
+    POSTGRES_POOL_HEADROOM_MIN: "6",
   };
   calculateDevHerokuPoolBudget(configured);
   return configured;
