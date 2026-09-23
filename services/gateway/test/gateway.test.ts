@@ -52,6 +52,24 @@ let previousFreeClientDashboardDomain: string | undefined;
   let queuedOrderListPayloads: Array<Array<ReturnType<typeof buildOrderPayload>>>;
   let failOrderListFetchWhenQueueEmpty: boolean;
 
+  it("does not echo caller-supplied invite URL material for unknown routes", async () => {
+    const app = await buildApp();
+    const marker = "synthetic-invite-credential";
+    const response = await app.inject({
+      method: "GET",
+      url: `/v1/operator/invites/${marker}/accept?token=${marker}`
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.body).not.toContain(marker);
+    expect(response.json()).toMatchObject({
+      code: "ROUTE_NOT_FOUND",
+      message: "The requested route was not found."
+    });
+
+    await app.close();
+  });
+
   function buildOrderPayload(
     orderId: string,
     status: "PENDING_PAYMENT" | "PAID" | "IN_PREP" | "READY" | "COMPLETED" | "CANCELED"
