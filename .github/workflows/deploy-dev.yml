@@ -234,6 +234,12 @@ jobs:
           printf 'https://heroku:%s@git.heroku.com\n' "${HEROKU_API_KEY}" > "$HOME/.git-credentials"
           chmod 600 "$HOME/.git-credentials"
           git push --force "https://git.heroku.com/${HEROKU_APP_NAME}.git" "${DEPLOY_SHA}:refs/heads/main"
+          remote_sha="$(git ls-remote "https://git.heroku.com/${HEROKU_APP_NAME}.git" refs/heads/main | cut -f1)"
+          if [ "${remote_sha}" != "${DEPLOY_SHA}" ]; then
+            echo "Heroku Git ref does not match the exact deployment SHA." >&2
+            exit 1
+          fi
+          echo "Heroku Git ref verified at ${remote_sha}."
 
       - name: Wait for the dev API
         env:
@@ -248,6 +254,14 @@ jobs:
           done
           echo "Dev API did not become healthy." >&2
           exit 1
+
+      - name: Verify release migration provenance
+        env:
+          HEROKU_APP_NAME: ${{ vars.HEROKU_APP_NAME }}
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+          DEPLOY_ENV: dev
+          DEPLOY_SHA: ${{ needs.preflight.outputs.deploy_sha }}
+        run: node scripts/verify-heroku-release-provenance.mjs
 
       - name: Smoke check deployed stack
         env:

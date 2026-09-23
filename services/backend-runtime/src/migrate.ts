@@ -1,9 +1,11 @@
 import {
   assertExpectedDatabaseTarget,
   createPostgresDb,
+  getMigrationProvenance,
   getDatabaseUrl,
   runMigrations,
 } from "@lattelink/persistence";
+import { resolveDeploymentProvenance } from "./provenance.js";
 
 const databaseUrl = getDatabaseUrl();
 if (!databaseUrl) {
@@ -15,7 +17,15 @@ const db = createPostgresDb(databaseUrl);
 
 try {
   await runMigrations(db);
-  console.info("[backend-runtime] database migrations completed");
+  const migrations = await getMigrationProvenance(db);
+  if (migrations.pendingCount !== 0) {
+    throw new Error("database migration history remains pending after migrateToLatest");
+  }
+  console.info(`[backend-runtime] release provenance ${JSON.stringify({
+    phase: "migration",
+    ...resolveDeploymentProvenance(process.env),
+    migrations,
+  })}`);
 } finally {
   await db.destroy();
 }

@@ -3,7 +3,7 @@ import { Kysely, PostgresDialect } from "kysely";
 import type { Generated } from "kysely";
 import { Client, Pool, type PoolConfig } from "pg";
 
-export { runMigrations } from "./migrate.js";
+export { getMigrationProvenance, runMigrations } from "./migrate.js";
 export { sql } from "kysely";
 
 export interface PaymentsChargeTable {

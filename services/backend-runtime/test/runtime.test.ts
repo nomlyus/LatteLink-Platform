@@ -39,6 +39,11 @@ function createDependencies(input: {
     startWorkers: async () => {
       input.events.push("workers:start");
       return {
+        states: {
+          notificationsDispatch: "started",
+          paymentReconciler: "disabled",
+          menuSync: "disabled",
+        },
         handles: [
           {
             stop: () => {
@@ -57,6 +62,7 @@ function createDependencies(input: {
 describe("backend runtime lifecycle", () => {
   it("starts internal services before the public gateway and shuts down in reverse", async () => {
     const events: string[] = [];
+    const log = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const runtime = await startBackendRuntime({
       env: { PORT: "8181" } as NodeJS.ProcessEnv,
       dependencies: createDependencies({ events }),
@@ -67,6 +73,9 @@ describe("backend runtime lifecycle", () => {
       "listen:gateway",
       "workers:start",
     ]);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('"phase":"worker-startup"'));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('"paymentReconciler":"disabled"'));
+    log.mockRestore();
 
     await runtime.close();
     await runtime.close();

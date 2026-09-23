@@ -30,9 +30,16 @@ import {
   type BackendRuntimeConfig,
   type InternalServiceName,
 } from "./config.js";
+import { resolveDeploymentProvenance } from "./provenance.js";
 
 type WorkerHandle = {
   stop: () => void;
+};
+
+export type WorkerStates = {
+  notificationsDispatch: "started";
+  paymentReconciler: "started" | "disabled";
+  menuSync: "started" | "disabled";
 };
 
 export type RuntimeDependencies = {
@@ -42,6 +49,7 @@ export type RuntimeDependencies = {
   >;
   startWorkers: (env: NodeJS.ProcessEnv) => Promise<{
     handles: WorkerHandle[];
+    states: WorkerStates;
     close: () => Promise<void>;
   }>;
 };
@@ -68,6 +76,8 @@ const defaultDependencies: RuntimeDependencies = {
 async function startRuntimeWorkers(env: NodeJS.ProcessEnv) {
   const handles: WorkerHandle[] = [];
   let paymentRuntime: PaymentReconcilerRuntime | undefined;
+  let paymentStarted = false;
+  let menuStarted = false;
 
   const notificationsConfig = buildNotificationsDispatchConfig(env);
   const paymentConfig = buildPaymentReconcilerConfig(env);
@@ -91,12 +101,14 @@ async function startRuntimeWorkers(env: NodeJS.ProcessEnv) {
 
     if (paymentConfig.enabled && paymentRuntime) {
       handles.push(startPaymentReconcilerWorker(paymentConfig, paymentRuntime));
+      paymentStarted = true;
     } else {
       console.info("[backend-runtime] payment reconciler disabled");
     }
 
     if (menuConfig.enabled && menuRuntime) {
       handles.push(startMenuSyncWorker(menuConfig, menuRuntime));
+      menuStarted = true;
     } else {
       console.info("[backend-runtime] menu sync disabled");
     }
@@ -110,6 +122,11 @@ async function startRuntimeWorkers(env: NodeJS.ProcessEnv) {
 
   return {
     handles,
+    states: {
+      notificationsDispatch: "started" as const,
+      paymentReconciler: paymentStarted ? "started" as const : "disabled" as const,
+      menuSync: menuStarted ? "started" as const : "disabled" as const,
+    },
     close: async () => {
       await paymentRuntime?.close?.();
     },
@@ -124,6 +141,7 @@ export async function startBackendRuntime(
 ): Promise<BackendRuntime> {
   const env = input.env ?? process.env;
   const dependencies = input.dependencies ?? defaultDependencies;
+  const deployment = resolveDeploymentProvenance(env);
   const config = resolveBackendRuntimeConfig(env);
   const internalEnvironment = buildInternalServiceEnvironment(config);
 
@@ -159,6 +177,11 @@ export async function startBackendRuntime(
     const workers = await dependencies.startWorkers(env);
     workerHandles = workers.handles;
     closeWorkerResources = workers.close;
+    console.info(`[backend-runtime] release provenance ${JSON.stringify({
+      phase: "worker-startup",
+      ...deployment,
+      workers: workers.states,
+    })}`);
   } catch (error) {
     for (const app of apps.reverse()) {
       await app.close().catch(() => undefined);
