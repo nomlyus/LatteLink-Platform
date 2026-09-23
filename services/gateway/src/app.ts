@@ -89,7 +89,7 @@ function resolveAllowedCorsOriginHostSuffixes() {
   return parseOriginHostSuffixCandidate(process.env.CORS_ALLOWED_ORIGIN_HOST_SUFFIXES);
 }
 
-export async function buildApp() {
+export async function buildApp(options: { allowDeferredFeatureTestRoutes?: boolean } = {}) {
   const serviceName = "gateway";
   initializeSentry({ service: serviceName });
   const publicApiBaseUrl = process.env.PUBLIC_API_BASE_URL ?? "http://localhost:8080/v1";
@@ -242,7 +242,7 @@ export async function buildApp() {
     requests: requestMetrics
   }));
 
-  await registerRoutes(app);
+  await registerRoutes(app, options);
 
   return app;
 }

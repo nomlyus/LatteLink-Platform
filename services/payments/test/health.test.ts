@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Stripe from "stripe";
 import { buildApp } from "../src/app.js";
-import { summarizeCloverResponseForLogs } from "../src/routes.js";
+import { createInMemoryRepository, summarizeCloverResponseForLogs } from "../src/routes.js";
 
 const internalPaymentsToken = "orders-internal-token";
 const stripeWebhookSecret = "whsec_test_secret";
@@ -25,10 +25,10 @@ function stripeWebhookHeaders(payload: string, extraHeaders?: Record<string, str
   };
 }
 
-async function connectCloverOauth(app: Awaited<ReturnType<typeof buildApp>>, merchantId = "merchant-oauth-1") {
+async function connectCloverOauth(app: Awaited<ReturnType<typeof buildApp>>, merchantId = "merchant-oauth-1", locationId?: string) {
   const connectResponse = await app.inject({
     method: "GET",
-    url: "/v1/payments/clover/oauth/connect"
+    url: `/v1/payments/clover/oauth/connect${locationId ? `?locationId=${encodeURIComponent(locationId)}` : ""}`
   });
   expect(connectResponse.statusCode).toBe(200);
 
@@ -85,6 +85,36 @@ describe("payments service", () => {
       }
     });
     await app.close();
+  });
+
+  it("does not enable legacy Clover connection or order submission from process environment", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("VITEST", "true");
+    const app = await buildApp();
+    for (const [method, url] of [
+      ["GET", "/v1/payments/clover/oauth/connect"],
+      ["GET", "/v1/payments/clover/oauth/callback"],
+      ["POST", "/v1/payments/clover/oauth/refresh"],
+      ["POST", "/v1/payments/orders/submit"]
+    ] as const) {
+      const response = await app.inject({ method, url, headers: internalHeaders(), payload: method === "POST" ? {} : undefined });
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toMatchObject({ code: "FEATURE_NOT_AVAILABLE" });
+    }
+    await app.close();
+  });
+
+  it("never falls back to another location's Clover connection", async () => {
+    const repository = createInMemoryRepository();
+    await repository.saveCloverConnection({
+      merchantId: "clover-merchant-a",
+      locationId: "location-a",
+      accessToken: "synthetic-test-token"
+    });
+    expect((await repository.findLatestCloverConnection("location-a"))?.merchantId).toBe("clover-merchant-a");
+    expect(await repository.findLatestCloverConnection("location-b")).toBeUndefined();
+    expect(await repository.findLatestCloverConnection("")).toBeUndefined();
+    await repository.close();
   });
 
   it("does not expose a Clover customer charge route in the active checkout service", async () => {
@@ -1299,7 +1329,7 @@ describe("payments service", () => {
       throw new Error(`unexpected Clover URL: ${url}`);
     });
 
-    const app = await buildApp();
+    const app = await buildApp({ allowDeferredFeatureTestRoutes: true });
     await connectCloverOauth(app, "merchant-ready-1");
     const ready = await app.inject({ method: "GET", url: "/ready" });
 
@@ -1629,7 +1659,7 @@ describe("payments service", () => {
     vi.stubEnv("CLOVER_APP_SECRET", "clover-app-secret");
     vi.stubEnv("CLOVER_OAUTH_REDIRECT_URI", "https://example.test/v1/payments/clover/oauth/callback");
 
-    const app = await buildApp();
+    const app = await buildApp({ allowDeferredFeatureTestRoutes: true });
     const response = await app.inject({
       method: "GET",
       url: "/v1/payments/clover/oauth/connect"
@@ -1659,7 +1689,7 @@ describe("payments service", () => {
     vi.stubEnv("CLOVER_APP_SECRET", "clover-app-secret");
     vi.stubEnv("CLOVER_OAUTH_REDIRECT_URI", "https://example.test/v1/payments/clover/oauth/callback");
 
-    const app = await buildApp();
+    const app = await buildApp({ allowDeferredFeatureTestRoutes: true });
 
     const response = await app.inject({
       method: "GET",
@@ -2109,8 +2139,8 @@ describe("payments service", () => {
       throw new Error(`unexpected live Clover URL: ${url}`);
     });
 
-    const app = await buildApp();
-    await connectCloverOauth(app, "merchant-sbx");
+    const app = await buildApp({ allowDeferredFeatureTestRoutes: true });
+    await connectCloverOauth(app, "merchant-sbx", "flagship-01");
     const response = await app.inject({
       method: "POST",
       url: "/v1/payments/orders/submit",

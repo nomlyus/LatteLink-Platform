@@ -15,6 +15,7 @@ import { registerRoutes } from "./routes.js";
 export type BuildAppOptions = {
   allowDevCustomerAccess?: boolean;
   allowDevOperatorAccess?: boolean;
+  allowDeferredFeatureTestRoutes?: boolean;
   repository?: IdentityRepository;
 };
 

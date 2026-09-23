@@ -303,7 +303,7 @@ function toCloverConnection(row: PersistedCloverConnectionRow): CloverConnection
   };
 }
 
-function createInMemoryRepository(): PaymentsRepository {
+export function createInMemoryRepository(): PaymentsRepository {
   const refundResultsByIdempotency = new Map<string, RefundResponse>();
   const refundResultByRefundId = new Map<string, RefundResponse>();
   const latestRefundIdByOrderPayment = new Map<string, string>();
@@ -311,7 +311,6 @@ function createInMemoryRepository(): PaymentsRepository {
   const stripeWebhookEventsById = new Map<string, PersistedStripeWebhookEventRow>();
   const stripePaymentIntentsById = new Map<string, PersistedStripePaymentIntentRow>();
   const cloverConnectionsByMerchantId = new Map<string, CloverConnection>();
-  let latestCloverMerchantId: string | undefined;
 
   return {
     backend: "memory",
@@ -357,15 +356,11 @@ function createInMemoryRepository(): PaymentsRepository {
       return cloverConnectionsByMerchantId.get(merchantId);
     },
     async findLatestCloverConnection(locationId) {
-      const byLocation = Array.from(cloverConnectionsByMerchantId.values()).find(
-        (c) => c.locationId === locationId
-      );
-      if (byLocation) return byLocation;
-      return latestCloverMerchantId ? cloverConnectionsByMerchantId.get(latestCloverMerchantId) : undefined;
+      if (!locationId) return undefined;
+      return Array.from(cloverConnectionsByMerchantId.values()).find((c) => c.locationId === locationId);
     },
     async saveCloverConnection(connection) {
       cloverConnectionsByMerchantId.set(connection.merchantId, connection);
-      latestCloverMerchantId = connection.merchantId;
       return connection;
     },
     async findWebhookResult(eventKey) {
@@ -523,21 +518,14 @@ async function createPostgresRepository(connectionString: string): Promise<Payme
       return row ? toCloverConnection(row as PersistedCloverConnectionRow) : undefined;
     },
     async findLatestCloverConnection(locationId) {
+      if (!locationId) return undefined;
       const byLocation = await db
         .selectFrom("payments_clover_connections")
         .selectAll()
         .where("location_id", "=", locationId)
         .orderBy("updated_at", "desc")
         .executeTakeFirst();
-      if (byLocation) return toCloverConnection(byLocation as PersistedCloverConnectionRow);
-
-      const row = await db
-        .selectFrom("payments_clover_connections")
-        .selectAll()
-        .orderBy("updated_at", "desc")
-        .executeTakeFirst();
-
-      return row ? toCloverConnection(row as PersistedCloverConnectionRow) : undefined;
+      return byLocation ? toCloverConnection(byLocation as PersistedCloverConnectionRow) : undefined;
     },
     async saveCloverConnection(connection) {
       await db
@@ -1514,15 +1502,19 @@ export async function resolveRuntimeCloverCredentials(params: {
   oauthConfig: CloverOAuthConfig;
   locationId?: string;
   allowRefresh?: boolean;
+  allowDeferredFeatureTestRoutes?: boolean;
 }): Promise<CloverRuntimeCredentials | CloverCredentialsUnavailableError | undefined> {
-  const { logger, repository, providerConfig, oauthConfig, locationId, allowRefresh = true } = params;
+  const { logger, repository, providerConfig, oauthConfig, locationId, allowRefresh = true, allowDeferredFeatureTestRoutes = false } = params;
+  if (!allowDeferredFeatureTestRoutes) {
+    return buildCloverCredentialsUnavailableError();
+  }
   if (providerConfig.mode !== "live") {
     return undefined;
   }
 
   const connectedMerchant = locationId
     ? await repository.findLatestCloverConnection(locationId)
-    : await repository.findLatestCloverConnection("");
+    : undefined;
 
   if (connectedMerchant) {
     let resolvedConnection = connectedMerchant;
@@ -2120,8 +2112,16 @@ function isStripeAccountUnavailableForActiveCredentialsError(error: unknown) {
   return false;
 }
 
-export async function registerRoutes(app: FastifyInstance) {
+export async function registerRoutes(app: FastifyInstance, options: { allowDeferredFeatureTestRoutes?: boolean } = {}) {
   const repository = await createPaymentsRepository(app.log);
+  const requireDeferredCloverTestHarness = async (request: FastifyRequest, reply: FastifyReply) => {
+    if (options.allowDeferredFeatureTestRoutes === true) return;
+    return reply.status(404).send(serviceErrorSchema.parse({
+      code: "FEATURE_NOT_AVAILABLE",
+      message: "Clover integration is not available",
+      requestId: request.id
+    }));
+  };
   const cloverProvider = resolveCloverProviderConfig(app.log);
   const cloverOAuthConfig = resolveCloverOAuthConfig();
   const catalogBaseUrl = process.env.CATALOG_SERVICE_BASE_URL ?? "http://127.0.0.1:3002";
@@ -2165,7 +2165,8 @@ export async function registerRoutes(app: FastifyInstance) {
       providerConfig: cloverProvider,
       oauthConfig: cloverOAuthConfig,
       locationId,
-      allowRefresh: false
+      allowRefresh: false,
+      allowDeferredFeatureTestRoutes: options.allowDeferredFeatureTestRoutes
     });
     const resolvedCredentials = isCloverCredentialsUnavailableError(runtimeCredentials) ? undefined : runtimeCredentials;
 
@@ -3049,7 +3050,7 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   );
 
-  app.get("/v1/payments/clover/oauth/connect", async (request, reply) => {
+  app.get("/v1/payments/clover/oauth/connect", { preHandler: requireDeferredCloverTestHarness }, async (request, reply) => {
     if (!cloverOAuthConfig.configured || !cloverOAuthConfig.appId || !cloverOAuthConfig.redirectUri || !cloverOAuthConfig.stateSigningSecret) {
       return reply.status(503).send(
         serviceErrorSchema.parse({
@@ -3073,7 +3074,7 @@ export async function registerRoutes(app: FastifyInstance) {
     });
   });
 
-  app.get("/v1/payments/clover/oauth/callback", async (request, reply) => {
+  app.get("/v1/payments/clover/oauth/callback", { preHandler: requireDeferredCloverTestHarness }, async (request, reply) => {
     const query = cloverOauthCallbackQuerySchema.parse(request.query ?? {});
     if (!cloverOAuthConfig.configured || !cloverOAuthConfig.stateSigningSecret) {
       return reply.status(503).send(
@@ -3187,7 +3188,7 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   });
 
-  app.post("/v1/payments/clover/oauth/refresh", async (request, reply) => {
+  app.post("/v1/payments/clover/oauth/refresh", { preHandler: requireDeferredCloverTestHarness }, async (request, reply) => {
     if (!cloverOAuthConfig.configured) {
       return reply.status(503).send(
         serviceErrorSchema.parse({
@@ -3247,7 +3248,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.post(
     "/v1/payments/orders/submit",
-    { preHandler: [app.rateLimit(paymentsWriteRateLimit), requireOrdersInternalWriteAccess] },
+    { preHandler: [app.rateLimit(paymentsWriteRateLimit), requireOrdersInternalWriteAccess, requireDeferredCloverTestHarness] },
     async (request, reply) => {
     const order = orderSchema.parse(request.body);
     if (cloverProvider.mode === "simulated") {
@@ -3261,7 +3262,8 @@ export async function registerRoutes(app: FastifyInstance) {
         providerConfig: cloverProvider,
         oauthConfig: cloverOAuthConfig,
         locationId: order.locationId,
-        requestId: request.id
+        requestId: request.id,
+        allowDeferredFeatureTestRoutes: options.allowDeferredFeatureTestRoutes
       });
       await adapter.submitOrder(order);
       const latestConnection = await repository.findLatestCloverConnection(order.locationId);

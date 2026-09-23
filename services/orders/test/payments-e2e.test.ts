@@ -340,7 +340,7 @@ describe.sequential("orders + payments e2e", () => {
     process.env.ORDERS_INTERNAL_API_TOKEN = internalPaymentsToken;
     process.env.ALLOW_UNAUTHENTICATED_ORDERS_GATEWAY = "true";
     process.env.ALLOW_UNAUTHENTICATED_ORDERS_INTERNAL = "true";
-    paymentsApp = await buildPaymentsApp();
+    paymentsApp = await buildPaymentsApp({ allowDeferredFeatureTestRoutes: true });
     await paymentsApp.listen({ host: "127.0.0.1", port: 0 });
     const paymentsAddress = paymentsApp.server.address() as AddressInfo | null;
     if (!paymentsAddress || typeof paymentsAddress.port !== "number") {

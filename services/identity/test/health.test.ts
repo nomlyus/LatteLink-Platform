@@ -72,7 +72,7 @@ describe("identity service", () => {
   });
 
   it("requires userId for passkey registration challenges", async () => {
-    const app = await buildApp();
+    const app = await buildApp({ allowDeferredFeatureTestRoutes: true });
     const response = await app.inject({
       method: "POST",
       url: "/v1/auth/passkey/register/challenge",
@@ -84,6 +84,18 @@ describe("identity service", () => {
       code: "INVALID_USER_CONTEXT"
     });
 
+    await app.close();
+  });
+
+  it("does not expose passkey enrollment based on process environment", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("VITEST", "true");
+    const app = await buildApp();
+    for (const url of ["/v1/auth/passkey/register/challenge", "/v1/auth/passkey/register/verify"]) {
+      const response = await app.inject({ method: "POST", url, payload: { userId: "customer-1" } });
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toMatchObject({ code: "FEATURE_NOT_AVAILABLE" });
+    }
     await app.close();
   });
 
@@ -574,7 +586,7 @@ describe("identity service", () => {
   });
 
   it("rejects register verify when passkey challenge is unknown", async () => {
-    const app = await buildApp();
+    const app = await buildApp({ allowDeferredFeatureTestRoutes: true });
     const clientDataJSON = Buffer.from(
       JSON.stringify({
         type: "webauthn.create",

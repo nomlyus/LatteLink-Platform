@@ -87,14 +87,14 @@ Three distinct auth populations:
 
 The gateway decodes JWT access tokens and forwards user identity to downstream services via `x-user-id` and `x-gateway-token` headers. Internal service-to-service calls use static `x-internal-token` secrets.
 
-Passkey (WebAuthn) auth is implemented server-side and is available for customers. Mobile UI is not yet built.
+Passkey (WebAuthn) route implementation exists, but customer enrollment is intentionally unavailable in Nomly 1.2.0 pending authenticated account binding and security review. Mobile UI is not built; route presence does not mean the feature is exposed to customers.
 
 ## Payment Architecture
 
-Two payment providers, mutually exclusive per location:
+Payment capabilities and product status:
 
-- **Stripe Connect**: Per-merchant Connect accounts. Mobile PaymentIntent session → Stripe PaymentSheet → webhook reconciliation → order PAID. Apple Pay is part of Stripe PaymentSheet. This is the primary production path.
-- **Clover**: OAuth per merchant, direct charge API. Legacy/alternative path.
+- **Stripe Connect**: Per-merchant Connect accounts. Mobile PaymentIntent session → Stripe PaymentSheet → webhook reconciliation → Nomly order PAID. Apple Pay is part of Stripe PaymentSheet. This is the customer mobile-ordering payment path in Nomly 1.2.0; Nomly owns the order lifecycle.
+- **Clover**: Legacy OAuth/POS paths exist in source but are unavailable in Nomly 1.2.0. Clover is not the destination for app orders. The intended future integration is read-only full-day reporting that combines Nomly orders with Clover in-store sales; that reporting capability is not implemented yet.
 
 Payment profile per location is stored in `catalog_payment_profiles`. The payments service reads this to route charges to the correct Stripe Connected Account.
 

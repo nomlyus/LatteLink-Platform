@@ -1694,7 +1694,15 @@ async function requireAuthenticatedCustomer(params: {
   return undefined;
 }
 
-export async function registerRoutes(app: FastifyInstance) {
+export async function registerRoutes(app: FastifyInstance, options: { allowDeferredFeatureTestRoutes?: boolean } = {}) {
+  const requireDeferredFeatureTestHarness = async (request: FastifyRequest, reply: FastifyReply) => {
+    if (options.allowDeferredFeatureTestRoutes === true) return;
+    return reply.status(404).send(apiErrorSchema.parse({
+      code: "FEATURE_NOT_AVAILABLE",
+      message: "This feature is not available",
+      requestId: request.id
+    }));
+  };
   const identityBaseUrl = resolveServiceBaseUrl({
     envVar: "IDENTITY_SERVICE_BASE_URL",
     serviceLabel: "Identity",
@@ -2099,7 +2107,7 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   );
 
-  app.get("/v1/payments/clover/oauth/connect", { preHandler: app.rateLimit(paymentsReadRateLimit) }, async (request, reply) =>
+  app.get("/v1/payments/clover/oauth/connect", { preHandler: [app.rateLimit(paymentsReadRateLimit), requireDeferredFeatureTestHarness] }, async (request, reply) =>
     proxyOpaqueUpstream({
       request,
       reply,
@@ -2111,7 +2119,7 @@ export async function registerRoutes(app: FastifyInstance) {
     })
   );
 
-  app.get("/v1/payments/clover/oauth/callback", { preHandler: app.rateLimit(paymentsReadRateLimit) }, async (request, reply) =>
+  app.get("/v1/payments/clover/oauth/callback", { preHandler: [app.rateLimit(paymentsReadRateLimit), requireDeferredFeatureTestHarness] }, async (request, reply) =>
     proxyOpaqueUpstream({
       request,
       reply,
@@ -2124,7 +2132,7 @@ export async function registerRoutes(app: FastifyInstance) {
     })
   );
 
-  app.post("/v1/payments/clover/oauth/refresh", { preHandler: app.rateLimit(paymentsWriteRateLimit) }, async (request, reply) =>
+  app.post("/v1/payments/clover/oauth/refresh", { preHandler: [app.rateLimit(paymentsWriteRateLimit), requireDeferredFeatureTestHarness] }, async (request, reply) =>
     proxyOpaqueUpstream({
       request,
       reply,
@@ -2176,7 +2184,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/auth/passkey/register/challenge",
     {
-      preHandler: app.rateLimit(authWriteRateLimit)
+      preHandler: [app.rateLimit(authWriteRateLimit), requireDeferredFeatureTestHarness]
     },
     async (request, reply) => {
     const input = passkeyChallengeRequestSchema.parse(request.body ?? {});
@@ -2197,7 +2205,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/auth/passkey/register/verify",
     {
-      preHandler: app.rateLimit(authWriteRateLimit)
+      preHandler: [app.rateLimit(authWriteRateLimit), requireDeferredFeatureTestHarness]
     },
     async (request, reply) => {
     const input = passkeyVerifyRequestSchema.parse(request.body);

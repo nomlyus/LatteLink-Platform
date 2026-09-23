@@ -12,7 +12,7 @@ import {
 } from "@lattelink/observability";
 import { registerRoutes } from "./routes.js";
 
-export async function buildApp() {
+export async function buildApp(options: { allowDeferredFeatureTestRoutes?: boolean } = {}) {
   const serviceName = "payments";
   initializeSentry({ service: serviceName });
   const app = Fastify({
@@ -94,6 +94,6 @@ export async function buildApp() {
     requests: requestMetrics
   }));
 
-  await registerRoutes(app);
+  await registerRoutes(app, options);
   return app;
 }

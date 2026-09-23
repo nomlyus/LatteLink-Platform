@@ -2653,6 +2653,31 @@ let previousFreeClientDashboardDomain: string | undefined;
     await app.close();
   });
 
+  it("does not enable passkey enrollment or Clover OAuth from process environment", async () => {
+    const previousVitest = process.env.VITEST;
+    process.env.NODE_ENV = "test";
+    process.env.VITEST = "true";
+    try {
+      const app = await buildApp();
+      for (const [method, url] of [
+        ["POST", "/v1/auth/passkey/register/challenge"],
+        ["POST", "/v1/auth/passkey/register/verify"],
+        ["GET", "/v1/payments/clover/oauth/connect"],
+        ["GET", "/v1/payments/clover/oauth/callback"],
+        ["POST", "/v1/payments/clover/oauth/refresh"]
+      ] as const) {
+        const response = await app.inject({ method, url, payload: method === "POST" ? {} : undefined });
+        expect(response.statusCode).toBe(404);
+        expect(response.json()).toMatchObject({ code: "FEATURE_NOT_AVAILABLE" });
+      }
+      await app.close();
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      if (previousVitest === undefined) delete process.env.VITEST;
+      else process.env.VITEST = previousVitest;
+    }
+  });
+
   it("allows the default client dashboard origin through CORS", async () => {
     const app = await buildApp();
     const response = await app.inject({
@@ -5541,7 +5566,7 @@ let previousFreeClientDashboardDomain: string | undefined;
   });
 
   it("preserves Clover OAuth callback redirects through the gateway", async () => {
-    const app = await buildApp();
+    const app = await buildApp({ allowDeferredFeatureTestRoutes: true });
     const response = await app.inject({
       method: "GET",
       url: "/v1/payments/clover/oauth/callback?merchant_id=test-merchant-123"
@@ -5608,7 +5633,7 @@ let previousFreeClientDashboardDomain: string | undefined;
   it("rate limits Clover OAuth refresh writes when configured threshold is reached", async () => {
     vi.stubEnv("GATEWAY_RATE_LIMIT_PAYMENTS_WRITE_MAX", "1");
     vi.stubEnv("GATEWAY_RATE_LIMIT_WINDOW_MS", "60000");
-    const app = await buildApp();
+    const app = await buildApp({ allowDeferredFeatureTestRoutes: true });
 
     try {
       const firstResponse = await app.inject({
