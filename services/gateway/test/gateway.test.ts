@@ -3172,7 +3172,7 @@ let previousFreeClientDashboardDomain: string | undefined;
     await app.close();
   });
 
-  it("forwards orders lifecycle routes", async () => {
+  it("retires legacy order creation while retaining historical order reads and cancellation", async () => {
     const app = await buildApp();
     const createResponse = await app.inject({
       method: "POST",
@@ -3183,13 +3183,13 @@ let previousFreeClientDashboardDomain: string | undefined;
         quoteHash: "gateway-quote-hash"
       }
     });
-    expect(createResponse.statusCode).toBe(200);
-    expect(createResponse.json()).toMatchObject({
-      id: "123e4567-e89b-12d3-a456-426614174112",
-      status: "PENDING_PAYMENT"
-    });
+    expect(createResponse.statusCode).toBe(410);
+    expect(createResponse.json()).toMatchObject({ code: "LEGACY_ORDER_CREATE_RETIRED" });
+    expect(fetchMock.mock.calls.some(([input, init]) =>
+      (typeof input === "string" ? input : input.url) === "http://orders.internal/v1/orders" && init?.method === "POST"
+    )).toBe(false);
 
-    const orderId = createResponse.json().id as string;
+    const orderId = "123e4567-e89b-12d3-a456-426614174112";
 
     const getResponse = await app.inject({
       method: "GET",

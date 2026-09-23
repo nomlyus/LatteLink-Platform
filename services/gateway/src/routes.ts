@@ -108,7 +108,6 @@ import {
   discountCodeListResponseSchema,
   discountCodeRedemptionsResponseSchema,
   discountCodeSchema,
-  createOrderRequestSchema,
   stripeMobilePaymentFinalizeRequestSchema,
   stripeMobilePaymentFinalizeResponseSchema,
   stripeMobilePaymentSessionRequestSchema,
@@ -3123,47 +3122,29 @@ export async function registerRoutes(app: FastifyInstance) {
   );
 
   // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
-  app.post("/v1/orders", { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(ordersWriteRateLimit)] }, async (request, reply) => {
-    const input = createOrderRequestSchema.parse(request.body);
-    const userId = await resolveAuthenticatedUserId({
-      request,
-      reply,
-      identityBaseUrl,
-      jwtSecretConfigured: Boolean(jwtSecret)
-    });
-    if (!userId) {
-      return;
-    }
-
-    return proxyUpstream({
-      request,
-      reply,
-      baseUrl: ordersBaseUrl,
-      serviceLabel: "Orders",
-      method: "POST",
-      path: "/v1/orders",
-      body: input,
-      additionalHeaders: {
-        "x-gateway-token": gatewayInternalApiToken,
-        "x-user-id": userId
-      },
-      responseSchema: orderSchema,
-      onSuccess: (response) => {
-        request.log.info(
-          {
-            service: "gateway",
-            event: "order.created",
-            timestamp: new Date().toISOString(),
-            requestId: request.id,
-            userId,
-            orderId: response.id,
-            locationId: response.locationId,
-            status: response.status
-          },
-          "order created"
-        );
+  // The quote-to-order mutation bypassed customer-bound checkout drafts.
+  app.post("/v1/orders", {
+    preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(ordersWriteRateLimit)],
+    schema: {
+      summary: "Retired legacy order creation route",
+      response: {
+        410: {
+          type: "object",
+          required: ["code", "message", "requestId"],
+          properties: {
+            code: { type: "string", const: "LEGACY_ORDER_CREATE_RETIRED" },
+            message: { type: "string" },
+            requestId: { type: "string" }
+          }
+        }
       }
-    });
+    }
+  }, async (request, reply) => {
+    return reply.status(410).send(apiErrorSchema.parse({
+      code: "LEGACY_ORDER_CREATE_RETIRED",
+      message: "Create a checkout draft to place an order.",
+      requestId: request.id
+    }));
   });
 
   app.get("/v1/orders", { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(ordersReadRateLimit)] }, async (request, reply) => {

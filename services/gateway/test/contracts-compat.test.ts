@@ -116,6 +116,12 @@ function assertContractCoverage(spec: OpenApiSpec) {
   }
 }
 
+function assertRetiredOrderCreateContract(spec: OpenApiSpec) {
+  const operation = spec.paths?.["/orders"]?.post as { responses?: Record<string, unknown> } | undefined;
+  expect(operation?.responses?.["410"]).toBeDefined();
+  expect(operation?.responses?.["200"]).toBeUndefined();
+}
+
 describe("gateway contract compatibility", () => {
   it("covers all published contracts in runtime swagger", async () => {
     const app = await buildApp();
@@ -123,6 +129,7 @@ describe("gateway contract compatibility", () => {
     const spec = app.swagger() as OpenApiSpec;
 
     assertContractCoverage(spec);
+    assertRetiredOrderCreateContract(spec);
     await app.close();
   });
 
@@ -133,5 +140,6 @@ describe("gateway contract compatibility", () => {
     const spec = JSON.parse(raw) as OpenApiSpec;
 
     assertContractCoverage(spec);
+    assertRetiredOrderCreateContract(spec);
   });
 });

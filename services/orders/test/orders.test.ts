@@ -324,6 +324,44 @@ describe("orders service", () => {
     await app.close();
   });
 
+  it("rejects legacy order creation outside the test fixture runtime", async () => {
+    vi.stubEnv("VITEST", "false");
+    const app = await buildApp();
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/v1/orders",
+      headers: customerHeaders(),
+      payload: { quoteId: randomUUID(), quoteHash: "obsolete" }
+    });
+    expect(createResponse.statusCode).toBe(410);
+    expect(createResponse.json()).toMatchObject({ code: "LEGACY_ORDER_CREATE_RETIRED" });
+    await app.close();
+  });
+
+  it("scopes checkout replay to the authenticated customer and quote location", async () => {
+    const app = await buildApp();
+    const quoteResponse = await app.inject({
+      method: "POST",
+      url: "/v1/orders/quote",
+      payload: { ...sampleQuotePayload, pointsToRedeem: 0 }
+    });
+    const quote = orderQuoteSchema.parse(quoteResponse.json());
+    const payload = { quoteId: quote.quoteId, quoteHash: quote.quoteHash };
+    const firstUser = "123e4567-e89b-12d3-a456-426614174880";
+    const secondUser = "123e4567-e89b-12d3-a456-426614174881";
+    const createDraft = (userId: string) => app.inject({
+      method: "POST", url: "/v1/orders/checkouts", headers: customerHeaders(userId), payload
+    });
+
+    const first = checkoutDraftSchema.parse((await createDraft(firstUser)).json());
+    const repeated = checkoutDraftSchema.parse((await createDraft(firstUser)).json());
+    const otherCustomer = checkoutDraftSchema.parse((await createDraft(secondUser)).json());
+    expect(repeated.checkoutId).toBe(first.checkoutId);
+    expect(otherCustomer.checkoutId).not.toBe(first.checkoutId);
+    expect([first.locationId, otherCustomer.locationId]).toEqual([quote.locationId, quote.locationId]);
+    await app.close();
+  });
+
   it("creates quote and order, then exposes get/list lifecycle endpoints", async () => {
     const app = await buildApp();
 
