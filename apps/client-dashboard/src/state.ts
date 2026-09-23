@@ -23,6 +23,7 @@ import type {
   OperatorOrderFilter
 } from "./model";
 import type { OperatorReportingResponse } from "./api";
+import type { AdminOrderStreamState } from "./api";
 import { isStoreOperator } from "./model";
 import { loadStoredApiBaseUrl, loadStoredSection, loadStoredSession } from "./storage";
 
@@ -101,6 +102,7 @@ export type AppState = {
   lastRefreshedAt: number | null;
   autoRefreshHandle: ReturnType<typeof setInterval> | null;
   orderStreamUnsubscribe: (() => void) | null;
+  orderConnectionState: AdminOrderStreamState;
   pendingCancelOrderId: string | null;
   pendingCancelTimeoutHandle: ReturnType<typeof setTimeout> | null;
   menuCreateDraft: {
@@ -203,6 +205,7 @@ export const state: AppState = {
   lastRefreshedAt: null,
   autoRefreshHandle: null,
   orderStreamUnsubscribe: null,
+  orderConnectionState: "connecting",
   pendingCancelOrderId: null,
   pendingCancelTimeoutHandle: null,
   toasts: [],
@@ -293,6 +296,7 @@ export function resetDashboardData() {
   state.updatingOnboarding = false;
   state.selectedOrderId = null;
   state.lastRefreshedAt = null;
+  state.orderConnectionState = "connecting";
   state.busyOrderId = null;
   state.busyMenuItemId = null;
   state.busyMenuVisibilityItemId = null;

@@ -54,6 +54,24 @@ describe("new order tracker", () => {
     expect(tracker.observe("operator:location-2", [order(orderTwoId, "READY")])).toEqual([]);
   });
 
+  it("remembers the seen orders across a page refresh and alerts only for a newly paid order", () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("window", {
+      sessionStorage: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value)
+      }
+    });
+    const firstPage = new NewOrderTracker();
+    expect(firstPage.observe("operator:location", [order(orderOneId, "PAID")])).toEqual([]);
+
+    const refreshedPage = new NewOrderTracker();
+    expect(refreshedPage.observe("operator:location", [order(orderOneId, "PAID"), order(orderTwoId, "PAID")])).toEqual([
+      expect.objectContaining({ id: orderTwoId })
+    ]);
+    expect(refreshedPage.observe("operator:location", [order(orderOneId, "PAID"), order(orderTwoId, "IN_PREP")])).toEqual([]);
+  });
+
   it("enables a suspended audio context and plays a test chime", async () => {
     const start = vi.fn();
     const stop = vi.fn();

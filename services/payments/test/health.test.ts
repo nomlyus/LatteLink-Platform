@@ -87,6 +87,20 @@ describe("payments service", () => {
     await app.close();
   });
 
+  it("does not expose a Clover customer charge route in the active checkout service", async () => {
+    vi.stubEnv("PAYMENTS_PROVIDER_MODE", "live");
+    const app = await buildApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/payments/charges",
+      headers: internalHeaders(),
+      payload: { orderId: "123e4567-e89b-12d3-a456-426614174000" }
+    });
+
+    expect(response.statusCode).toBe(404);
+    await app.close();
+  });
+
   it("fails fast in production when Stripe keys are still test mode", async () => {
     vi.stubEnv("DEPLOY_ENV", "production");
 
@@ -265,6 +279,121 @@ describe("payments service", () => {
       })
     );
 
+    stripeCreateSpy.mockRestore();
+    await app.close();
+  });
+
+  it("blocks customer checkout when the selected location is not Stripe-ready", async () => {
+    const checkoutId = "123e4567-e89b-12d3-a456-426614174778";
+    const stripeCreateSpy = vi.spyOn(Object.getPrototypeOf(stripe.paymentIntents), "create");
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url === `http://127.0.0.1:3001/v1/orders/internal/checkouts/${checkoutId}/payment-context`) {
+        return new Response(JSON.stringify({
+          checkoutId,
+          locationId: "flagship-01",
+          status: "OPEN",
+          expiresAt: "2030-03-10T00:30:00.000Z",
+          total: { currency: "USD", amountCents: 1295 }
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (url === "http://127.0.0.1:3002/v1/catalog/internal/locations/flagship-01") {
+        return new Response(JSON.stringify({
+          brandId: "gazelle",
+          brandName: "Gazelle Coffee",
+          locationId: "flagship-01",
+          locationName: "Flagship",
+          marketLabel: "Detroit, MI",
+          storeName: "Gazelle Flagship",
+          hours: "Daily · 7:00 AM - 6:00 PM",
+          pickupInstructions: "Pickup at the espresso counter.",
+          taxRateBasisPoints: 600,
+          capabilities: {
+            menu: { source: "platform_managed" },
+            operations: { fulfillmentMode: "staff", liveOrderTrackingEnabled: true, dashboardEnabled: true },
+            loyalty: { visible: true }
+          },
+          paymentProfile: {
+            locationId: "flagship-01",
+            stripeAccountId: "acct_notready",
+            stripeAccountType: "express",
+            stripeOnboardingStatus: "pending",
+            stripeDetailsSubmitted: false,
+            stripeChargesEnabled: false,
+            stripePayoutsEnabled: false,
+            stripeDashboardEnabled: false,
+            country: "US",
+            currency: "USD",
+            cardEnabled: true,
+            applePayEnabled: true,
+            refundsEnabled: true,
+            cloverPosEnabled: true
+          },
+          paymentReadiness: {
+            ready: false,
+            onboardingState: "pending",
+            missingRequiredFields: ["stripeChargesEnabled", "stripePayoutsEnabled"]
+          }
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      throw new Error(`unexpected Stripe mobile session URL: ${url}`);
+    }));
+
+    const app = await buildApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/payments/stripe/mobile-session",
+      headers: {
+        "x-gateway-token": "gateway-payments-token",
+        "x-user-id": "123e4567-e89b-12d3-a456-426614174000"
+      },
+      payload: { checkoutId }
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ code: "STRIPE_ACCOUNT_NOT_READY" });
+    expect(stripeCreateSpy).not.toHaveBeenCalled();
+    stripeCreateSpy.mockRestore();
+    await app.close();
+  });
+
+  it("fails closed when the catalog returns malformed location payment context", async () => {
+    const checkoutId = "123e4567-e89b-12d3-a456-426614174779";
+    const stripeCreateSpy = vi.spyOn(Object.getPrototypeOf(stripe.paymentIntents), "create");
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url === `http://127.0.0.1:3001/v1/orders/internal/checkouts/${checkoutId}/payment-context`) {
+        return new Response(JSON.stringify({
+          checkoutId,
+          locationId: "flagship-01",
+          status: "OPEN",
+          expiresAt: "2030-03-10T00:30:00.000Z",
+          total: { currency: "USD", amountCents: 1295 }
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (url === "http://127.0.0.1:3002/v1/catalog/internal/locations/flagship-01") {
+        return new Response(JSON.stringify({
+          locationId: "flagship-01",
+          paymentProfile: { stripeAccountId: "acct_invalid_field" }
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      throw new Error(`unexpected Stripe mobile session URL: ${url}`);
+    }));
+
+    const app = await buildApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/payments/stripe/mobile-session",
+      headers: {
+        "x-gateway-token": "gateway-payments-token",
+        "x-user-id": "123e4567-e89b-12d3-a456-426614174000"
+      },
+      payload: { checkoutId }
+    });
+
+    expect(response.statusCode).toBe(502);
+    expect(response.json()).toMatchObject({ code: "CATALOG_LOCATION_UNAVAILABLE" });
+    expect(stripeCreateSpy).not.toHaveBeenCalled();
     stripeCreateSpy.mockRestore();
     await app.close();
   });

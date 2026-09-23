@@ -127,7 +127,7 @@ describe("checkout helpers", () => {
   });
 
   it("keeps definitive pay failures on the cart", () => {
-    const error = new CheckoutSubmissionError("Clover declined the charge", "pay");
+    const error = new CheckoutSubmissionError("Card payment was declined", "pay");
 
     expect(shouldShowCheckoutFailureScreen(error)).toBe(false);
     expect(resolveInlineCheckoutErrorMessage(error)).toBe(
@@ -154,6 +154,44 @@ describe("checkout helpers", () => {
 
     expect(shouldShowCheckoutFailureScreen(error)).toBe(true);
     expect(resolveInlineCheckoutErrorMessage(error)).toBe("Payment timed out");
+  });
+
+  it("explains unavailable location checkout without exposing Stripe configuration details", async () => {
+    const existingCheckout: CheckoutDraftSnapshot = {
+      checkoutId: "123e4567-e89b-12d3-a456-426614174000",
+      quoteId: "5ec083a1-0f31-4d04-a525-7808a0d7624b",
+      quoteHash: "quote-hash-123",
+      locationId: "flagship-01",
+      status: "OPEN",
+      items: [],
+      total: { currency: "USD", amountCents: 575 },
+      expiresAt: "2030-03-10T00:00:00.000Z",
+      quoteItems: []
+    };
+    const checkoutApi = {
+      quoteOrder: vi.fn(),
+      createCheckoutDraft: vi.fn(),
+      createStripeMobilePaymentSession: vi.fn().mockRejectedValue(
+        new Error('Payment request failed: {"code":"STRIPE_ACCOUNT_NOT_READY","message":"Location is not ready for Stripe mobile checkout"}')
+      )
+    };
+
+    const items = [createCartItem({
+      menuItemId: "latte",
+      itemName: "Latte",
+      basePriceCents: 575,
+      customizationGroups: [],
+      customization: DEFAULT_CUSTOMIZATION
+    })];
+
+    await expect(prepareStripeCheckout({ locationId: "flagship-01", items, existingCheckout }, checkoutApi))
+      .rejects.toMatchObject({
+        stage: "pay",
+        message: "Ordering is unavailable at this location right now. Please try again later."
+      });
+    expect(checkoutApi.createStripeMobilePaymentSession).toHaveBeenCalledWith({
+      checkoutId: existingCheckout.checkoutId
+    });
   });
 
   it("prepares a Stripe payment session after quoting and creating a checkout draft", async () => {

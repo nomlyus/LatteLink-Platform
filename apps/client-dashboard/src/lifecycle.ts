@@ -129,6 +129,7 @@ async function ensureFreshSession() {
   if (!sessionNeedsRefresh(state.session.expiresAt)) {
     return state.session;
   }
+  stopAutoRefresh();
   const refreshedSession = await refreshOperatorSession(state.session);
   state.session = refreshedSession;
   persistSession(refreshedSession);
@@ -309,7 +310,7 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
       }
     } catch (error) {
       if (isSessionAuthFailure(error)) throw error;
-      state.orders = [];
+      if (!silent) state.orders = [];
       state.ownerHome.ordersError = error instanceof Error ? error.message : "Unable to load current orders.";
     }
 

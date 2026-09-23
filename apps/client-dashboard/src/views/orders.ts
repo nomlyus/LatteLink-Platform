@@ -24,6 +24,22 @@ import { renderLocationSelectionNotice, renderOrderStatusBadge, renderSectionHea
 type StoreLaneTone = "needs-action" | "in-progress" | "ready" | "closed" | "canceled";
 type StoreTicketFilter = "all" | "needs_action" | "in_progress" | "ready" | "closed";
 
+function renderOrderConnection() {
+  const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+  const stateLabel = offline
+    ? "Offline — orders may be out of date"
+    : isAllLocationsSelected()
+      ? "Updating all locations every 30 seconds"
+      : state.orderConnectionState === "connected"
+        ? "Live orders connected"
+        : state.orderConnectionState === "connecting"
+          ? "Connecting to live orders"
+          : state.orderConnectionState === "reconnecting"
+            ? "Live orders reconnecting — checking for updates"
+            : "Live orders unavailable — checking for updates";
+  return `<span class="dash-order-connection dash-order-connection--${offline ? "unavailable" : state.orderConnectionState}" role="status" aria-live="polite">${escapeHtml(stateLabel)}</span>`;
+}
+
 function renderOrderFilterRow(activeOrderCount: number, completedOrderCount: number) {
   return (
     [
@@ -422,6 +438,7 @@ function renderStoreModeBoard(appConfig: AppConfig | null) {
     <section class="dash-section dash-section--store-mode">
       <div class="dash-store-board__toolbar">
         ${renderStoreModeSummary(storeOrders, completedOrders)}
+        ${renderOrderConnection()}
         <button
           class="button ${isNewOrderSoundEnabled() ? "button--secondary" : "button--primary"}"
           type="button"
@@ -462,6 +479,7 @@ function renderAllLocationsOrders() {
           <div class="dash-segmented-control">
             ${renderOrderFilterRow(activeOrders.length, completedOrders.length)}
           </div>
+          ${renderOrderConnection()}
           <button class="button button--ghost" type="button" data-action="refresh" ${state.loading ? "disabled" : ""}>
             ${state.loading ? '<span class="spinner"></span>' : "Refresh"}
           </button>
@@ -509,6 +527,7 @@ function renderDashboardOrders(appConfig: AppConfig | null) {
           <div class="dash-segmented-control">
             ${renderOrderFilterRow(activeOrders.length, completedOrders.length)}
           </div>
+          ${renderOrderConnection()}
           <button class="button button--ghost" type="button" data-action="refresh" ${state.loading ? "disabled" : ""}>
             ${state.loading ? '<span class="spinner"></span>' : "Refresh"}
           </button>
