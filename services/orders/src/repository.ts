@@ -123,6 +123,37 @@ type PersistedQuoteRow = {
   quote_json: unknown;
 };
 
+export type RefundVerificationSummaryRow = {
+  payment_id: string | null;
+  amount_cents: number;
+  currency: string;
+  status: string;
+  source: string;
+};
+
+export function countUnverifiedRefunds(rows: RefundVerificationSummaryRow[]) {
+  const verifiedTotalsByPayment = new Map<string, number>();
+  const legacyRefundCountsByPayment = new Map<string, number>();
+  for (const row of rows) {
+    if (row.status !== "REFUNDED" || !row.payment_id) continue;
+    const key = `${row.payment_id}:${row.currency}`;
+    if (row.source === "STRIPE_VERIFIED") {
+      verifiedTotalsByPayment.set(key, (verifiedTotalsByPayment.get(key) ?? 0) + row.amount_cents);
+    } else {
+      legacyRefundCountsByPayment.set(key, (legacyRefundCountsByPayment.get(key) ?? 0) + 1);
+    }
+  }
+
+  return rows.filter((row) => {
+    if (row.status !== "REFUNDED" || row.source === "STRIPE_VERIFIED") return false;
+    if (!row.payment_id) return true;
+    const key = `${row.payment_id}:${row.currency}`;
+    if (legacyRefundCountsByPayment.get(key) !== 1) return true;
+    const verifiedAmountCents = verifiedTotalsByPayment.get(key) ?? 0;
+    return verifiedAmountCents !== row.amount_cents;
+  }).length;
+}
+
 export type SupportAuditLogEntry = {
   logId: string;
   locationId: string;
@@ -1346,14 +1377,15 @@ async function createPostgresRepository(
       const result = new Map<string, NonNullable<Order["refundSummary"]>>();
       if (orders.length === 0) return result;
       const rows = await sql<{
-        order_id: string; amount_cents: number; status: string; source: string; allocation_json: unknown;
-      }>`SELECT order_id::text, amount_cents, status, source, allocation_json
+        order_id: string; payment_id: string | null; amount_cents: number; currency: string;
+        status: string; source: string; allocation_json: unknown;
+      }>`SELECT order_id::text, payment_id, amount_cents, currency, status, source, allocation_json
          FROM payments_refunds WHERE order_id::text IN (${sql.join(orders.map((order) => order.id))})`.execute(db);
       for (const order of orders) {
         const ownRows = rows.rows.filter((row) => row.order_id === order.id);
         const settled = ownRows.filter((row) => row.status === "REFUNDED" && row.source === "STRIPE_VERIFIED");
         const settledAmountCents = settled.reduce((sum, row) => sum + row.amount_cents, 0);
-        const unverifiedRefundCount = ownRows.filter((row) => row.status === "REFUNDED" && row.source !== "STRIPE_VERIFIED").length;
+        const unverifiedRefundCount = countUnverifiedRefunds(ownRows);
         const allAllocated = settled.every((row) => {
           if (!row.allocation_json || typeof row.allocation_json !== "object") return false;
           const allocation = row.allocation_json as { merchandiseAmountCents?: unknown };

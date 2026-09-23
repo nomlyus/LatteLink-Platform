@@ -88,8 +88,9 @@ const paymentsRefundRequestSchema = z.object({
   locationId: z.string().min(1).optional()
 });
 
-const paymentsRefundResponseSchema = z.object({
-  refundId: z.string().min(1),
+const paymentsRefundSnapshotBaseSchema = z.object({
+  refundId: z.string().min(1).optional(),
+  providerRefundIds: z.array(z.string().min(1)).min(1).optional(),
   provider: paymentsProviderSchema,
   orderId: z.string().uuid(),
   paymentId: z.string().min(1),
@@ -98,6 +99,10 @@ const paymentsRefundResponseSchema = z.object({
   currency: z.literal("USD"),
   occurredAt: z.string().datetime(),
   message: z.string().optional()
+});
+
+const paymentsRefundResponseSchema = paymentsRefundSnapshotBaseSchema.extend({
+  refundId: z.string().min(1)
 });
 
 const loyaltyBalanceSchema = z.object({
@@ -363,7 +368,7 @@ const refundAllocationSchema = z.object({
   })).min(1)
 });
 
-const persistedRefundSnapshotSchema = paymentsRefundResponseSchema.extend({
+const persistedRefundSnapshotSchema = paymentsRefundSnapshotBaseSchema.extend({
   allocation: refundAllocationSchema.optional()
 });
 
@@ -408,7 +413,7 @@ function buildFullRefundAllocation(quote: OrderQuote) {
   });
 }
 
-function attachRefundAllocation(response: PaymentsRefundResponse, quote: OrderQuote): PersistedRefundSnapshot {
+function attachRefundAllocation(response: z.output<typeof paymentsRefundSnapshotBaseSchema>, quote: OrderQuote): PersistedRefundSnapshot {
   return persistedRefundSnapshotSchema.parse({
     ...response,
     allocation: buildFullRefundAllocation(quote)
@@ -2017,7 +2022,12 @@ export async function cancelOrder(params: {
       orderQuote.pointsToRedeem > 0 ? `refunded ${orderQuote.pointsToRedeem} redeemed points` : undefined
     ].filter((value): value is string => Boolean(value));
 
-    refundNote = ` Refund submitted: ${successfulRefund.refundId}.${
+    const refundConfirmation = successfulRefund.refundId
+      ? `Refund submitted: ${successfulRefund.refundId}.`
+      : successfulRefund.providerRefundIds?.length
+        ? `Refund verified across ${successfulRefund.providerRefundIds.length} Stripe refund records.`
+        : "Refund confirmed.";
+    refundNote = ` ${refundConfirmation}${
       loyaltyReversalParts.length > 0 ? ` Loyalty updated: ${loyaltyReversalParts.join("; ")}.` : ""
     }`;
   }
@@ -2232,10 +2242,17 @@ export async function reconcilePaymentWebhook(params: {
 
   const existingPersistedRefund = await deps.repository.getSuccessfulRefund(input.orderId);
   const parsedPersistedRefund =
-    existingPersistedRefund === undefined ? undefined : paymentsRefundResponseSchema.safeParse(existingPersistedRefund);
+    existingPersistedRefund === undefined ? undefined : persistedRefundSnapshotSchema.safeParse(existingPersistedRefund);
   const refundIdFromStore = parsedPersistedRefund?.success ? parsedPersistedRefund.data.refundId : undefined;
-  const refundSnapshot = paymentsRefundResponseSchema.parse({
-    refundId: input.refundId ?? refundIdFromStore ?? randomUUID(),
+  const aggregateRefundIds = input.providerRefundIds?.length && input.providerRefundIds.length > 1
+    ? input.providerRefundIds
+    : undefined;
+  const refundId = aggregateRefundIds
+    ? undefined
+    : input.refundId ?? refundIdFromStore ?? randomUUID();
+  const refundSnapshot = persistedRefundSnapshotSchema.parse({
+    ...(refundId ? { refundId } : {}),
+    providerRefundIds: input.providerRefundIds,
     provider: input.provider,
     orderId: input.orderId,
     paymentId: input.paymentId,

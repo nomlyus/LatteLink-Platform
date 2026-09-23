@@ -231,6 +231,7 @@ export type PaymentsRepository = {
   saveRefund(input: { request: RefundRequest; response: RefundResponse; providerRefundId?: string; stripeAccountId?: string }): Promise<RefundResponse>;
   findLatestRefundForOrderAndPayment(orderId: string, paymentId: string): Promise<RefundResponse | undefined>;
   findVerifiedRefundForOrderAndPayment(orderId: string, paymentId: string): Promise<RefundResponse | undefined>;
+  getVerifiedRefundTotalCents(orderId: string, paymentId: string, currency: "USD"): Promise<number>;
   saveVerifiedStripeRefund(input: {
     providerRefundId: string;
     stripeAccountId: string;
@@ -348,6 +349,12 @@ export function createInMemoryRepository(): PaymentsRepository {
     async findVerifiedRefundForOrderAndPayment(orderId, paymentId) {
       return [...verifiedRefundsByProviderId.values()].find((refund) =>
         refund.orderId === orderId && refund.paymentId === paymentId && refund.status === "REFUNDED");
+    },
+    async getVerifiedRefundTotalCents(orderId, paymentId, currency) {
+      return [...verifiedRefundsByProviderId.values()]
+        .filter((refund) => refund.orderId === orderId && refund.paymentId === paymentId &&
+          refund.status === "REFUNDED" && refund.currency === currency)
+        .reduce((total, refund) => total + refund.amountCents, 0);
     },
     async saveVerifiedStripeRefund(input) {
       const key = `${input.stripeAccountId}:${input.providerRefundId}`;
@@ -548,6 +555,17 @@ async function createPostgresRepository(connectionString: string): Promise<Payme
         .where("source", "=", "STRIPE_VERIFIED").where("status", "=", "REFUNDED")
         .orderBy("occurred_at", "desc").orderBy("created_at", "desc").executeTakeFirst();
       return row ? toRefundResponse(row as PersistedRefundRow) : undefined;
+    },
+    async getVerifiedRefundTotalCents(orderId, paymentId, currency) {
+      const row = await db.selectFrom("payments_refunds")
+        .select((eb) => eb.fn.sum<number>("amount_cents").as("total_amount_cents"))
+        .where("order_id", "=", orderId)
+        .where("payment_id", "=", paymentId)
+        .where("currency", "=", currency)
+        .where("source", "=", "STRIPE_VERIFIED")
+        .where("status", "=", "REFUNDED")
+        .executeTakeFirst();
+      return Number(row?.total_amount_cents ?? 0);
     },
     async saveVerifiedStripeRefund(input) {
       await db.insertInto("payments_refunds").values({
@@ -1973,12 +1991,6 @@ function resolveStripeChargePaymentId(charge: Stripe.Charge) {
   return undefined;
 }
 
-function resolveStripeRefundId(charge: Stripe.Charge) {
-  const refunds = (charge.refunds?.data ?? []).filter((refund) => refund.status === "succeeded");
-  const latestRefund = refunds[refunds.length - 1];
-  return latestRefund?.id;
-}
-
 function localRefundIdFromProvider(providerRefundId: string) {
   const digest = createHash("sha256").update(providerRefundId).digest("hex");
   return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-4${digest.slice(13, 16)}-8${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
@@ -2020,7 +2032,11 @@ function stripeIntentMatchesStoredPayment(intent: Stripe.PaymentIntent, stored: 
     (resolveStripeMetadataCheckoutId(intent.metadata) ?? resolveStripeMetadataOrderId(intent.metadata)) === stored.order_id;
 }
 
-function resolveStripeOrderReconciliation(event: Stripe.Event, stored?: PersistedStripePaymentIntentRow): OrderPaymentReconciliation | undefined {
+function resolveStripeOrderReconciliation(
+  event: Stripe.Event,
+  stored?: PersistedStripePaymentIntentRow,
+  verifiedProviderRefundIds?: string[]
+): OrderPaymentReconciliation | undefined {
   if (event.type === "payment_intent.succeeded") {
     const intent = event.data.object as Stripe.PaymentIntent;
     if (resolveStripeMetadataCheckoutId(intent.metadata)) return undefined;
@@ -2079,10 +2095,15 @@ function resolveStripeOrderReconciliation(event: Stripe.Event, stored?: Persiste
       kind: "REFUND",
       orderId,
       paymentId,
-      refundId: resolveStripeRefundId(charge),
+      refundId: verifiedProviderRefundIds?.length === 1 ? verifiedProviderRefundIds[0] : undefined,
+      providerRefundIds: verifiedProviderRefundIds && verifiedProviderRefundIds.length > 1
+        ? verifiedProviderRefundIds
+        : undefined,
       status: "REFUNDED",
       occurredAt: toStripeWebhookOccurredAt(event.created),
-      message: "Stripe refund succeeded",
+      message: verifiedProviderRefundIds && verifiedProviderRefundIds.length > 1
+        ? `Stripe refund total reconciled from ${verifiedProviderRefundIds.length} provider refunds`
+        : "Stripe refund succeeded",
       amountCents: charge.amount_refunded,
       currency: normalizeStripeCurrency(charge.currency)
     });
@@ -2253,6 +2274,7 @@ function isStripeAccountUnavailableForActiveCredentialsError(error: unknown) {
 export async function registerRoutes(app: FastifyInstance, options: {
   allowDeferredFeatureTestRoutes?: boolean;
   repository?: PaymentsRepository;
+  stripeClient?: Stripe;
 } = {}) {
   const repository = options.repository ?? await createPaymentsRepository(app.log);
   const requireDeferredCloverTestHarness = async (request: FastifyRequest, reply: FastifyReply) => {
@@ -2278,7 +2300,7 @@ export async function registerRoutes(app: FastifyInstance, options: {
     stripePublishableKey,
     stripeConnectWebhookSecret
   });
-  const stripeClient = new Stripe(stripeSecretKey ?? "sk_test_placeholder");
+  const stripeClient = options.stripeClient ?? new Stripe(stripeSecretKey ?? "sk_test_placeholder");
   const rateLimitWindowMs = toPositiveInteger(process.env.PAYMENTS_RATE_LIMIT_WINDOW_MS, defaultRateLimitWindowMs);
   const paymentsWriteRateLimit = {
     max: toPositiveInteger(process.env.PAYMENTS_RATE_LIMIT_WRITE_MAX, defaultPaymentsWriteRateLimitMax),
@@ -3490,9 +3512,23 @@ export async function registerRoutes(app: FastifyInstance, options: {
 
     if (existingRefund && existingRefund.status === "REFUNDED") {
       if (existingRefund.message?.startsWith("Simulated Stripe refund")) {
+        const sameHistoricalRequest = existingRefund.orderId === input.orderId &&
+          existingRefund.paymentId === input.paymentId &&
+          existingRefund.amountCents === input.amountCents &&
+          existingRefund.currency === input.currency;
+        const verifiedAmountCents = sameHistoricalRequest
+          ? await repository.getVerifiedRefundTotalCents(input.orderId, input.paymentId, input.currency)
+          : 0;
+        if (verifiedAmountCents === existingRefund.amountCents) {
+          return reply.status(409).send(serviceErrorSchema.parse({
+            code: "STRIPE_REFUND_ALREADY_RECORDED",
+            message: "Verified Stripe refund records already cover this historical amount; no new refund was created",
+            requestId: request.id
+          }));
+        }
         return reply.status(409).send(serviceErrorSchema.parse({
           code: "STRIPE_REFUND_UNVERIFIED",
-          message: "Historical refund has no verified Stripe settlement; inspect the PaymentIntent in Stripe before retrying",
+          message: "Historical refund does not yet match verified Stripe refund records; inspect the PaymentIntent in Stripe before retrying",
           requestId: request.id
         }));
       }
@@ -3554,6 +3590,17 @@ export async function registerRoutes(app: FastifyInstance, options: {
       );
     }
 
+    const storedPayment = await repository.findStripePaymentIntent(input.paymentId);
+    if (!storedPayment || storedPayment.order_id !== input.orderId ||
+      storedPayment.location_id !== input.locationId || storedPayment.currency !== input.currency ||
+      input.amountCents !== storedPayment.amount_cents) {
+      return reply.status(409).send(serviceErrorSchema.parse({
+        code: "STRIPE_PAYMENT_BINDING_MISMATCH",
+        message: "Refund does not match a recorded payment",
+        requestId: request.id
+      }));
+    }
+
     const locationSummaryResult = await fetchInternalLocationSummary({
       catalogBaseUrl,
       gatewayToken: gatewayInternalToken,
@@ -3584,10 +3631,7 @@ export async function registerRoutes(app: FastifyInstance, options: {
       );
     }
 
-    const storedPayment = await repository.findStripePaymentIntent(input.paymentId);
-    if (!storedPayment || storedPayment.order_id !== input.orderId ||
-      storedPayment.location_id !== input.locationId || storedPayment.stripe_account_id !== stripeAccountId ||
-      storedPayment.currency !== input.currency || input.amountCents !== storedPayment.amount_cents) {
+    if (storedPayment.stripe_account_id !== stripeAccountId) {
       return reply.status(409).send(serviceErrorSchema.parse({
         code: "STRIPE_PAYMENT_BINDING_MISMATCH",
         message: "Refund does not match a recorded payment",
@@ -3731,6 +3775,7 @@ export async function registerRoutes(app: FastifyInstance, options: {
       }));
     }
     const storedPayment = paymentIntentId ? await repository.findStripePaymentIntent(paymentIntentId) : undefined;
+    let verifiedProviderRefundIds: string[] | undefined;
     const expectedLivemode = stripeRuntime.expectedMode === "live";
     if (paymentIntentId && (!storedPayment || !stripeEventMatchesStoredPayment(event, storedPayment, expectedLivemode))) {
       request.log.warn({ requestId: request.id, eventId: event.id, paymentIntentId, account: event.account }, "Stripe webhook payment binding rejected");
@@ -3809,10 +3854,11 @@ export async function registerRoutes(app: FastifyInstance, options: {
           providerStatus: "succeeded"
         });
       }
+      verifiedProviderRefundIds = succeededRefunds.map((refund) => refund.id);
     }
     const stripeAccount = typeof event.account === "string" ? event.account : undefined;
     const checkoutConfirmation = resolveStripeCheckoutConfirmation(event);
-    const reconciliationPayload = resolveStripeOrderReconciliation(event, storedPayment);
+    const reconciliationPayload = resolveStripeOrderReconciliation(event, storedPayment, verifiedProviderRefundIds);
     let reconciliationApplied: boolean | undefined;
 
     if (checkoutConfirmation) {

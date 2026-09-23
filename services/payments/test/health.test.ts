@@ -1635,6 +1635,7 @@ describe("payments service", () => {
   it("reconciles a signed Stripe refund webhook", async () => {
     const fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal("fetch", fetchMock);
+    const stripeRefundCreateSpy = vi.spyOn(Object.getPrototypeOf(stripe.refunds), "create").mockRejectedValue(new Error("unexpected Stripe refund creation"));
     const orderId = "123e4567-e89b-12d3-a456-426614174403";
     const retrieveSpy = vi.spyOn(Object.getPrototypeOf(stripe.paymentIntents), "retrieve").mockResolvedValue({
       id: "pi_test_refund", amount: 650, currency: "usd", livemode: false,
@@ -1722,6 +1723,25 @@ describe("payments service", () => {
     expect(await repository.findLatestRefundForOrderAndPayment(orderId, "pi_test_refund")).toMatchObject({
       message: "Stripe refund re_test_refund succeeded"
     });
+    const recoveredHistoricalRetry = await app.inject({
+      method: "POST",
+      url: "/v1/payments/refunds",
+      headers: internalHeaders(),
+      payload: {
+        orderId,
+        paymentId: "pi_test_refund",
+        amountCents: 650,
+        currency: "USD",
+        reason: "historical test",
+        idempotencyKey: "historical-test",
+        locationId: "flagship-01"
+      }
+    });
+    expect(recoveredHistoricalRetry.statusCode).toBe(409);
+    expect(recoveredHistoricalRetry.json()).toMatchObject({ code: "STRIPE_REFUND_ALREADY_RECORDED" });
+    expect(stripeRefundCreateSpy).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    stripeRefundCreateSpy.mockRestore();
     retrieveSpy.mockRestore();
     await app.close();
   });
@@ -2084,6 +2104,37 @@ describe("payments service", () => {
     expect(metricsResponse.json().requests.total).toBeGreaterThanOrEqual(1);
     expect(metricsResponse.json().requests.status4xx).toBeGreaterThanOrEqual(1);
 
+    await app.close();
+  });
+
+  it("rejects operator partial refund requests before provider lookups or Stripe calls", async () => {
+    vi.stubEnv("PAYMENTS_PROVIDER_MODE", "simulated");
+    vi.stubEnv("PAYMENTS_TEST_SIMULATE_STRIPE_REFUNDS", "false");
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetchMock);
+    const stripeRefundCreateSpy = vi.spyOn(Object.getPrototypeOf(stripe.refunds), "create").mockRejectedValue(new Error("unexpected Stripe refund creation"));
+    const orderId = "123e4567-e89b-12d3-a456-426614174045";
+    const app = await buildApp({ repository: await recordedStripePayment("pi_partial_operator", orderId, 650) });
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/payments/refunds",
+      headers: internalHeaders(),
+      payload: {
+        orderId,
+        paymentId: "pi_partial_operator",
+        amountCents: 200,
+        currency: "USD",
+        reason: "customer cancellation",
+        idempotencyKey: "partial-operator-attempt",
+        locationId: "flagship-01"
+      }
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ code: "STRIPE_PAYMENT_BINDING_MISMATCH" });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(stripeRefundCreateSpy).not.toHaveBeenCalled();
+    stripeRefundCreateSpy.mockRestore();
     await app.close();
   });
 
