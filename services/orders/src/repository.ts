@@ -298,6 +298,7 @@ export type OrdersRepository = {
   listOrderCustomers(orderIds: readonly string[]): Promise<Map<string, OrderCustomer>>;
   setOrderUserId(orderId: string, userId: string): Promise<void>;
   setPaymentId(orderId: string, paymentId: string): Promise<void>;
+  claimCheckoutPaymentId(orderId: string, paymentId: string): Promise<boolean>;
   getPaymentId(orderId: string): Promise<string | undefined>;
   setSuccessfulCharge(orderId: string, payload: unknown): Promise<void>;
   getSuccessfulCharge(orderId: string): Promise<unknown | undefined>;
@@ -635,6 +636,12 @@ function createInMemoryRepository(): OrdersRepository {
     },
     async getPaymentId(orderId) {
       return ordersById.get(orderId)?.paymentId;
+    },
+    async claimCheckoutPaymentId(orderId, paymentId) {
+      const record = ordersById.get(orderId);
+      if (!record || (record.paymentId && record.paymentId !== paymentId)) return false;
+      ordersById.set(orderId, { ...record, paymentId });
+      return true;
     },
     async setSuccessfulCharge(orderId, payload) {
       const record = ordersById.get(orderId);
@@ -1330,6 +1337,15 @@ async function createPostgresRepository(
     async getPaymentId(orderId) {
       const row = await getPersistedOrder(orderId);
       return row?.payment_id ?? undefined;
+    },
+    async claimCheckoutPaymentId(orderId, paymentId) {
+      const updated = await db
+        .updateTable("orders")
+        .set({ payment_id: paymentId, updated_at: new Date().toISOString() })
+        .where("order_id", "=", orderId)
+        .where((eb) => eb.or([eb("payment_id", "is", null), eb("payment_id", "=", paymentId)]))
+        .executeTakeFirst();
+      return Number(updated.numUpdatedRows ?? 0) > 0;
     },
     async setSuccessfulCharge(orderId, payload) {
       await db

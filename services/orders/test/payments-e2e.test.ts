@@ -265,6 +265,7 @@ describe.sequential("orders + payments e2e", () => {
   let previousOrdersInternalToken: string | undefined;
   let previousAllowUnauthenticatedGateway: string | undefined;
   let previousAllowUnauthenticatedInternal: string | undefined;
+  let previousStripeRefundSimulation: string | undefined;
   let catalogApp: FastifyInstance | undefined;
 
   async function createOrder(input?: { pointsToRedeem?: number; userId?: string }) {
@@ -336,10 +337,12 @@ describe.sequential("orders + payments e2e", () => {
     previousOrdersInternalToken = process.env.ORDERS_INTERNAL_API_TOKEN;
     previousAllowUnauthenticatedGateway = process.env.ALLOW_UNAUTHENTICATED_ORDERS_GATEWAY;
     previousAllowUnauthenticatedInternal = process.env.ALLOW_UNAUTHENTICATED_ORDERS_INTERNAL;
+    previousStripeRefundSimulation = process.env.PAYMENTS_TEST_SIMULATE_STRIPE_REFUNDS;
 
     process.env.ORDERS_INTERNAL_API_TOKEN = internalPaymentsToken;
     process.env.ALLOW_UNAUTHENTICATED_ORDERS_GATEWAY = "true";
     process.env.ALLOW_UNAUTHENTICATED_ORDERS_INTERNAL = "true";
+    process.env.PAYMENTS_TEST_SIMULATE_STRIPE_REFUNDS = "true";
     paymentsApp = await buildPaymentsApp({ allowDeferredFeatureTestRoutes: true });
     await paymentsApp.listen({ host: "127.0.0.1", port: 0 });
     const paymentsAddress = paymentsApp.server.address() as AddressInfo | null;
@@ -441,6 +444,11 @@ describe.sequential("orders + payments e2e", () => {
       delete process.env.ALLOW_UNAUTHENTICATED_ORDERS_INTERNAL;
     } else {
       process.env.ALLOW_UNAUTHENTICATED_ORDERS_INTERNAL = previousAllowUnauthenticatedInternal;
+    }
+    if (previousStripeRefundSimulation === undefined) {
+      delete process.env.PAYMENTS_TEST_SIMULATE_STRIPE_REFUNDS;
+    } else {
+      process.env.PAYMENTS_TEST_SIMULATE_STRIPE_REFUNDS = previousStripeRefundSimulation;
     }
   });
 

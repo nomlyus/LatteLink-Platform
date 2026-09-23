@@ -10,9 +10,12 @@ import {
   initializeSentry,
   registerSentryErrorHook
 } from "@lattelink/observability";
-import { registerRoutes } from "./routes.js";
+import { registerRoutes, type PaymentsRepository } from "./routes.js";
 
-export async function buildApp(options: { allowDeferredFeatureTestRoutes?: boolean } = {}) {
+export async function buildApp(options: {
+  allowDeferredFeatureTestRoutes?: boolean;
+  repository?: PaymentsRepository;
+} = {}) {
   const serviceName = "payments";
   initializeSentry({ service: serviceName });
   const app = Fastify({

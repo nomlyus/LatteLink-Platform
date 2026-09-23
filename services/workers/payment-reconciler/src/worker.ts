@@ -45,7 +45,7 @@ export type StalePaymentIntentCandidate = {
 
 export type ReconcilerPaymentIntent = Pick<
   Stripe.PaymentIntent,
-  "id" | "status" | "amount" | "amount_received" | "currency" | "metadata" | "last_payment_error"
+  "id" | "status" | "amount" | "amount_received" | "currency" | "metadata" | "last_payment_error" | "livemode"
 >;
 
 export type PaymentReconcilerBatchResult = {
@@ -270,7 +270,7 @@ export async function listStalePendingPaymentIntents(
     FROM payments_stripe_payment_intents spi
     INNER JOIN order_checkout_drafts d ON d.checkout_id::text = spi.order_id
     INNER JOIN orders_quotes q ON q.quote_id = d.quote_id
-    WHERE d.status = 'OPEN'
+    WHERE d.status IN ('OPEN', 'EXPIRED')
     ) candidates
     WHERE candidates.created_at < ${cutoffIso}
     ORDER BY candidates.created_at ASC
@@ -462,20 +462,23 @@ export async function processStalePaymentsBatch(
       }
 
       const paymentIntent = await runtime.retrievePaymentIntent(candidate.paymentIntentId, candidate.stripeAccountId);
-      await runtime.updatePaymentIntentStatus(candidate.paymentIntentId, paymentIntent.status);
+      if (paymentIntent.id !== candidate.paymentIntentId || paymentIntent.livemode !== config.stripeSecretKey.startsWith("sk_live_")) {
+        throw new Error("Stripe PaymentIntent identity or mode does not match recorded payment");
+      }
 
       const metadataReferenceId = candidate.referenceType === "CHECKOUT"
         ? paymentIntent.metadata.checkoutId
         : resolveStripeMetadataOrderId(paymentIntent.metadata);
-      if (metadataReferenceId !== candidate.orderId) {
+      if (metadataReferenceId !== candidate.orderId || paymentIntent.metadata.locationId !== candidate.locationId) {
         throw new Error("Stripe PaymentIntent metadata does not match order");
       }
 
       const amountCents = paymentIntent.amount_received > 0 ? paymentIntent.amount_received : paymentIntent.amount;
       const currency = normalizeStripeCurrency(paymentIntent.currency);
-      if (amountCents !== context.total.amountCents || currency !== context.total.currency) {
+      if (paymentIntent.amount !== candidate.amountCents || amountCents !== context.total.amountCents || currency !== context.total.currency || currency !== candidate.currency) {
         throw new Error("Stripe PaymentIntent amount or currency does not match order");
       }
+      await runtime.updatePaymentIntentStatus(candidate.paymentIntentId, paymentIntent.status);
 
       if (paymentIntent.status === "succeeded") {
         await runtime.reconcileSucceededPayment({

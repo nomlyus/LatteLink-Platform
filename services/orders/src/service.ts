@@ -1182,7 +1182,9 @@ export async function confirmCheckoutPayment(params: {
   }
   const existingOrder = await deps.repository.getOrder(input.checkoutId);
   if (existingOrder) {
-    await recordSuccessfulCheckoutPayment({ order: existingOrder, input, repository: deps.repository });
+    if (!await recordSuccessfulCheckoutPayment({ order: existingOrder, input, repository: deps.repository })) {
+      return { error: buildServiceError({ statusCode: 409, code: "CHECKOUT_PAYMENT_CONFLICT", message: "Checkout already has a different settled payment" }) };
+    }
     return { result: checkoutPaymentConfirmationResponseSchema.parse({ accepted: true, applied: false, order: existingOrder }) };
   }
   const quote = await deps.repository.getQuote(draft.quoteId);
@@ -1232,7 +1234,9 @@ export async function confirmCheckoutPayment(params: {
     quoteId: draft.quoteId,
     userId: draft.userId
   });
-  await recordSuccessfulCheckoutPayment({ order: promotion.order, input, repository: deps.repository });
+  if (!await recordSuccessfulCheckoutPayment({ order: promotion.order, input, repository: deps.repository })) {
+    return { error: buildServiceError({ statusCode: 409, code: "CHECKOUT_PAYMENT_CONFLICT", message: "Checkout already has a different settled payment" }) };
+  }
   if (promotion.created) {
     await sendOrderStateNotification({ requestId, deps, userId: draft.userId, order: promotion.order });
   }
@@ -1246,7 +1250,7 @@ async function recordSuccessfulCheckoutPayment(params: {
   input: z.output<typeof checkoutPaymentConfirmationSchema>;
   repository: OrdersRepository;
 }) {
-  await params.repository.setPaymentId(params.order.id, params.input.paymentId);
+  if (!await params.repository.claimCheckoutPaymentId(params.order.id, params.input.paymentId)) return false;
   await params.repository.setSuccessfulCharge(params.order.id, {
     paymentId: params.input.paymentId,
     provider: "STRIPE",
@@ -1257,6 +1261,7 @@ async function recordSuccessfulCheckoutPayment(params: {
     currency: params.input.currency,
     occurredAt: params.input.occurredAt
   });
+  return true;
 }
 
 export async function expireCheckoutDraft(params: { checkoutId: string; deps: OrderServiceDeps }) {

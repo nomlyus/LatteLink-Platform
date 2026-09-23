@@ -43,6 +43,7 @@ it.skipIf(!databaseUrl)("selects stale orders and checkouts across UUID/text ref
       const candidates = await listStalePendingPaymentIntents(tx, "2026-01-01T11:00:00Z", 50);
       expect(candidates.map((candidate) => [candidate.referenceType, candidate.paymentIntentId])).toEqual([
         ["ORDER", "pi_order"],
+        ["CHECKOUT", "pi_expired"],
         ["CHECKOUT", "pi_checkout"]
       ]);
       expect(candidates[0].orderJson).toEqual({ status: "PENDING_PAYMENT" });
