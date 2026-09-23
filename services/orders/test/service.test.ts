@@ -980,6 +980,7 @@ describe("orders service layer", () => {
     };
     const repository: OrdersRepository = {
       backend: "memory",
+      getRefundSummaries: vi.fn().mockResolvedValue(new Map()),
       saveQuote: vi.fn(),
       getQuote: vi.fn(),
       createOrder: vi.fn(),
@@ -1071,6 +1072,7 @@ describe("orders service layer", () => {
     };
     const repository: OrdersRepository = {
       backend: "memory",
+      getRefundSummaries: vi.fn().mockResolvedValue(new Map()),
       saveQuote: vi.fn(),
       getQuote: vi.fn(),
       createOrder: vi.fn(),
@@ -1186,6 +1188,7 @@ describe("orders service layer", () => {
 
     const repository = {
       listOrders: vi.fn().mockResolvedValue([staffOrder, timeBasedOrder]),
+      getRefundSummaries: vi.fn().mockResolvedValue(new Map()),
       listOrdersByLocation: vi.fn(),
       listOrdersByUser: vi.fn(),
       getOrder: vi.fn(),

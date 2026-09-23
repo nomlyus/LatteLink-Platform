@@ -1775,8 +1775,10 @@ export async function listOrdersForRead(params: {
     orders: reconciledOrders,
     deps: params.deps
   });
-
-  return { orders: z.array(orderSchema).parse(hydratedOrders) };
+  const refundSummaries = await params.deps.repository.getRefundSummaries(hydratedOrders);
+  return { orders: z.array(orderSchema).parse(hydratedOrders.map((order) => ({
+    ...order, refundSummary: refundSummaries.get(order.id)
+  }))) };
 }
 
 export async function getOrderForRead(params: {
@@ -1818,7 +1820,8 @@ export async function getOrderForRead(params: {
     order: reconciledOrder,
     deps: params.deps
   });
-  return { order: orderSchema.parse(hydratedOrder) };
+  const refundSummaries = await params.deps.repository.getRefundSummaries([hydratedOrder]);
+  return { order: orderSchema.parse({ ...hydratedOrder, refundSummary: refundSummaries.get(hydratedOrder.id) }) };
 }
 
 export async function cancelOrder(params: {

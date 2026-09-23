@@ -134,6 +134,8 @@ export function createPostgresReportingRepository(db: PersistenceDb): ReportingR
             0::bigint, 0::bigint, 0::bigint, 0::bigint,
             r.amount_cents::bigint AS refunds,
             CASE
+              WHEN (r.allocation_json ->> 'merchandiseAmountCents') ~ '^[0-9]+$'
+              THEN (r.allocation_json ->> 'merchandiseAmountCents')::bigint
               WHEN o.successful_refund_json ->> 'refundId' = r.refund_id::text
                 AND (o.successful_refund_json -> 'allocation' ->> 'merchandiseAmountCents') ~ '^[0-9]+$'
               THEN (o.successful_refund_json -> 'allocation' ->> 'merchandiseAmountCents')::bigint
@@ -144,6 +146,8 @@ export function createPostgresReportingRepository(db: PersistenceDb): ReportingR
             END AS merchandise_refunds,
             0::bigint, 0::bigint,
             CASE
+              WHEN (r.allocation_json ->> 'merchandiseAmountCents') ~ '^[0-9]+$'
+              THEN 0::bigint
               WHEN o.successful_refund_json ->> 'refundId' = r.refund_id::text
                 AND (o.successful_refund_json -> 'allocation' ->> 'merchandiseAmountCents') ~ '^[0-9]+$'
               THEN 0::bigint
@@ -155,6 +159,7 @@ export function createPostgresReportingRepository(db: PersistenceDb): ReportingR
           JOIN orders o ON o.order_id = r.order_id
           LEFT JOIN orders_quotes q ON q.quote_id = o.quote_id
           WHERE r.status = 'REFUNDED'
+            AND r.source <> 'LEGACY_SIMULATED'
             AND r.occurred_at >= ${input.bounds.previousStart}::timestamptz
             AND r.occurred_at < ${input.bounds.currentEnd}::timestamptz
             AND (o.order_json ->> 'locationId') IN (${sql.join(input.locationIds)})

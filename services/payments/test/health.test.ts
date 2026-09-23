@@ -1636,6 +1636,10 @@ describe("payments service", () => {
     const fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal("fetch", fetchMock);
     const orderId = "123e4567-e89b-12d3-a456-426614174403";
+    const retrieveSpy = vi.spyOn(Object.getPrototypeOf(stripe.paymentIntents), "retrieve").mockResolvedValue({
+      id: "pi_test_refund", amount: 650, currency: "usd", livemode: false,
+      metadata: { orderId, locationId: "flagship-01" }
+    } as Stripe.PaymentIntent);
     fetchMock.mockImplementation(async (input, init) => {
       const url = typeof input === "string" ? input : input.toString();
       if (url === "http://127.0.0.1:3001/v1/orders/internal/payments/reconcile") {
@@ -1689,7 +1693,10 @@ describe("payments service", () => {
           refunds: {
             data: [
               {
-                id: "re_test_refund"
+                id: "re_failed_earlier", status: "failed", amount: 650, created: 1_790_121_600
+              },
+              {
+                id: "re_test_refund", status: "succeeded", amount: 650, created: 1_790_121_600
               }
             ]
           }
@@ -1715,12 +1722,18 @@ describe("payments service", () => {
     expect(await repository.findLatestRefundForOrderAndPayment(orderId, "pi_test_refund")).toMatchObject({
       message: "Stripe refund re_test_refund succeeded"
     });
+    retrieveSpy.mockRestore();
     await app.close();
   });
 
-  it("surfaces a partial Stripe refund for manual allocation review", async () => {
+  it("records a partial Stripe refund without inventing item allocation", async () => {
     const orderId = "123e4567-e89b-12d3-a456-426614174405";
-    const app = await buildApp({ repository: await recordedStripePayment("pi_partial_refund", orderId, 650) });
+    const retrieveSpy = vi.spyOn(Object.getPrototypeOf(stripe.paymentIntents), "retrieve").mockResolvedValue({
+      id: "pi_partial_refund", amount: 650, currency: "usd", livemode: false,
+      metadata: { orderId, locationId: "flagship-01" }
+    } as Stripe.PaymentIntent);
+    const repository = await recordedStripePayment("pi_partial_refund", orderId, 650);
+    const app = await buildApp({ repository });
     const fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal("fetch", fetchMock);
     const payload = JSON.stringify({
@@ -1737,14 +1750,58 @@ describe("payments service", () => {
         amount_refunded: 200,
         currency: "usd",
         metadata: { orderId },
-        refunds: { data: [{ id: "re_partial_refund" }] }
+        refunds: { data: [{ id: "re_partial_refund", status: "succeeded", amount: 200, created: 1_790_121_600 }] }
       } }
     });
     const response = await app.inject({ method: "POST", url: "/v1/payments/webhooks/stripe", headers: stripeWebhookHeaders(payload), payload });
-    expect(response.statusCode).toBe(409);
-    expect(response.json()).toMatchObject({ code: "STRIPE_REFUND_REQUIRES_REVIEW" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ accepted: true });
+    expect(await repository.findVerifiedRefundForOrderAndPayment(orderId, "pi_partial_refund")).toMatchObject({
+      amountCents: 200,
+      status: "REFUNDED"
+    });
+    const replay = await app.inject({ method: "POST", url: "/v1/payments/webhooks/stripe", headers: stripeWebhookHeaders(payload), payload });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json()).toMatchObject({ duplicate: true });
+    const listSpy = vi.spyOn(Object.getPrototypeOf(stripe.refunds), "list").mockImplementation(() => ({
+      async *[Symbol.asyncIterator]() {
+        yield { id: "re_partial_refund", status: "succeeded", amount: 200, created: 1_790_121_600 };
+        yield { id: "re_partial_refund_second", status: "succeeded", amount: 250, created: 1_790_122_600 };
+      }
+    }) as ReturnType<typeof stripe.refunds.list>);
+    const laterPayload = payload.replace('"evt_partial_refund"', '"evt_partial_refund_later"')
+      .replace('"amount_refunded":200', '"amount_refunded":450')
+      .replace('"refunds":{"data":', '"refunds":{"has_more":true,"data":');
+    const later = await app.inject({ method: "POST", url: "/v1/payments/webhooks/stripe", headers: stripeWebhookHeaders(laterPayload), payload: laterPayload });
+    expect(later.statusCode).toBe(200);
+    expect(await repository.findLatestRefundForOrderAndPayment(orderId, "pi_partial_refund")).toMatchObject({ amountCents: 250 });
+    const olderPayload = payload.replace('"evt_partial_refund"', '"evt_partial_refund_older_replay"');
+    const older = await app.inject({ method: "POST", url: "/v1/payments/webhooks/stripe", headers: stripeWebhookHeaders(olderPayload), payload: olderPayload });
+    expect(older.statusCode).toBe(200);
+    expect(await repository.findLatestRefundForOrderAndPayment(orderId, "pi_partial_refund")).toMatchObject({ amountCents: 250 });
+    expect(listSpy).toHaveBeenCalledOnce();
     expect(fetchMock).not.toHaveBeenCalled();
+    listSpy.mockRestore();
+    retrieveSpy.mockRestore();
     await app.close();
+  });
+
+  it("keeps one provider refund identity under concurrent webhook ledger writes", async () => {
+    const repository = createInMemoryRepository();
+    const input = {
+      providerRefundId: "re_concurrent",
+      stripeAccountId: "acct_123456789",
+      orderId: "123e4567-e89b-12d3-a456-426614174406",
+      paymentId: "pi_concurrent",
+      amountCents: 200,
+      currency: "USD" as const,
+      occurredAt: "2026-09-23T00:00:00.000Z",
+      providerStatus: "succeeded"
+    };
+    const results = await Promise.all(Array.from({ length: 8 }, () => repository.saveVerifiedStripeRefund(input)));
+    expect(new Set(results.map((result) => result.refundId)).size).toBe(1);
+    await expect(repository.saveVerifiedStripeRefund({ ...input, amountCents: 201 }))
+      .rejects.toThrow("Stripe refund identity binding cannot change");
   });
 
   it("generates a Clover OAuth authorize URL when app credentials are configured", async () => {

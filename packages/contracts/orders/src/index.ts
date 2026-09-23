@@ -94,7 +94,15 @@ export const orderSchema = z.object({
   total: moneySchema,
   pickupCode: z.string(),
   timeline: z.array(orderTimelineEntrySchema),
-  customer: orderCustomerSchema.optional()
+  customer: orderCustomerSchema.optional(),
+  refundSummary: z.object({
+    state: z.enum(["NONE", "PARTIAL", "FULL"]),
+    settledAmountCents: z.number().int().nonnegative(),
+    remainingPaidAmountCents: z.number().int().nonnegative(),
+    settledRefundCount: z.number().int().nonnegative(),
+    allocationQuality: z.enum(["NONE", "COMPLETE", "UNALLOCATED"]),
+    unverifiedRefundCount: z.number().int().nonnegative()
+  }).optional()
 });
 
 export const quoteRequestItemSchema = z.object({

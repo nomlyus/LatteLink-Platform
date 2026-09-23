@@ -300,6 +300,7 @@ export type OrdersRepository = {
   setPaymentId(orderId: string, paymentId: string): Promise<void>;
   claimCheckoutPaymentId(orderId: string, paymentId: string): Promise<boolean>;
   getPaymentId(orderId: string): Promise<string | undefined>;
+  getRefundSummaries(orders: Order[]): Promise<Map<string, NonNullable<Order["refundSummary"]>>>;
   setSuccessfulCharge(orderId: string, payload: unknown): Promise<void>;
   getSuccessfulCharge(orderId: string): Promise<unknown | undefined>;
   setSuccessfulRefund(orderId: string, payload: unknown): Promise<void>;
@@ -636,6 +637,9 @@ function createInMemoryRepository(): OrdersRepository {
     },
     async getPaymentId(orderId) {
       return ordersById.get(orderId)?.paymentId;
+    },
+    async getRefundSummaries() {
+      return new Map();
     },
     async claimCheckoutPaymentId(orderId, paymentId) {
       const record = ordersById.get(orderId);
@@ -1337,6 +1341,34 @@ async function createPostgresRepository(
     async getPaymentId(orderId) {
       const row = await getPersistedOrder(orderId);
       return row?.payment_id ?? undefined;
+    },
+    async getRefundSummaries(orders) {
+      const result = new Map<string, NonNullable<Order["refundSummary"]>>();
+      if (orders.length === 0) return result;
+      const rows = await sql<{
+        order_id: string; amount_cents: number; status: string; source: string; allocation_json: unknown;
+      }>`SELECT order_id::text, amount_cents, status, source, allocation_json
+         FROM payments_refunds WHERE order_id::text IN (${sql.join(orders.map((order) => order.id))})`.execute(db);
+      for (const order of orders) {
+        const ownRows = rows.rows.filter((row) => row.order_id === order.id);
+        const settled = ownRows.filter((row) => row.status === "REFUNDED" && row.source === "STRIPE_VERIFIED");
+        const settledAmountCents = settled.reduce((sum, row) => sum + row.amount_cents, 0);
+        const unverifiedRefundCount = ownRows.filter((row) => row.status === "REFUNDED" && row.source !== "STRIPE_VERIFIED").length;
+        const allAllocated = settled.every((row) => {
+          if (!row.allocation_json || typeof row.allocation_json !== "object") return false;
+          const allocation = row.allocation_json as { merchandiseAmountCents?: unknown };
+          return typeof allocation.merchandiseAmountCents === "number" && Number.isSafeInteger(allocation.merchandiseAmountCents);
+        });
+        result.set(order.id, {
+          state: settledAmountCents === 0 ? "NONE" : settledAmountCents >= order.total.amountCents ? "FULL" : "PARTIAL",
+          settledAmountCents,
+          remainingPaidAmountCents: Math.max(0, order.total.amountCents - settledAmountCents),
+          settledRefundCount: settled.length,
+          allocationQuality: settled.length === 0 ? "NONE" : allAllocated || (settled.length === 1 && settledAmountCents === order.total.amountCents) ? "COMPLETE" : "UNALLOCATED",
+          unverifiedRefundCount
+        });
+      }
+      return result;
     },
     async claimCheckoutPaymentId(orderId, paymentId) {
       const updated = await db

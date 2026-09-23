@@ -120,6 +120,15 @@ export function OrderDetailSheet({ order, refundEntries, bottomInset, onClose }:
         <View style={styles.section}>
           <DetailRow label="Order ref" value={formatOrderReference(order.id)} />
           <DetailRow label="Total" value={formatUsd(order.total.amountCents)} />
+          {order.refundSummary?.state !== "NONE" && order.refundSummary ? (
+            <DetailRow
+              label={order.refundSummary.state === "PARTIAL" ? "Partially refunded" : "Refunded"}
+              value={formatUsd(order.refundSummary.settledAmountCents)}
+            />
+          ) : null}
+          {order.refundSummary?.unverifiedRefundCount ? (
+            <DetailRow label="Refund review" value="Payment status is being verified" />
+          ) : null}
           <DetailRow label="Updated" value={formatOrderDateTime(findLatestOrderTime(order))} />
         </View>
 
