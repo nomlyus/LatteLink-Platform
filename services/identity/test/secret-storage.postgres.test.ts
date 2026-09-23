@@ -511,6 +511,9 @@ describeWithLocalPostgres(
               cipher,
               1,
             );
+            summary.customerSessions += retry.customerSessions;
+            summary.operatorSessions += retry.operatorSessions;
+            summary.internalAdminSessions += retry.internalAdminSessions;
             expect(retry.appleRefreshTokens).toBe(0);
             expect(retry.nextCursor).not.toBeNull();
             expect(cipher.decodeBackfillCursor(retry.nextCursor!)).toBe(
