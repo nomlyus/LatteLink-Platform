@@ -96,6 +96,10 @@ jobs:
           APPLE_PRIVATE_KEY: ${{ secrets.APPLE_PRIVATE_KEY }}
           APPLE_ALLOWED_CLIENT_IDS: ${{ vars.APPLE_ALLOWED_CLIENT_IDS }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          DEPLOY_ENV: dev
+          IDENTITY_APPLE_TOKEN_ENCRYPTION_KEYS: ${{ secrets.IDENTITY_APPLE_TOKEN_ENCRYPTION_KEYS }}
+          IDENTITY_APPLE_TOKEN_ENCRYPTION_ACTIVE_KEY_ID: ${{ vars.IDENTITY_APPLE_TOKEN_ENCRYPTION_ACTIVE_KEY_ID }}
+          IDENTITY_ALLOW_LEGACY_SECRETS: ${{ vars.IDENTITY_ALLOW_LEGACY_SECRETS }}
         run: |
           set -euo pipefail
 
@@ -129,6 +133,8 @@ jobs:
             echo "STRIPE_SECRET_KEY is required for the deployed checkout E2E." >&2
             exit 1
           fi
+
+          node scripts/check-identity-secret-storage-config.mjs
 
       - name: Synchronize Heroku config vars
         env:
@@ -173,6 +179,9 @@ jobs:
           APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
           APPLE_PRIVATE_KEY: ${{ secrets.APPLE_PRIVATE_KEY }}
           APPLE_ALLOWED_CLIENT_IDS: ${{ vars.APPLE_ALLOWED_CLIENT_IDS }}
+          IDENTITY_APPLE_TOKEN_ENCRYPTION_KEYS: ${{ secrets.IDENTITY_APPLE_TOKEN_ENCRYPTION_KEYS }}
+          IDENTITY_APPLE_TOKEN_ENCRYPTION_ACTIVE_KEY_ID: ${{ vars.IDENTITY_APPLE_TOKEN_ENCRYPTION_ACTIVE_KEY_ID }}
+          IDENTITY_ALLOW_LEGACY_SECRETS: ${{ vars.IDENTITY_ALLOW_LEGACY_SECRETS }}
           GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
           GOOGLE_OAUTH_STATE_SECRET: ${{ secrets.GOOGLE_OAUTH_STATE_SECRET }}

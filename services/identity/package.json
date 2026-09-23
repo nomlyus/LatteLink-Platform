@@ -16,7 +16,8 @@
     "lint": "eslint src test --max-warnings=0",
     "test": "vitest run --testTimeout=15000",
     "openapi": "tsx src/openapi.ts",
-    "provision:owner": "tsx src/provision-owner.ts"
+    "provision:owner": "tsx src/provision-owner.ts",
+    "backfill:secret-storage": "node dist/backfill-secret-storage.js"
   },
   "dependencies": {
     "@fastify/rate-limit": "^10.3.0",

@@ -4,6 +4,7 @@ set -euo pipefail
 ENV_FILE="${1:-.env}"
 PROJECT_NAME="${COMPOSE_PROJECT_NAME:-lattelink-${DEPLOY_ENV:-dev}}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 
 if [ ! -f "${ENV_FILE}" ]; then
   echo "[deploy-compose] missing env file: ${ENV_FILE}" >&2
@@ -36,6 +37,7 @@ trap dump_failure EXIT
 
 "${SCRIPT_DIR}/check-live-payments-env.sh" "${ENV_FILE}"
 "${SCRIPT_DIR}/check-postgres-pool-budget.sh" "${ENV_FILE}"
+node "${ROOT_DIR}/scripts/check-identity-secret-storage-config.mjs" "${ENV_FILE}"
 
 echo "[deploy-compose] pulling images"
 compose pull
