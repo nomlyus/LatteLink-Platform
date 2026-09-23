@@ -136,6 +136,7 @@ jobs:
           HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
           NODE_ENV: production
           DEPLOY_ENV: dev
+          GATEWAY_PROXY_MODE: heroku-common
           APP_VERSION: ${{ vars.APP_VERSION || '1.0.10' }}
           LOG_LEVEL: ${{ vars.LOG_LEVEL || 'info' }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}

@@ -508,9 +508,10 @@ async function resolveOperatorAccess(params: {
   request: FastifyRequest;
   reply: FastifyReply;
   identityBaseUrl: string;
+  gatewayInternalApiToken: string | undefined;
   requiredCapability: z.output<typeof operatorMeResponseSchema>["capabilities"][number];
 }) {
-  const { request, reply, identityBaseUrl, requiredCapability } = params;
+  const { request, reply, identityBaseUrl, gatewayInternalApiToken, requiredCapability } = params;
   if (!ensureBearerAuth(request, reply)) {
     return undefined;
   }
@@ -530,10 +531,11 @@ async function resolveOperatorAccess(params: {
   const timeoutHandle = setTimeout(() => timeoutController.abort(), timeoutMs);
 
   try {
-    const response = await fetch(`${identityBaseUrl}/v1/operator/auth/me`, {
+    const response = await fetch(`${identityBaseUrl}/v1/internal/gateway/operator/auth/verify`, {
       method: "GET",
       headers: {
         authorization: String(authorization),
+        "x-gateway-token": gatewayInternalApiToken ?? "",
         "x-request-id": request.id
       },
       signal: timeoutController.signal
@@ -590,7 +592,7 @@ async function resolveOperatorAccess(params: {
         error,
         upstream: "Identity",
         method: "GET",
-        path: "/v1/operator/auth/me",
+        path: "/v1/internal/gateway/operator/auth/verify",
         timeoutMs
       });
       reply.status(504).send(
@@ -630,9 +632,10 @@ async function resolveInternalAdminAccess(params: {
   request: FastifyRequest;
   reply: FastifyReply;
   identityBaseUrl: string;
+  gatewayInternalApiToken: string | undefined;
   requiredCapability: z.output<typeof internalAdminMeResponseSchema>["capabilities"][number];
 }) {
-  const { request, reply, identityBaseUrl, requiredCapability } = params;
+  const { request, reply, identityBaseUrl, gatewayInternalApiToken, requiredCapability } = params;
   if (!ensureInternalAdminBearerAuth(request, reply)) {
     return undefined;
   }
@@ -652,10 +655,11 @@ async function resolveInternalAdminAccess(params: {
   const timeoutHandle = setTimeout(() => timeoutController.abort(), timeoutMs);
 
   try {
-    const response = await fetch(`${identityBaseUrl}/v1/internal-admin/auth/me`, {
+    const response = await fetch(`${identityBaseUrl}/v1/internal/gateway/internal-admin/auth/verify`, {
       method: "GET",
       headers: {
         authorization: String(authorization),
+        "x-gateway-token": gatewayInternalApiToken ?? "",
         "x-request-id": request.id
       },
       signal: timeoutController.signal
@@ -712,7 +716,7 @@ async function resolveInternalAdminAccess(params: {
         error,
         upstream: "Identity",
         method: "GET",
-        path: "/v1/internal-admin/auth/me",
+        path: "/v1/internal/gateway/internal-admin/auth/verify",
         timeoutMs
       });
       reply.status(504).send(
@@ -883,15 +887,21 @@ function toHeaderValue(value: string | string[] | undefined) {
 }
 
 function userScopedRateLimitKey(request: FastifyRequest) {
-  const userId =
-    trimToUndefined(request.authenticatedUserId) ??
-    trimToUndefined(request.authenticatedOperator?.operatorUserId) ??
-    trimToUndefined(request.authenticatedInternalAdmin?.internalAdminUserId) ??
-    trimToUndefined(toHeaderValue(request.headers["x-user-id"]));
-  if (userId) {
-    return `user:${userId.toLowerCase()}`;
+  const customerId = trimToUndefined(request.authenticatedUserId);
+  if (customerId) {
+    return `customer:${customerId.toLowerCase()}`;
+  }
+  const operatorId = trimToUndefined(request.authenticatedOperator?.operatorUserId);
+  if (operatorId) {
+    return `operator:${operatorId.toLowerCase()}`;
+  }
+  const internalAdminId = trimToUndefined(request.authenticatedInternalAdmin?.internalAdminUserId);
+  if (internalAdminId) {
+    return `internal-admin:${internalAdminId.toLowerCase()}`;
   }
 
+  // Public and pre-auth routes use Fastify's peer IP. Never derive this key from
+  // caller-supplied identity headers, bearer text, or a claimed account email.
   return `ip:${request.ip}`;
 }
 
@@ -1726,6 +1736,25 @@ export async function registerRoutes(app: FastifyInstance) {
   const gatewayInternalApiToken = trimToUndefined(process.env.GATEWAY_INTERNAL_API_TOKEN);
   const jwtSecret = trimToUndefined(process.env.JWT_SECRET);
   const rateLimitWindowMs = toPositiveInteger(process.env.GATEWAY_RATE_LIMIT_WINDOW_MS, defaultRateLimitWindowMs);
+  // A separate coarse peer-IP ceiling protects the auth lookup itself from invalid
+  // bearer floods. The finer bucket is applied after identity verification below.
+  const protectedPreAuthRateLimit = {
+    max: toPositiveInteger(process.env.GATEWAY_RATE_LIMIT_PROTECTED_PRE_AUTH_MAX, 1200),
+    timeWindow: rateLimitWindowMs,
+    keyGenerator: (request: FastifyRequest) => `ip:${request.ip}`
+  };
+  const checkProtectedPreAuthLimit = app.createRateLimit(protectedPreAuthRateLimit);
+  const enforceProtectedPreAuthRateLimit = async (request: FastifyRequest, reply: FastifyReply) => {
+    const result = await checkProtectedPreAuthLimit(request);
+    if (!result.isAllowed && result.isExceeded) {
+      return reply.header("retry-after", result.ttlInSeconds).status(429).send({
+        statusCode: 429,
+        error: "Too Many Requests",
+        message: "Rate limit exceeded, retry later"
+      });
+    }
+    return undefined;
+  };
   const authWriteRateLimit = {
     max: toPositiveInteger(process.env.GATEWAY_RATE_LIMIT_AUTH_WRITE_MAX, 24),
     timeWindow: rateLimitWindowMs
@@ -1819,6 +1848,7 @@ export async function registerRoutes(app: FastifyInstance) {
         request,
         reply,
         identityBaseUrl,
+        gatewayInternalApiToken,
         requiredCapability: capability
       });
   const requireInternalAdminCapability = (
@@ -1829,6 +1859,7 @@ export async function registerRoutes(app: FastifyInstance) {
         request,
         reply,
         identityBaseUrl,
+        gatewayInternalApiToken,
         requiredCapability: capability
       });
 
@@ -1901,7 +1932,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.post(
     "/v1/payments/stripe/mobile-session",
-    { preHandler: [app.rateLimit(checkoutRateLimit), requireCustomerAuth] },
+    { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(checkoutRateLimit)] },
     async (request, reply) => {
       const input = stripeMobilePaymentSessionRequestSchema.parse(request.body);
 
@@ -1939,7 +1970,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.post(
     "/v1/payments/stripe/mobile-session/finalize",
-    { preHandler: [app.rateLimit(checkoutRateLimit), requireCustomerAuth] },
+    { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(checkoutRateLimit)] },
     async (request, reply) => {
       const input = stripeMobilePaymentFinalizeRequestSchema.parse(request.body);
 
@@ -1986,7 +2017,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/internal/locations/:locationId/stripe/onboarding-link",
     {
-      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("clients:write"), app.rateLimit(authWriteRateLimit)]
     },
     async (request, reply) => {
       const { locationId } = internalLocationParamsSchema.parse(request.params);
@@ -2015,7 +2046,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/internal/locations/:locationId/stripe/dashboard-link",
     {
-      preHandler: [app.rateLimit(authReadRateLimit), requireInternalAdminCapability("clients:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("clients:read"), app.rateLimit(authReadRateLimit)]
     },
     async (request, reply) => {
       const { locationId } = internalLocationParamsSchema.parse(request.params);
@@ -2044,7 +2075,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/internal/locations/:locationId/stripe/status-refresh",
     {
-      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("clients:write"), app.rateLimit(authWriteRateLimit)]
     },
     async (request, reply) => {
       const { locationId } = internalLocationParamsSchema.parse(request.params);
@@ -2311,7 +2342,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/admin/payments/stripe/onboarding-link",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("store:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("store:write"), app.rateLimit(staffWriteRateLimit)]
     },
     async (request, reply) => {
       if (request.authenticatedOperator?.role !== "owner") {
@@ -2348,7 +2379,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/admin/payments/stripe/dashboard-link",
     {
-      preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("store:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("store:read"), app.rateLimit(staffReadRateLimit)]
     },
     async (request, reply) => {
       if (request.authenticatedOperator?.role !== "owner") {
@@ -2384,7 +2415,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/admin/payments/stripe/status-refresh",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("store:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("store:write"), app.rateLimit(staffWriteRateLimit)]
     },
     async (request, reply) => {
       if (request.authenticatedOperator?.role !== "owner") {
@@ -2757,7 +2788,8 @@ export async function registerRoutes(app: FastifyInstance) {
         baseUrl: identityBaseUrl,
         serviceLabel: "Identity",
         method: "GET",
-        path: "/v1/operator/auth/me",
+        path: "/v1/internal/gateway/operator/auth/verify",
+        additionalHeaders: { "x-gateway-token": gatewayInternalApiToken },
         responseSchema: operatorMeResponseSchema
       })
   );
@@ -2837,7 +2869,8 @@ export async function registerRoutes(app: FastifyInstance) {
         baseUrl: identityBaseUrl,
         serviceLabel: "Identity",
         method: "GET",
-        path: "/v1/internal-admin/auth/me",
+        path: "/v1/internal/gateway/internal-admin/auth/verify",
+        additionalHeaders: { "x-gateway-token": gatewayInternalApiToken },
         responseSchema: internalAdminMeResponseSchema
       })
   );
@@ -3024,7 +3057,7 @@ export async function registerRoutes(app: FastifyInstance) {
   // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
   app.post(
     "/v1/orders/checkouts",
-    { preHandler: [app.rateLimit(checkoutRateLimit), requireCustomerAuth] },
+    { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(checkoutRateLimit)] },
     async (request, reply) => {
       const input = createCheckoutDraftRequestSchema.parse(request.body);
       const userId = await resolveAuthenticatedUserId({ request, reply, identityBaseUrl, jwtSecretConfigured: Boolean(jwtSecret) });
@@ -3045,7 +3078,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.post(
     "/v1/orders/quote",
-    { preHandler: [app.rateLimit(ordersWriteRateLimit), requireCustomerAuth] },
+    { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(ordersWriteRateLimit)] },
     async (request, reply) => {
     const input = quoteRequestSchema.parse(request.body);
     const userId = await resolveAuthenticatedUserId({
@@ -3090,7 +3123,7 @@ export async function registerRoutes(app: FastifyInstance) {
   );
 
   // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
-  app.post("/v1/orders", { preHandler: [app.rateLimit(ordersWriteRateLimit), requireCustomerAuth] }, async (request, reply) => {
+  app.post("/v1/orders", { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(ordersWriteRateLimit)] }, async (request, reply) => {
     const input = createOrderRequestSchema.parse(request.body);
     const userId = await resolveAuthenticatedUserId({
       request,
@@ -3133,7 +3166,7 @@ export async function registerRoutes(app: FastifyInstance) {
     });
   });
 
-  app.get("/v1/orders", { preHandler: [app.rateLimit(ordersReadRateLimit), requireCustomerAuth] }, async (request, reply) => {
+  app.get("/v1/orders", { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(ordersReadRateLimit)] }, async (request, reply) => {
     const userId = await resolveAuthenticatedUserId({
       request,
       reply,
@@ -3159,7 +3192,7 @@ export async function registerRoutes(app: FastifyInstance) {
     });
   });
 
-  app.get("/v1/orders/stream", { preHandler: [app.rateLimit(ordersReadRateLimit), requireCustomerAuth] }, async (request, reply) => {
+  app.get("/v1/orders/stream", { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(ordersReadRateLimit)] }, async (request, reply) => {
     const userId = await resolveAuthenticatedUserId({
       request,
       reply,
@@ -3326,7 +3359,7 @@ export async function registerRoutes(app: FastifyInstance) {
     }, orderStreamPollIntervalMs);
   });
 
-  app.get("/v1/orders/:orderId", { preHandler: [app.rateLimit(ordersReadRateLimit), requireCustomerAuth] }, async (request, reply) => {
+  app.get("/v1/orders/:orderId", { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(ordersReadRateLimit)] }, async (request, reply) => {
     const { orderId } = orderIdParamsSchema.parse(request.params);
     const userId = await resolveAuthenticatedUserId({
       request,
@@ -3370,7 +3403,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.get(
     "/v1/orders/:orderId/stream",
-    { preHandler: [app.rateLimit(ordersReadRateLimit), requireCustomerAuth] },
+    { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(ordersReadRateLimit)] },
     async (request, reply) => {
       const { orderId } = orderIdParamsSchema.parse(request.params);
       const userId = await resolveAuthenticatedUserId({
@@ -3558,7 +3591,7 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   );
 
-  app.post("/v1/orders/:orderId/cancel", { preHandler: [app.rateLimit(checkoutRateLimit), requireCustomerAuth] }, async (request, reply) => {
+  app.post("/v1/orders/:orderId/cancel", { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(checkoutRateLimit)] }, async (request, reply) => {
     const { orderId } = orderIdParamsSchema.parse(request.params);
     const input = cancelOrderRequestSchema.parse(request.body);
     const userId = await resolveAuthenticatedUserId({
@@ -3590,7 +3623,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/admin/reporting/query",
     {
-      preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("orders:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("orders:read"), app.rateLimit(staffReadRateLimit)]
     },
     async (request, reply) => {
       const input = reportingQueryRequestSchema.parse(request.body);
@@ -3623,7 +3656,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/admin/orders",
     {
-      preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("orders:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("orders:read"), app.rateLimit(staffReadRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -3655,7 +3688,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/admin/orders/:orderId",
     {
-      preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("orders:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("orders:read"), app.rateLimit(staffReadRateLimit)]
     },
     async (request, reply) => {
       const { orderId } = orderIdParamsSchema.parse(request.params);
@@ -3688,7 +3721,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/admin/orders/:orderId/status",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("orders:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("orders:write"), app.rateLimit(staffWriteRateLimit)]
     },
     async (request, reply) => {
       const { orderId } = orderIdParamsSchema.parse(request.params);
@@ -3734,7 +3767,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/admin/orders/:orderId/cancel-and-refund",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("payments:refund")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("payments:refund"), app.rateLimit(staffWriteRateLimit)]
     },
     async (request, reply) => {
       const { orderId } = orderIdParamsSchema.parse(request.params);
@@ -3782,7 +3815,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/admin/discount-codes",
     {
-      preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("menu:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("menu:read"), app.rateLimit(staffReadRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -3814,7 +3847,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/admin/discount-codes",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("menu:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("menu:write"), app.rateLimit(staffWriteRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -3848,7 +3881,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.patch(
     "/v1/admin/discount-codes/:discountCodeId",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("menu:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("menu:write"), app.rateLimit(staffWriteRateLimit)]
     },
     async (request, reply) => {
       const { discountCodeId } = discountCodeIdParamsSchema.parse(request.params);
@@ -3883,7 +3916,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/admin/discount-codes/:discountCodeId/redemptions",
     {
-      preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("menu:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("menu:read"), app.rateLimit(staffReadRateLimit)]
     },
     async (request, reply) => {
       const { discountCodeId } = discountCodeIdParamsSchema.parse(request.params);
@@ -3920,7 +3953,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/admin/orders/stream",
     {
-      preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("orders:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("orders:read"), app.rateLimit(staffReadRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4101,7 +4134,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/admin/menu",
     {
-      preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("menu:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("menu:read"), app.rateLimit(staffReadRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4132,7 +4165,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/admin/cards",
     {
-      preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("menu:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("menu:read"), app.rateLimit(staffReadRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4178,7 +4211,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.put(
     "/v1/admin/cards",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("menu:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("menu:write"), app.rateLimit(staffWriteRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4209,7 +4242,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/admin/cards",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("menu:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("menu:write"), app.rateLimit(staffWriteRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4239,7 +4272,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.put(
     "/v1/admin/cards/:cardId",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("menu:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("menu:write"), app.rateLimit(staffWriteRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4270,7 +4303,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.patch(
     "/v1/admin/cards/:cardId/visibility",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("menu:visibility")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("menu:visibility"), app.rateLimit(staffWriteRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4301,7 +4334,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.delete(
     "/v1/admin/cards/:cardId",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("menu:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("menu:write"), app.rateLimit(staffWriteRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4330,7 +4363,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.put(
     "/v1/admin/menu/:itemId",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("menu:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("menu:write"), app.rateLimit(staffWriteRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4369,7 +4402,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/admin/menu/:itemId/image-upload",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("menu:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("menu:write"), app.rateLimit(staffWriteRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4401,7 +4434,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/admin/menu",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("menu:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("menu:write"), app.rateLimit(staffWriteRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4432,7 +4465,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.patch(
     "/v1/admin/menu/:itemId/visibility",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("menu:visibility")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("menu:visibility"), app.rateLimit(staffWriteRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4464,7 +4497,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.delete(
     "/v1/admin/menu/:itemId",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("menu:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("menu:write"), app.rateLimit(staffWriteRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4493,7 +4526,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/admin/store/config",
     {
-      preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("store:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("store:read"), app.rateLimit(staffReadRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4520,7 +4553,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.put(
     "/v1/admin/store/config",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("store:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("store:write"), app.rateLimit(staffWriteRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4550,7 +4583,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/admin/mobile-experience",
     {
-      preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("store:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("store:read"), app.rateLimit(staffReadRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4577,7 +4610,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/admin/mobile-experience/versions",
     {
-      preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("store:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("store:read"), app.rateLimit(staffReadRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4604,7 +4637,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/admin/mobile-release/build-jobs",
     {
-      preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("store:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("store:read"), app.rateLimit(staffReadRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4631,7 +4664,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.put(
     "/v1/admin/mobile-experience/draft",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("store:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("store:write"), app.rateLimit(staffWriteRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4661,7 +4694,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/admin/mobile-experience/publish",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("store:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("store:write"), app.rateLimit(staffWriteRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4691,7 +4724,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/admin/mobile-experience/rollback",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("store:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("store:write"), app.rateLimit(staffWriteRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4721,7 +4754,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/admin/onboarding",
     {
-      preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("store:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("store:read"), app.rateLimit(staffReadRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4749,7 +4782,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.patch(
     "/v1/admin/onboarding",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("store:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("store:write"), app.rateLimit(staffWriteRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4781,7 +4814,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.patch(
     "/v1/admin/app-identity",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("store:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("store:write"), app.rateLimit(staffWriteRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4813,7 +4846,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/admin/onboarding/submit-review",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("store:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("store:write"), app.rateLimit(staffWriteRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4845,7 +4878,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/admin/staff",
     {
-      preHandler: [app.rateLimit(staffReadRateLimit), requireOperatorCapability("team:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("team:read"), app.rateLimit(staffReadRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4873,7 +4906,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/admin/staff",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("team:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("team:write"), app.rateLimit(staffWriteRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4912,7 +4945,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.patch(
     "/v1/admin/staff/:operatorUserId",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("team:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("team:write"), app.rateLimit(staffWriteRateLimit)]
     },
     async (request, reply) => {
       const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
@@ -4952,7 +4985,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.delete(
     "/v1/admin/staff/:operatorUserId",
     {
-      preHandler: [app.rateLimit(staffWriteRateLimit), requireOperatorCapability("team:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("team:write"), app.rateLimit(staffWriteRateLimit)]
     },
     async (request, reply) => {
       if (request.authenticatedOperator?.role !== "owner") {
@@ -4991,7 +5024,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/internal/clients",
     {
-      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("clients:write"), app.rateLimit(authWriteRateLimit)]
     },
     async (request, reply) => {
       const input = adminClientCreateRequestSchema.parse(request.body);
@@ -5017,7 +5050,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/internal/clients",
     {
-      preHandler: [app.rateLimit(authReadRateLimit), requireInternalAdminCapability("clients:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("clients:read"), app.rateLimit(authReadRateLimit)]
     },
     async (request, reply) => {
       return proxyUpstream({
@@ -5039,7 +5072,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/internal/clients/:tenantId",
     {
-      preHandler: [app.rateLimit(authReadRateLimit), requireInternalAdminCapability("clients:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("clients:read"), app.rateLimit(authReadRateLimit)]
     },
     async (request, reply) => {
       const { tenantId } = tenantParamsSchema.parse(request.params);
@@ -5063,7 +5096,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/internal/locations/bootstrap",
     {
-      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("clients:write"), app.rateLimit(authWriteRateLimit)]
     },
     async (request, reply) => {
       const input = internalLocationBootstrapSchema.parse(request.body);
@@ -5088,7 +5121,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.put(
     "/v1/internal/locations/:locationId/capabilities",
     {
-      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("clients:write"), app.rateLimit(authWriteRateLimit)]
     },
     async (request, reply) => {
       const { locationId } = internalLocationParamsSchema.parse(request.params);
@@ -5115,7 +5148,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/internal/locations",
     {
-      preHandler: [app.rateLimit(authReadRateLimit), requireInternalAdminCapability("clients:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("clients:read"), app.rateLimit(authReadRateLimit)]
     },
     async (request, reply) => {
       return proxyUpstream({
@@ -5137,7 +5170,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/internal/locations/:locationId",
     {
-      preHandler: [app.rateLimit(authReadRateLimit), requireInternalAdminCapability("clients:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("clients:read"), app.rateLimit(authReadRateLimit)]
     },
     async (request, reply) => {
       const { locationId } = internalLocationParamsSchema.parse(request.params);
@@ -5161,7 +5194,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/internal/support/orders",
     {
-      preHandler: [app.rateLimit(authReadRateLimit), requireInternalAdminCapability("clients:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("clients:read"), app.rateLimit(authReadRateLimit)]
     },
     async (request, reply) => {
       const input = supportOrderLookupQuerySchema.parse(request.query);
@@ -5192,7 +5225,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/internal/support/checkouts",
     {
-      preHandler: [app.rateLimit(authReadRateLimit), requireInternalAdminCapability("clients:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("clients:read"), app.rateLimit(authReadRateLimit)]
     },
     async (request, reply) => {
       const input = supportOrderLookupQuerySchema.parse(request.query);
@@ -5223,7 +5256,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/internal/support/checkouts/:checkoutId/expire",
     {
-      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("clients:write"), app.rateLimit(authWriteRateLimit)]
     },
     async (request, reply) => {
       const { checkoutId } = z.object({ checkoutId: z.string().uuid() }).parse(request.params);
@@ -5248,7 +5281,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/internal/support/orders/:orderId/cancel",
     {
-      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("clients:write"), app.rateLimit(authWriteRateLimit)]
     },
     async (request, reply) => {
       const { orderId } = orderIdParamsSchema.parse(request.params);
@@ -5275,7 +5308,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/internal/support/orders/:orderId/manual-review",
     {
-      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("clients:write"), app.rateLimit(authWriteRateLimit)]
     },
     async (request, reply) => {
       const { orderId } = orderIdParamsSchema.parse(request.params);
@@ -5302,7 +5335,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/internal/locations/:locationId/onboarding",
     {
-      preHandler: [app.rateLimit(authReadRateLimit), requireInternalAdminCapability("clients:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("clients:read"), app.rateLimit(authReadRateLimit)]
     },
     async (request, reply) => {
       const { locationId } = internalLocationParamsSchema.parse(request.params);
@@ -5327,7 +5360,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/internal/locations/:locationId/readiness",
     {
-      preHandler: [app.rateLimit(authReadRateLimit), requireInternalAdminCapability("clients:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("clients:read"), app.rateLimit(authReadRateLimit)]
     },
     async (request, reply) => {
       const { locationId } = internalLocationParamsSchema.parse(request.params);
@@ -5488,7 +5521,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/internal/locations/:locationId/payment-profile",
     {
-      preHandler: [app.rateLimit(authReadRateLimit), requireInternalAdminCapability("clients:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("clients:read"), app.rateLimit(authReadRateLimit)]
     },
     async (request, reply) => {
       const { locationId } = internalLocationParamsSchema.parse(request.params);
@@ -5512,7 +5545,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.put(
     "/v1/internal/locations/:locationId/payment-profile",
     {
-      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("clients:write"), app.rateLimit(authWriteRateLimit)]
     },
     async (request, reply) => {
       const { locationId } = internalLocationParamsSchema.parse(request.params);
@@ -5542,7 +5575,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.patch(
     "/v1/internal/locations/:locationId/app-identity",
     {
-      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("clients:write"), app.rateLimit(authWriteRateLimit)]
     },
     async (request, reply) => {
       const { locationId } = internalLocationParamsSchema.parse(request.params);
@@ -5569,7 +5602,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.patch(
     "/v1/internal/locations/:locationId/mobile-release",
     {
-      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("clients:write"), app.rateLimit(authWriteRateLimit)]
     },
     async (request, reply) => {
       const { locationId } = internalLocationParamsSchema.parse(request.params);
@@ -5596,7 +5629,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/internal/locations/:locationId/mobile-release/build-jobs",
     {
-      preHandler: [app.rateLimit(authReadRateLimit), requireInternalAdminCapability("clients:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("clients:read"), app.rateLimit(authReadRateLimit)]
     },
     async (request, reply) => {
       const { locationId } = internalLocationParamsSchema.parse(request.params);
@@ -5621,7 +5654,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/internal/locations/:locationId/mobile-release/build-jobs",
     {
-      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("clients:write"), app.rateLimit(authWriteRateLimit)]
     },
     async (request, reply) => {
       const { locationId } = internalLocationParamsSchema.parse(request.params);
@@ -5648,7 +5681,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/internal/mobile-release/build-jobs/:jobId/approve",
     {
-      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("clients:write"), app.rateLimit(authWriteRateLimit)]
     },
     async (request, reply) => {
       const { jobId } = mobileReleaseBuildJobParamsSchema.parse(request.params);
@@ -5677,7 +5710,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/internal/locations/:locationId/mobile-experience/versions",
     {
-      preHandler: [app.rateLimit(authReadRateLimit), requireInternalAdminCapability("clients:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("clients:read"), app.rateLimit(authReadRateLimit)]
     },
     async (request, reply) => {
       const { locationId } = internalLocationParamsSchema.parse(request.params);
@@ -5703,7 +5736,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/internal/locations/:locationId/mobile-experience/rollback",
     {
-      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("clients:write"), app.rateLimit(authWriteRateLimit)]
     },
     async (request, reply) => {
       const { locationId } = internalLocationParamsSchema.parse(request.params);
@@ -5731,7 +5764,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/internal/locations/:locationId/launch-approval",
     {
-      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("clients:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("clients:write"), app.rateLimit(authWriteRateLimit)]
     },
     async (request, reply) => {
       const { locationId } = internalLocationParamsSchema.parse(request.params);
@@ -5837,7 +5870,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get(
     "/v1/internal/locations/:locationId/owner",
     {
-      preHandler: [app.rateLimit(authReadRateLimit), requireInternalAdminCapability("owners:read")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("owners:read"), app.rateLimit(authReadRateLimit)]
     },
     async (request, reply) => {
       const { locationId } = internalLocationParamsSchema.parse(request.params);
@@ -5861,7 +5894,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/internal/locations/:locationId/owner/invite/resend",
     {
-      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("owners:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("owners:write"), app.rateLimit(authWriteRateLimit)]
     },
     async (request, reply) => {
       const { locationId } = internalOwnerProvisionParamsSchema.parse(request.params);
@@ -5888,7 +5921,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/internal/locations/:locationId/owner/provision",
     {
-      preHandler: [app.rateLimit(authWriteRateLimit), requireInternalAdminCapability("owners:write")]
+      preHandler: [enforceProtectedPreAuthRateLimit, requireInternalAdminCapability("owners:write"), app.rateLimit(authWriteRateLimit)]
     },
     async (request, reply) => {
       const { locationId } = internalOwnerProvisionParamsSchema.parse(request.params);
@@ -5912,7 +5945,7 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   );
 
-  app.get("/v1/loyalty/balance", { preHandler: [app.rateLimit(loyaltyReadRateLimit), requireCustomerAuth] }, async (request, reply) => {
+  app.get("/v1/loyalty/balance", { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(loyaltyReadRateLimit)] }, async (request, reply) => {
     return proxyUpstream({
       request,
       reply,
@@ -5928,7 +5961,7 @@ export async function registerRoutes(app: FastifyInstance) {
     });
   });
 
-  app.get("/v1/loyalty/ledger", { preHandler: [app.rateLimit(loyaltyReadRateLimit), requireCustomerAuth] }, async (request, reply) => {
+  app.get("/v1/loyalty/ledger", { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(loyaltyReadRateLimit)] }, async (request, reply) => {
     return proxyUpstream({
       request,
       reply,
@@ -5944,7 +5977,7 @@ export async function registerRoutes(app: FastifyInstance) {
     });
   });
 
-  app.put("/v1/devices/push-token", { preHandler: [app.rateLimit(pushTokenRateLimit), requireCustomerAuth] }, async (request, reply) => {
+  app.put("/v1/devices/push-token", { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(pushTokenRateLimit)] }, async (request, reply) => {
     const input = pushTokenUpsertSchema.parse(request.body);
 
     return proxyUpstream({

@@ -11,6 +11,7 @@ test("the Heroku config allowlist excludes platform-owned and deploy credentials
   assert.equal(herokuConfigKeys.includes("PORT"), false);
   assert.equal(herokuConfigKeys.includes("HEROKU_API_KEY"), false);
   assert.equal(herokuConfigKeys.includes("HEROKU_APP_NAME"), false);
+  assert.equal(herokuConfigKeys.includes("GATEWAY_PROXY_MODE"), true);
 });
 
 test("collectConfigVars keeps multiline secrets and omits empty values", () => {

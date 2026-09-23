@@ -121,6 +121,62 @@ describe("gateway JWT customer auth", () => {
     await app.close();
   });
 
+  it("limits each verified customer on a shared IP regardless of forged identity headers", async () => {
+    process.env.JWT_SECRET = "12345678901234567890123456789012";
+    vi.stubEnv("GATEWAY_RATE_LIMIT_LOYALTY_READ_MAX", "1");
+    vi.stubEnv("GATEWAY_RATE_LIMIT_WINDOW_MS", "60000");
+    const secondUserId = "123e4567-e89b-12d3-a456-426614174001";
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (!url.includes("/v1/loyalty/balance")) {
+        throw new Error(`Unexpected fetch call: ${url}`);
+      }
+
+      const forwardedUserId = new Headers((init?.headers ?? {}) as HeadersInit).get("x-user-id");
+      return new Response(
+        JSON.stringify({
+          userId: forwardedUserId,
+          locationId: "flagship-01",
+          availablePoints: 0,
+          pendingPoints: 0,
+          lifetimeEarned: 0
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    });
+
+    const expires = Math.floor(Date.now() / 1000) + 300;
+    const firstToken = buildJwtAccessToken({ userId, secret: process.env.JWT_SECRET, exp: expires });
+    const secondToken = buildJwtAccessToken({ userId: secondUserId, secret: process.env.JWT_SECRET, exp: expires });
+    const app = await buildApp();
+
+    try {
+      const first = await app.inject({
+        method: "GET",
+        url: "/v1/loyalty/balance?locationId=flagship-01",
+        headers: { authorization: `Bearer ${firstToken}`, "x-user-id": "claimed-a" }
+      });
+      const repeated = await app.inject({
+        method: "GET",
+        url: "/v1/loyalty/balance?locationId=flagship-01",
+        headers: { authorization: `Bearer ${firstToken}`, "x-user-id": "claimed-b" }
+      });
+      const second = await app.inject({
+        method: "GET",
+        url: "/v1/loyalty/balance?locationId=flagship-01",
+        headers: { authorization: `Bearer ${secondToken}`, "x-user-id": "claimed-a" }
+      });
+
+      expect(first.statusCode).toBe(200);
+      expect(repeated.statusCode).toBe(429);
+      expect(second.statusCode).toBe(200);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.unstubAllEnvs();
+      await app.close();
+    }
+  });
+
   it("rejects tampered JWT access tokens", async () => {
     process.env.JWT_SECRET = "12345678901234567890123456789012";
     const validToken = buildJwtAccessToken({

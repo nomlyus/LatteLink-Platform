@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isIP } from "node:net";
 import { Readable } from "node:stream";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
@@ -94,8 +95,24 @@ export async function buildApp() {
   const publicApiBaseUrl = process.env.PUBLIC_API_BASE_URL ?? "http://localhost:8080/v1";
   const allowedCorsOrigins = resolveAllowedCorsOrigins();
   const allowedCorsOriginHostSuffixes = resolveAllowedCorsOriginHostSuffixes();
+  const trustedProxyAddress = process.env.GATEWAY_TRUSTED_PROXY_ADDRESS?.trim();
+  const proxyMode = process.env.GATEWAY_PROXY_MODE?.trim();
+  if (trustedProxyAddress && !isIP(trustedProxyAddress)) {
+    throw new Error("GATEWAY_TRUSTED_PROXY_ADDRESS must be one IP address");
+  }
+  if (proxyMode && proxyMode !== "heroku-common") {
+    throw new Error("GATEWAY_PROXY_MODE must be heroku-common");
+  }
+  if (proxyMode && (trustedProxyAddress || !process.env.DYNO || !process.env.PORT)) {
+    throw new Error("heroku-common proxy mode requires a Heroku dyno and cannot be combined with an exact trusted proxy");
+  }
   const app = Fastify({
     logger: buildFastifyLoggerOptions(serviceName),
+    // Common Runtime only exposes $PORT through the Heroku router. Its rightmost
+    // X-Forwarded-For entry is router-appended; earlier entries are caller input.
+    trustProxy: proxyMode === "heroku-common"
+      ? (_address, hop) => hop === 0
+      : trustedProxyAddress ? (address) => address === trustedProxyAddress : false,
     genReqId: (req) => (req.headers["x-request-id"] as string | undefined) ?? randomUUID()
   });
   registerSentryErrorHook(app, serviceName);
@@ -104,7 +121,9 @@ export async function buildApp() {
     total: 0,
     status2xx: 0,
     status4xx: 0,
-    status5xx: 0
+    status5xx: 0,
+    rateLimited: 0,
+    authRateLimited: 0
   };
 
   await app.register(cors, {
@@ -182,6 +201,17 @@ export async function buildApp() {
   });
   app.addHook("onResponse", async (request, reply) => {
     requestMetrics.total += 1;
+
+    if (reply.statusCode === 429) {
+      requestMetrics.rateLimited += 1;
+      if (
+        request.url.startsWith("/v1/auth/") ||
+        request.url.startsWith("/v1/operator/auth/") ||
+        request.url.startsWith("/v1/internal-admin/auth/")
+      ) {
+        requestMetrics.authRateLimited += 1;
+      }
+    }
 
     if (reply.statusCode >= 500) {
       requestMetrics.status5xx += 1;

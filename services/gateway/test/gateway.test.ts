@@ -638,7 +638,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         });
       }
 
-      if (url.endsWith("/v1/operator/auth/me") && method === "GET") {
+      if ((url.endsWith("/v1/operator/auth/me") || url.endsWith("/v1/internal/gateway/operator/auth/verify")) && method === "GET") {
         if (!authHeader) {
           return new Response(
             JSON.stringify({
@@ -777,7 +777,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         });
       }
 
-      if (url.endsWith("/v1/internal-admin/auth/me") && method === "GET") {
+      if ((url.endsWith("/v1/internal-admin/auth/me") || url.endsWith("/v1/internal/gateway/internal-admin/auth/verify")) && method === "GET") {
         if (!authHeader) {
           return new Response(
             JSON.stringify({
@@ -3635,7 +3635,7 @@ let previousFreeClientDashboardDomain: string | undefined;
     expect(response.statusCode).toBe(401);
     expect(response.json()).toMatchObject({ code: "UNAUTHORIZED" });
     const requestedUrls = fetchMock.mock.calls.map(([input]) => (typeof input === "string" ? input : input.url));
-    expect(requestedUrls).toEqual(["http://identity.internal/v1/operator/auth/me"]);
+    expect(requestedUrls).toEqual(["http://identity.internal/v1/internal/gateway/operator/auth/verify"]);
     await app.close();
   });
 
@@ -4015,8 +4015,8 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const requestedUrls = fetchMock.mock.calls.map(([input]) => (typeof input === "string" ? input : input.url));
     expect(requestedUrls).toEqual([
-      "http://identity.internal/v1/operator/auth/me",
-      "http://identity.internal/v1/operator/auth/me"
+      "http://identity.internal/v1/internal/gateway/operator/auth/verify",
+      "http://identity.internal/v1/internal/gateway/operator/auth/verify"
     ]);
 
     await app.close();
@@ -5143,7 +5143,7 @@ let previousFreeClientDashboardDomain: string | undefined;
     expect(lastCall).toBeDefined();
     if (lastCall) {
       expect(typeof lastCall[0] === "string" ? lastCall[0] : lastCall[0].url).toBe(
-        "http://identity.internal/v1/operator/auth/me"
+        "http://identity.internal/v1/internal/gateway/operator/auth/verify"
       );
     }
 
@@ -5753,6 +5753,166 @@ let previousFreeClientDashboardDomain: string | undefined;
         payload: { email: "owner@gazellecoffee.com" }
       });
       expect(secondRequest.statusCode).toBe(429);
+    } finally {
+      vi.unstubAllEnvs();
+      await app.close();
+    }
+  });
+
+  it("keeps public requests on the peer-IP bucket despite forged user headers", async () => {
+    vi.stubEnv("GATEWAY_RATE_LIMIT_CATALOG_READ_MAX", "1");
+    vi.stubEnv("GATEWAY_RATE_LIMIT_WINDOW_MS", "60000");
+    const app = await buildApp();
+
+    try {
+      const first = await app.inject({
+        method: "GET",
+        url: "/v1/menu",
+        headers: { "x-user-id": "forged-first-user" }
+      });
+      const second = await app.inject({
+        method: "GET",
+        url: "/v1/menu",
+        headers: { "x-user-id": "forged-second-user" }
+      });
+
+      expect(first.statusCode).toBe(200);
+      expect(second.statusCode).toBe(429);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect((await app.inject({ method: "GET", url: "/metrics" })).json().requests).toMatchObject({
+        rateLimited: 1,
+        authRateLimited: 0
+      });
+    } finally {
+      vi.unstubAllEnvs();
+      await app.close();
+    }
+  });
+
+  it("uses verified operator identities after auth so one shared IP does not exhaust another operator", async () => {
+    vi.stubEnv("GATEWAY_RATE_LIMIT_STAFF_READ_MAX", "1");
+    vi.stubEnv("GATEWAY_RATE_LIMIT_WINDOW_MS", "60000");
+    const app = await buildApp();
+    const url = "/v1/admin/orders?locationId=flagship-01";
+
+    try {
+      const ownerFirst = await app.inject({ method: "GET", url, headers: ownerOperatorHeaders });
+      const ownerSecond = await app.inject({
+        method: "GET",
+        url,
+        headers: { ...ownerOperatorHeaders, "x-user-id": "forged-new-bucket" }
+      });
+      const managerFirst = await app.inject({ method: "GET", url, headers: managerOperatorHeaders });
+
+      expect(ownerFirst.statusCode).toBe(200);
+      expect(ownerSecond.statusCode).toBe(429);
+      expect(managerFirst.statusCode).toBe(200);
+    } finally {
+      vi.unstubAllEnvs();
+      await app.close();
+    }
+  });
+
+  it("caps forged unauthenticated requests before repeated identity lookups", async () => {
+    vi.stubEnv("GATEWAY_RATE_LIMIT_PROTECTED_PRE_AUTH_MAX", "2");
+    vi.stubEnv("GATEWAY_RATE_LIMIT_WINDOW_MS", "60000");
+    const app = await buildApp();
+
+    try {
+      const request = (claimedUser: string) => app.inject({
+        method: "GET",
+        url: "/v1/admin/orders?locationId=flagship-01",
+        headers: { authorization: "Bearer invalid-operator-token", "x-user-id": claimedUser }
+      });
+      const first = await request("claimed-a");
+      const second = await request("claimed-b");
+      const third = await request("claimed-c");
+
+      expect(first.statusCode).toBe(401);
+      expect(second.statusCode).toBe(401);
+      expect(third.statusCode).toBe(429);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.unstubAllEnvs();
+      await app.close();
+    }
+  });
+
+  it("trusts only the configured Caddy peer for distinct protected client buckets", async () => {
+    vi.stubEnv("GATEWAY_TRUSTED_PROXY_ADDRESS", "172.30.91.2");
+    vi.stubEnv("GATEWAY_RATE_LIMIT_PROTECTED_PRE_AUTH_MAX", "2");
+    const app = await buildApp();
+    const url = "/v1/admin/orders?locationId=flagship-01";
+    const from = (peer: string, claimedClient: string, token = "Bearer invalid") => app.inject({
+      method: "GET", url, remoteAddress: peer,
+      headers: { authorization: token, "x-forwarded-for": claimedClient }
+    });
+
+    try {
+      expect((await from("198.51.100.5", "192.0.2.10")).statusCode).toBe(401);
+      expect((await from("198.51.100.5", "192.0.2.11")).statusCode).toBe(401);
+      expect((await from("198.51.100.5", "192.0.2.12")).statusCode).toBe(429);
+
+      expect((await from("172.30.91.2", "192.0.2.20")).statusCode).toBe(401);
+      expect((await from("172.30.91.2", "192.0.2.20")).statusCode).toBe(401);
+      expect((await from("172.30.91.2", "192.0.2.20")).statusCode).toBe(429);
+      expect((await from("172.30.91.2", "192.0.2.21", ownerOperatorHeaders.authorization)).statusCode).toBe(200);
+    } finally {
+      vi.unstubAllEnvs();
+      await app.close();
+    }
+  });
+
+  it("uses only the Heroku router-appended client IP for protected buckets", async () => {
+    vi.stubEnv("GATEWAY_PROXY_MODE", "heroku-common");
+    vi.stubEnv("DYNO", "web.1");
+    vi.stubEnv("PORT", "8080");
+    vi.stubEnv("GATEWAY_RATE_LIMIT_PROTECTED_PRE_AUTH_MAX", "2");
+    const app = await buildApp();
+    const url = "/v1/admin/orders?locationId=flagship-01";
+    const from = (client: string, claimed = "192.0.2.99", token = "Bearer invalid") => app.inject({
+      method: "GET", url, remoteAddress: "172.20.0.1",
+      headers: { authorization: token, "x-forwarded-for": `${claimed}, ${client}` }
+    });
+
+    try {
+      expect((await from("198.51.100.10")).statusCode).toBe(401);
+      expect((await from("198.51.100.10", "192.0.2.98")).statusCode).toBe(401);
+      expect((await from("198.51.100.10", "192.0.2.97")).statusCode).toBe(429);
+      expect((await from("198.51.100.11", "192.0.2.99", ownerOperatorHeaders.authorization)).statusCode).toBe(200);
+      expect((await from("198.51.100.11", "192.0.2.99", managerOperatorHeaders.authorization)).statusCode).toBe(200);
+      expect((await from("198.51.100.12", "192.0.2.99")).statusCode).toBe(401);
+    } finally {
+      vi.unstubAllEnvs();
+      await app.close();
+    }
+  });
+
+  it("limits public auth writes by peer IP and records a non-sensitive abuse counter", async () => {
+    vi.stubEnv("GATEWAY_RATE_LIMIT_AUTH_WRITE_MAX", "1");
+    vi.stubEnv("GATEWAY_RATE_LIMIT_WINDOW_MS", "60000");
+    const app = await buildApp();
+
+    try {
+      const first = await app.inject({
+        method: "POST",
+        url: "/v1/auth/dev-access",
+        headers: { "x-user-id": "claimed-a" },
+        payload: { email: "owner@gazellecoffee.com" }
+      });
+      const second = await app.inject({
+        method: "POST",
+        url: "/v1/auth/dev-access",
+        headers: { "x-user-id": "claimed-b" },
+        payload: { email: "owner@gazellecoffee.com" }
+      });
+
+      expect(first.statusCode).toBe(200);
+      expect(second.statusCode).toBe(429);
+      expect((await app.inject({ method: "GET", url: "/metrics" })).json().requests).toMatchObject({
+        rateLimited: 1,
+        authRateLimited: 1
+      });
     } finally {
       vi.unstubAllEnvs();
       await app.close();

@@ -31,6 +31,7 @@ export function effectiveHerokuConfigEnv(env) {
 export const herokuConfigKeys = [
   "NODE_ENV",
   "DEPLOY_ENV",
+  "GATEWAY_PROXY_MODE",
   "APP_VERSION",
   "LOG_LEVEL",
   "SENTRY_DSN",
