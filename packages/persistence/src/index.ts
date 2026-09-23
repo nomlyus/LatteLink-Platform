@@ -346,7 +346,7 @@ export interface NotificationsOutboxTable {
   platform: "ios" | "android";
   expo_push_token: string;
   payload_json: unknown;
-  status: "PENDING" | "SUBMITTED" | "DISPATCHED" | "FAILED" | "EXPIRED";
+  status: "PENDING" | "PROCESSING" | "SUBMITTED" | "DISPATCHED" | "FAILED" | "EXPIRED";
   attempts: number;
   available_at: string;
   dispatched_at: string | null;
@@ -354,9 +354,11 @@ export interface NotificationsOutboxTable {
   receipt_id: string | null;
   receipt_due_at: string | null;
   receipt_expires_at: string | null;
-  delivered_at: string | null;
+  provider_accepted_at: string | null;
   failure_code: string | null;
   environment: string;
+  dispatch_claim_token: string | null;
+  dispatch_lease_expires_at: string | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }

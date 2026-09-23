@@ -18,7 +18,7 @@ type Logger = Pick<Console, "info" | "warn" | "error">;
 
 export type NotificationsDispatchRuntime = {
   processOutbox: (baseUrl: string, batchSize: number, internalApiToken: string) => Promise<NotificationsDispatchResult>;
-  processReceipts: (baseUrl: string, batchSize: number, internalApiToken: string) => Promise<{ processed: number; delivered: number; failed: number; expired: number; unresolved: number }>;
+  processReceipts: (baseUrl: string, batchSize: number, internalApiToken: string) => Promise<{ processed: number; providerAccepted: number; failed: number; expired: number; unresolved: number }>;
   logger: Logger;
   setTimeoutFn: (callback: () => void, delayMs: number) => ReturnType<typeof setTimeout>;
   clearTimeoutFn: (handle: ReturnType<typeof setTimeout>) => void;
@@ -116,7 +116,7 @@ export function createNotificationsDispatchRuntime(
         body: JSON.stringify({ batchSize })
       });
       if (!response.ok) throw new Error(`notifications receipt process request failed with status ${response.status}`);
-      return z.object({ processed: z.number(), delivered: z.number(), failed: z.number(),
+      return z.object({ processed: z.number(), providerAccepted: z.number(), failed: z.number(),
         expired: z.number(), unresolved: z.number() }).parse(await response.json());
     },
     logger,
@@ -188,7 +188,7 @@ export function startNotificationsDispatchWorker(
       try {
         await processOutboxBatch(config, runtime);
         const receipts = await runtime.processReceipts(config.notificationsBaseUrl, config.batchSize, config.internalApiToken);
-        runtime.logger.info(`[notifications-dispatch] receipts processed=${receipts.processed} delivered=${receipts.delivered} failed=${receipts.failed} expired=${receipts.expired} unresolved=${receipts.unresolved}`);
+        runtime.logger.info(`[notifications-dispatch] receipts processed=${receipts.processed} providerAccepted=${receipts.providerAccepted} failed=${receipts.failed} expired=${receipts.expired} unresolved=${receipts.unresolved}`);
       } catch (error) {
         runtime.logger.error("[notifications-dispatch] cycle failed", error);
       }

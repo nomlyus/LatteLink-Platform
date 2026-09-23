@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   orderStateDispatchResponseSchema,
@@ -42,6 +42,8 @@ const outboxBatchMax = 200;
 const outboxDefaultBatch = 50;
 const outboxMaxAttempts = 3;
 const outboxRetryBaseMs = 1_000;
+const outboxDispatchLeaseMs = 60_000;
+const outboxDispatchTimeoutMs = 30_000;
 const receiptPollDelayMs = 15_000;
 const receiptLifetimeMs = 24 * 60 * 60_000;
 
@@ -269,6 +271,7 @@ async function dispatchExpoPushNotification(entry: OutboxEntry) {
   const copy = getOrderStatusPushCopy(entry);
   const response = await fetch(resolveExpoPushApiUrl(), {
     method: "POST",
+    signal: AbortSignal.timeout(outboxDispatchTimeoutMs),
     headers: {
       accept: "application/json",
       "accept-encoding": "gzip, deflate",
@@ -522,49 +525,58 @@ export async function registerRoutes(app: FastifyInstance) {
 
       const input = outboxProcessRequestSchema.parse(request.body ?? {});
       const batchSize = input.batchSize ?? outboxDefaultBatch;
-      const nowIso = input.nowIso ?? new Date().toISOString();
-      const cycleNowMs = Date.parse(nowIso);
-      const entries = await repository.listPendingOutbox(batchSize, nowIso);
-
+      let processed = 0;
       let dispatched = 0;
       let retried = 0;
       let failed = 0;
 
-      for (const entry of entries) {
+      while (processed < batchSize) {
+        const nowIso = input.nowIso ?? new Date().toISOString();
+        const cycleNowMs = Date.parse(nowIso);
+        const claimToken = randomUUID();
+        const entries = await repository.claimPendingOutbox(1, {
+          nowIso,
+          leaseExpiresAtIso: new Date(cycleNowMs + outboxDispatchLeaseMs).toISOString(),
+          claimToken
+        });
+        const entry = entries[0];
+        if (!entry) break;
+        processed += 1;
+
         try {
           if (shouldSuppressOrderPushStatus(entry.payload.status)) {
-            await repository.markOutboxDispatched(entry.id);
+            await repository.markOutboxSimulated(entry.id, claimToken);
             continue;
           }
 
           if (notificationProviderMode === "expo") {
             const receiptId = await dispatchExpoPushNotification(entry);
-            await repository.markOutboxSubmitted(entry.id, { receiptId,
+            await repository.markOutboxSubmitted(entry.id, claimToken, { receiptId,
               dueAtIso: new Date(cycleNowMs + receiptPollDelayMs).toISOString(),
               expiresAtIso: new Date(cycleNowMs + receiptLifetimeMs).toISOString() });
           } else {
             simulatePushDispatch(entry);
-            await repository.markOutboxDispatched(entry.id);
+            await repository.markOutboxSimulated(entry.id, claimToken);
           }
           dispatched += 1;
         } catch (error) {
           const normalizedError = error instanceof Error ? error.message : "unknown push dispatch error";
           if (error instanceof ExpoTicketError && error.code === "DeviceNotRegistered") {
-            await repository.markOutboxFailed(entry.id, normalizedError, error.code);
+            await repository.markOutboxFailed(entry.id, claimToken, normalizedError, error.code);
             await repository.retirePushToken(entry);
             failed += 1;
             continue;
           }
-          const nextAttempt = entry.attempts + 1;
+          const nextAttempt = entry.attempts;
 
           if (nextAttempt >= outboxMaxAttempts) {
-            await repository.markOutboxFailed(entry.id, normalizedError);
+            await repository.markOutboxFailed(entry.id, claimToken, normalizedError);
             failed += 1;
             continue;
           }
 
           const retryAtIso = new Date(cycleNowMs + computeRetryDelayMs(nextAttempt)).toISOString();
-          await repository.markOutboxRetry(entry.id, {
+          await repository.markOutboxRetry(entry.id, claimToken, {
             retryAtIso,
             error: normalizedError
           });
@@ -573,7 +585,7 @@ export async function registerRoutes(app: FastifyInstance) {
       }
 
       return outboxProcessResponseSchema.parse({
-        processed: entries.length,
+        processed,
         dispatched,
         retried,
         failed
@@ -594,7 +606,7 @@ export async function registerRoutes(app: FastifyInstance) {
     const active = due.filter((entry) => !expired.includes(entry));
     const ids = active.map((entry) => entry.receiptId).filter((id): id is string => Boolean(id));
     const receipts = ids.length ? await fetchExpoReceipts(ids) : {};
-    let delivered = 0;
+    let providerAccepted = 0;
     let failed = 0;
     let unresolved = 0;
     for (const entry of active) {
@@ -603,8 +615,8 @@ export async function registerRoutes(app: FastifyInstance) {
         await repository.markReceiptPending(entry.id, new Date(Date.parse(nowIso) + receiptPollDelayMs).toISOString());
         unresolved++;
       } else if (result.status === "ok") {
-        await repository.markReceiptDelivered(entry.id);
-        delivered++;
+        await repository.markReceiptProviderAccepted(entry.id);
+        providerAccepted++;
       } else {
         const code = result.details?.error ?? "PROVIDER_REJECTED";
         await repository.markReceiptFailed(entry.id, { code, message: result.message ?? code });
@@ -612,7 +624,7 @@ export async function registerRoutes(app: FastifyInstance) {
         failed++;
       }
     }
-    return { processed: due.length, delivered, failed, expired: expired.length, unresolved };
+    return { processed: due.length, providerAccepted, failed, expired: expired.length, unresolved };
   });
 
   app.get("/v1/notifications/internal/delivery-health", async (request, reply) => {

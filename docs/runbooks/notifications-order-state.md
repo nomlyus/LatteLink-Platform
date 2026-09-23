@@ -101,19 +101,33 @@ Ensure the worker environment also has `NOTIFICATIONS_INTERNAL_API_TOKEN` set.
 
 In Expo mode, `dispatched` means Expo accepted the push ticket. It does not mean delivery.
 The same worker polls Expo receipts and persists `DISPATCHED` (receipt `ok`), `FAILED`,
-or `EXPIRED` after 24 hours without a receipt. It retires a `DeviceNotRegistered`
-token only if the device still has the same token; a fresh registration is preserved.
+or `EXPIRED` after 24 hours without a receipt. Receipt `ok` means APNs or FCM accepted
+the notification; it does not prove that a device received or displayed it. Health
+metrics therefore call this outcome `providerAccepted`, not delivered. It retires a
+`DeviceNotRegistered` token only if the device still has the same token; a fresh
+registration is preserved.
 `EXPO_RECEIPT_API_URL` overrides the receipt endpoint for a controlled test server.
 `NOTIFICATIONS_ENVIRONMENT` labels new outcomes (set it to `dev` on live dev;
 otherwise `DEPLOY_ENV` is used).
 
+Outbox processing atomically claims rows as `PROCESSING` in Postgres using
+`FOR UPDATE SKIP LOCKED`, with a unique claim token and a 60-second lease. Expo
+requests time out after 30 seconds. Expired leases can be reclaimed after a worker
+crash; concurrent worker instances cannot send the same row while a live claim is
+held. As with any external provider, a process crash after Expo accepts a ticket but
+before the database stores its receipt ID is an ambiguous-send window; this path is
+at-least-once rather than an exactly-once guarantee.
+
 The internal delivery-health endpoint requires `x-internal-token` and returns
-`pending`, `submitted`, `oldestSubmittedAgeSeconds`, and outcome counts grouped by
-`merchantId`, `environment`, and `notificationType`. Postgres resolves merchantId
-from `catalog_client_locations.tenant_id`, falling back to location ID when that
-mapping is absent. The endpoint exposes no device token, message content, or
-provider credential. Monitoring for #417 can alert on old `submitted` entries;
-its workflow and alert destination are owned by that issue.
+`pending`, `processing`, `oldestProcessingAgeSeconds`, `submitted`,
+`oldestSubmittedAgeSeconds`, and outcomes grouped by `merchantId`, `environment`, and
+`notificationType` (`providerAccepted`, `unverified`, `failed`, and `expired`).
+Historical `DISPATCHED` rows from before receipt tracking and simulated dispatches
+are `unverified`; they are never counted as provider-accepted. Postgres resolves
+`merchantId` from `catalog_client_locations.tenant_id`, falling back to location ID
+when that mapping is absent. The endpoint exposes no device token, message content,
+or provider credential. Monitoring for #417 can alert on old `submitted` and
+`processing` entries; its workflow and alert destination are owned by that issue.
 
 ## Orders Integration
 
@@ -125,6 +139,6 @@ The notifications service also accepts `REFUNDED` when a refund is confirmed by
 the payment path. Order status remains `CANCELED`; receipt outcomes never update
 order state. Unpaid `PENDING_PAYMENT` is not pushed. Earlier rows marked
 `DISPATCHED` before receipt tracking existed have no receipt IDs and cannot be
-retroactively verified.
+retroactively verified; they appear as `unverified` in delivery health.
 
 The integration is best-effort and does not block order responses if notifications is unavailable.

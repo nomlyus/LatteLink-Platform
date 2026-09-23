@@ -46,6 +46,7 @@ describe("notifications service", () => {
   });
 
   it("upserts a push token, enqueues order-state notifications, and processes outbox", async () => {
+    vi.stubEnv("NOTIFICATIONS_PROVIDER_MODE", "simulated");
     const app = await buildApp();
     const userId = "123e4567-e89b-12d3-a456-426614174910";
 
@@ -102,6 +103,11 @@ describe("notifications service", () => {
       retried: 0,
       failed: 0
     });
+
+    const health = await app.inject({ method: "GET", url: "/v1/notifications/internal/delivery-health",
+      headers: internalHeaders() });
+    expect(health.json()).toMatchObject({ outcomes: [expect.objectContaining({ notificationType: "PAID",
+      providerAccepted: 0, unverified: 1 })] });
 
     await app.close();
   });
@@ -496,6 +502,19 @@ describe("notifications service", () => {
       code: "UNAUTHORIZED_INTERNAL_REQUEST"
     });
 
+    const receiptProcessResponse = await app.inject({
+      method: "POST",
+      url: "/v1/notifications/internal/receipts/process",
+      payload: {}
+    });
+    expect(receiptProcessResponse.statusCode).toBe(401);
+
+    const deliveryHealthResponse = await app.inject({
+      method: "GET",
+      url: "/v1/notifications/internal/delivery-health"
+    });
+    expect(deliveryHealthResponse.statusCode).toBe(401);
+
     await app.close();
   });
 
@@ -578,7 +597,7 @@ describe("notifications service", () => {
     const healthAfter = await app.inject({ method: "GET", url: "/v1/notifications/internal/delivery-health",
       headers: internalHeaders() });
     expect(healthAfter.json()).toMatchObject({ submitted: 0, outcomes: [{ merchantId: "merchant-location",
-      environment: "test", notificationType: "PAID", delivered: 0, failed: 1, expired: 0 }] });
+      environment: "test", notificationType: "PAID", providerAccepted: 0, unverified: 0, failed: 1, expired: 0 }] });
     const receiptCall = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)) as { ids: string[] };
     expect(receiptCall.ids).toEqual(["ticket-1"]);
     await enqueue("READY");
@@ -609,7 +628,7 @@ describe("notifications service", () => {
     await app.close();
   });
 
-  it("records a delivered receipt and preserves a freshly replaced device token", async () => {
+  it("records provider acceptance from a receipt and preserves a freshly replaced device token", async () => {
     vi.stubEnv("NOTIFICATIONS_PROVIDER_MODE", "expo");
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ status: "ok", id: "ticket-old" }] }), { status: 200 }))
@@ -638,11 +657,11 @@ describe("notifications service", () => {
     expect((await receipts("2030-01-01T00:00:15.000Z")).json()).toMatchObject({ failed: 1 });
     await notify("READY");
     expect((await process("2030-01-01T00:00:16.000Z")).json()).toMatchObject({ processed: 1 });
-    expect((await receipts("2030-01-01T00:00:31.000Z")).json()).toMatchObject({ delivered: 1 });
+    expect((await receipts("2030-01-01T00:00:31.000Z")).json()).toMatchObject({ providerAccepted: 1 });
     const health = await app.inject({ method: "GET", url: "/v1/notifications/internal/delivery-health",
       headers: internalHeaders() });
     expect(health.json()).toMatchObject({ submitted: 0, outcomes: expect.arrayContaining([
-      expect.objectContaining({ notificationType: "READY", delivered: 1 })]) });
+      expect.objectContaining({ notificationType: "READY", providerAccepted: 1, unverified: 0 })]) });
     await app.close();
   });
 });
