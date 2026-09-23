@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { up as applyDevDataApiLockdown } from "../../../packages/persistence/src/migrations/0049_restrict_public_data_api_access.js";
 import { backfillIdentitySecretStorage } from "../src/backfill-secret-storage.js";
 import { createIdentityRepository } from "../src/repository.js";
 import {
@@ -22,6 +23,14 @@ function createKeyRing() {
 
 describe("identity secret storage", () => {
   afterEach(() => vi.unstubAllEnvs());
+
+  it("refuses the dev Data API lockdown migration outside dev and test", async () => {
+    vi.stubEnv("DEPLOY_ENV", "production");
+
+    await expect(applyDevDataApiLockdown({} as never)).rejects.toThrow(
+      "Migration 0049 is limited to dev/test",
+    );
+  });
 
   it("stores a versioned, domain-separated one-way lookup value for bearer tokens", () => {
     const token = `refresh_${randomBytes(32).toString("base64url")}`;

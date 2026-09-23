@@ -26,6 +26,24 @@ if (configuredUrl) {
   }
 }
 const describeWithLocalPostgres = configuredUrl ? describe : describe.skip;
+const apiRoleNames = ["anon", "authenticated", "service_role"] as const;
+const defaultAclOwnerNames = ["postgres", "supabase_admin"] as const;
+const tablesRequiringRowLevelSecurity = [
+  "payments_stripe_payment_intents",
+  "audit_log",
+  "catalog_clients",
+  "discount_codes",
+  "discount_code_redemptions",
+  "catalog_client_locations",
+  "catalog_onboarding_progress",
+  "operator_owner_invites",
+  "order_checkout_drafts",
+  "catalog_mobile_experience_drafts",
+  "catalog_mobile_experience_versions",
+  "catalog_app_identity_profiles",
+  "catalog_mobile_release_profiles",
+  "catalog_mobile_release_build_jobs",
+] as const;
 
 describeWithLocalPostgres(
   "identity secret storage (disposable local PostgreSQL)",
@@ -45,6 +63,7 @@ describeWithLocalPostgres(
     const scopedDatabaseUrl = scopedUrl.toString();
     const inspectDb = createPostgresDb(scopedDatabaseUrl);
     let repository: IdentityRepository | undefined;
+    const createdRoles: string[] = [];
 
     beforeAll(async () => {
       vi.stubEnv("DATABASE_URL", scopedDatabaseUrl);
@@ -61,6 +80,34 @@ describeWithLocalPostgres(
 
       vi.spyOn(console, "info").mockImplementation(() => undefined);
       await sql.raw(`CREATE SCHEMA "${schema}"`).execute(adminDb);
+
+      for (const role of [...apiRoleNames, ...defaultAclOwnerNames]) {
+        const existingRole = await sql<{ exists: boolean }>`
+          SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = ${role}) AS exists
+        `.execute(adminDb);
+        if (!existingRole.rows[0]?.exists) {
+          await sql.raw(`CREATE ROLE "${role}" NOLOGIN`).execute(adminDb);
+          createdRoles.push(role);
+        }
+      }
+
+      await sql
+        .raw(
+          `GRANT USAGE, CREATE ON SCHEMA "${schema}" TO PUBLIC, anon, authenticated, service_role`,
+        )
+        .execute(adminDb);
+
+      for (const owner of defaultAclOwnerNames) {
+        await sql.raw(`
+          ALTER DEFAULT PRIVILEGES FOR ROLE "${owner}" IN SCHEMA "${schema}"
+            GRANT ALL PRIVILEGES ON TABLES TO anon, authenticated, service_role;
+          ALTER DEFAULT PRIVILEGES FOR ROLE "${owner}" IN SCHEMA "${schema}"
+            GRANT ALL PRIVILEGES ON SEQUENCES TO anon, authenticated, service_role;
+          ALTER DEFAULT PRIVILEGES FOR ROLE "${owner}" IN SCHEMA "${schema}"
+            GRANT EXECUTE ON FUNCTIONS TO PUBLIC, anon, authenticated, service_role;
+        `).execute(adminDb);
+      }
+
       repository = await createIdentityRepository({
         info: () => undefined,
         error: () => undefined,
@@ -74,10 +121,172 @@ describeWithLocalPostgres(
       await sql
         .raw(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`)
         .execute(adminDb);
+      for (const role of createdRoles.reverse()) {
+        await sql.raw(`DROP ROLE IF EXISTS "${role}"`).execute(adminDb);
+      }
       await adminDb.destroy();
       vi.restoreAllMocks();
       vi.unstubAllEnvs();
     }, 60_000);
+
+    it("denies Supabase Data API roles on current and future objects in the migration schema", async () => {
+      const protectedTables = await sql<{
+        table_name: string;
+        rls_enabled: boolean;
+        policy_count: number;
+        anon_can_select: boolean;
+        authenticated_can_select: boolean;
+        service_role_can_select: boolean;
+        anon_has_schema_usage: boolean;
+        authenticated_has_schema_usage: boolean;
+        service_role_has_schema_usage: boolean;
+        anon_can_truncate: boolean;
+        authenticated_can_truncate: boolean;
+        service_role_can_truncate: boolean;
+      }>`
+        SELECT
+          c.relname AS table_name,
+          c.relrowsecurity AS rls_enabled,
+          (SELECT count(*)::integer FROM pg_policy WHERE polrelid = c.oid) AS policy_count,
+          has_table_privilege('anon', c.oid, 'SELECT') AS anon_can_select,
+          has_table_privilege('authenticated', c.oid, 'SELECT') AS authenticated_can_select,
+          has_table_privilege('service_role', c.oid, 'SELECT') AS service_role_can_select,
+          has_schema_privilege('anon', n.oid, 'USAGE') AS anon_has_schema_usage,
+          has_schema_privilege('authenticated', n.oid, 'USAGE') AS authenticated_has_schema_usage,
+          has_schema_privilege('service_role', n.oid, 'USAGE') AS service_role_has_schema_usage,
+          has_table_privilege('anon', c.oid, 'TRUNCATE') AS anon_can_truncate,
+          has_table_privilege('authenticated', c.oid, 'TRUNCATE') AS authenticated_can_truncate,
+          has_table_privilege('service_role', c.oid, 'TRUNCATE') AS service_role_can_truncate
+        FROM pg_class AS c
+        JOIN pg_namespace AS n ON n.oid = c.relnamespace
+        WHERE n.nspname = ${schema}
+          AND c.relname = ANY(${[...tablesRequiringRowLevelSecurity]}::text[])
+          AND c.relkind IN ('r', 'p')
+        ORDER BY c.relname
+      `.execute(inspectDb);
+
+      expect(protectedTables.rows).toHaveLength(
+        tablesRequiringRowLevelSecurity.length,
+      );
+      for (const table of protectedTables.rows) {
+        expect(table).toMatchObject({
+          rls_enabled: true,
+          policy_count: 0,
+          anon_can_select: false,
+          authenticated_can_select: false,
+          service_role_can_select: false,
+          anon_has_schema_usage: false,
+          authenticated_has_schema_usage: false,
+          service_role_has_schema_usage: false,
+          anon_can_truncate: false,
+          authenticated_can_truncate: false,
+          service_role_can_truncate: false,
+        });
+      }
+
+      await sql
+        .raw(`CREATE TABLE "${schema}".api_default_table_probe (id integer)`)
+        .execute(adminDb);
+      await sql
+        .raw(`CREATE SEQUENCE "${schema}".api_default_sequence_probe`)
+        .execute(adminDb);
+      await sql
+        .raw(
+          `CREATE FUNCTION "${schema}".api_default_function_probe() RETURNS integer LANGUAGE sql AS 'SELECT 1'`,
+        )
+        .execute(adminDb);
+
+      const futureObjectPrivileges = await sql<{
+        anon_table: boolean;
+        authenticated_table: boolean;
+        service_role_table: boolean;
+        anon_sequence: boolean;
+        authenticated_sequence: boolean;
+        service_role_sequence: boolean;
+        anon_function: boolean;
+        authenticated_function: boolean;
+        service_role_function: boolean;
+      }>`
+        SELECT
+          has_table_privilege('anon', ${`${schema}.api_default_table_probe`}, 'SELECT') AS anon_table,
+          has_table_privilege('authenticated', ${`${schema}.api_default_table_probe`}, 'SELECT') AS authenticated_table,
+          has_table_privilege('service_role', ${`${schema}.api_default_table_probe`}, 'SELECT') AS service_role_table,
+          has_sequence_privilege('anon', ${`${schema}.api_default_sequence_probe`}, 'USAGE') AS anon_sequence,
+          has_sequence_privilege('authenticated', ${`${schema}.api_default_sequence_probe`}, 'USAGE') AS authenticated_sequence,
+          has_sequence_privilege('service_role', ${`${schema}.api_default_sequence_probe`}, 'USAGE') AS service_role_sequence,
+          has_function_privilege('anon', ${`${schema}.api_default_function_probe()`}, 'EXECUTE') AS anon_function,
+          has_function_privilege('authenticated', ${`${schema}.api_default_function_probe()`}, 'EXECUTE') AS authenticated_function,
+          has_function_privilege('service_role', ${`${schema}.api_default_function_probe()`}, 'EXECUTE') AS service_role_function
+      `.execute(inspectDb);
+
+      expect(futureObjectPrivileges.rows[0]).toEqual({
+        anon_table: false,
+        authenticated_table: false,
+        service_role_table: false,
+        anon_sequence: false,
+        authenticated_sequence: false,
+        service_role_sequence: false,
+        anon_function: false,
+        authenticated_function: false,
+        service_role_function: false,
+      });
+
+      // Supabase-managed owners may retain broad object default ACLs that the
+      // application migration role cannot change. Even then, the schema fence
+      // keeps those future objects unreachable through the Data API roles.
+      await sql
+        .raw(`GRANT USAGE, CREATE ON SCHEMA "${schema}" TO supabase_admin;
+          SET ROLE supabase_admin;
+          CREATE TABLE "${schema}".supabase_admin_default_table_probe (id integer);
+          CREATE SEQUENCE "${schema}".supabase_admin_default_sequence_probe;
+          CREATE FUNCTION "${schema}".supabase_admin_default_function_probe() RETURNS integer LANGUAGE sql AS 'SELECT 1';
+          RESET ROLE;`)
+        .execute(adminDb);
+
+      const supabaseAdminObjectAccess = await sql<{
+        anon_schema: boolean;
+        authenticated_schema: boolean;
+        service_role_schema: boolean;
+        anon_table_reachable: boolean;
+        authenticated_table_reachable: boolean;
+        service_role_table_reachable: boolean;
+        anon_sequence_reachable: boolean;
+        authenticated_sequence_reachable: boolean;
+        service_role_sequence_reachable: boolean;
+        anon_function_reachable: boolean;
+        authenticated_function_reachable: boolean;
+        service_role_function_reachable: boolean;
+      }>`
+        SELECT
+          has_schema_privilege('anon', ${schema}, 'USAGE') AS anon_schema,
+          has_schema_privilege('authenticated', ${schema}, 'USAGE') AS authenticated_schema,
+          has_schema_privilege('service_role', ${schema}, 'USAGE') AS service_role_schema,
+          has_schema_privilege('anon', ${schema}, 'USAGE') AND has_table_privilege('anon', ${`${schema}.supabase_admin_default_table_probe`}, 'SELECT') AS anon_table_reachable,
+          has_schema_privilege('authenticated', ${schema}, 'USAGE') AND has_table_privilege('authenticated', ${`${schema}.supabase_admin_default_table_probe`}, 'SELECT') AS authenticated_table_reachable,
+          has_schema_privilege('service_role', ${schema}, 'USAGE') AND has_table_privilege('service_role', ${`${schema}.supabase_admin_default_table_probe`}, 'SELECT') AS service_role_table_reachable,
+          has_schema_privilege('anon', ${schema}, 'USAGE') AND has_sequence_privilege('anon', ${`${schema}.supabase_admin_default_sequence_probe`}, 'USAGE') AS anon_sequence_reachable,
+          has_schema_privilege('authenticated', ${schema}, 'USAGE') AND has_sequence_privilege('authenticated', ${`${schema}.supabase_admin_default_sequence_probe`}, 'USAGE') AS authenticated_sequence_reachable,
+          has_schema_privilege('service_role', ${schema}, 'USAGE') AND has_sequence_privilege('service_role', ${`${schema}.supabase_admin_default_sequence_probe`}, 'USAGE') AS service_role_sequence_reachable,
+          has_schema_privilege('anon', ${schema}, 'USAGE') AND has_function_privilege('anon', ${`${schema}.supabase_admin_default_function_probe()`}, 'EXECUTE') AS anon_function_reachable,
+          has_schema_privilege('authenticated', ${schema}, 'USAGE') AND has_function_privilege('authenticated', ${`${schema}.supabase_admin_default_function_probe()`}, 'EXECUTE') AS authenticated_function_reachable,
+          has_schema_privilege('service_role', ${schema}, 'USAGE') AND has_function_privilege('service_role', ${`${schema}.supabase_admin_default_function_probe()`}, 'EXECUTE') AS service_role_function_reachable
+      `.execute(inspectDb);
+
+      expect(supabaseAdminObjectAccess.rows[0]).toEqual({
+        anon_schema: false,
+        authenticated_schema: false,
+        service_role_schema: false,
+        anon_table_reachable: false,
+        authenticated_table_reachable: false,
+        service_role_table_reachable: false,
+        anon_sequence_reachable: false,
+        authenticated_sequence_reachable: false,
+        service_role_sequence_reachable: false,
+        anon_function_reachable: false,
+        authenticated_function_reachable: false,
+        service_role_function_reachable: false,
+      });
+    });
 
     it("persists only session digests for customers, operators, and internal admins while preserving lookup and rotation", async () => {
       const now = new Date();
