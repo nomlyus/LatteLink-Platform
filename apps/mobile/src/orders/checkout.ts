@@ -108,6 +108,13 @@ function parseCheckoutApiError(error: unknown): ParsedCheckoutApiError | undefin
 
 function resolveCheckoutErrorMessage(error: unknown, fallback: string) {
   const parsedApiError = parseCheckoutApiError(error);
+  if (
+    parsedApiError?.code === "STRIPE_ACCOUNT_NOT_READY" ||
+    parsedApiError?.code === "STRIPE_SECRET_KEY_NOT_CONFIGURED" ||
+    parsedApiError?.code === "STRIPE_PUBLISHABLE_KEY_NOT_CONFIGURED"
+  ) {
+    return "Ordering is unavailable at this location right now. Please try again later.";
+  }
   if (typeof parsedApiError?.message === "string" && parsedApiError.message.trim().length > 0) {
     return parsedApiError.message;
   }

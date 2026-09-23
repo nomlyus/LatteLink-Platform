@@ -48,6 +48,7 @@ These should be configured as GitHub Environment vars unless they are sensitive:
 - `CORS_ALLOWED_ORIGINS`
 - `ALLOW_DEV_CUSTOMER_LOGIN`
 - `PAYMENTS_PROVIDER_MODE`
+  - Legacy Clover POS order-submit/refund simulation mode, **not** the Nomly customer checkout provider. Mobile checkout remains Stripe in both environments; do not use this variable to infer Stripe test/live mode.
 - `CLOVER_OAUTH_ENVIRONMENT`
 - `APPLE_SIGN_IN_ENABLED`
 - `APPLE_ALLOWED_CLIENT_IDS`

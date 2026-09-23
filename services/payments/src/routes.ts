@@ -1765,7 +1765,7 @@ async function fetchInternalLocationSummary(params: {
   if (!parsed.success) {
     return {
       ok: false,
-      status: upstream.status,
+      status: 502,
       body
     };
   }

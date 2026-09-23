@@ -1,75 +1,36 @@
-# Payment Order Flow
+# Nomly payment and order flow
 
-Last updated: `2026-03-20`
+Last verified against the 1.2.0 live-dev candidate: 2026-09-23.
 
-## Summary
+## Customer checkout
 
-The current checkout path is:
+Nomly owns the customer order and its fulfillment lifecycle. The merchant-branded mobile app quotes catalog-backed items and creates an expiring checkout draft with the orders service. It then requests a Stripe mobile payment session for that checkout. The payments service checks the selected location's Stripe Connect readiness and enabled card method before creating a PaymentIntent under that location's connected account. Cards and Apple Pay use Stripe; Clover is not a customer checkout provider.
 
-1. mobile builds a quote from menu items
-2. orders service creates a `PENDING_PAYMENT` order from that quote
-3. payments service authorizes the Clover charge
-4. orders service finalizes the order as `PAID`
-5. the paid order is visible through the normal order read endpoints
-6. Clover webhooks can replay the same finalization safely
-
-The orders service remains the source of truth for order status transitions. Payments is responsible for charge/refund persistence and for dispatching reconciliation events to orders.
-
-## Normal Checkout Sequence
+After Stripe confirms payment, the payments/orders integration promotes the checkout draft to a paid Nomly order. The orders service remains authoritative for order status, and staff progress fulfillment there. Finalization, webhook, and reconciliation paths must converge on the same order and payment without duplicate side effects; the remaining recovery and account-binding work is tracked in Gate 1 issue #411.
 
 ```mermaid
 sequenceDiagram
-  participant Mobile
-  participant Orders
-  participant Payments
-
-  Mobile->>Orders: POST /v1/orders/quote
-  Mobile->>Orders: POST /v1/orders
-  Mobile->>Payments: POST /v1/payments/charges
-  Payments-->>Mobile: charge response
-  Orders->>Orders: mark order PAID on payment success
-  Mobile->>Orders: GET /v1/orders/:orderId
-  Orders-->>Mobile: visible PAID order
+  participant App as Branded mobile app
+  participant Orders as Nomly orders
+  participant Payments as Nomly payments
+  participant Stripe
+  App->>Orders: Quote and create checkout draft
+  App->>Payments: Create Stripe mobile payment session
+  Payments->>Orders: Read checkout payment context
+  Payments->>Stripe: Create location-scoped PaymentIntent
+  Stripe-->>App: Card or Apple Pay payment confirmation
+  Payments->>Orders: Confirm paid checkout
+  Orders-->>App: Paid Nomly order
 ```
 
-## Webhook Finalization
+A location without a ready Stripe account or enabled card method cannot create a customer payment session. The app presents a location-level ordering-unavailable message rather than exposing provider configuration details.
 
-When Clover later sends a charge or refund webhook:
+## Configuration boundary
 
-1. `payments` resolves the payment or refund from persisted state.
-2. `payments` normalizes the webhook payload into a reconciliation event.
-3. `payments` POSTs the event to `orders` at `/v1/orders/internal/payments/reconcile`.
-4. `orders` applies the transition if it is still valid.
-5. `payments` returns the reconciliation result to the webhook caller.
+`STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, and the location's Stripe Connect profile govern customer checkout. Dev uses Stripe test-mode keys and test instruments. `PAYMENTS_PROVIDER_MODE` is a legacy setting for the separate Clover POS order-submit/refund simulation path; it does **not** switch mobile checkout between Stripe and Clover. Do not use it as evidence that customer payments are simulated or Clover-powered.
 
-Duplicate webhook deliveries are safe in two layers:
-
-- `payments` caches successful webhook deliveries for the life of the process and returns the prior response for identical events.
-- `orders` still rejects invalid state regressions and duplicate terminal transitions.
-
-Failed webhook dispatches are not cached, so a retry can attempt finalization again.
-
-## Idempotency Rules
-
-- Charges are idempotent by `orderId + idempotencyKey`.
-- Refunds are idempotent by `orderId + idempotencyKey`.
-- Webhook finalization is replay-safe for identical events.
-- `orders` remains the authoritative guard against duplicate status transitions.
-
-## Operational Notes
-
-- Use `CLOVER_PROVIDER_MODE=simulated` for local development unless live Clover credentials are configured.
-- Use `CLOVER_PROVIDER_MODE=live` only when the Clover charge, refund, and optional Apple Pay tokenization endpoints are set.
-- `payments` now requires `ORDERS_INTERNAL_API_TOKEN` on internal charge/refund writes, and `payments` plus `orders` must share the same value for webhook reconciliation to succeed.
-- `CLOVER_WEBHOOK_SHARED_SECRET` must be configured before `payments` will accept Clover webhook deliveries.
-- The payment path does not write order records directly. If orders is unavailable, payments can persist the charge or refund result, but the order finalization step still depends on orders returning successfully.
-- After payment, fulfillment progression depends on the configured runtime mode:
-  - `staff` mode keeps the order at `PAID` until staff advances it.
-  - `time_based` mode can auto-progress later reads using the configured schedule.
+The Clover POS/OAuth surface is deferred and subject to Gate 1 containment in #420. Future optional Clover work is read-only sales reporting, not order creation, charging, fulfillment, or refunds. Historical Clover charging instructions in older runbooks are not instructions for the current 1.2.0 customer journey.
 
 ## Verification
 
-```bash
-pnpm --filter @lattelink/payments test
-pnpm --filter @lattelink/orders test
-```
+Run the mobile checkout and payments tests, then verify the Stripe test-mode order/refund journey on the live dev stack. Keep production and real customer data out of 1.2.0 verification. Gate 1 exit #421 owns the broader paid-order, recovery, and soak evidence; production promotion is a separate client #2 release decision.

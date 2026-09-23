@@ -1,5 +1,7 @@
 # Clover Payment Integration Path
 
+> Historical integration runbook. This describes legacy Clover charge/order-submission mechanics, **not** the Nomly 1.2.0 customer checkout path. The active branded-app checkout uses location-scoped Stripe cards and Apple Pay; Nomly owns orders and fulfillment. Do not enable Clover charging or POS order submission based on this runbook. Gate 1 #420 contains the deferred Clover surface, and future optional Clover work is read-only sales reporting. See `docs/payment-order-flow.md` for the current flow.
+
 Last reviewed: `2026-04-03`
 
 ## Scope
