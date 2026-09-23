@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { validateReleaseEvidence } from "./verify-heroku-release-provenance.mjs";
+import { validateReleaseEvidence, validateWorkerEvidence } from "./verify-heroku-release-provenance.mjs";
 
 const sha = "a".repeat(40);
 const valid = {
@@ -64,4 +64,50 @@ test("returns only allowlisted non-sensitive fields", () => {
   const serialized = JSON.stringify(evidence);
   assert.equal(serialized.includes("private"), false);
   assert.equal(serialized.includes("DATABASE_URL"), false);
+});
+
+const workerRecord = {
+  phase: "worker-startup",
+  environment: "dev",
+  buildCommit: sha,
+  releaseVersion: "v42",
+  workers: {
+    notificationsDispatch: "started",
+    paymentReconciler: "started",
+    menuSync: "disabled",
+  },
+};
+
+test("accepts only worker startup evidence bound to the exact release and build", () => {
+  const input = {
+    logText: `2026-09-22 app[web.1]: [backend-runtime] release provenance ${JSON.stringify(workerRecord)}`,
+    expectedSha: sha,
+    releaseVersion: 42,
+    expectedEnvironment: "dev",
+    workers: workerRecord.workers,
+  };
+  assert.deepEqual(validateWorkerEvidence(input), workerRecord.workers);
+  assert.throws(() => validateWorkerEvidence({ ...input, releaseVersion: 43 }));
+  assert.throws(() => validateWorkerEvidence({ ...input, expectedSha: "b".repeat(40) }));
+  assert.throws(() => validateWorkerEvidence({ ...input, expectedEnvironment: "production" }));
+  assert.throws(() => validateWorkerEvidence({
+    ...input,
+    workers: { ...workerRecord.workers, paymentReconciler: "disabled" },
+  }), /disagrees/);
+});
+
+test("rejects worker lines without Heroku build metadata or with malformed content", () => {
+  const input = {
+    logText: `[backend-runtime] release provenance ${JSON.stringify({
+      ...workerRecord,
+      buildCommit: null,
+      releaseVersion: null,
+    })}`,
+    expectedSha: sha,
+    releaseVersion: 42,
+    expectedEnvironment: "dev",
+    workers: workerRecord.workers,
+  };
+  assert.throws(() => validateWorkerEvidence(input));
+  assert.throws(() => validateWorkerEvidence({ ...input, logText: "[backend-runtime] release provenance {invalid" }));
 });

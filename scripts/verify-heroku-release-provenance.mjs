@@ -58,15 +58,99 @@ export function validateReleaseEvidence(input) {
   };
 }
 
-async function herokuJson(path, appName, apiKey) {
+function expectedWorkerStates(config) {
+  const enabled = config.PAYMENT_RECONCILER_ENABLED?.trim().toLowerCase();
+  if (enabled && !["1", "true", "yes", "on", "0", "false", "no", "off"].includes(enabled)) {
+    throw new Error("Payment reconciler configuration is invalid");
+  }
+  return {
+    notificationsDispatch: "started",
+    paymentReconciler: ["0", "false", "no", "off"].includes(enabled) ? "disabled" : "started",
+    menuSync: config.WEBAPP_MENU_SOURCE_URL?.trim() ? "started" : "disabled",
+  };
+}
+
+export function validateWorkerEvidence(input) {
+  const { logText, expectedSha, releaseVersion, expectedEnvironment, workers } = input;
+  const marker = "[backend-runtime] release provenance ";
+  for (const line of logText.split("\n")) {
+    const markerIndex = line.indexOf(marker);
+    if (markerIndex === -1) continue;
+    let record;
+    try {
+      record = JSON.parse(line.slice(markerIndex + marker.length));
+    } catch {
+      continue;
+    }
+    if (
+      record.phase !== "worker-startup" ||
+      record.environment !== expectedEnvironment ||
+      record.buildCommit !== expectedSha ||
+      record.releaseVersion !== `v${releaseVersion}`
+    ) continue;
+    if (
+      record.workers?.notificationsDispatch !== workers.notificationsDispatch ||
+      record.workers?.paymentReconciler !== workers.paymentReconciler ||
+      record.workers?.menuSync !== workers.menuSync
+    ) {
+      throw new Error("Worker startup state disagrees with the current Heroku configuration");
+    }
+    return workers;
+  }
+  throw new Error("Current release worker startup evidence is unavailable or does not match build metadata");
+}
+
+async function herokuJson(path, appName, apiKey, input = {}) {
   const response = await fetch(`https://api.heroku.com/apps/${encodeURIComponent(appName)}${path}`, {
+    method: input.method ?? "GET",
+    body: input.body ? JSON.stringify(input.body) : undefined,
     headers: {
       accept: "application/vnd.heroku+json; version=3",
       authorization: `Bearer ${apiKey}`,
+      ...(input.body ? { "content-type": "application/json" } : {}),
     },
   });
   if (!response.ok) throw new Error(`Heroku provenance request failed (${response.status})`);
   return response.json();
+}
+
+async function readRecentWebLogs(appName, apiKey) {
+  const session = await herokuJson("/log-sessions", appName, apiKey, {
+    method: "POST",
+    body: { type: "web", source: "app", lines: 1500, tail: false },
+  });
+  if (!session.logplex_url) throw new Error("Heroku log session is unavailable");
+  const response = await fetch(session.logplex_url, { headers: { accept: "text/plain" } });
+  if (!response.ok) throw new Error(`Heroku log session retrieval failed (${response.status})`);
+  return response.text();
+}
+
+async function verifyCurrentWorkerEvidence(input) {
+  const { appName, apiKey, release, expectedSha, expectedEnvironment } = input;
+  const config = await herokuJson("/config-vars", appName, apiKey);
+  if (config.DEPLOY_ENV !== expectedEnvironment) {
+    throw new Error("Heroku runtime environment does not match deployment evidence");
+  }
+  const workers = expectedWorkerStates(config);
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const logText = await readRecentWebLogs(appName, apiKey);
+    try {
+      return validateWorkerEvidence({
+        logText,
+        expectedSha,
+        releaseVersion: release.version,
+        expectedEnvironment,
+        workers,
+      });
+    } catch (error) {
+      if (error.message !== "Current release worker startup evidence is unavailable or does not match build metadata") {
+        throw error;
+      }
+      if (attempt === 9) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+    }
+  }
+  throw new Error("Current release worker startup evidence is unavailable");
 }
 
 export async function verifyHerokuReleaseProvenance(env = process.env) {
@@ -108,8 +192,24 @@ export async function verifyHerokuReleaseProvenance(env = process.env) {
     expectedEnvironment,
     resolvedDescriptionCommit,
   });
-  console.info(`[release-provenance] ${JSON.stringify(evidence)}`);
-  return evidence;
+  const workers = await verifyCurrentWorkerEvidence({
+    appName,
+    apiKey,
+    release,
+    expectedSha,
+    expectedEnvironment,
+  });
+  const dynos = await herokuJson("/dynos", appName, apiKey);
+  if (!dynos.some((dyno) => dyno.type === "web" && ["up", "idle"].includes(dyno.state) && dyno.release?.id === release.id)) {
+    throw new Error("No current web dyno is associated with the verified Heroku release");
+  }
+  const latestReleases = await herokuJson("/releases", appName, apiKey);
+  if (latestReleases.find((candidate) => candidate.current === true)?.id !== release.id) {
+    throw new Error("Heroku current release changed during provenance verification");
+  }
+  const verified = { ...evidence, workers };
+  console.info(`[release-provenance] ${JSON.stringify(verified)}`);
+  return verified;
 }
 
 const invokedPath = process.argv[1] ? pathToFileURL(process.argv[1]).href : undefined;

@@ -18,6 +18,8 @@ public gateway and embedded workers start successfully. It records the
 notification dispatcher as `started` and the payment reconciler/menu sync as
 `started` or `disabled` according to the workers actually started. If worker
 startup fails, the process fails and no successful worker record is emitted.
+`started` means the loop was launched; it does not prove continuing worker
+health or successful processing of every subsequent job.
 The record is in Heroku application logs, not public `/health` or `/ready`.
 Heroku access controls are therefore the operator boundary for this evidence.
 
@@ -29,14 +31,22 @@ stack, `slug` can be null; the verifier instead requires Heroku's generated
 `Deploy <short SHA>` description to be an eight-or-more-character prefix that
 resolves uniquely to the selected full commit in the checked-out repository.
 This is a weaker release-to-commit correlation than a full slug commit, so the
-evidence explicitly labels the method. It then reads that same release's release-phase output and
-requires a complete migration record for the expected environment. The
-workflow prints only app-independent, non-sensitive release ID/version, SHA,
-environment, and migration summary. Release logs should be reviewed for the
-worker-startup record after the successful deployment, alongside the workflow
-evidence and Heroku release ID/version. The runtime's optional
-`HEROKU_BUILD_COMMIT`/`HEROKU_RELEASE_VERSION` fields remain `null` unless
-Heroku Dyno Metadata is enabled; a null value is **not** a verified match.
+evidence explicitly labels the method. It then reads that same release's
+release-phase output and requires a complete migration record for the expected
+environment. The verifier reads recent authorized web logs and requires a
+worker-startup record with the exact `HEROKU_BUILD_COMMIT`, current
+`HEROKU_RELEASE_VERSION`, expected environment, and worker states matching the
+current Heroku configuration. It confirms a web dyno belongs to that release
+and rechecks that the release is still current. Missing or mismatched evidence
+fails closed. The workflow prints only non-sensitive release ID/version, SHA,
+environment, migration summary, and worker states; signed log/output URLs,
+configuration values, and raw logs are never printed.
+
+The worker verification requires Heroku's `runtime-dyno-metadata` and
+`runtime-dyno-build-metadata` Labs features to provide the two metadata fields.
+Without them the record contains `null`, which is **not** a verified match.
+Enable them on dev before the controlled dev deployment and verify their
+availability. Do not enable or change them on production under this task.
 Read-only inspection of the dev app's existing v30 release on 2026-09-22 found
 `slug: null` and a generated `Deploy 872de7d1` description. The two Heroku
 Dyno Metadata Labs features were disabled. These observations are why the
@@ -52,22 +62,26 @@ workflow evidence must never be treated as current deployment state.
 
 1. Deploy the exact reviewed `develop` SHA through `deploy-dev`; do not use the
    workflow run's own SHA for a `workflow_run` event.
-2. Confirm the Heroku Git ref equals the exact selected SHA. Confirm `Verify
+2. Confirm the two Dyno Metadata Labs features are enabled on the **dev** app.
+   Confirm the Heroku Git ref equals the exact selected SHA. Confirm `Verify
    release migration provenance` passes and records a current, succeeded
    release with either an exact slug-commit match or a unique Heroku-generated
-   description prefix, plus `pendingCount=0`. Record which method was used.
+   description prefix, plus `pendingCount=0` and worker states bound to its
+   exact build SHA and release version. Record which method was used.
 3. In Heroku's authorized release output, confirm the applied migration name
    and count agree with the workflow summary. No credentials or URLs should be
    present in the provenance record.
-4. In authorized app logs after that release, confirm one startup record shows
-   the notification dispatcher and the actual enabled/disabled payment
+4. Confirm the verifier found a startup record for the current release showing
+   the notification dispatcher and actual enabled/disabled payment
    reconciliation and menu-sync states. Confirm public `/ready` does not expose
-   that worker record.
+   that worker record. This is startup-state evidence, not a liveness guarantee.
 5. If the container-stack release has no slug metadata, a missing/ambiguous
    description prefix, or no retrievable release output, leave #471 open.
    Establish another exact-commit evidence chain before relaxing the verifier;
    do not accept a config-var target SHA as proof of the running build.
 
 Production remains unverified until a future user-authorized production
-release. This runbook does not authorize production access, configuration
-changes, deployment, or enabling Heroku Labs features.
+release. Its deploy workflow will require equivalent metadata when it is next
+used; enabling that metadata on production is a separate approved release
+preparation, not an action authorized here. This runbook does not authorize
+production access, configuration changes, or deployment.
