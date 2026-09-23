@@ -3123,7 +3123,23 @@ export async function registerRoutes(app: FastifyInstance) {
 
   // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
   // The quote-to-order mutation bypassed customer-bound checkout drafts.
-  app.post("/v1/orders", { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(ordersWriteRateLimit)] }, async (request, reply) => {
+  app.post("/v1/orders", {
+    preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(ordersWriteRateLimit)],
+    schema: {
+      summary: "Retired legacy order creation route",
+      response: {
+        410: {
+          type: "object",
+          required: ["code", "message", "requestId"],
+          properties: {
+            code: { type: "string", const: "LEGACY_ORDER_CREATE_RETIRED" },
+            message: { type: "string" },
+            requestId: { type: "string" }
+          }
+        }
+      }
+    }
+  }, async (request, reply) => {
     return reply.status(410).send(apiErrorSchema.parse({
       code: "LEGACY_ORDER_CREATE_RETIRED",
       message: "Create a checkout draft to place an order.",

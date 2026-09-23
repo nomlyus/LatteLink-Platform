@@ -547,9 +547,36 @@
     },
     "/orders": {
       "post": {
+        "summary": "Retired legacy order creation route",
         "responses": {
-          "200": {
-            "description": "Default Response"
+          "410": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "LEGACY_ORDER_CREATE_RETIRED"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       },

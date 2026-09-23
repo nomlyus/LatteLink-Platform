@@ -1,5 +1,7 @@
 # API Contracts: First Cut
 
+Historical first-cut reference. See [payment and order flow](../payment-order-flow.md) for the supported 1.2.0 customer checkout sequence.
+
 ## Base URL
 
 `https://api.gazellecoffee.com/v1`
@@ -23,7 +25,8 @@
 ## Orders
 
 - `POST /orders/quote`
-- `POST /orders`
+- `POST /orders/checkouts` (create a customer-bound checkout draft)
+- `POST /orders` (retired; returns 410 `LEGACY_ORDER_CREATE_RETIRED`)
 - `GET /orders`
 - `GET /orders/{orderId}`
 - `POST /orders/{orderId}/cancel`

@@ -1791,6 +1791,7 @@ export interface paths {
             };
         };
         put?: never;
+        /** Retired legacy order creation route */
         post: {
             parameters: {
                 query?: never;
@@ -1801,11 +1802,18 @@ export interface paths {
             requestBody?: never;
             responses: {
                 /** @description Default Response */
-                200: {
+                410: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": {
+                            /** @enum {string} */
+                            code: "LEGACY_ORDER_CREATE_RETIRED";
+                            message: string;
+                            requestId: string;
+                        };
+                    };
                 };
             };
         };
