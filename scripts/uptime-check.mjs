@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { writeFile } from "node:fs/promises";
+import { failureResult, resolveTargetTimeout, safeRequestId } from "./uptime-monitor-utils.mjs";
 
 const defaultTargets = [
   { key: "prod-api-health", name: "Production API /health", url: "https://api.nomly.us/health", critical: true },
@@ -63,19 +64,20 @@ async function checkTarget(target, timeoutMs) {
       ...target,
       ok,
       status: response.status,
-      requestId: response.headers.get("x-request-id") ?? undefined,
+      requestId: safeRequestId(response.headers.get("x-request-id")),
       responseTimeMs,
       checkedAt: new Date().toISOString(),
       error: ok ? undefined : `HTTP ${response.status}`
     };
   } catch (error) {
+    const timedOut = error instanceof Error && error.name === "AbortError";
     return {
       ...target,
       ok: false,
       status: null,
       responseTimeMs: Date.now() - startedAt,
       checkedAt: new Date().toISOString(),
-      error: error instanceof Error ? error.message : String(error)
+      error: timedOut ? `Request timed out after ${timeoutMs}ms` : "Network request failed"
     };
   } finally {
     clearTimeout(timeout);
@@ -112,12 +114,8 @@ if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || !Number.isInteger(devApi
 }
 const targets = parseTargets();
 const results = await Promise.all(targets.map((target) => {
-  const hostname = new URL(target.url).hostname.toLowerCase();
-  const targetTimeoutMs = target.timeoutMs ?? (hostname === "api-dev.nomly.us" ? devApiTimeoutMs : timeoutMs);
-  if (!Number.isInteger(targetTimeoutMs) || targetTimeoutMs < 1000 || targetTimeoutMs > 60000) {
-    throw new Error(`Invalid timeout for uptime target ${target.key}`);
-  }
-  return checkTarget(target, targetTimeoutMs);
+  const resolved = resolveTargetTimeout(target, { timeoutMs, devApiTimeoutMs });
+  return resolved.error ? failureResult(target, resolved.error) : checkTarget(target, resolved.timeoutMs);
 }));
 const failed = results.filter((result) => !result.ok);
 

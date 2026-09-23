@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { readFile } from "node:fs/promises";
+import { safeMarkdownText, safeRequestId, safeTargetKey, safeTargetUrl } from "./uptime-monitor-utils.mjs";
 
 const token = process.env.GITHUB_TOKEN;
 const repository = process.env.GITHUB_REPOSITORY;
@@ -59,20 +60,7 @@ async function ensureLabel(name, color, description) {
 }
 
 function markerFor(key) {
-  return `${issueMarkerPrefix} ${key} -->`;
-}
-
-function safeTargetUrl(value) {
-  try {
-    const url = new URL(value);
-    url.username = "";
-    url.password = "";
-    url.search = "";
-    url.hash = "";
-    return url.toString();
-  } catch {
-    return "<invalid target URL>";
-  }
+  return `${issueMarkerPrefix} ${safeTargetKey(key)} -->`;
 }
 
 function renderFailureBody(result) {
@@ -81,14 +69,14 @@ function renderFailureBody(result) {
     "",
     "External uptime monitoring detected a failing target.",
     "",
-    `- Target: ${result.name}`,
+    `- Target: ${safeMarkdownText(result.name)}`,
     `- URL: ${safeTargetUrl(result.url)}`,
     `- Critical: ${result.critical ? "yes" : "no"}`,
     `- Checked at: ${result.checkedAt}`,
     `- HTTP status: ${result.status ?? "n/a"}`,
-    result.requestId ? `- Request ID: ${result.requestId}` : undefined,
+    safeRequestId(result.requestId) ? `- Request ID: ${safeRequestId(result.requestId)}` : undefined,
     `- Response time: ${result.responseTimeMs}ms`,
-    `- Error: ${result.error ?? "unknown"}`,
+    `- Error: ${safeMarkdownText(result.error ?? "unknown")}`,
     "",
     "Runbook: docs/runbooks/pilot-uptime-monitoring.md",
     "Incident playbook: docs/runbooks/pilot-incident-response.md"
@@ -101,9 +89,9 @@ function renderFailureComment(result) {
     "",
     `- Checked at: ${result.checkedAt}`,
     `- HTTP status: ${result.status ?? "n/a"}`,
-    result.requestId ? `- Request ID: ${result.requestId}` : undefined,
+    safeRequestId(result.requestId) ? `- Request ID: ${safeRequestId(result.requestId)}` : undefined,
     `- Response time: ${result.responseTimeMs}ms`,
-    `- Error: ${result.error ?? "unknown"}`
+    `- Error: ${safeMarkdownText(result.error ?? "unknown")}`
   ].filter(Boolean).join("\n");
 }
 
@@ -113,7 +101,7 @@ function renderRecoveryComment(result) {
     "",
     `- Checked at: ${result.checkedAt}`,
     `- HTTP status: ${result.status ?? "n/a"}`,
-    result.requestId ? `- Request ID: ${result.requestId}` : undefined,
+    safeRequestId(result.requestId) ? `- Request ID: ${safeRequestId(result.requestId)}` : undefined,
     `- Response time: ${result.responseTimeMs}ms`
   ].filter(Boolean).join("\n");
 }
@@ -170,7 +158,7 @@ for (const result of failures) {
   }
 
   await github("POST", `/repos/${owner}/${repo}/issues`, {
-    title: `[Uptime] ${result.name} is failing`,
+    title: `[Uptime] ${safeMarkdownText(result.name)} is failing`,
     body: renderFailureBody(result),
     labels: ["uptime", "status:degraded", "p1", "gate:1", "area:infra"]
   });
