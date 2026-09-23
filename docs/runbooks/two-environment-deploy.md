@@ -132,6 +132,16 @@ Dashboard:
 - local dashboard development should point to `dev`
 - deployed dashboard should have separate `dev` and `production` builds/domains
 
+Marketing site:
+
+- `develop` preview branch domain: `https://dev.nomly.us`, sign-in protected by
+  Vercel for authorized testers; an anonymous `302` to Vercel SSO is expected.
+- public production domain: `https://nomly.us`, deployed through the approved
+  published-release workflow, not by a `main` push alone.
+- See [the marketing Vercel runbook](./lattelink-vercel-deployment.md) for
+  alias, access, smoke-check, and troubleshooting steps. Do not use an
+  unauthenticated `200` expectation as the dev marketing health check.
+
 ## Heroku layout
 
 - `dev` uses one Eco web dyno and may sleep after inactivity.

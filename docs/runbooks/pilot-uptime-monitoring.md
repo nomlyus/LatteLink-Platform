@@ -59,6 +59,15 @@ Backup targets checked by `scripts/uptime-check.mjs`:
 | dev | operator dashboard | `https://app-dev.nomly.us` | no |
 | dev | admin console | `https://admin-dev.nomly.us` | no |
 
+`https://dev.nomly.us` is intentionally absent from both unauthenticated
+monitor lists. The development marketing branch domain is Vercel sign-in
+protected; an anonymous request redirects to Vercel SSO (`302`) by policy.
+Treat that redirect as an access-control pass, not a marketing-site outage.
+Release verifies the actual page and `develop` deployment alias with an
+authorized session using
+[the marketing deployment smoke check](./lattelink-vercel-deployment.md#dev-smoke-check-authorized-releaseproduct-tester).
+The public production marketing site remains monitored at `https://nomly.us`.
+
 If a URL changes, update both the Sentry uptime monitor and the backup GitHub Actions target. For the backup workflow, either update `scripts/uptime-check.mjs` or define repository variable `UPTIME_TARGETS_JSON`.
 
 Example override:
