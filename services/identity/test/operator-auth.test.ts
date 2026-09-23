@@ -74,6 +74,40 @@ describe("operator auth", () => {
     }
   });
 
+  it("keeps gateway verification independent across operators beyond the public peer limit", async () => {
+    process.env.GATEWAY_INTERNAL_API_TOKEN = "test-gateway-secret";
+    const repository = createInMemoryIdentityRepository();
+    await provisionOwner(repository);
+    await provisionStore(repository);
+    const app = await buildApp({ repository });
+    try {
+      const owner = await signInOperator(app, ownerEmail, ownerPassword);
+      const store = await signInOperator(app, storeEmail, storePassword, locationId);
+      for (let i = 0; i < 121; i += 1) {
+        const response = await app.inject({
+          method: "GET",
+          url: "/v1/internal/gateway/operator/auth/verify",
+          headers: { authorization: `Bearer ${owner.accessToken}`, "x-gateway-token": "test-gateway-secret" }
+        });
+        expect(response.statusCode).toBe(200);
+      }
+      const unrelated = await app.inject({
+        method: "GET",
+        url: "/v1/internal/gateway/operator/auth/verify",
+        headers: { authorization: `Bearer ${store.accessToken}`, "x-gateway-token": "test-gateway-secret" }
+      });
+      expect(unrelated.statusCode).toBe(200);
+      const unauthorized = await app.inject({
+        method: "GET",
+        url: "/v1/internal/gateway/operator/auth/verify",
+        headers: { authorization: `Bearer ${store.accessToken}`, "x-gateway-token": "wrong" }
+      });
+      expect(unauthorized.statusCode).toBe(401);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("supports refresh rotation and invalidates prior operator access tokens after logout", async () => {
     const repository = createInMemoryIdentityRepository();
     await provisionOwner(repository);

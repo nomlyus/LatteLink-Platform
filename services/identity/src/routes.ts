@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   generateAuthenticationOptions,
   generateRegistrationOptions,
@@ -884,6 +884,26 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
   const authReadRateLimit = {
     max: toPositiveInteger(process.env.IDENTITY_RATE_LIMIT_AUTH_READ_MAX, defaultAuthReadRateLimitMax),
     timeWindow: rateLimitWindowMs
+  };
+  // Gateway verification has its own keyed boundary. The public /auth/me limit
+  // remains peer-IP based; the private path cannot let one operator consume
+  // every other operator's gateway-to-Identity allowance.
+  const gatewayVerificationRateLimit = {
+    max: toPositiveInteger(process.env.IDENTITY_RATE_LIMIT_GATEWAY_VERIFY_MAX, 1200),
+    timeWindow: rateLimitWindowMs,
+    keyGenerator: (request: FastifyRequest) => {
+      const authorization = request.headers.authorization;
+      return authorization
+        ? `bearer:${createHash("sha256").update(authorization).digest("hex")}`
+        : `ip:${request.ip}`;
+    }
+  };
+  const requireGatewayVerification = async (request: FastifyRequest, reply: FastifyReply) => {
+    const authorization = authorizeGatewayRequest(request, gatewayApiToken);
+    if (!authorization.ok) {
+      return reply.status(authorization.statusCode).send(authorization.body);
+    }
+    return undefined;
   };
   const passkeyChallengeRateLimit = {
     max: toPositiveInteger(process.env.IDENTITY_RATE_LIMIT_PASSKEY_CHALLENGE_MAX, defaultPasskeyChallengeRateLimitMax),
@@ -2151,6 +2171,22 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
     }
   );
 
+  app.get(
+    "/v1/internal/gateway/operator/auth/verify",
+    { preHandler: [requireGatewayVerification, app.rateLimit(gatewayVerificationRateLimit)] },
+    async (request, reply) => {
+      const parsed = authHeaderSchema.safeParse(request.headers);
+      const operator = await resolveOperatorFromBearer({
+        repository,
+        authorizationHeader: parsed.success ? parsed.data.authorization : undefined
+      });
+      if (!operator) {
+        return reply.status(401).send(buildApiError(request.id, "UNAUTHORIZED", "Missing or invalid auth token"));
+      }
+      return operatorMeResponseSchema.parse(operator);
+    }
+  );
+
   // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
   app.post(
     "/v1/internal-admin/auth/sign-in",
@@ -2269,6 +2305,22 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
         return reply.status(401).send(buildApiError(request.id, "UNAUTHORIZED", "Missing or invalid auth token"));
       }
 
+      return internalAdminMeResponseSchema.parse(admin);
+    }
+  );
+
+  app.get(
+    "/v1/internal/gateway/internal-admin/auth/verify",
+    { preHandler: [requireGatewayVerification, app.rateLimit(gatewayVerificationRateLimit)] },
+    async (request, reply) => {
+      const parsed = authHeaderSchema.safeParse(request.headers);
+      const admin = await resolveInternalAdminFromBearer({
+        repository,
+        authorizationHeader: parsed.success ? parsed.data.authorization : undefined
+      });
+      if (!admin) {
+        return reply.status(401).send(buildApiError(request.id, "UNAUTHORIZED", "Missing or invalid auth token"));
+      }
       return internalAdminMeResponseSchema.parse(admin);
     }
   );

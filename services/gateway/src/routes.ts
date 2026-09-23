@@ -508,9 +508,10 @@ async function resolveOperatorAccess(params: {
   request: FastifyRequest;
   reply: FastifyReply;
   identityBaseUrl: string;
+  gatewayInternalApiToken: string | undefined;
   requiredCapability: z.output<typeof operatorMeResponseSchema>["capabilities"][number];
 }) {
-  const { request, reply, identityBaseUrl, requiredCapability } = params;
+  const { request, reply, identityBaseUrl, gatewayInternalApiToken, requiredCapability } = params;
   if (!ensureBearerAuth(request, reply)) {
     return undefined;
   }
@@ -530,10 +531,11 @@ async function resolveOperatorAccess(params: {
   const timeoutHandle = setTimeout(() => timeoutController.abort(), timeoutMs);
 
   try {
-    const response = await fetch(`${identityBaseUrl}/v1/operator/auth/me`, {
+    const response = await fetch(`${identityBaseUrl}/v1/internal/gateway/operator/auth/verify`, {
       method: "GET",
       headers: {
         authorization: String(authorization),
+        "x-gateway-token": gatewayInternalApiToken ?? "",
         "x-request-id": request.id
       },
       signal: timeoutController.signal
@@ -590,7 +592,7 @@ async function resolveOperatorAccess(params: {
         error,
         upstream: "Identity",
         method: "GET",
-        path: "/v1/operator/auth/me",
+        path: "/v1/internal/gateway/operator/auth/verify",
         timeoutMs
       });
       reply.status(504).send(
@@ -630,9 +632,10 @@ async function resolveInternalAdminAccess(params: {
   request: FastifyRequest;
   reply: FastifyReply;
   identityBaseUrl: string;
+  gatewayInternalApiToken: string | undefined;
   requiredCapability: z.output<typeof internalAdminMeResponseSchema>["capabilities"][number];
 }) {
-  const { request, reply, identityBaseUrl, requiredCapability } = params;
+  const { request, reply, identityBaseUrl, gatewayInternalApiToken, requiredCapability } = params;
   if (!ensureInternalAdminBearerAuth(request, reply)) {
     return undefined;
   }
@@ -652,10 +655,11 @@ async function resolveInternalAdminAccess(params: {
   const timeoutHandle = setTimeout(() => timeoutController.abort(), timeoutMs);
 
   try {
-    const response = await fetch(`${identityBaseUrl}/v1/internal-admin/auth/me`, {
+    const response = await fetch(`${identityBaseUrl}/v1/internal/gateway/internal-admin/auth/verify`, {
       method: "GET",
       headers: {
         authorization: String(authorization),
+        "x-gateway-token": gatewayInternalApiToken ?? "",
         "x-request-id": request.id
       },
       signal: timeoutController.signal
@@ -712,7 +716,7 @@ async function resolveInternalAdminAccess(params: {
         error,
         upstream: "Identity",
         method: "GET",
-        path: "/v1/internal-admin/auth/me",
+        path: "/v1/internal/gateway/internal-admin/auth/verify",
         timeoutMs
       });
       reply.status(504).send(
@@ -1844,6 +1848,7 @@ export async function registerRoutes(app: FastifyInstance) {
         request,
         reply,
         identityBaseUrl,
+        gatewayInternalApiToken,
         requiredCapability: capability
       });
   const requireInternalAdminCapability = (
@@ -1854,6 +1859,7 @@ export async function registerRoutes(app: FastifyInstance) {
         request,
         reply,
         identityBaseUrl,
+        gatewayInternalApiToken,
         requiredCapability: capability
       });
 
@@ -2782,7 +2788,8 @@ export async function registerRoutes(app: FastifyInstance) {
         baseUrl: identityBaseUrl,
         serviceLabel: "Identity",
         method: "GET",
-        path: "/v1/operator/auth/me",
+        path: "/v1/internal/gateway/operator/auth/verify",
+        additionalHeaders: { "x-gateway-token": gatewayInternalApiToken },
         responseSchema: operatorMeResponseSchema
       })
   );
@@ -2862,7 +2869,8 @@ export async function registerRoutes(app: FastifyInstance) {
         baseUrl: identityBaseUrl,
         serviceLabel: "Identity",
         method: "GET",
-        path: "/v1/internal-admin/auth/me",
+        path: "/v1/internal/gateway/internal-admin/auth/verify",
+        additionalHeaders: { "x-gateway-token": gatewayInternalApiToken },
         responseSchema: internalAdminMeResponseSchema
       })
   );

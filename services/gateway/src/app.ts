@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isIP } from "node:net";
 import { Readable } from "node:stream";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
@@ -94,8 +95,13 @@ export async function buildApp() {
   const publicApiBaseUrl = process.env.PUBLIC_API_BASE_URL ?? "http://localhost:8080/v1";
   const allowedCorsOrigins = resolveAllowedCorsOrigins();
   const allowedCorsOriginHostSuffixes = resolveAllowedCorsOriginHostSuffixes();
+  const trustedProxyAddress = process.env.GATEWAY_TRUSTED_PROXY_ADDRESS?.trim();
+  if (trustedProxyAddress && !isIP(trustedProxyAddress)) {
+    throw new Error("GATEWAY_TRUSTED_PROXY_ADDRESS must be one IP address");
+  }
   const app = Fastify({
     logger: buildFastifyLoggerOptions(serviceName),
+    trustProxy: trustedProxyAddress ? (address) => address === trustedProxyAddress : false,
     genReqId: (req) => (req.headers["x-request-id"] as string | undefined) ?? randomUUID()
   });
   registerSentryErrorHook(app, serviceName);

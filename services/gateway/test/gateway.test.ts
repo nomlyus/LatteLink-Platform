@@ -638,7 +638,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         });
       }
 
-      if (url.endsWith("/v1/operator/auth/me") && method === "GET") {
+      if ((url.endsWith("/v1/operator/auth/me") || url.endsWith("/v1/internal/gateway/operator/auth/verify")) && method === "GET") {
         if (!authHeader) {
           return new Response(
             JSON.stringify({
@@ -777,7 +777,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         });
       }
 
-      if (url.endsWith("/v1/internal-admin/auth/me") && method === "GET") {
+      if ((url.endsWith("/v1/internal-admin/auth/me") || url.endsWith("/v1/internal/gateway/internal-admin/auth/verify")) && method === "GET") {
         if (!authHeader) {
           return new Response(
             JSON.stringify({
@@ -3635,7 +3635,7 @@ let previousFreeClientDashboardDomain: string | undefined;
     expect(response.statusCode).toBe(401);
     expect(response.json()).toMatchObject({ code: "UNAUTHORIZED" });
     const requestedUrls = fetchMock.mock.calls.map(([input]) => (typeof input === "string" ? input : input.url));
-    expect(requestedUrls).toEqual(["http://identity.internal/v1/operator/auth/me"]);
+    expect(requestedUrls).toEqual(["http://identity.internal/v1/internal/gateway/operator/auth/verify"]);
     await app.close();
   });
 
@@ -4015,8 +4015,8 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const requestedUrls = fetchMock.mock.calls.map(([input]) => (typeof input === "string" ? input : input.url));
     expect(requestedUrls).toEqual([
-      "http://identity.internal/v1/operator/auth/me",
-      "http://identity.internal/v1/operator/auth/me"
+      "http://identity.internal/v1/internal/gateway/operator/auth/verify",
+      "http://identity.internal/v1/internal/gateway/operator/auth/verify"
     ]);
 
     await app.close();
@@ -5143,7 +5143,7 @@ let previousFreeClientDashboardDomain: string | undefined;
     expect(lastCall).toBeDefined();
     if (lastCall) {
       expect(typeof lastCall[0] === "string" ? lastCall[0] : lastCall[0].url).toBe(
-        "http://identity.internal/v1/operator/auth/me"
+        "http://identity.internal/v1/internal/gateway/operator/auth/verify"
       );
     }
 
@@ -5832,6 +5832,31 @@ let previousFreeClientDashboardDomain: string | undefined;
       expect(second.statusCode).toBe(401);
       expect(third.statusCode).toBe(429);
       expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.unstubAllEnvs();
+      await app.close();
+    }
+  });
+
+  it("trusts only the configured Caddy peer for distinct protected client buckets", async () => {
+    vi.stubEnv("GATEWAY_TRUSTED_PROXY_ADDRESS", "172.30.91.2");
+    vi.stubEnv("GATEWAY_RATE_LIMIT_PROTECTED_PRE_AUTH_MAX", "2");
+    const app = await buildApp();
+    const url = "/v1/admin/orders?locationId=flagship-01";
+    const from = (peer: string, claimedClient: string, token = "Bearer invalid") => app.inject({
+      method: "GET", url, remoteAddress: peer,
+      headers: { authorization: token, "x-forwarded-for": claimedClient }
+    });
+
+    try {
+      expect((await from("198.51.100.5", "192.0.2.10")).statusCode).toBe(401);
+      expect((await from("198.51.100.5", "192.0.2.11")).statusCode).toBe(401);
+      expect((await from("198.51.100.5", "192.0.2.12")).statusCode).toBe(429);
+
+      expect((await from("172.30.91.2", "192.0.2.20")).statusCode).toBe(401);
+      expect((await from("172.30.91.2", "192.0.2.20")).statusCode).toBe(401);
+      expect((await from("172.30.91.2", "192.0.2.20")).statusCode).toBe(429);
+      expect((await from("172.30.91.2", "192.0.2.21", ownerOperatorHeaders.authorization)).statusCode).toBe(200);
     } finally {
       vi.unstubAllEnvs();
       await app.close();
