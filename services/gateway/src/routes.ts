@@ -1096,7 +1096,7 @@ async function proxyUpstream<TResponse>(params: {
         requestId: request.id,
         upstream: serviceLabel,
         method,
-        path,
+        path: sanitizeRequestUrl(path),
         status: upstreamResponse.status
       },
       "upstream request returned error response"

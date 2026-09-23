@@ -9,9 +9,10 @@ describe("dashboard Sentry invite scrubbing", () => {
         url: "https://client.example.com/invites/synthetic-secret#synthetic-secret",
         data: { token: "synthetic-secret", password: "temporary-password" }
       },
-      transaction: "/invites/synthetic-secret",
+      transaction: "/invites/#synthetic-secret",
       breadcrumbs: [{ data: { url: "/v1/operator/invites/synthetic-secret/accept", to: "?inviteToken=synthetic-secret" } }],
-      extra: { error: "lookup failed at /v1/operator/invites/synthetic-secret" }
+      extra: { error: "lookup failed at /v1/operator/invites/#synthetic-secret" },
+      exception: { values: [{ value: "failure at /invites/#synthetic-secret" }] }
     } as unknown as Event);
 
     const serialized = JSON.stringify(event);

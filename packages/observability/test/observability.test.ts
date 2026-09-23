@@ -34,7 +34,12 @@ describe("observability helpers", () => {
       },
       breadcrumbs: [{ data: { url: "/invites/synthetic-secret", body: { inviteToken: "synthetic-secret" } } }],
       extra: { retryPath: "/v1/operator/invites/synthetic-secret/accept" },
-      exception: { values: [{ value: "failed at /v1/operator/invites/synthetic-secret/accept" }] }
+      exception: {
+        values: [
+          { value: "failed at /v1/operator/invites/synthetic-secret/accept" },
+          { value: "failed at /invites/#synthetic-secret" }
+        ]
+      }
     });
 
     expect(JSON.stringify(event)).not.toContain("synthetic-secret");

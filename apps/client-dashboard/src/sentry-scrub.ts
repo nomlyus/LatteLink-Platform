@@ -5,6 +5,7 @@ const sensitiveFieldPattern = /(token|password|secret|authorization|cookie|api[_
 function sanitizeSensitiveText(value: string) {
   return value
     .replace(/((?:^|\/)invites?\/)[^/?#\s]+/gi, "$1[redacted]")
+    .replace(/((?:^|\/)invites?\/)(#[^\s]*)/gi, "$1")
     .replace(/([?&](?:inviteToken|invite|token)=)[^&#\s]+/gi, "$1[redacted]");
 }
 
