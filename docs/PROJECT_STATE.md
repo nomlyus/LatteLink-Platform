@@ -225,7 +225,7 @@ Routes:
 - `GET /v1/store/config`
 - `GET /v1/store/cards`
 - `POST /v1/orders/quote`
-- `POST /v1/orders`
+- `POST /v1/orders` (retired; returns 410)
 - `POST /v1/orders/:orderId/pay`
 - `GET /v1/orders`
 - `GET /v1/orders/:orderId`
@@ -347,7 +347,7 @@ Routes:
 - `POST /v1/orders/internal/payments/reconcile`
 - `GET /v1/orders/internal/:orderId/payment-context`
 - `POST /v1/orders/quote`
-- `POST /v1/orders`
+- `POST /v1/orders` (retired; returns 410)
 - `POST /v1/orders/:orderId/pay`
 - `GET /v1/orders`
 - `GET /v1/orders/:orderId`

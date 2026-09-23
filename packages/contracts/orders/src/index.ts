@@ -392,12 +392,6 @@ export const ordersContract = {
       request: quoteRequestSchema,
       response: orderQuoteSchema
     },
-    create: {
-      method: "POST",
-      path: "/",
-      request: createOrderRequestSchema,
-      response: orderSchema
-    },
     createCheckout: {
       method: "POST",
       path: "/checkouts",

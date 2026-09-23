@@ -2,6 +2,8 @@
 
 Last reviewed: `2026-03-11`
 
+Historical runbook. The 1.2.0 checkout uses quote → checkout draft → Stripe mobile payment session as documented in [`docs/payment-order-flow.md`](../payment-order-flow.md). The `POST /v1/orders` step below is retired and returns 410; do not use these local token instructions for live dev verification.
+
 ## Scope
 
 `apps/mobile` cart checkout now performs:

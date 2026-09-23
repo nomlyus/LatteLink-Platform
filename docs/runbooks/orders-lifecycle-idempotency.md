@@ -2,6 +2,8 @@
 
 Last reviewed: `2026-03-10`
 
+Historical description of the retired quote-to-order path. `POST /v1/orders` now returns 410 in deployed runtimes. The supported 1.2.0 customer path is documented in [`docs/payment-order-flow.md`](../payment-order-flow.md); historical order reads remain supported.
+
 ## Scope
 
 `services/orders` now implements:

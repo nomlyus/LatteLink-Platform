@@ -891,39 +891,30 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   );
 
-  app.post(
-    "/v1/orders",
-    {
-      preHandler: app.rateLimit(ordersWriteRateLimit)
-    },
-    async (request, reply) => {
-      if (!authorizeGatewayRequest(request, reply, gatewayApiToken, { allowUnauthenticated: allowUnauthenticatedGatewayAccess })) {
-        return;
-      }
-
-      const input = createOrderRequestSchema.parse(request.body);
-      const requestUserContext = parseRequestUserContext(request);
+  if (process.env.NODE_ENV === "test" && process.env.VITEST === "true") {
+    // Historical lifecycle fixtures exercise legacy orders without making this route available in deployed runtimes.
+    app.post("/v1/orders", { preHandler: app.rateLimit(ordersWriteRateLimit) }, async (request, reply) => {
+      if (!authorizeGatewayRequest(request, reply, gatewayApiToken, { allowUnauthenticated: allowUnauthenticatedGatewayAccess })) return;
       const result = await createOrder({
-        input,
+        input: createOrderRequestSchema.parse(request.body),
         requestId: request.id,
-        requestUserContext,
+        requestUserContext: parseRequestUserContext(request),
         deps: getServiceDeps(request)
       });
-
-      if ("error" in result) {
-        return sendServiceError(reply, request, result.error);
-      }
-
-      logOrderMutation(request, "order created", {
-        event: "order.created",
-        orderId: result.order.id,
-        locationId: result.order.locationId,
-        status: result.order.status,
-        totalAmountCents: result.order.total.amountCents
-      });
+      if ("error" in result) return sendServiceError(reply, request, result.error);
       return result.order;
-    }
-  );
+    });
+  } else {
+    // Defense in depth if the orders service is reached without the gateway.
+    app.post("/v1/orders", { preHandler: app.rateLimit(ordersWriteRateLimit) }, async (request, reply) => {
+      if (!authorizeGatewayRequest(request, reply, gatewayApiToken, { allowUnauthenticated: allowUnauthenticatedGatewayAccess })) return;
+      return reply.status(410).send(serviceErrorSchema.parse({
+        code: "LEGACY_ORDER_CREATE_RETIRED",
+        message: "Create a checkout draft to place an order.",
+        requestId: request.id
+      }));
+    });
+  }
 
   // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
   app.get(

@@ -6,6 +6,8 @@ Last verified against the 1.2.0 live-dev candidate: 2026-09-23.
 
 Nomly owns the customer order and its fulfillment lifecycle. The merchant-branded mobile app quotes catalog-backed items and creates an expiring checkout draft with the orders service. It then requests a Stripe mobile payment session for that checkout. The payments service checks the selected location's Stripe Connect readiness and enabled card method before creating a PaymentIntent under that location's connected account. Cards and Apple Pay use Stripe; Clover is not a customer checkout provider.
 
+This is the only customer order-creation path for 1.2.0. `POST /v1/orders` is retired and returns `410 LEGACY_ORDER_CREATE_RETIRED` at both the gateway and orders service; quote creation remains available because checkout drafts use it. `GET /v1/orders` and `GET /v1/orders/:orderId` continue to read historical paid orders. The mobile SDK no longer exposes `createOrder`; callers use `createCheckoutDraft` and `createStripeMobilePaymentSession`.
+
 After Stripe confirms payment, the payments/orders integration promotes the checkout draft to a paid Nomly order. The orders service remains authoritative for order status, and staff progress fulfillment there. Finalization, webhook, and reconciliation paths must converge on the same order and payment without duplicate side effects; the remaining recovery and account-binding work is tracked in Gate 1 issue #411.
 
 ```mermaid

@@ -21,7 +21,6 @@ import { authSessionSchema } from "@lattelink/contracts-core";
 import {
   checkoutDraftSchema,
   createCheckoutDraftRequestSchema,
-  createOrderRequestSchema,
   orderQuoteSchema,
   orderSchema,
   stripeMobilePaymentSessionRequestSchema,
@@ -206,12 +205,6 @@ export class GazelleApiClient {
     quoteRequestSchema.parse(input);
     const data = await this.post<unknown>("/orders/quote", input);
     return orderQuoteSchema.parse(data);
-  }
-
-  async createOrder(input: z.input<typeof createOrderRequestSchema>): Promise<z.output<typeof orderSchema>> {
-    createOrderRequestSchema.parse(input);
-    const data = await this.post<unknown>("/orders", input);
-    return orderSchema.parse(data);
   }
 
   async createCheckoutDraft(
