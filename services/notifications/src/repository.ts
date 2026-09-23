@@ -34,6 +34,8 @@ export type OutboxEntry = {
   environment?: string;
   dispatchClaimToken?: string;
   dispatchLeaseExpiresAt?: string;
+  receiptClaimToken?: string;
+  receiptLeaseExpiresAt?: string;
 };
 
 type PersistedOutboxRow = {
@@ -56,6 +58,8 @@ type PersistedOutboxRow = {
   environment: string;
   dispatch_claim_token: string | null;
   dispatch_lease_expires_at: string | Date | null;
+  receipt_claim_token: string | null;
+  receipt_lease_expires_at: string | Date | null;
 };
 
 type PersistedPushTokenRow = {
@@ -71,12 +75,12 @@ export type NotificationsRepository = {
   markOrderStateDispatchIfNew(input: { dispatchKey: string; payload: OrderStateNotification }): Promise<boolean>;
   enqueueOrderStateOutbox(payload: OrderStateNotification): Promise<number>;
   claimPendingOutbox(batchSize: number, input: { nowIso: string; leaseExpiresAtIso: string; claimToken: string }): Promise<OutboxEntry[]>;
-  listDueReceipts(batchSize: number, nowIso: string): Promise<OutboxEntry[]>;
+  claimDueReceipts(batchSize: number, input: { nowIso: string; leaseExpiresAtIso: string; claimToken: string }): Promise<OutboxEntry[]>;
   markOutboxSubmitted(id: string, claimToken: string, input: { receiptId: string; dueAtIso: string; expiresAtIso: string }): Promise<void>;
   markOutboxSimulated(id: string, claimToken: string): Promise<void>;
-  markReceiptPending(id: string, dueAtIso: string): Promise<void>;
-  markReceiptProviderAccepted(id: string): Promise<void>;
-  markReceiptFailed(id: string, input: { code: string; message: string; expired?: boolean }): Promise<void>;
+  markReceiptPending(id: string, claimToken: string, dueAtIso: string): Promise<void>;
+  markReceiptProviderAccepted(id: string, claimToken: string): Promise<void>;
+  markReceiptFailed(id: string, claimToken: string, input: { code: string; message: string; expired?: boolean }): Promise<void>;
   retirePushToken(entry: OutboxEntry): Promise<void>;
   getDeliveryHealth(nowIso: string): Promise<DeliveryHealth>;
   markOutboxRetry(id: string, claimToken: string, input: { retryAtIso: string; error: string }): Promise<void>;
@@ -109,7 +113,9 @@ function toOutboxEntry(row: PersistedOutboxRow): OutboxEntry {
     providerAcceptedAt: row.provider_accepted_at ? parseIsoDate(row.provider_accepted_at) : undefined,
     failureCode: row.failure_code ?? undefined, lastError: row.last_error ?? undefined,
     environment: row.environment, dispatchClaimToken: row.dispatch_claim_token ?? undefined,
-    dispatchLeaseExpiresAt: row.dispatch_lease_expires_at ? parseIsoDate(row.dispatch_lease_expires_at) : undefined
+    dispatchLeaseExpiresAt: row.dispatch_lease_expires_at ? parseIsoDate(row.dispatch_lease_expires_at) : undefined,
+    receiptClaimToken: row.receipt_claim_token ?? undefined,
+    receiptLeaseExpiresAt: row.receipt_lease_expires_at ? parseIsoDate(row.receipt_lease_expires_at) : undefined
   };
 }
 
@@ -174,10 +180,17 @@ function createInMemoryRepository(): NotificationsRepository {
           return claimed;
         });
     },
-    async listDueReceipts(batchSize, nowIso) {
+    async claimDueReceipts(batchSize, input) {
       return [...outbox.values()].filter((entry) => entry.status === "SUBMITTED" &&
-        Date.parse(entry.receiptDueAt ?? "") <= Date.parse(nowIso))
-        .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)).slice(0, batchSize);
+        Date.parse(entry.receiptDueAt ?? "") <= Date.parse(input.nowIso) &&
+        (!entry.receiptClaimToken || !entry.receiptLeaseExpiresAt ||
+          Date.parse(entry.receiptLeaseExpiresAt) <= Date.parse(input.nowIso)))
+        .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)).slice(0, batchSize)
+        .map((entry) => {
+          const claimed = { ...entry, receiptClaimToken: input.claimToken, receiptLeaseExpiresAt: input.leaseExpiresAtIso };
+          outbox.set(entry.id, claimed);
+          return claimed;
+        });
     },
     async markOutboxSubmitted(id, claimToken, input) {
       const entry = outbox.get(id);
@@ -194,18 +207,28 @@ function createInMemoryRepository(): NotificationsRepository {
       }
       outbox.set(id, { ...entry, status: "DISPATCHED", dispatchClaimToken: undefined, dispatchLeaseExpiresAt: undefined });
     },
-    async markReceiptPending(id, dueAtIso) {
+    async markReceiptPending(id, claimToken, dueAtIso) {
       const entry = outbox.get(id);
-      if (entry && entry.status === "SUBMITTED") outbox.set(id, { ...entry, receiptDueAt: dueAtIso });
+      if (!entry || entry.status !== "SUBMITTED" || entry.receiptClaimToken !== claimToken) {
+        throw new Error("notification receipt claim was lost before rescheduling");
+      }
+      outbox.set(id, { ...entry, receiptDueAt: dueAtIso, receiptClaimToken: undefined, receiptLeaseExpiresAt: undefined });
     },
-    async markReceiptProviderAccepted(id) {
+    async markReceiptProviderAccepted(id, claimToken) {
       const entry = outbox.get(id);
-      if (entry && entry.status === "SUBMITTED") outbox.set(id, { ...entry, status: "DISPATCHED", providerAcceptedAt: new Date().toISOString() });
+      if (!entry || entry.status !== "SUBMITTED" || entry.receiptClaimToken !== claimToken) {
+        throw new Error("notification receipt claim was lost before acceptance persistence");
+      }
+      outbox.set(id, { ...entry, status: "DISPATCHED", providerAcceptedAt: new Date().toISOString(),
+        receiptClaimToken: undefined, receiptLeaseExpiresAt: undefined });
     },
-    async markReceiptFailed(id, input) {
+    async markReceiptFailed(id, claimToken, input) {
       const entry = outbox.get(id);
-      if (entry && entry.status === "SUBMITTED") outbox.set(id, { ...entry, status: input.expired ? "EXPIRED" : "FAILED",
-        failureCode: input.code, lastError: input.message });
+      if (!entry || entry.status !== "SUBMITTED" || entry.receiptClaimToken !== claimToken) {
+        throw new Error("notification receipt claim was lost before failure persistence");
+      }
+      outbox.set(id, { ...entry, status: input.expired ? "EXPIRED" : "FAILED",
+        failureCode: input.code, lastError: input.message, receiptClaimToken: undefined, receiptLeaseExpiresAt: undefined });
     },
     async retirePushToken(entry) {
       const token = pushTokensByUserId.get(entry.userId)?.get(entry.deviceId);
@@ -372,7 +395,9 @@ async function createPostgresRepository(connectionString: string): Promise<Notif
             failure_code: null,
             environment: environmentName(),
             dispatch_claim_token: null,
-            dispatch_lease_expires_at: null
+            dispatch_lease_expires_at: null,
+            receipt_claim_token: null,
+            receipt_lease_expires_at: null
           })
           .execute();
         enqueued += 1;
@@ -401,10 +426,26 @@ async function createPostgresRepository(connectionString: string): Promise<Notif
       `.execute(db);
       return result.rows.map(toOutboxEntry);
     },
-    async listDueReceipts(batchSize, nowIso) {
-      const rows = await db.selectFrom("notifications_outbox").selectAll().where("status", "=", "SUBMITTED")
-        .where("receipt_due_at", "<=", nowIso).orderBy("created_at", "asc").limit(batchSize).execute();
-      return (rows as PersistedOutboxRow[]).map(toOutboxEntry);
+    async claimDueReceipts(batchSize, input) {
+      const result = await sql<PersistedOutboxRow>`
+        WITH eligible AS (
+          SELECT id
+          FROM notifications_outbox
+          WHERE status = 'SUBMITTED'
+            AND receipt_due_at <= ${input.nowIso}
+            AND (receipt_claim_token IS NULL OR receipt_lease_expires_at IS NULL OR receipt_lease_expires_at <= ${input.nowIso})
+          ORDER BY created_at ASC
+          LIMIT ${batchSize}
+          FOR UPDATE SKIP LOCKED
+        )
+        UPDATE notifications_outbox AS outbox
+        SET receipt_claim_token = ${input.claimToken}, receipt_lease_expires_at = ${input.leaseExpiresAtIso},
+            updated_at = ${input.nowIso}
+        FROM eligible
+        WHERE outbox.id = eligible.id
+        RETURNING outbox.*
+      `.execute(db);
+      return result.rows.map(toOutboxEntry);
     },
     async markOutboxSubmitted(id, claimToken, input) {
       const result = await db.updateTable("notifications_outbox").set({ status: "SUBMITTED", receipt_id: input.receiptId,
@@ -419,18 +460,24 @@ async function createPostgresRepository(connectionString: string): Promise<Notif
         .where("id", "=", id).where("status", "=", "PROCESSING").where("dispatch_claim_token", "=", claimToken).executeTakeFirst();
       if (Number(result.numUpdatedRows) !== 1) throw new Error("notification outbox claim was lost before dispatch completion");
     },
-    async markReceiptPending(id, dueAtIso) {
-      await db.updateTable("notifications_outbox").set({ receipt_due_at: dueAtIso, updated_at: new Date().toISOString() })
-        .where("id", "=", id).where("status", "=", "SUBMITTED").execute();
+    async markReceiptPending(id, claimToken, dueAtIso) {
+      const result = await db.updateTable("notifications_outbox").set({ receipt_due_at: dueAtIso,
+        receipt_claim_token: null, receipt_lease_expires_at: null, updated_at: new Date().toISOString() })
+        .where("id", "=", id).where("status", "=", "SUBMITTED").where("receipt_claim_token", "=", claimToken).executeTakeFirst();
+      if (Number(result.numUpdatedRows) !== 1) throw new Error("notification receipt claim was lost before rescheduling");
     },
-    async markReceiptProviderAccepted(id) {
-      await db.updateTable("notifications_outbox").set({ status: "DISPATCHED", provider_accepted_at: new Date().toISOString(),
-        updated_at: new Date().toISOString() }).where("id", "=", id).where("status", "=", "SUBMITTED").execute();
+    async markReceiptProviderAccepted(id, claimToken) {
+      const result = await db.updateTable("notifications_outbox").set({ status: "DISPATCHED", provider_accepted_at: new Date().toISOString(),
+        receipt_claim_token: null, receipt_lease_expires_at: null, updated_at: new Date().toISOString() })
+        .where("id", "=", id).where("status", "=", "SUBMITTED").where("receipt_claim_token", "=", claimToken).executeTakeFirst();
+      if (Number(result.numUpdatedRows) !== 1) throw new Error("notification receipt claim was lost before acceptance persistence");
     },
-    async markReceiptFailed(id, input) {
-      await db.updateTable("notifications_outbox").set({ status: input.expired ? "EXPIRED" : "FAILED",
-        failure_code: input.code, last_error: input.message, updated_at: new Date().toISOString() })
-        .where("id", "=", id).where("status", "=", "SUBMITTED").execute();
+    async markReceiptFailed(id, claimToken, input) {
+      const result = await db.updateTable("notifications_outbox").set({ status: input.expired ? "EXPIRED" : "FAILED",
+        failure_code: input.code, last_error: input.message, receipt_claim_token: null, receipt_lease_expires_at: null,
+        updated_at: new Date().toISOString() })
+        .where("id", "=", id).where("status", "=", "SUBMITTED").where("receipt_claim_token", "=", claimToken).executeTakeFirst();
+      if (Number(result.numUpdatedRows) !== 1) throw new Error("notification receipt claim was lost before failure persistence");
     },
     async retirePushToken(entry) {
       await db.deleteFrom("notifications_push_tokens").where("user_id", "=", entry.userId)

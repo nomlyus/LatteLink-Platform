@@ -112,11 +112,12 @@ otherwise `DEPLOY_ENV` is used).
 
 Outbox processing atomically claims rows as `PROCESSING` in Postgres using
 `FOR UPDATE SKIP LOCKED`, with a unique claim token and a 60-second lease. Expo
-requests time out after 30 seconds. Expired leases can be reclaimed after a worker
-crash; concurrent worker instances cannot send the same row while a live claim is
-held. As with any external provider, a process crash after Expo accepts a ticket but
-before the database stores its receipt ID is an ambiguous-send window; this path is
-at-least-once rather than an exactly-once guarantee.
+push and receipt requests time out after 30 seconds. Receipt polling also atomically
+claims due `SUBMITTED` rows with a unique claim token and 60-second lease, so concurrent
+workers do not poll the same receipt IDs. Expired leases can be reclaimed after a
+worker crash. As with any external provider, a process crash after Expo accepts a
+ticket but before the database stores its receipt ID is an ambiguous-send window; this
+path is at-least-once rather than an exactly-once guarantee.
 
 The internal delivery-health endpoint requires `x-internal-token` and returns
 `pending`, `processing`, `oldestProcessingAgeSeconds`, `submitted`,

@@ -359,6 +359,8 @@ export interface NotificationsOutboxTable {
   environment: string;
   dispatch_claim_token: string | null;
   dispatch_lease_expires_at: string | null;
+  receipt_claim_token: string | null;
+  receipt_lease_expires_at: string | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }

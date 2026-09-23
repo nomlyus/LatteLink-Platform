@@ -628,6 +628,50 @@ describe("notifications service", () => {
     await app.close();
   });
 
+  it("bounds Expo receipt polling and reclaims the receipt lease after an aborted request", async () => {
+    vi.stubEnv("NOTIFICATIONS_PROVIDER_MODE", "expo");
+    const timeoutController = new AbortController();
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeoutController.signal);
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ status: "ok", id: "ticket-timeout" }] }), { status: 200 }))
+      .mockImplementationOnce((_input, init) => new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        if (!signal) {
+          reject(new Error("receipt polling did not pass an abort signal"));
+          return;
+        }
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { "ticket-timeout": { status: "ok" } } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const app = await buildApp();
+    const userId = "123e4567-e89b-12d3-a456-426614174977";
+    await app.inject({ method: "PUT", url: "/v1/devices/push-token", headers: gatewayHeaders({ "x-user-id": userId }),
+      payload: { deviceId: "ios-timeout", platform: "ios", expoPushToken: "ExponentPushToken[timeout]" } });
+    await app.inject({ method: "POST", url: "/v1/notifications/internal/order-state", headers: internalHeaders(),
+      payload: { userId, orderId: "123e4567-e89b-12d3-a456-426614174978", status: "READY",
+        pickupCode: "TEST12", locationId: "merchant-location", occurredAt: "2030-01-01T00:00:00.000Z" } });
+    await app.inject({ method: "POST", url: "/v1/notifications/internal/outbox/process", headers: internalHeaders(),
+      payload: { nowIso: "2030-01-01T00:00:00.000Z" } });
+
+    const pendingPoll = app.inject({ method: "POST", url: "/v1/notifications/internal/receipts/process",
+      headers: internalHeaders(), payload: { nowIso: "2030-01-01T00:00:15.000Z" } });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(timeoutSpy).toHaveBeenCalledWith(30_000);
+    expect(fetchMock.mock.calls[1]?.[1]?.signal).toBe(timeoutController.signal);
+    timeoutController.abort(new Error("simulated receipt request timeout"));
+    expect((await pendingPoll).statusCode).toBe(500);
+
+    const reclaimed = await app.inject({ method: "POST", url: "/v1/notifications/internal/receipts/process",
+      headers: internalHeaders(), payload: { nowIso: "2030-01-01T00:01:16.000Z" } });
+    expect(reclaimed.statusCode).toBe(200);
+    expect(reclaimed.json()).toMatchObject({ processed: 1, providerAccepted: 1, failed: 0 });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await app.close();
+    timeoutSpy.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
   it("records provider acceptance from a receipt and preserves a freshly replaced device token", async () => {
     vi.stubEnv("NOTIFICATIONS_PROVIDER_MODE", "expo");
     const fetchMock = vi.fn<typeof fetch>()

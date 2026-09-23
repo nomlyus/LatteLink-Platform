@@ -44,6 +44,8 @@ const outboxMaxAttempts = 3;
 const outboxRetryBaseMs = 1_000;
 const outboxDispatchLeaseMs = 60_000;
 const outboxDispatchTimeoutMs = 30_000;
+const receiptPollLeaseMs = 60_000;
+const receiptPollTimeoutMs = 30_000;
 const receiptPollDelayMs = 15_000;
 const receiptLifetimeMs = 24 * 60 * 60_000;
 
@@ -318,7 +320,7 @@ async function fetchExpoReceipts(ids: string[]) {
   const response = await fetch(resolveExpoReceiptApiUrl(), { method: "POST", headers: {
     accept: "application/json", "content-type": "application/json",
     ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {})
-  }, body: JSON.stringify({ ids }) });
+  }, signal: AbortSignal.timeout(receiptPollTimeoutMs), body: JSON.stringify({ ids }) });
   if (!response.ok) throw new Error(`expo receipt request failed with status ${response.status}`);
   return expoReceiptResponseSchema.parse(await response.json()).data;
 }
@@ -599,9 +601,15 @@ export async function registerRoutes(app: FastifyInstance) {
     if (!authorizeInternalRequest(request, reply, notificationsInternalApiToken)) return;
     const input = outboxProcessRequestSchema.parse(request.body ?? {});
     const nowIso = input.nowIso ?? new Date().toISOString();
-    const due = await repository.listDueReceipts(input.batchSize ?? outboxDefaultBatch, nowIso);
+    const claimToken = randomUUID();
+    const nowMs = Date.parse(nowIso);
+    const due = await repository.claimDueReceipts(input.batchSize ?? outboxDefaultBatch, {
+      nowIso,
+      leaseExpiresAtIso: new Date(nowMs + receiptPollLeaseMs).toISOString(),
+      claimToken
+    });
     const expired = due.filter((entry) => Date.parse(entry.receiptExpiresAt ?? "") <= Date.parse(nowIso));
-    for (const entry of expired) await repository.markReceiptFailed(entry.id,
+    for (const entry of expired) await repository.markReceiptFailed(entry.id, claimToken,
       { code: "RECEIPT_EXPIRED", message: "provider receipt unavailable before expiry", expired: true });
     const active = due.filter((entry) => !expired.includes(entry));
     const ids = active.map((entry) => entry.receiptId).filter((id): id is string => Boolean(id));
@@ -612,14 +620,15 @@ export async function registerRoutes(app: FastifyInstance) {
     for (const entry of active) {
       const result = entry.receiptId ? receipts[entry.receiptId] : undefined;
       if (!result) {
-        await repository.markReceiptPending(entry.id, new Date(Date.parse(nowIso) + receiptPollDelayMs).toISOString());
+        await repository.markReceiptPending(entry.id, claimToken,
+          new Date(Date.parse(nowIso) + receiptPollDelayMs).toISOString());
         unresolved++;
       } else if (result.status === "ok") {
-        await repository.markReceiptProviderAccepted(entry.id);
+        await repository.markReceiptProviderAccepted(entry.id, claimToken);
         providerAccepted++;
       } else {
         const code = result.details?.error ?? "PROVIDER_REJECTED";
-        await repository.markReceiptFailed(entry.id, { code, message: result.message ?? code });
+        await repository.markReceiptFailed(entry.id, claimToken, { code, message: result.message ?? code });
         if (code === "DeviceNotRegistered") await repository.retirePushToken(entry);
         failed++;
       }

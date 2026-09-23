@@ -57,7 +57,7 @@ describeWithPostgres("notification receipts and claims (PostgreSQL)", () => {
     `.execute(fixtureDb);
     const columnNames = new Set(columns.rows.map((row) => row.column_name));
     for (const name of ["receipt_id", "receipt_due_at", "receipt_expires_at", "provider_accepted_at",
-      "dispatch_claim_token", "dispatch_lease_expires_at", "environment"]) {
+      "dispatch_claim_token", "dispatch_lease_expires_at", "receipt_claim_token", "receipt_lease_expires_at", "environment"]) {
       expect(columnNames.has(name)).toBe(true);
     }
 
@@ -83,9 +83,11 @@ describeWithPostgres("notification receipts and claims (PostgreSQL)", () => {
 
     let releasePush: ((response: Response) => void) | undefined;
     const pendingPush = new Promise<Response>((resolve) => { releasePush = resolve; });
+    let releaseReceipt: ((response: Response) => void) | undefined;
+    const pendingReceipt = new Promise<Response>((resolve) => { releaseReceipt = resolve; });
     const fetchMock = vi.fn<typeof fetch>(async (input) => {
       if (String(input).includes("push/getReceipts")) {
-        return new Response(JSON.stringify({ data: { "db-ticket-1": { status: "ok" } } }), { status: 200 });
+        return pendingReceipt;
       }
       return pendingPush;
     });
@@ -108,11 +110,25 @@ describeWithPostgres("notification receipts and claims (PostgreSQL)", () => {
     `.execute(fixtureDb);
     expect(submitted.rows).toEqual([{ status: "SUBMITTED", receipt_id: "db-ticket-1", dispatch_claim_token: null }]);
 
-    await sql`UPDATE notifications_outbox SET receipt_due_at = NOW() - INTERVAL '1 second'
+    await sql`UPDATE notifications_outbox SET receipt_due_at = NOW() - INTERVAL '1 second',
+      receipt_claim_token = 'abandoned-receipt-worker', receipt_lease_expires_at = NOW() - INTERVAL '1 second'
       WHERE payload_json ->> 'orderId' = ${orderId}`.execute(fixtureDb);
-    const receiptResponse = await firstApp!.inject({ method: "POST",
+    const firstReceiptRequest = firstApp!.inject({ method: "POST",
       url: "/v1/notifications/internal/receipts/process", headers, payload: { batchSize: 10 } });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const competingReceiptResponse = await secondApp!.inject({ method: "POST",
+      url: "/v1/notifications/internal/receipts/process", headers, payload: { batchSize: 10 } });
+    expect(competingReceiptResponse.json()).toMatchObject({ processed: 0, providerAccepted: 0 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    releaseReceipt!(new Response(JSON.stringify({ data: { "db-ticket-1": { status: "ok" } } }), { status: 200 }));
+    const receiptResponse = await firstReceiptRequest;
     expect(receiptResponse.json()).toMatchObject({ providerAccepted: 1, failed: 0, expired: 0 });
+
+    const claimedReceipt = await sql<{ status: string; receipt_claim_token: string | null; receipt_lease_expires_at: Date | null }>`
+      SELECT status, receipt_claim_token, receipt_lease_expires_at FROM notifications_outbox
+      WHERE payload_json ->> 'orderId' = ${orderId}
+    `.execute(fixtureDb);
+    expect(claimedReceipt.rows).toEqual([{ status: "DISPATCHED", receipt_claim_token: null, receipt_lease_expires_at: null }]);
 
     const legacyOrderId = "123e4567-e89b-12d3-a456-426614174983";
     await sql`INSERT INTO notifications_outbox (
