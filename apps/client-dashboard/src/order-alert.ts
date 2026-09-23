@@ -1,6 +1,28 @@
 import type { OperatorOrder } from "./model";
 
 const alertableStatuses = new Set<OperatorOrder["status"]>(["PAID", "IN_PREP", "READY"]);
+const seenOrdersKeyPrefix = "nomly:seen-order-alerts:";
+
+function readSeenOrderIds(scope: string): Set<string> | null {
+  try {
+    const raw = window.sessionStorage.getItem(`${seenOrdersKeyPrefix}${scope}`);
+    if (raw === null) return null;
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.every((value) => typeof value === "string")
+      ? new Set(parsed)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveSeenOrderIds(scope: string, ids: Set<string>) {
+  try {
+    window.sessionStorage.setItem(`${seenOrdersKeyPrefix}${scope}`, JSON.stringify([...ids].slice(-500)));
+  } catch {
+    // Storage can be disabled; in-memory deduplication still works.
+  }
+}
 
 export class NewOrderTracker {
   private scope: string | null = null;
@@ -11,14 +33,19 @@ export class NewOrderTracker {
 
     if (this.scope !== scope) {
       this.scope = scope;
-      this.alertedOrderIds = new Set(alertableOrders.map((order) => order.id));
-      return [];
+      const previouslySeen = readSeenOrderIds(scope);
+      this.alertedOrderIds = previouslySeen ?? new Set(alertableOrders.map((order) => order.id));
+      if (previouslySeen === null) {
+        saveSeenOrderIds(scope, this.alertedOrderIds);
+        return [];
+      }
     }
 
     const newOrders = alertableOrders.filter((order) => !this.alertedOrderIds.has(order.id));
     for (const order of newOrders) {
       this.alertedOrderIds.add(order.id);
     }
+    if (newOrders.length > 0) saveSeenOrderIds(scope, this.alertedOrderIds);
     return newOrders;
   }
 
@@ -90,6 +117,15 @@ export async function enableNewOrderSound() {
   }
 
   return soundEnabled;
+}
+
+export async function resumeNewOrderSound() {
+  if (!soundEnabled || !audioContext || audioContext.state === "running") return;
+  try {
+    await audioContext.resume();
+  } catch {
+    // The button remains available for another user-initiated attempt.
+  }
 }
 
 export function alertForNewOrders(scope: string, orders: readonly OperatorOrder[]) {

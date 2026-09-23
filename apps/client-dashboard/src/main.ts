@@ -4,6 +4,8 @@ import { registerEvents } from "./events";
 import { handleGoogleCallback, handleOwnerInviteFromUrl, loadAuthProviders } from "./controllers/auth";
 import { handleStripeOnboardingStart, handleStripeStatusRefresh } from "./controllers/onboarding";
 import { loadDashboard } from "./lifecycle";
+import { refreshOrderConnection } from "./orders-runtime";
+import { resumeNewOrderSound } from "./order-alert";
 
 function handleStripeReturnParams() {
   if (typeof window === "undefined") {
@@ -51,8 +53,17 @@ function handleLaunchEntryParams() {
 
 async function bootstrap() {
   registerEvents();
-  window.addEventListener("online", render);
+  window.addEventListener("online", () => {
+    refreshOrderConnection(loadDashboard);
+    render();
+  });
   window.addEventListener("offline", render);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      void resumeNewOrderSound();
+      refreshOrderConnection(loadDashboard);
+    }
+  });
 
   state.initializing = false;
   const stripeReturn = handleStripeReturnParams();

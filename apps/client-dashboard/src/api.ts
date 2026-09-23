@@ -1149,24 +1149,37 @@ export type AdminOrderStreamEvent =
   | { type: "snapshot"; orders: OperatorOrder[] }
   | { type: "order_update"; order: OperatorOrder };
 
+export type AdminOrderStreamState = "connecting" | "connected" | "reconnecting" | "unavailable";
+
 export function subscribeToAdminOrderStream(params: {
   session: OperatorSession;
   locationId: string | null;
   onEvent: (event: AdminOrderStreamEvent) => void;
-  onError: () => void;
+  onStateChange: (state: AdminOrderStreamState) => void;
 }): () => void {
-  const { session, locationId, onEvent, onError } = params;
+  const { session, locationId, onEvent, onStateChange } = params;
   const query = locationId && locationId !== "all" ? `?locationId=${encodeURIComponent(locationId)}` : "";
   const url = `${requireApiBaseUrl(session.apiBaseUrl)}/admin/orders/stream${query}`;
   const headers = buildOperatorHeaders(session.accessToken);
 
   let closed = false;
-  let abortController = new AbortController();
+  let abortController: AbortController | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let failures = 0;
+
+  const scheduleReconnect = () => {
+    if (closed) return;
+    failures += 1;
+    onStateChange(failures >= 3 ? "unavailable" : "reconnecting");
+    const delay = Math.min(30_000, 1_000 * 2 ** Math.min(failures - 1, 5));
+    retryTimer = setTimeout(connect, delay);
+  };
 
   const connect = () => {
     if (closed) {
       return;
     }
+    retryTimer = null;
     abortController = new AbortController();
     fetch(url, { headers, signal: abortController.signal })
       .then(async (response) => {
@@ -1197,6 +1210,8 @@ export function subscribeToAdminOrderStream(params: {
             }
             const snapshot = adminOrderStreamSnapshotSchema.safeParse(parsed);
             if (snapshot.success) {
+              failures = 0;
+              onStateChange("connected");
               onEvent({ type: "snapshot", orders: filterVisibleOrders(snapshot.data.orders as unknown as OperatorOrder[]) });
               continue;
             }
@@ -1208,21 +1223,23 @@ export function subscribeToAdminOrderStream(params: {
         }
         // stream closed normally — notify so caller can reconnect or fall back to polling
         if (!closed) {
-          onError();
+          scheduleReconnect();
         }
       })
       .catch(() => {
         if (closed) {
           return;
         }
-        onError();
+        scheduleReconnect();
       });
   };
 
+  onStateChange("connecting");
   connect();
 
   return () => {
     closed = true;
-    abortController.abort();
+    abortController?.abort();
+    if (retryTimer !== null) clearTimeout(retryTimer);
   };
 }

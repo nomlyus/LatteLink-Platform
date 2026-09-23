@@ -26,6 +26,23 @@ export function stopAutoRefresh() {
     state.orderStreamUnsubscribe();
     state.orderStreamUnsubscribe = null;
   }
+  state.orderConnectionState = "connecting";
+}
+
+function startFallbackPolling(loadDashboard: (options?: { silent?: boolean }) => Promise<void>) {
+  if (state.autoRefreshHandle !== null) return;
+  state.autoRefreshHandle = setInterval(() => {
+    if (state.session && !state.loading) void loadDashboard({ silent: true });
+  }, ordersRefreshIntervalMs);
+}
+
+export function refreshOrderConnection(loadDashboard: (options?: { silent?: boolean }) => Promise<void>) {
+  if (!state.session || !canAccessCapability(state.session.operator, "orders:read")) return;
+  stopAutoRefresh();
+  if (state.selectedLocationId === "all") {
+    void loadDashboard({ silent: true });
+  }
+  startAutoRefresh(loadDashboard);
 }
 
 export function startAutoRefresh(loadDashboard: (options?: { silent?: boolean }) => Promise<void>) {
@@ -47,11 +64,12 @@ export function startAutoRefresh(loadDashboard: (options?: { silent?: boolean })
   // aggregate correct instead of allowing one location's SSE snapshot to
   // overwrite the portfolio state.
   if (locationId === "all") {
-    state.autoRefreshHandle = setInterval(() => {
-      if (state.session && !state.loading) {
-        void loadDashboard({ silent: true });
-      }
-    }, ordersRefreshIntervalMs);
+    state.orderConnectionState = "connected";
+    startFallbackPolling(loadDashboard);
+    return;
+  }
+  if (!locationId) {
+    state.orderConnectionState = "unavailable";
     return;
   }
 
@@ -59,32 +77,32 @@ export function startAutoRefresh(loadDashboard: (options?: { silent?: boolean })
     session,
     locationId,
     onEvent: (event: AdminOrderStreamEvent) => {
-      if (!state.session) {
+      if (state.session !== session || state.selectedLocationId !== locationId) {
         return;
       }
       if (event.type === "snapshot") {
-        state.orders = event.orders;
+        state.orders = event.orders.filter((order) => order.locationId === locationId);
         alertForCurrentOrders();
         state.lastRefreshedAt = Date.now();
         reconcileSelectedOrder();
         render();
       } else if (event.type === "order_update") {
+        if (event.order.locationId !== locationId) return;
         applyUpdatedOrder(event.order);
         alertForCurrentOrders();
         render();
       }
     },
-    onError: () => {
-      if (state.orderStreamUnsubscribe !== null) {
-        state.orderStreamUnsubscribe = null;
+    onStateChange: (connectionState) => {
+      if (state.session !== session || state.selectedLocationId !== locationId) return;
+      state.orderConnectionState = connectionState;
+      if (connectionState === "connected" && state.autoRefreshHandle !== null) {
+        clearInterval(state.autoRefreshHandle);
+        state.autoRefreshHandle = null;
+      } else if (connectionState === "reconnecting" || connectionState === "unavailable") {
+        startFallbackPolling(loadDashboard);
       }
-      if (state.autoRefreshHandle === null && state.session) {
-        state.autoRefreshHandle = setInterval(() => {
-          if (state.session && !state.loading) {
-            void loadDashboard({ silent: true });
-          }
-        }, ordersRefreshIntervalMs);
-      }
+      render();
     }
   });
 }

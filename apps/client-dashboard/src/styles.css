@@ -1752,6 +1752,32 @@ label.field > span {
   white-space: nowrap;
 }
 
+.dash-order-connection {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--color-text-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.dash-order-connection::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: #c78c22;
+}
+
+.dash-order-connection--connected::before {
+  background: #2b9a61;
+}
+
+.dash-order-connection--unavailable::before {
+  background: #c65347;
+}
+
 /* ============================================================
    OVERVIEW
    ============================================================ */
