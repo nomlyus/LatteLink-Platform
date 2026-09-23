@@ -28,19 +28,21 @@ export function validateReleaseEvidence(input) {
   }
 
   const marker = "[backend-runtime] release provenance ";
-  const migrationLine = output.split("\n").find((line) => line.includes(marker));
-  if (!migrationLine) {
-    throw new Error("Heroku release output has no migration provenance record");
-  }
-  let provenance;
-  try {
-    provenance = JSON.parse(migrationLine.slice(migrationLine.indexOf(marker) + marker.length));
-  } catch {
-    throw new Error("Heroku migration provenance record is malformed");
-  }
+  const provenance = output.split("\n").flatMap((line) => {
+    const markerIndex = line.indexOf(marker);
+    if (markerIndex === -1) return [];
+    try {
+      return [JSON.parse(line.slice(markerIndex + marker.length))];
+    } catch {
+      return [];
+    }
+  }).find((record) => record.phase === "migration" && record.buildCommit === expectedSha &&
+    record.releaseVersion === `v${release.version}` && record.environment === expectedEnvironment);
   if (
-    provenance.phase !== "migration" ||
+    provenance?.phase !== "migration" ||
     provenance.environment !== expectedEnvironment ||
+    provenance.buildCommit !== expectedSha ||
+    provenance.releaseVersion !== `v${release.version}` ||
     typeof provenance.migrations?.latestApplied !== "string" ||
     !Number.isInteger(provenance.migrations.appliedCount) ||
     provenance.migrations.appliedCount < 1 ||
@@ -110,14 +112,17 @@ async function herokuJson(path, appName, apiKey, input = {}) {
       ...(input.body ? { "content-type": "application/json" } : {}),
     },
   });
-  if (!response.ok) throw new Error(`Heroku provenance request failed (${response.status})`);
+  if (!response.ok) {
+    const problem = await response.json().catch(() => ({}));
+    throw new Error(`Heroku provenance request failed for ${path} (${response.status}; ${problem.message ?? "unknown"})`);
+  }
   return response.json();
 }
 
-async function readRecentWebLogs(appName, apiKey) {
+async function readRecentAppLogs(appName, apiKey) {
   const session = await herokuJson("/log-sessions", appName, apiKey, {
     method: "POST",
-    body: { type: "web", source: "app", lines: 1500, tail: false },
+    body: { source: "app", lines: 500, tail: false },
   });
   if (!session.logplex_url) throw new Error("Heroku log session is unavailable");
   const response = await fetch(session.logplex_url, { headers: { accept: "text/plain" } });
@@ -133,7 +138,7 @@ async function verifyCurrentWorkerEvidence(input) {
   }
   const workers = expectedWorkerStates(config);
   for (let attempt = 0; attempt < 10; attempt += 1) {
-    const logText = await readRecentWebLogs(appName, apiKey);
+    const logText = await readRecentAppLogs(appName, apiKey);
     try {
       return validateWorkerEvidence({
         logText,
@@ -164,8 +169,8 @@ export async function verifyHerokuReleaseProvenance(env = process.env) {
 
   const releases = await herokuJson("/releases", appName, apiKey);
   const release = releases.find((candidate) => candidate.current === true);
-  if (!release?.id || !release.output_stream_url) {
-    throw new Error("Current Heroku release lacks release-output provenance");
+  if (!release?.id) {
+    throw new Error("Current Heroku release is unavailable");
   }
   const slug = release.slug?.id
     ? await herokuJson(`/slugs/${encodeURIComponent(release.slug.id)}`, appName, apiKey)
@@ -182,12 +187,20 @@ export async function verifyHerokuReleaseProvenance(env = process.env) {
       throw new Error("Heroku release short commit cannot be resolved uniquely in this checkout");
     }
   }
-  const outputResponse = await fetch(release.output_stream_url, { headers: { accept: "text/plain" } });
-  if (!outputResponse.ok) throw new Error(`Heroku release output unavailable (${outputResponse.status})`);
+  let releaseOutput = "";
+  if (release.output_stream_url) {
+    const outputResponse = await fetch(release.output_stream_url, { headers: { accept: "text/plain" } });
+    if (outputResponse.ok) releaseOutput = await outputResponse.text();
+  }
+  if (!releaseOutput.includes("[backend-runtime] release provenance ")) {
+    // Heroku container releases may expose an empty release-output stream even
+    // though release-dyno application logs contain the completed migration.
+    releaseOutput = await readRecentAppLogs(appName, apiKey);
+  }
   const evidence = validateReleaseEvidence({
     release,
     slug,
-    output: await outputResponse.text(),
+    output: releaseOutput,
     expectedSha,
     expectedEnvironment,
     resolvedDescriptionCommit,

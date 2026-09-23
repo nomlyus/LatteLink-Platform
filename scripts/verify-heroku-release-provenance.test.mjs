@@ -8,7 +8,13 @@ const valid = {
   slug: { commit: sha },
   expectedSha: sha,
   expectedEnvironment: "dev",
-  output: '[backend-runtime] release provenance {"phase":"migration","environment":"dev","migrations":{"latestApplied":"0047_backfill_refund_allocations","appliedCount":48,"pendingCount":0}}',
+  output: `[backend-runtime] release provenance ${JSON.stringify({
+    phase: "migration",
+    environment: "dev",
+    buildCommit: sha,
+    releaseVersion: "v42",
+    migrations: { latestApplied: "0047_backfill_refund_allocations", appliedCount: 48, pendingCount: 0 },
+  })}`,
 };
 
 test("validates exact release commit and actual migration record", () => {
@@ -33,8 +39,26 @@ test("rejects a failed release, wrong commit, or missing migration evidence", ()
   assert.throws(() => validateReleaseEvidence({ ...valid, expectedEnvironment: "production" }));
   assert.throws(() => validateReleaseEvidence({
     ...valid,
+    output: valid.output.replace(`"buildCommit":"${sha}"`, '"buildCommit":null'),
+  }));
+  assert.throws(() => validateReleaseEvidence({
+    ...valid,
+    output: valid.output.replace('"releaseVersion":"v42"', '"releaseVersion":"v41"'),
+  }));
+  assert.throws(() => validateReleaseEvidence({
+    ...valid,
     output: valid.output.replace('"pendingCount":0', '"pendingCount":1'),
   }));
+});
+
+test("ignores stale release log records and accepts only the current commit/version", () => {
+  const stale = valid.output.replace(`"buildCommit":"${sha}"`, `"buildCommit":"${"b".repeat(40)}"`);
+  assert.deepEqual(validateReleaseEvidence({ ...valid, output: `${stale}\n${valid.output}` }).migrations, {
+    latestApplied: "0047_backfill_refund_allocations",
+    appliedCount: 48,
+    pendingCount: 0,
+  });
+  assert.throws(() => validateReleaseEvidence({ ...valid, output: stale }));
 });
 
 test("accepts container release description only when its prefix resolves uniquely to the exact SHA", () => {

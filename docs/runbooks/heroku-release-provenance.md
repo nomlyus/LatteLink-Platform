@@ -33,7 +33,11 @@ resolves uniquely to the selected full commit in the checked-out repository.
 This is a weaker release-to-commit correlation than a full slug commit, so the
 evidence explicitly labels the method. It then reads that same release's
 release-phase output and requires a complete migration record for the expected
-environment. The verifier reads recent authorized web logs and requires a
+environment, exact build SHA, and current release version. For Heroku container
+releases whose signed release-output stream is empty, it falls back to
+authorized release-dyno app logs and applies those same exact-match checks.
+An unavailable or mismatched record fails closed. The verifier reads recent
+authorized web logs and requires a
 worker-startup record with the exact `HEROKU_BUILD_COMMIT`, current
 `HEROKU_RELEASE_VERSION`, expected environment, and worker states matching the
 current Heroku configuration. It confirms a web dyno belongs to that release
@@ -68,9 +72,11 @@ workflow evidence must never be treated as current deployment state.
    release with either an exact slug-commit match or a unique Heroku-generated
    description prefix, plus `pendingCount=0` and worker states bound to its
    exact build SHA and release version. Record which method was used.
-3. In Heroku's authorized release output, confirm the applied migration name
-   and count agree with the workflow summary. No credentials or URLs should be
-   present in the provenance record.
+3. In Heroku's authorized release output or release-dyno app log, confirm the
+   applied migration name and count agree with the workflow summary, exact
+   build SHA, and release version. Dev release v31 demonstrated that the
+   release-output stream can be empty while the release-dyno app log contains
+   the record. No credentials or URLs should be present in the provenance record.
 4. Confirm the verifier found a startup record for the current release showing
    the notification dispatcher and actual enabled/disabled payment
    reconciliation and menu-sync states. Confirm public `/ready` does not expose
