@@ -42,6 +42,8 @@ const outboxBatchMax = 200;
 const outboxDefaultBatch = 50;
 const outboxMaxAttempts = 3;
 const outboxRetryBaseMs = 1_000;
+const receiptPollDelayMs = 15_000;
+const receiptLifetimeMs = 24 * 60 * 60_000;
 
 const outboxProcessRequestSchema = z.object({
   batchSize: z.number().int().positive().max(outboxBatchMax).optional(),
@@ -64,6 +66,10 @@ const expoPushSendResponseSchema = z.object({
     })
   )
 });
+
+class ExpoTicketError extends Error {
+  constructor(message: string, readonly code: string) { super(message); }
+}
 
 function resolveUserId(request: FastifyRequest, reply: FastifyReply) {
   const parsed = userHeadersSchema.safeParse(request.headers);
@@ -200,8 +206,12 @@ function resolveExpoPushApiUrl() {
   return trimToUndefined(process.env.EXPO_PUSH_API_URL) ?? "https://exp.host/--/api/v2/push/send";
 }
 
+function resolveExpoReceiptApiUrl() {
+  return trimToUndefined(process.env.EXPO_RECEIPT_API_URL) ?? "https://exp.host/--/api/v2/push/getReceipts";
+}
+
 export function shouldSuppressOrderPushStatus(status: OutboxEntry["payload"]["status"]) {
-  return status === "PENDING_PAYMENT" || status === "CANCELED";
+  return status === "PENDING_PAYMENT";
 }
 
 export function getOrderStatusPushCopy(entry: OutboxEntry) {
@@ -237,6 +247,8 @@ export function getOrderStatusPushCopy(entry: OutboxEntry) {
         title: "Order canceled",
         body: `Order ${payload.pickupCode} was canceled.`
       };
+    case "REFUNDED":
+      return { title: "Order refunded", body: `A refund for order ${payload.pickupCode} has been confirmed.` };
     default:
       return {
         title: "Order updated",
@@ -286,9 +298,26 @@ async function dispatchExpoPushNotification(entry: OutboxEntry) {
 
   const parsed = expoPushSendResponseSchema.parse(await response.json());
   const result = parsed.data[0];
-  if (!result || result.status !== "ok") {
-    throw new Error(result?.message ?? "expo push provider rejected the notification");
+  if (!result || result.status !== "ok" || !result.id) {
+    const code = typeof result?.details?.error === "string" ? result.details.error : "PROVIDER_REJECTED";
+    throw new ExpoTicketError(result?.message ?? "expo push provider did not return a receipt ID", code);
   }
+  return result.id;
+}
+
+const expoReceiptResponseSchema = z.object({ data: z.record(z.object({
+  status: z.enum(["ok", "error"]), message: z.string().optional(),
+  details: z.object({ error: z.string().optional() }).passthrough().optional()
+})) });
+
+async function fetchExpoReceipts(ids: string[]) {
+  const accessToken = trimToUndefined(process.env.EXPO_ACCESS_TOKEN);
+  const response = await fetch(resolveExpoReceiptApiUrl(), { method: "POST", headers: {
+    accept: "application/json", "content-type": "application/json",
+    ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {})
+  }, body: JSON.stringify({ ids }) });
+  if (!response.ok) throw new Error(`expo receipt request failed with status ${response.status}`);
+  return expoReceiptResponseSchema.parse(await response.json()).data;
 }
 
 export async function registerRoutes(app: FastifyInstance) {
@@ -341,7 +370,7 @@ export async function registerRoutes(app: FastifyInstance) {
         app.log.warn({ event, errors: notificationPayload.error.flatten() }, "event-bus order event failed schema validation");
         return;
       }
-      // Unconfirmed and canceled states are not customer-facing push events.
+      // Unconfirmed states are not customer-facing push events.
       if (shouldSuppressOrderPushStatus(notificationPayload.data.status)) {
         return;
       }
@@ -437,8 +466,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
       const input = orderStateNotificationSchema.parse(request.body);
 
-      // The first customer-facing notification is PAID. Cancellation is reflected
-      // in order history without sending a push notification.
+      // The first customer-facing notification is PAID.
       if (shouldSuppressOrderPushStatus(input.status)) {
         return orderStateDispatchResponseSchema.parse({
           accepted: true,
@@ -510,14 +538,23 @@ export async function registerRoutes(app: FastifyInstance) {
           }
 
           if (notificationProviderMode === "expo") {
-            await dispatchExpoPushNotification(entry);
+            const receiptId = await dispatchExpoPushNotification(entry);
+            await repository.markOutboxSubmitted(entry.id, { receiptId,
+              dueAtIso: new Date(cycleNowMs + receiptPollDelayMs).toISOString(),
+              expiresAtIso: new Date(cycleNowMs + receiptLifetimeMs).toISOString() });
           } else {
             simulatePushDispatch(entry);
+            await repository.markOutboxDispatched(entry.id);
           }
-          await repository.markOutboxDispatched(entry.id);
           dispatched += 1;
         } catch (error) {
           const normalizedError = error instanceof Error ? error.message : "unknown push dispatch error";
+          if (error instanceof ExpoTicketError && error.code === "DeviceNotRegistered") {
+            await repository.markOutboxFailed(entry.id, normalizedError, error.code);
+            await repository.retirePushToken(entry);
+            failed += 1;
+            continue;
+          }
           const nextAttempt = entry.attempts + 1;
 
           if (nextAttempt >= outboxMaxAttempts) {
@@ -543,6 +580,45 @@ export async function registerRoutes(app: FastifyInstance) {
       });
     }
   );
+
+  app.post("/v1/notifications/internal/receipts/process", {
+    preHandler: app.rateLimit(notificationsInternalOutboxProcessRateLimit)
+  }, async (request, reply) => {
+    if (!authorizeInternalRequest(request, reply, notificationsInternalApiToken)) return;
+    const input = outboxProcessRequestSchema.parse(request.body ?? {});
+    const nowIso = input.nowIso ?? new Date().toISOString();
+    const due = await repository.listDueReceipts(input.batchSize ?? outboxDefaultBatch, nowIso);
+    const expired = due.filter((entry) => Date.parse(entry.receiptExpiresAt ?? "") <= Date.parse(nowIso));
+    for (const entry of expired) await repository.markReceiptFailed(entry.id,
+      { code: "RECEIPT_EXPIRED", message: "provider receipt unavailable before expiry", expired: true });
+    const active = due.filter((entry) => !expired.includes(entry));
+    const ids = active.map((entry) => entry.receiptId).filter((id): id is string => Boolean(id));
+    const receipts = ids.length ? await fetchExpoReceipts(ids) : {};
+    let delivered = 0;
+    let failed = 0;
+    let unresolved = 0;
+    for (const entry of active) {
+      const result = entry.receiptId ? receipts[entry.receiptId] : undefined;
+      if (!result) {
+        await repository.markReceiptPending(entry.id, new Date(Date.parse(nowIso) + receiptPollDelayMs).toISOString());
+        unresolved++;
+      } else if (result.status === "ok") {
+        await repository.markReceiptDelivered(entry.id);
+        delivered++;
+      } else {
+        const code = result.details?.error ?? "PROVIDER_REJECTED";
+        await repository.markReceiptFailed(entry.id, { code, message: result.message ?? code });
+        if (code === "DeviceNotRegistered") await repository.retirePushToken(entry);
+        failed++;
+      }
+    }
+    return { processed: due.length, delivered, failed, expired: expired.length, unresolved };
+  });
+
+  app.get("/v1/notifications/internal/delivery-health", async (request, reply) => {
+    if (!authorizeInternalRequest(request, reply, notificationsInternalApiToken)) return;
+    return repository.getDeliveryHealth(new Date().toISOString());
+  });
 
   app.post("/v1/notifications/internal/ping", async (request, reply) => {
     if (!authorizeInternalRequest(request, reply, notificationsInternalApiToken)) {

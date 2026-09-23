@@ -926,7 +926,7 @@ describe.sequential("orders + payments e2e", () => {
     );
   });
 
-  it("dispatches confirmed order notifications but suppresses cancellation notifications", async () => {
+  it("dispatches confirmed and refunded order notifications without duplicates", async () => {
     if (!notificationsApp) {
       throw new Error("Notifications app not initialized");
     }
@@ -981,11 +981,12 @@ describe.sequential("orders + payments e2e", () => {
     const events = (eventsResponse.json() as { events: NotificationDispatchEvent[] }).events.filter(
       (event) => event.orderId === order.id
     );
-    expect(events).toHaveLength(2);
+    expect(events).toHaveLength(3);
     expect(events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ userId, status: "PENDING_PAYMENT" }),
-        expect.objectContaining({ userId, status: "PAID" })
+        expect.objectContaining({ userId, status: "PAID" }),
+        expect.objectContaining({ userId, status: "REFUNDED" })
       ])
     );
   });

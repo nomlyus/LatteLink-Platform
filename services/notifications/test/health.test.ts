@@ -106,8 +106,11 @@ describe("notifications service", () => {
     await app.close();
   });
 
-  it("suppresses canceled order notifications", async () => {
+  it("dispatches canceled order notifications once", async () => {
     const app = await buildApp();
+    await app.inject({ method: "PUT", url: "/v1/devices/push-token",
+      headers: gatewayHeaders({ "x-user-id": "123e4567-e89b-12d3-a456-426614174920" }),
+      payload: { deviceId: "ios-cancel", platform: "ios", expoPushToken: "ExponentPushToken[cancel-token]" } });
     const payload = {
       userId: "123e4567-e89b-12d3-a456-426614174920",
       orderId: "123e4567-e89b-12d3-a456-426614174921",
@@ -127,7 +130,7 @@ describe("notifications service", () => {
     expect(firstDispatch.statusCode).toBe(200);
     expect(firstDispatch.json()).toEqual({
       accepted: true,
-      enqueued: 0,
+      enqueued: 1,
       deduplicated: false
     });
 
@@ -141,7 +144,7 @@ describe("notifications service", () => {
     expect(secondDispatch.json()).toEqual({
       accepted: true,
       enqueued: 0,
-      deduplicated: false
+      deduplicated: true
     });
 
     const processOutbox = await app.inject({
@@ -154,8 +157,8 @@ describe("notifications service", () => {
     });
     expect(processOutbox.statusCode).toBe(200);
     expect(processOutbox.json()).toEqual({
-      processed: 0,
-      dispatched: 0,
+      processed: 1,
+      dispatched: 1,
       retried: 0,
       failed: 0
     });
@@ -163,9 +166,9 @@ describe("notifications service", () => {
     await app.close();
   });
 
-  it("suppresses unconfirmed and canceled statuses at every dispatch boundary", () => {
+  it("suppresses only unconfirmed status at every dispatch boundary", () => {
     expect(shouldSuppressOrderPushStatus("PENDING_PAYMENT")).toBe(true);
-    expect(shouldSuppressOrderPushStatus("CANCELED")).toBe(true);
+    expect(shouldSuppressOrderPushStatus("CANCELED")).toBe(false);
     expect(shouldSuppressOrderPushStatus("PAID")).toBe(false);
   });
 
@@ -173,7 +176,9 @@ describe("notifications service", () => {
     ["PAID", "Order confirmed", "We've received order TEST12. We'll let you know when it's ready."],
     ["IN_PREP", "Your order is being prepared", "We're preparing order TEST12."],
     ["READY", "Your order is ready", "Order TEST12 is ready for pickup."],
-    ["COMPLETED", "Thanks for your order", "Order TEST12 has been picked up. We hope to see you again soon."]
+    ["COMPLETED", "Thanks for your order", "Order TEST12 has been picked up. We hope to see you again soon."],
+    ["CANCELED", "Order canceled", "Order TEST12 was canceled."],
+    ["REFUNDED", "Order refunded", "A refund for order TEST12 has been confirmed."]
   ] as const)("uses customer-facing copy for %s notifications", (status, title, body) => {
     const entry = {
       payload: {
@@ -535,6 +540,109 @@ describe("notifications service", () => {
       code: "GATEWAY_ACCESS_NOT_CONFIGURED"
     });
 
+    await app.close();
+  });
+
+  it("polls Expo receipts, records terminal outcomes, and retires only the rejected token", async () => {
+    vi.stubEnv("NOTIFICATIONS_PROVIDER_MODE", "expo");
+    vi.stubEnv("NOTIFICATIONS_ENVIRONMENT", "test");
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ status: "ok", id: "ticket-1" }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: {} }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { "ticket-1": {
+        status: "error", message: "device unregistered", details: { error: "DeviceNotRegistered" }
+      } } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const app = await buildApp();
+    const userId = "123e4567-e89b-12d3-a456-426614174971";
+    await app.inject({ method: "PUT", url: "/v1/devices/push-token", headers: gatewayHeaders({ "x-user-id": userId }),
+      payload: { deviceId: "ios-old", platform: "ios", expoPushToken: "ExponentPushToken[old]" } });
+    const orderId = "123e4567-e89b-12d3-a456-426614174972";
+    const enqueue = async (status: "PAID" | "READY") => app.inject({ method: "POST",
+      url: "/v1/notifications/internal/order-state", headers: internalHeaders(),
+      payload: { userId, orderId, status, pickupCode: "TEST12", locationId: "merchant-location",
+        occurredAt: "2030-01-01T00:00:00.000Z" } });
+    await enqueue("PAID");
+    const submit = await app.inject({ method: "POST", url: "/v1/notifications/internal/outbox/process",
+      headers: internalHeaders(), payload: { nowIso: "2030-01-01T00:00:00.000Z" } });
+    expect(submit.json()).toMatchObject({ dispatched: 1 });
+    const healthBefore = await app.inject({ method: "GET", url: "/v1/notifications/internal/delivery-health",
+      headers: internalHeaders() });
+    expect(healthBefore.json()).toMatchObject({ submitted: 1, outcomes: [] });
+    const firstPoll = await app.inject({ method: "POST", url: "/v1/notifications/internal/receipts/process",
+      headers: internalHeaders(), payload: { nowIso: "2030-01-01T00:00:15.000Z" } });
+    expect(firstPoll.json()).toMatchObject({ unresolved: 1 });
+    const secondPoll = await app.inject({ method: "POST", url: "/v1/notifications/internal/receipts/process",
+      headers: internalHeaders(), payload: { nowIso: "2030-01-01T00:00:30.000Z" } });
+    expect(secondPoll.json()).toMatchObject({ failed: 1 });
+    const healthAfter = await app.inject({ method: "GET", url: "/v1/notifications/internal/delivery-health",
+      headers: internalHeaders() });
+    expect(healthAfter.json()).toMatchObject({ submitted: 0, outcomes: [{ merchantId: "merchant-location",
+      environment: "test", notificationType: "PAID", delivered: 0, failed: 1, expired: 0 }] });
+    const receiptCall = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)) as { ids: string[] };
+    expect(receiptCall.ids).toEqual(["ticket-1"]);
+    await enqueue("READY");
+    const afterRetirement = await app.inject({ method: "POST", url: "/v1/notifications/internal/outbox/process",
+      headers: internalHeaders(), payload: { nowIso: "2030-01-01T00:00:31.000Z" } });
+    expect(afterRetirement.json()).toMatchObject({ processed: 0 });
+    await app.close();
+  });
+
+  it("expires an unresolved receipt without another provider call", async () => {
+    vi.stubEnv("NOTIFICATIONS_PROVIDER_MODE", "expo");
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      new Response(JSON.stringify({ data: [{ status: "ok", id: "ticket-expiring" }] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const app = await buildApp();
+    const userId = "123e4567-e89b-12d3-a456-426614174973";
+    await app.inject({ method: "PUT", url: "/v1/devices/push-token", headers: gatewayHeaders({ "x-user-id": userId }),
+      payload: { deviceId: "ios-expire", platform: "ios", expoPushToken: "ExponentPushToken[expire]" } });
+    await app.inject({ method: "POST", url: "/v1/notifications/internal/order-state", headers: internalHeaders(),
+      payload: { userId, orderId: "123e4567-e89b-12d3-a456-426614174974", status: "READY",
+        pickupCode: "TEST12", locationId: "merchant-location", occurredAt: "2030-01-01T00:00:00.000Z" } });
+    await app.inject({ method: "POST", url: "/v1/notifications/internal/outbox/process", headers: internalHeaders(),
+      payload: { nowIso: "2030-01-01T00:00:00.000Z" } });
+    const result = await app.inject({ method: "POST", url: "/v1/notifications/internal/receipts/process",
+      headers: internalHeaders(), payload: { nowIso: "2030-01-02T00:00:00.000Z" } });
+    expect(result.json()).toMatchObject({ expired: 1 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await app.close();
+  });
+
+  it("records a delivered receipt and preserves a freshly replaced device token", async () => {
+    vi.stubEnv("NOTIFICATIONS_PROVIDER_MODE", "expo");
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ status: "ok", id: "ticket-old" }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { "ticket-old": { status: "error",
+        details: { error: "DeviceNotRegistered" } } } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ status: "ok", id: "ticket-new" }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { "ticket-new": { status: "ok" } } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const app = await buildApp();
+    const userId = "123e4567-e89b-12d3-a456-426614174975";
+    const register = async (token: string) => app.inject({ method: "PUT", url: "/v1/devices/push-token",
+      headers: gatewayHeaders({ "x-user-id": userId }),
+      payload: { deviceId: "ios-replaced", platform: "ios", expoPushToken: token } });
+    const notify = async (status: "PAID" | "READY") => app.inject({ method: "POST",
+      url: "/v1/notifications/internal/order-state", headers: internalHeaders(), payload: { userId,
+        orderId: "123e4567-e89b-12d3-a456-426614174976", status, pickupCode: "TEST12",
+        locationId: "merchant-location", occurredAt: "2030-01-01T00:00:00.000Z" } });
+    const process = async (nowIso: string) => app.inject({ method: "POST",
+      url: "/v1/notifications/internal/outbox/process", headers: internalHeaders(), payload: { nowIso } });
+    const receipts = async (nowIso: string) => app.inject({ method: "POST",
+      url: "/v1/notifications/internal/receipts/process", headers: internalHeaders(), payload: { nowIso } });
+    await register("ExponentPushToken[old]");
+    await notify("PAID");
+    await process("2030-01-01T00:00:00.000Z");
+    await register("ExponentPushToken[new]");
+    expect((await receipts("2030-01-01T00:00:15.000Z")).json()).toMatchObject({ failed: 1 });
+    await notify("READY");
+    expect((await process("2030-01-01T00:00:16.000Z")).json()).toMatchObject({ processed: 1 });
+    expect((await receipts("2030-01-01T00:00:31.000Z")).json()).toMatchObject({ delivered: 1 });
+    const health = await app.inject({ method: "GET", url: "/v1/notifications/internal/delivery-health",
+      headers: internalHeaders() });
+    expect(health.json()).toMatchObject({ submitted: 0, outcomes: expect.arrayContaining([
+      expect.objectContaining({ notificationType: "READY", delivered: 1 })]) });
     await app.close();
   });
 });

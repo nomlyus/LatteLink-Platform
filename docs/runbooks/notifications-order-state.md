@@ -1,6 +1,6 @@
 # Notifications Push Tokens and Order-State Events
 
-Last reviewed: `2026-03-11`
+Last reviewed: `2026-09-23`
 
 ## Purpose
 
@@ -13,6 +13,8 @@ Validate local push-token registration and order-state notification dispatch beh
 - Notifications service internal endpoint:
   - `POST /v1/notifications/internal/order-state`
   - `POST /v1/notifications/internal/outbox/process`
+  - `POST /v1/notifications/internal/receipts/process`
+  - `GET /v1/notifications/internal/delivery-health`
 
 ## Local Flow
 
@@ -63,7 +65,7 @@ curl -s http://127.0.0.1:3005/v1/notifications/internal/order-state \
   }"
 ```
 
-Expected response shape:
+Expected response shape for simulated dispatch:
 
 ```json
 { "accepted": true, "enqueued": 1, "deduplicated": false }
@@ -97,11 +99,32 @@ START_NOTIFICATIONS_DISPATCH_WORKER=1 pnpm dev:services
 
 Ensure the worker environment also has `NOTIFICATIONS_INTERNAL_API_TOKEN` set.
 
+In Expo mode, `dispatched` means Expo accepted the push ticket. It does not mean delivery.
+The same worker polls Expo receipts and persists `DISPATCHED` (receipt `ok`), `FAILED`,
+or `EXPIRED` after 24 hours without a receipt. It retires a `DeviceNotRegistered`
+token only if the device still has the same token; a fresh registration is preserved.
+`EXPO_RECEIPT_API_URL` overrides the receipt endpoint for a controlled test server.
+`NOTIFICATIONS_ENVIRONMENT` labels new outcomes (set it to `dev` on live dev;
+otherwise `DEPLOY_ENV` is used).
+
+The internal delivery-health endpoint requires `x-internal-token` and returns
+`pending`, `submitted`, `oldestSubmittedAgeSeconds`, and outcome counts grouped by
+`merchantId`, `environment`, and `notificationType`. Postgres resolves merchantId
+from `catalog_client_locations.tenant_id`, falling back to location ID when that
+mapping is absent. The endpoint exposes no device token, message content, or
+provider credential. Monitoring for #417 can alert on old `submitted` entries;
+its workflow and alert destination are owned by that issue.
+
 ## Orders Integration
 
-`services/orders` automatically emits internal order-state events when status changes to:
-- `PENDING_PAYMENT`
-- `PAID`
-- `CANCELED`
+`services/orders` emits internal order-state events for `PENDING_PAYMENT`, `PAID`,
+`IN_PREP`, `READY`, `COMPLETED`, and `CANCELED`. Confirmed refunds emit a
+`REFUNDED` notification while the authoritative order remains `CANCELED`.
+
+The notifications service also accepts `REFUNDED` when a refund is confirmed by
+the payment path. Order status remains `CANCELED`; receipt outcomes never update
+order state. Unpaid `PENDING_PAYMENT` is not pushed. Earlier rows marked
+`DISPATCHED` before receipt tracking existed have no receipt IDs and cannot be
+retroactively verified.
 
 The integration is best-effort and does not block order responses if notifications is unavailable.

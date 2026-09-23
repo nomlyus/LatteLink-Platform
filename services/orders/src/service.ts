@@ -43,7 +43,8 @@ const notificationOrderStatusSchema = z.enum([
   "IN_PREP",
   "READY",
   "COMPLETED",
-  "CANCELED"
+  "CANCELED",
+  "REFUNDED"
 ]);
 
 const orderStateNotificationSchema = z.object({
@@ -551,20 +552,21 @@ async function sendOrderStateNotification(params: {
   userId: string;
   order: Order;
   timelineEntry?: z.output<typeof orderTimelineEntrySchema>;
+  notificationStatus?: "REFUNDED";
 }) {
   const { requestId, deps, userId, order } = params;
   const latestTimelineEntry = params.timelineEntry ?? order.timeline[order.timeline.length - 1];
   const payload = orderStateNotificationSchema.parse({
     userId,
     orderId: order.id,
-    status: latestTimelineEntry?.status ?? order.status,
+    status: params.notificationStatus ?? latestTimelineEntry?.status ?? order.status,
     pickupCode: order.pickupCode,
     locationId: order.locationId,
     occurredAt: latestTimelineEntry?.occurredAt ?? new Date().toISOString(),
     note: latestTimelineEntry?.note
   });
 
-  if (deps.eventBusPublisher) {
+  if (deps.eventBusPublisher && !params.notificationStatus) {
     const event: OrderEvent = {
       userId,
       order
@@ -577,10 +579,6 @@ async function sendOrderStateNotification(params: {
         "event bus unavailable while publishing order-state event"
       );
     }
-  }
-
-  if (payload.status === "CANCELED") {
-    return;
   }
 
   const headers: Record<string, string> = {
@@ -1906,6 +1904,7 @@ export async function cancelOrder(params: {
 
   const cancelActorLabel = cancelSource === "staff" ? "staff" : cancelSource === "system" ? "system" : "customer";
   let refundNote = "";
+  let refundConfirmed = false;
 
   if (existingOrder.status !== "PENDING_PAYMENT") {
     const paymentId = await deps.repository.getPaymentId(orderId);
@@ -2030,6 +2029,7 @@ export async function cancelOrder(params: {
     refundNote = ` ${refundConfirmation}${
       loyaltyReversalParts.length > 0 ? ` Loyalty updated: ${loyaltyReversalParts.join("; ")}.` : ""
     }`;
+    refundConfirmed = true;
   }
 
   const canceledTransition = transitionOrderStatus(existingOrder, "CANCELED", {
@@ -2065,7 +2065,8 @@ export async function cancelOrder(params: {
     deps,
     userId: notificationUserId,
     order: canceledTransition.order,
-    timelineEntry: canceledTransition.appliedTransitions[0]?.timelineEntry
+    timelineEntry: canceledTransition.appliedTransitions[0]?.timelineEntry,
+    notificationStatus: refundConfirmed ? "REFUNDED" : undefined
   });
 
   return { order: canceledTransition.order };
@@ -2384,7 +2385,8 @@ export async function reconcilePaymentWebhook(params: {
     deps,
     userId: orderUserId,
     order: canceledTransition.order,
-    timelineEntry: canceledTransition.appliedTransitions[0]?.timelineEntry
+    timelineEntry: canceledTransition.appliedTransitions[0]?.timelineEntry,
+    notificationStatus: "REFUNDED"
   });
 
   return {

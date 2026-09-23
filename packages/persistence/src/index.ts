@@ -334,7 +334,7 @@ export interface NotificationsOrderStateDispatchTable {
   dispatch_key: string;
   user_id: string;
   order_id: string;
-  status: "PENDING_PAYMENT" | "PAID" | "IN_PREP" | "READY" | "COMPLETED" | "CANCELED";
+  status: "PENDING_PAYMENT" | "PAID" | "IN_PREP" | "READY" | "COMPLETED" | "CANCELED" | "REFUNDED";
   occurred_at: string;
   created_at: Generated<string>;
 }
@@ -346,11 +346,17 @@ export interface NotificationsOutboxTable {
   platform: "ios" | "android";
   expo_push_token: string;
   payload_json: unknown;
-  status: "PENDING" | "DISPATCHED" | "FAILED";
+  status: "PENDING" | "SUBMITTED" | "DISPATCHED" | "FAILED" | "EXPIRED";
   attempts: number;
   available_at: string;
   dispatched_at: string | null;
   last_error: string | null;
+  receipt_id: string | null;
+  receipt_due_at: string | null;
+  receipt_expires_at: string | null;
+  delivered_at: string | null;
+  failure_code: string | null;
+  environment: string;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }

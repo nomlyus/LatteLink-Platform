@@ -6,7 +6,8 @@ export const notificationOrderStatusSchema = z.enum([
   "IN_PREP",
   "READY",
   "COMPLETED",
-  "CANCELED"
+  "CANCELED",
+  "REFUNDED"
 ]);
 
 export const pushTokenUpsertSchema = z.object({

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildNotificationsDispatchConfig,
   processOutboxBatch,
+  startNotificationsDispatchWorker,
   startNotificationsDispatchLoop,
   type NotificationsDispatchConfig,
   type NotificationsDispatchRuntime
@@ -22,6 +23,7 @@ function buildRuntime(overrides: Partial<NotificationsDispatchRuntime> = {}): No
       retried: 0,
       failed: 0
     }),
+    processReceipts: async () => ({ processed: 0, delivered: 0, failed: 0, expired: 0, unresolved: 0 }),
     logger: {
       info: () => undefined,
       warn: () => undefined,
@@ -98,5 +100,15 @@ describe("notifications dispatch worker", () => {
     handle.stop();
     await vi.advanceTimersByTimeAsync(5000);
     expect(runCycle).toHaveBeenCalledTimes(2);
+  });
+
+  it("polls receipts on every dispatch cycle", async () => {
+    const processOutbox = vi.fn(async () => ({ processed: 0, dispatched: 0, retried: 0, failed: 0 }));
+    const processReceipts = vi.fn(async () => ({ processed: 1, delivered: 1, failed: 0, expired: 0, unresolved: 0 }));
+    const runtime = buildRuntime({ processOutbox, processReceipts });
+    const handle = startNotificationsDispatchWorker(baseConfig, runtime);
+    await vi.waitFor(() => expect(processReceipts).toHaveBeenCalledOnce());
+    handle.stop();
+    expect(processOutbox).toHaveBeenCalledOnce();
   });
 });
