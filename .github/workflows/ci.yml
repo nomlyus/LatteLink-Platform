@@ -135,6 +135,10 @@ jobs:
       - run: pnpm --filter @lattelink/payment-reconciler-worker test
         env:
           RECONCILER_TEST_DATABASE_URL: postgres://postgres:test-only@localhost:5432/reconciler_test
+      - run: pnpm --filter '@lattelink/payments...' build
+      - run: pnpm --filter @lattelink/payments exec vitest run test/refund-retry.postgres.test.ts
+        env:
+          PAYMENTS_TEST_DATABASE_URL: postgres://postgres:test-only@localhost:5432/reconciler_test
       - run: pnpm --filter '@lattelink/reporting...' build
       - run: pnpm --filter @lattelink/reporting test
         env:

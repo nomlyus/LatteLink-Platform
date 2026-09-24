@@ -1944,6 +1944,32 @@ describe("payments service", () => {
     await app.close();
   });
 
+  it("rejects reuse of a rejected refund key for a different amount before calling Stripe", async () => {
+    const orderId = "123e4567-e89b-12d3-a456-426614174097";
+    const repository = await recordedStripePayment("pi_rejected_retry", orderId, 600);
+    await repository.saveRefund({
+      request: { orderId, paymentId: "pi_rejected_retry", amountCents: 500, currency: "USD",
+        reason: "customer cancellation", idempotencyKey: "rejected-key", locationId: "flagship-01" },
+      response: { refundId: "123e4567-e89b-12d3-a456-426614174098", provider: "STRIPE",
+        orderId, paymentId: "pi_rejected_retry", status: "REJECTED", amountCents: 500,
+        currency: "USD", occurredAt: "2026-09-23T12:00:00.000Z" }
+    });
+    const stripeRefundCreateSpy = vi.spyOn(Object.getPrototypeOf(stripe.refunds), "create")
+      .mockRejectedValue(new Error("Stripe should not be called"));
+    const app = await buildApp({ repository });
+    try {
+      const response = await app.inject({ method: "POST", url: "/v1/payments/refunds", headers: internalHeaders(),
+        payload: { orderId, paymentId: "pi_rejected_retry", amountCents: 600, currency: "USD",
+          reason: "customer cancellation", idempotencyKey: "rejected-key", locationId: "flagship-01" } });
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({ code: "IDEMPOTENCY_KEY_REUSE" });
+      expect(stripeRefundCreateSpy).not.toHaveBeenCalled();
+    } finally {
+      stripeRefundCreateSpy.mockRestore();
+      await app.close();
+    }
+  });
+
   it("does not simulate refunds without a location", async () => {
     const app = await buildApp();
     const orderId = "123e4567-e89b-12d3-a456-426614174023";

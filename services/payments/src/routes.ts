@@ -8,7 +8,8 @@ import {
   createPostgresDb,
   getDatabaseUrl,
   getPersistenceReadinessMetadata,
-  runMigrations
+  runMigrations,
+  type PersistenceDb
 } from "@lattelink/persistence";
 import { captureOperationalError } from "@lattelink/observability";
 import {
@@ -476,6 +477,10 @@ async function createPostgresRepository(connectionString: string): Promise<Payme
   const db = createPostgresDb(connectionString, "critical");
   await runMigrations(db);
 
+  return createPostgresPaymentsRepository(db);
+}
+
+export function createPostgresPaymentsRepository(db: PersistenceDb): PaymentsRepository {
   return {
     backend: "postgres",
     async findRefundByIdempotency(orderId, idempotencyKey) {
@@ -516,6 +521,56 @@ async function createPostgresRepository(connectionString: string): Promise<Payme
         .where("order_id", "=", request.orderId)
         .where("idempotency_key", "=", request.idempotencyKey)
         .executeTakeFirst();
+      if (persisted?.status === "REJECTED" && providerRefundId && stripeAccountId) {
+        if (persisted.payment_id !== request.paymentId || persisted.amount_cents !== request.amountCents ||
+          persisted.currency !== request.currency || persisted.provider !== response.provider ||
+          persisted.source === "STRIPE_VERIFIED" || persisted.provider_refund_id || persisted.stripe_account_id) {
+          throw new Error("Rejected refund does not match provider result");
+        }
+
+        // A webhook may have recorded this provider refund under its own key.
+        // Keep the rejected historical row in that case and return the verified row.
+        const providerRow = await db.selectFrom("payments_refunds").selectAll()
+          .where("stripe_account_id", "=", stripeAccountId)
+          .where("provider_refund_id", "=", providerRefundId)
+          .executeTakeFirst();
+        if (providerRow) {
+          persisted = providerRow;
+        } else {
+          // Only an unverified rejected row can be replaced. The predicate also
+          // prevents a concurrent settlement from being silently overwritten.
+          try {
+            const updated = await db.updateTable("payments_refunds").set({
+              refund_id: response.refundId,
+              status: response.status,
+              occurred_at: response.occurredAt,
+              message: response.message ?? null,
+              stripe_account_id: stripeAccountId,
+              provider_refund_id: providerRefundId,
+              source: "STRIPE_VERIFIED",
+              provider_status: "succeeded"
+            }).where("refund_id", "=", persisted.refund_id)
+              .where("status", "=", "REJECTED")
+              .where("source", "!=", "STRIPE_VERIFIED")
+              .where("provider_refund_id", "is", null)
+              .where("stripe_account_id", "is", null)
+              .returningAll().executeTakeFirst();
+            persisted = updated ?? await db.selectFrom("payments_refunds").selectAll()
+              .where("order_id", "=", request.orderId)
+              .where("idempotency_key", "=", request.idempotencyKey)
+              .executeTakeFirst();
+          } catch (error) {
+            // A webhook can persist the same provider refund between the read
+            // and update. Its unique provider key is the authoritative replay.
+            if ((error as { code?: string }).code !== "23505") throw error;
+            persisted = await db.selectFrom("payments_refunds").selectAll()
+              .where("stripe_account_id", "=", stripeAccountId)
+              .where("provider_refund_id", "=", providerRefundId)
+              .executeTakeFirst();
+            if (!persisted) throw error;
+          }
+        }
+      }
       if (!persisted && providerRefundId && stripeAccountId) {
         persisted = await db.selectFrom("payments_refunds").selectAll()
           .where("stripe_account_id", "=", stripeAccountId)
@@ -531,7 +586,9 @@ async function createPostgresRepository(connectionString: string): Promise<Payme
       if (!persisted) throw new Error("Refund was not persisted after provider success");
       if (persisted.order_id !== request.orderId || persisted.payment_id !== request.paymentId ||
         persisted.amount_cents !== request.amountCents || persisted.currency !== request.currency ||
-        (providerRefundId && persisted.provider_refund_id !== providerRefundId)) {
+        (providerRefundId && (persisted.provider_refund_id !== providerRefundId ||
+          persisted.stripe_account_id !== stripeAccountId || persisted.status !== "REFUNDED" ||
+          persisted.source !== "STRIPE_VERIFIED"))) {
         throw new Error("Persisted refund does not match provider result");
       }
 
@@ -3510,15 +3567,18 @@ export async function registerRoutes(app: FastifyInstance, options: {
     const input = refundRequestSchema.parse(request.body);
     const existingRefund = await repository.findRefundByIdempotency(input.orderId, input.idempotencyKey);
 
+    if (existingRefund && (existingRefund.paymentId !== input.paymentId ||
+      existingRefund.amountCents !== input.amountCents || existingRefund.currency !== input.currency)) {
+      return reply.status(409).send(serviceErrorSchema.parse({
+        code: "IDEMPOTENCY_KEY_REUSE",
+        message: "Refund idempotency key was already used for a different refund request",
+        requestId: request.id
+      }));
+    }
+
     if (existingRefund && existingRefund.status === "REFUNDED") {
       if (existingRefund.message?.startsWith("Simulated Stripe refund")) {
-        const sameHistoricalRequest = existingRefund.orderId === input.orderId &&
-          existingRefund.paymentId === input.paymentId &&
-          existingRefund.amountCents === input.amountCents &&
-          existingRefund.currency === input.currency;
-        const verifiedAmountCents = sameHistoricalRequest
-          ? await repository.getVerifiedRefundTotalCents(input.orderId, input.paymentId, input.currency)
-          : 0;
+        const verifiedAmountCents = await repository.getVerifiedRefundTotalCents(input.orderId, input.paymentId, input.currency);
         if (verifiedAmountCents === existingRefund.amountCents) {
           return reply.status(409).send(serviceErrorSchema.parse({
             code: "STRIPE_REFUND_ALREADY_RECORDED",
@@ -3532,27 +3592,6 @@ export async function registerRoutes(app: FastifyInstance, options: {
           requestId: request.id
         }));
       }
-      if (
-        existingRefund.orderId !== input.orderId ||
-        existingRefund.paymentId !== input.paymentId ||
-        existingRefund.amountCents !== input.amountCents ||
-        existingRefund.currency !== input.currency
-      ) {
-        return reply.status(409).send(
-          serviceErrorSchema.parse({
-            code: "IDEMPOTENCY_KEY_REUSE",
-            message: "Refund idempotency key was already used for a different refund request",
-            requestId: request.id,
-            details: {
-              orderId: input.orderId,
-              paymentId: input.paymentId,
-              amountCents: input.amountCents,
-              currency: input.currency
-            }
-          })
-        );
-      }
-
       logPaymentsMutation(request, "refund idempotency replayed", {
         orderId: existingRefund.orderId,
         paymentId: existingRefund.paymentId,
