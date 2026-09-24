@@ -63,14 +63,20 @@ export function validateDevDatabaseUrl(env) {
     throw new Error("Dev DATABASE_URL must target the expected Supabase session pooler");
   }
 
-  if (parsed.searchParams.get("sslmode")?.toLowerCase() !== "require") {
-    throw new Error("Dev DATABASE_URL must require TLS with sslmode=require");
+  if (
+    parsed.searchParams.get("sslmode")?.toLowerCase() !== "require" ||
+    parsed.searchParams.get("uselibpqcompat")?.toLowerCase() !== "true"
+  ) {
+    throw new Error(
+      "Dev DATABASE_URL must require TLS with sslmode=require and uselibpqcompat=true",
+    );
   }
 
   return {
     targetProjectRef: expectedProjectRef,
     connectionMode: "session-pooler",
     tlsRequired: true,
+    serverCertificateVerified: false,
   };
 }
 
