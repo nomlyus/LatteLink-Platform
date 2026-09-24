@@ -29,6 +29,51 @@ export function effectiveHerokuConfigEnv(env) {
   return configured;
 }
 
+/** Reject dev database URLs that can fall back to an unencrypted connection. */
+export function validateDevDatabaseUrl(env) {
+  const databaseUrl = env.DATABASE_URL?.trim();
+  const expectedProjectRef = env.EXPECTED_SUPABASE_PROJECT_REF?.trim();
+  if (!databaseUrl || !expectedProjectRef) {
+    throw new Error(
+      "Dev DATABASE_URL and EXPECTED_SUPABASE_PROJECT_REF must be configured",
+    );
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(databaseUrl);
+  } catch {
+    throw new Error("Dev DATABASE_URL must be a valid PostgreSQL URL");
+  }
+
+  let username;
+  try {
+    username = decodeURIComponent(parsed.username);
+  } catch {
+    throw new Error("Dev DATABASE_URL must target the expected session pooler");
+  }
+
+  if (
+    !["postgres:", "postgresql:"].includes(parsed.protocol) ||
+    !parsed.hostname.endsWith(".pooler.supabase.com") ||
+    parsed.port !== "5432" ||
+    parsed.pathname !== "/postgres" ||
+    !username.endsWith(`.${expectedProjectRef}`)
+  ) {
+    throw new Error("Dev DATABASE_URL must target the expected Supabase session pooler");
+  }
+
+  if (parsed.searchParams.get("sslmode")?.toLowerCase() !== "require") {
+    throw new Error("Dev DATABASE_URL must require TLS with sslmode=require");
+  }
+
+  return {
+    targetProjectRef: expectedProjectRef,
+    connectionMode: "session-pooler",
+    tlsRequired: true,
+  };
+}
+
 export const herokuConfigKeys = [
   "NODE_ENV",
   "DEPLOY_ENV",
@@ -179,6 +224,7 @@ export async function syncHerokuConfig(env = process.env) {
 
   if (env.DEPLOY_ENV === "dev") {
     validateIdentitySecretStorageConfig(env);
+    validateDevDatabaseUrl(env);
   }
 
   const appPath = `/apps/${encodeURIComponent(appName)}/config-vars`;
