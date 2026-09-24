@@ -119,6 +119,8 @@ describe("Owner Home operational and state rendering", () => {
     state.ownerHome.error = "Reporting unavailable";
     const html = renderOwnerHome();
     expect(html).toContain("Reporting is unavailable");
+    expect(html).toContain("owner-home-chart--error");
+    expect(html).toContain("owner-home-kpis--unavailable");
     expect(html).toContain("Right now");
   });
 
@@ -145,6 +147,21 @@ describe("Owner Home operational and state rendering", () => {
     const html = renderOwnerHome();
     expect(html).toContain("Unavailable");
     expect(html).not.toContain("$0.00");
-    expect(html).toContain("Unavailable does not mean zero");
+    expect(html).toContain("The refund total is recorded, but we will not guess its merchandise split");
+
+    const report = state.ownerHome.report;
+    report.series = [{ ...report.summary, start: "2026-09-09T04:00:00.000Z", end: "2026-09-09T05:00:00.000Z" }];
+    expect(renderOwnerHome()).toContain("Net sales are unavailable for this period");
+    expect(renderOwnerHome()).not.toContain("No paid order activity in this period");
+
+    state.ownerHome.chartMetric = "orders";
+    expect(renderOwnerHome()).toContain("Orders: 2");
+
+    report.summary.paidOrders = 0;
+    report.comparison.paidOrders = { current: 0, previous: 2, percentChange: -100 };
+    report.series = [];
+    const noOrdersHtml = renderOwnerHome();
+    expect(noOrdersHtml).toContain("-100.0%");
+    expect(noOrdersHtml).toContain("The refund total is recorded, but we will not guess its merchandise split");
   });
 });

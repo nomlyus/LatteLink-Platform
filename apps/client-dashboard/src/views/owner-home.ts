@@ -93,16 +93,13 @@ function renderKpiSkeleton() {
   return `<div class="owner-home-kpi owner-home-kpi--skeleton" aria-hidden="true"><span class="owner-home-skeleton owner-home-skeleton--label"></span><span class="owner-home-skeleton owner-home-skeleton--value"></span><span class="owner-home-skeleton owner-home-skeleton--meta"></span></div>`;
 }
 
-function renderLocationContext() {
-  const label = isAllLocationsSelected() ? "All locations" : getSelectedLocation()?.locationName ?? "Current location";
-  return `<div class="owner-home-context" aria-label="Reporting location context"><span class="owner-home-context__dot"></span><span>${escapeHtml(label)}</span></div>`;
-}
-
 function renderChart(report: ReportingResponse | null, loading: boolean) {
   const metric = state.ownerHome.chartMetric;
   const series = report?.series ?? [];
   const values = series.map((bucket) => metric === "orders" ? bucket.paidOrders : bucket.netSales?.amountCents ?? 0);
   const max = Math.max(0, ...values.map((value) => Math.abs(value)));
+  const noActivity = !loading && series.length > 0 && values.every((value) => value === 0) && series.every((bucket) => bucket.paidOrders === 0);
+  const salesUnavailable = !loading && metric === "netSales" && series.some((bucket) => bucket.netSales === null);
   const timezone = report?.query.timezone;
   const formatBucket = (bucket: ReportingResponse["series"][number]) => {
     const date = new Date(bucket.start);
@@ -111,24 +108,42 @@ function renderChart(report: ReportingResponse | null, loading: boolean) {
     }
     return new Intl.DateTimeFormat("en-US", { timeZone: timezone, month: "numeric", day: "numeric" }).format(date);
   };
-
   return `<section class="owner-home-chart" aria-labelledby="owner-home-performance-title">
     <div class="owner-home-chart__header">
-      <div><h2 id="owner-home-performance-title">Performance</h2><p>${loading ? "Loading reporting data" : "Compared with the previous period"}</p></div>
+      <div><h2 id="owner-home-performance-title">Performance</h2></div>
       <div class="owner-home-toggle" role="group" aria-label="Performance metric">
         <button type="button" class="${metric === "netSales" ? "is-active" : ""}" data-action="set-owner-chart-metric" data-chart-metric="netSales">Net Sales</button>
         <button type="button" class="${metric === "orders" ? "is-active" : ""}" data-action="set-owner-chart-metric" data-chart-metric="orders">Orders</button>
       </div>
     </div>
     <div class="owner-home-chart__plot" aria-label="${metric === "netSales" ? "Net sales" : "Orders"} by ${report?.query.granularity ?? "time"}">
-      ${loading ? `<div class="owner-home-chart__loading">${Array.from({ length: 12 }, () => '<span class="owner-home-skeleton owner-home-skeleton--bar"></span>').join("")}</div>` : series.length === 0 ? `<div class="owner-home-chart__empty">No chart activity for this period</div>` : `<div class="owner-home-bars">${series.map((bucket, index) => {
+      ${loading ? (isAllLocationsSelected() ? `<div class="owner-home-chart__loading">${Array.from({ length: 12 }, () => '<span class="owner-home-skeleton owner-home-skeleton--bar"></span>').join("")}</div>` : `<div class="owner-home-chart__loading owner-home-chart__loading--roomy"><span class="owner-home-skeleton owner-home-skeleton--chart"></span></div>`) : salesUnavailable || series.length === 0 || noActivity ? `<div class="owner-home-chart__empty">${salesUnavailable ? "Net sales are unavailable for this period" : noActivity ? "No paid order activity in this period" : "No chart activity for this period"}</div>` : `<div class="owner-home-bars" style="--owner-series-count:${series.length}">${series.map((bucket, index) => {
         const value = values[index] ?? 0;
         const height = getChartBarHeight(value, max);
         const label = formatBucket(bucket);
         const display = metric === "orders" ? `${formatCompactCount(bucket.paidOrders)} orders` : formatMetric(bucket.netSales);
-        return `<button type="button" class="owner-home-bar" style="--owner-bar-height:${height}px" aria-label="${escapeHtml(`${label}: ${display}`)}" title="${escapeHtml(`${label}: ${display}`)}"><span class="owner-home-bar__fill"></span><span class="owner-home-bar__label">${escapeHtml(label)}</span></button>`;
+        const showLabel = series.length <= 8 || index === 0 || index === series.length - 1 || index % Math.ceil(series.length / 7) === 0;
+        return `<button type="button" class="owner-home-bar" style="--owner-bar-height:${height}px" aria-label="${escapeHtml(`${label}: ${display}`)}"><span class="owner-home-bar__fill"></span><span class="owner-home-bar__tooltip"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(`Sales: ${formatMetric(bucket.netSales)}`)}</span><span>${escapeHtml(`Orders: ${formatCompactCount(bucket.paidOrders)}`)}</span></span>${showLabel ? `<span class="owner-home-bar__label">${escapeHtml(label)}</span>` : ""}</button>`;
       }).join("")}</div>`}
     </div>
+  </section>`;
+}
+
+function renderChartError(message: string) {
+  return `<section class="owner-home-chart owner-home-chart--error" aria-labelledby="owner-home-performance-title">
+    <div class="owner-home-chart__header">
+      <div><h2 id="owner-home-performance-title">Performance</h2></div>
+      <div class="owner-home-toggle" aria-hidden="true"><span>Net Sales</span><span>Orders</span></div>
+    </div>
+    <div class="owner-home-chart__empty" role="status"><strong>Reporting is unavailable</strong><span>${escapeHtml(message)}</span></div>
+  </section>`;
+}
+
+function renderUnavailableKpis() {
+  return `<section class="owner-home-kpis owner-home-kpis--unavailable" aria-label="Business performance unavailable">
+    ${renderKpi("Net sales", "—", "Unavailable", "neutral")}
+    ${renderKpi("Orders", "—", "Unavailable", "neutral")}
+    ${renderKpi("Avg order", "—", "Unavailable", "neutral")}
   </section>`;
 }
 
@@ -163,18 +178,22 @@ function getAttentionItems(): AttentionItem[] {
 function renderAttention(loading: boolean) {
   if (loading) return `<section class="owner-home-panel owner-home-attention"><span class="owner-home-skeleton owner-home-skeleton--title"></span><div class="owner-home-attention__skeletons"><span></span><span></span></div></section>`;
   const items = getAttentionItems();
+  if (!items.length) return `<section class="owner-home-panel owner-home-attention" aria-labelledby="owner-home-attention-title">
+    <div class="owner-home-panel__heading"><div><h2 id="owner-home-attention-title">Needs attention</h2></div></div>
+    <div class="owner-home-healthy"><strong>Everything looks good</strong><span>No issues need your attention right now.</span></div>
+  </section>`;
   return `<section class="owner-home-panel owner-home-attention" aria-labelledby="owner-home-attention-title">
-    <div class="owner-home-panel__heading"><div><h2 id="owner-home-attention-title">Needs attention</h2><p>${items.length ? "A few things need your attention" : "Everything looks good"}</p></div></div>
-    ${items.length ? `<div class="owner-home-attention__items">${items.map((item) => `<div class="owner-home-attention__item"><div><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.copy)}</p></div><button type="button" data-action="${item.action}" ${item.tone ? `data-section="${item.tone}"` : ""}>${escapeHtml(item.actionLabel)}</button></div>`).join("")}</div>` : `<div class="owner-home-healthy"><span aria-hidden="true">✓</span><span>Everything looks good</span></div>`}
+    <div class="owner-home-panel__heading"><div><h2 id="owner-home-attention-title">Needs attention</h2></div></div>
+    <div class="owner-home-attention__items">${items.map((item) => `<div class="owner-home-attention__item"><div><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.copy)}</p></div><button type="button" data-action="${item.action}" ${item.tone ? `data-section="${item.tone}"` : ""}>${escapeHtml(item.actionLabel)}</button></div>`).join("")}</div>
   </section>`;
 }
 
 function renderRightNow(loading: boolean) {
   if (loading) return `<section class="owner-home-panel owner-home-right-now"><span class="owner-home-skeleton owner-home-skeleton--title"></span><span class="owner-home-skeleton owner-home-skeleton--count"></span></section>`;
-  if (state.ownerHome.ordersError) return `<section class="owner-home-panel owner-home-right-now" role="status"><div class="owner-home-panel__heading"><div><h2 id="owner-home-right-now-title">Right now</h2><p>Current orders are unavailable.</p></div></div><div class="owner-home-module-error">We couldn’t load operational counts. Reporting is still available.</div></section>`;
+  if (state.ownerHome.ordersError) return `<section class="owner-home-panel owner-home-right-now" role="status"><div class="owner-home-panel__heading"><div><h2 id="owner-home-right-now-title">Right now</h2></div></div><div class="owner-home-module-error">We couldn’t load operational counts. Reporting is still available.</div></section>`;
   const counts = getRightNowCounts(state.orders);
   return `<section class="owner-home-panel owner-home-right-now" aria-labelledby="owner-home-right-now-title">
-    <div class="owner-home-panel__heading"><div><h2 id="owner-home-right-now-title">Right now</h2><p>Live operational summary</p></div></div>
+    <div class="owner-home-panel__heading"><div><h2 id="owner-home-right-now-title">Right now</h2></div></div>
     <div class="owner-home-right-now__count"><strong>${counts.active}</strong><span>${counts.active === 0 ? "No active orders" : "Active orders"}</span></div>
     <div class="owner-home-right-now__breakdown"><div><span>Needs action</span><strong>${counts.needsAction}</strong></div><div><span>In prep</span><strong>${counts.inPrep}</strong></div><div><span>Ready</span><strong>${counts.ready}</strong></div></div>
     <button class="owner-home-link-button" type="button" data-action="set-section" data-section="orders">View orders</button>
@@ -185,7 +204,7 @@ function renderLocations(report: ReportingResponse | null, loading: boolean) {
   if (!hasMultipleLocations() || !isAllLocationsSelected()) return "";
   if (loading) return `<section class="owner-home-panel owner-home-locations"><span class="owner-home-skeleton owner-home-skeleton--title"></span><span class="owner-home-skeleton owner-home-skeleton--row"></span><span class="owner-home-skeleton owner-home-skeleton--row"></span></section>`;
   const locations = report?.locations ?? [];
-  return `<section class="owner-home-panel owner-home-locations" aria-labelledby="owner-home-locations-title"><div class="owner-home-panel__heading"><div><h2 id="owner-home-locations-title">Locations</h2><p>Performance by location</p></div></div><div class="owner-home-location-table"><div class="owner-home-location-table__head"><span>Location</span><span>Net sales</span><span>Orders</span><span>Avg order</span><span>Change</span></div>${locations.map((location) => `<div class="owner-home-location-row"><span>${escapeHtml(location.locationName)}</span><span>${escapeHtml(formatMetric(location.netSales))}</span><span>${escapeHtml(formatCompactCount(location.paidOrders))}</span><span>${escapeHtml(formatMetric(location.averageOrderValue))}</span><span>—</span></div>`).join("")}</div></section>`;
+  return `<section class="owner-home-panel owner-home-locations" aria-labelledby="owner-home-locations-title"><div class="owner-home-panel__heading"><div><h2 id="owner-home-locations-title">Location performance</h2></div><p class="owner-home-panel__hint">All locations · same reporting timezone</p></div><div class="owner-home-location-table"><div class="owner-home-location-table__head"><span>Location</span><span>Net Sales</span><span>Orders</span><span>Avg Order</span><span>Change</span></div>${locations.map((location) => `<div class="owner-home-location-row"><span>${escapeHtml(location.locationName)}</span><span>${escapeHtml(formatMetric(location.netSales))}</span><span>${escapeHtml(formatCompactCount(location.paidOrders))}</span><span>${escapeHtml(formatMetric(location.averageOrderValue))}</span><span>—</span></div>`).join("")}</div></section>`;
 }
 
 function renderMixedTimezone() {
@@ -208,14 +227,30 @@ export function renderOwnerHome() {
   const comparison = report?.comparison;
   const netSalesUnavailable = summary ? summary.netSales === null : false;
   const averageUnavailable = summary ? summary.averageOrderValue === null : false;
-  return `<div class="owner-home" aria-label="Owner home">
-    <div class="owner-home__controls">${renderLocationContext()}<div class="owner-home-period"><span>Reporting period</span><div role="group" aria-label="Reporting period">${(["today", "7d", "30d"] as OwnerPeriod[]).map((period) => `<button type="button" class="${state.ownerHome.period === period ? "is-active" : ""}" data-action="set-owner-period" data-period="${period}">${periodLabels[period]}</button>`).join("")}</div></div></div>
-    <h1 class="owner-home__section-title">Business performance</h1>
-    ${reportingUnavailable ? renderReportingError(timezoneState === "mixed") : `<section class="owner-home-kpis" aria-label="Business performance">${loading || !summary || !comparison ? `${renderKpiSkeleton()}${renderKpiSkeleton()}${renderKpiSkeleton()}` : `${renderKpi("Net sales", formatMetric(summary.netSales), comparisonLabel(comparison.netSales.percentChange, netSalesUnavailable), comparison.netSales.percentChange === null ? "neutral" : comparison.netSales.percentChange > 0 ? "positive" : "negative")}${renderKpi("Orders", formatCompactCount(summary.paidOrders), comparisonLabel(comparison.paidOrders.percentChange, false), comparison.paidOrders.percentChange === null ? "neutral" : comparison.paidOrders.percentChange > 0 ? "positive" : "negative")}${renderKpi("Avg order", formatMetric(summary.averageOrderValue), comparisonLabel(comparison.averageOrderValue.percentChange, averageUnavailable), comparison.averageOrderValue.percentChange === null ? "neutral" : comparison.averageOrderValue.percentChange > 0 ? "positive" : "negative")}`}</section>`}
-    ${summary && (netSalesUnavailable || averageUnavailable) ? `<p class="owner-home-data-quality" role="status">Some reporting metrics are unavailable because historical refund allocation is incomplete. Unavailable does not mean zero.</p>` : ""}
-    ${reportingUnavailable ? "" : renderChart(report, loading)}
+  const currentDataQuality = summary?.dataQuality;
+  const previousDataQuality = report?.previous.dataQuality;
+  const hasUnallocatableRefunds = Boolean(
+    (currentDataQuality?.unallocatableRefunds ?? 0) > 0 || (previousDataQuality?.unallocatableRefunds ?? 0) > 0
+  );
+  const hasMissingQuoteData = Boolean(
+    (currentDataQuality?.missingQuotePaidOrders ?? 0) > 0 || (previousDataQuality?.missingQuotePaidOrders ?? 0) > 0
+  );
+  const dataQualityMessage = hasUnallocatableRefunds
+    ? "A historical refund has no item allocation. The refund total is recorded, but we will not guess its merchandise split."
+    : hasMissingQuoteData
+      ? "Some paid orders are missing their quote details, so merchandise metrics cannot be calculated yet."
+      : "Some reporting metrics are unavailable. Valid metrics continue to display.";
+  const noPaidOrders = Boolean(summary && summary.paidOrders === 0);
+  const showDataQualityNotice = Boolean(summary && (netSalesUnavailable || averageUnavailable));
+  const experienceClass = isAllLocationsSelected() ? "owner-home--all-locations" : "owner-home--single-location";
+  const emptyClass = noPaidOrders ? " owner-home--empty" : "";
+  return `<div class="owner-home ${experienceClass}${emptyClass}" aria-label="Owner home">
+    <div class="owner-home__controls"><div class="owner-home-period"><div role="group" aria-label="Reporting period">${(["today", "7d", "30d"] as OwnerPeriod[]).map((period) => `<button type="button" class="${state.ownerHome.period === period ? "is-active" : ""}" data-action="set-owner-period" data-period="${period}">${periodLabels[period]}</button>`).join("")}</div></div></div>
+    ${timezoneState === "mixed" && !loading ? renderReportingError(true) : reportingUnavailable ? renderUnavailableKpis() : `<section class="owner-home-kpis" aria-label="Business performance">${loading || !summary || !comparison ? `${renderKpiSkeleton()}${renderKpiSkeleton()}${renderKpiSkeleton()}` : `${renderKpi("Net sales", formatMetric(summary.netSales), comparisonLabel(comparison.netSales.percentChange, netSalesUnavailable), comparison.netSales.percentChange === null ? "neutral" : comparison.netSales.percentChange > 0 ? "positive" : "negative")}${renderKpi("Orders", formatCompactCount(summary.paidOrders), comparisonLabel(comparison.paidOrders.percentChange, false), comparison.paidOrders.percentChange === null ? "neutral" : comparison.paidOrders.percentChange > 0 ? "positive" : "negative")}${renderKpi("Avg order", formatMetric(summary.averageOrderValue), comparisonLabel(comparison.averageOrderValue.percentChange, averageUnavailable), comparison.averageOrderValue.percentChange === null ? "neutral" : comparison.averageOrderValue.percentChange > 0 ? "positive" : "negative")}`}</section>`}
+    ${showDataQualityNotice ? `<p class="owner-home-data-quality" role="status">${dataQualityMessage}</p>` : ""}
+    ${timezoneState === "mixed" && !loading ? "" : reportingUnavailable ? renderChartError(state.ownerHome.error ?? "We couldn’t load performance data right now.") : renderChart(report, loading)}
     <div class="owner-home-operations">${renderAttention(loading)}${renderRightNow(loading)}</div>
-    ${reportingUnavailable ? "" : renderLocations(report, loading)}
+    ${timezoneState === "mixed" && !loading ? "" : reportingUnavailable ? "" : renderLocations(report, loading)}
   </div>`;
 }
 
