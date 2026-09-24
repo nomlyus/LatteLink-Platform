@@ -40,7 +40,7 @@ const syntheticKeyRing = JSON.stringify({
 });
 
 const secureDevDatabaseUrl =
-  "postgresql://postgres.wdlyegrmosuhrrbbmnrb:test-only-password@aws-1-us-west-2.pooler.supabase.com:5432/postgres?sslmode=require";
+  "postgresql://postgres.wdlyegrmosuhrrbbmnrb:test-only-password@aws-1-us-west-2.pooler.supabase.com:5432/postgres?sslmode=require&uselibpqcompat=true";
 
 test("dev database URL requires the expected Supabase session pooler and TLS without exposing credentials", () => {
   const result = validateDevDatabaseUrl({
@@ -52,6 +52,7 @@ test("dev database URL requires the expected Supabase session pooler and TLS wit
     targetProjectRef: "wdlyegrmosuhrrbbmnrb",
     connectionMode: "session-pooler",
     tlsRequired: true,
+    serverCertificateVerified: false,
   });
   assert.equal(JSON.stringify(result).includes("test-only-password"), false);
   assert.throws(
@@ -61,6 +62,14 @@ test("dev database URL requires the expected Supabase session pooler and TLS wit
         EXPECTED_SUPABASE_PROJECT_REF: "wdlyegrmosuhrrbbmnrb",
       }),
     /sslmode=require/,
+  );
+  assert.throws(
+    () =>
+      validateDevDatabaseUrl({
+        DATABASE_URL: secureDevDatabaseUrl.replace("&uselibpqcompat=true", ""),
+        EXPECTED_SUPABASE_PROJECT_REF: "wdlyegrmosuhrrbbmnrb",
+      }),
+    /uselibpqcompat=true/,
   );
   assert.throws(
     () =>
