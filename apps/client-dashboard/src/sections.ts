@@ -80,6 +80,10 @@ export function getAvailableDashboardSections() {
 }
 
 export function ensureSectionIsAvailable() {
+  if (state.availableLocations.length === 0 && !state.appConfig && state.lastRefreshedAt === null) {
+    return;
+  }
+
   const availableSections = getAvailableDashboardSections();
   if (!availableSections.includes(state.section)) {
     state.section = availableSections[0] ?? (isStoreOperator(state.session?.operator ?? null) ? "orders" : "overview");

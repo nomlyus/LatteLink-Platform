@@ -1,7 +1,6 @@
 import type { ReportingResponse } from "@lattelink/contracts-reporting";
 import { isApiRequestError } from "../api";
 import { getSelectedLocation, hasMultipleLocations, isAllLocationsSelected, state } from "../state";
-import type { OperatorOrder } from "../model";
 import { escapeHtml, formatCompactCount, formatMoney } from "../ui/format";
 
 export type OwnerPeriod = "today" | "7d" | "30d";
@@ -59,13 +58,6 @@ export function getOwnerReportingLocationIds() {
   return state.selectedLocationId ? [state.selectedLocationId] : [];
 }
 
-export function getRightNowCounts(orders: readonly Pick<OperatorOrder, "status">[]) {
-  const needsAction = orders.filter((order) => order.status === "PAID").length;
-  const inPrep = orders.filter((order) => order.status === "IN_PREP").length;
-  const ready = orders.filter((order) => order.status === "READY").length;
-  return { needsAction, inPrep, ready, active: needsAction + inPrep + ready };
-}
-
 export function getChartBarHeight(value: number, max: number, maxHeight = 104) {
   return max > 0 ? Math.round((Math.abs(value) / max) * maxHeight) : 0;
 }
@@ -83,14 +75,14 @@ function comparisonLabel(percentChange: number | null, unavailable: boolean) {
 
 function renderKpi(label: string, value: string, change: string, tone = "") {
   return `<article class="owner-home-kpi">
-    <div class="owner-home-kpi__label">${escapeHtml(label)}</div>
     <div class="owner-home-kpi__value">${escapeHtml(value)}</div>
+    <div class="owner-home-kpi__label">${escapeHtml(label)}</div>
     <div class="owner-home-kpi__comparison ${tone ? `owner-home-kpi__comparison--${tone}` : ""}">${escapeHtml(change)} <span>vs previous period</span></div>
   </article>`;
 }
 
 function renderKpiSkeleton() {
-  return `<div class="owner-home-kpi owner-home-kpi--skeleton" aria-hidden="true"><span class="owner-home-skeleton owner-home-skeleton--label"></span><span class="owner-home-skeleton owner-home-skeleton--value"></span><span class="owner-home-skeleton owner-home-skeleton--meta"></span></div>`;
+  return `<div class="owner-home-kpi owner-home-kpi--skeleton" aria-hidden="true"><span class="owner-home-skeleton owner-home-skeleton--value"></span><span class="owner-home-skeleton owner-home-skeleton--label"></span><span class="owner-home-skeleton owner-home-skeleton--meta"></span></div>`;
 }
 
 function renderChart(report: ReportingResponse | null, loading: boolean) {
@@ -147,56 +139,16 @@ function renderUnavailableKpis() {
   </section>`;
 }
 
-type AttentionItem = { title: string; copy: string; action: string; actionLabel: string; tone?: string };
-
-function getAttentionItems(): AttentionItem[] {
-  const items: AttentionItem[] = [];
-  const onboarding = state.onboardingSummary;
-  if (onboarding && onboarding.status !== "approved" && onboarding.status !== "live") {
-    items.push({ title: "Onboarding is incomplete", copy: "Finish the remaining setup steps before launch.", action: "open-onboarding-wizard", actionLabel: "Continue setup" });
-  }
-  if (onboarding?.paymentReadiness && !onboarding.paymentReadiness.ready) {
-    items.push({ title: "Payments need setup", copy: "Complete payment onboarding to begin accepting orders.", action: "start-stripe-onboarding", actionLabel: "Continue setup" });
-  }
-  const hiddenItems = state.menuCategories.flatMap((category) => category.items).filter((item) => !item.visible).length;
-  if (hiddenItems > 0) {
-    items.push({ title: `${hiddenItems} menu item${hiddenItems === 1 ? "" : "s"} hidden`, copy: "These items aren’t currently visible to customers.", action: "set-section", actionLabel: "Review menu", tone: "menu" });
-  }
-  if (state.appConfig?.featureFlags.orderTracking === false) {
-    items.push({ title: "Live order tracking is off", copy: "Customers cannot see order progress right now.", action: "set-section", actionLabel: "Review settings", tone: "store" });
-  }
-  if (state.appConfig?.featureFlags.staffDashboard === false) {
-    items.push({ title: "Staff dashboard is off", copy: "Store staff cannot use the order workspace yet.", action: "set-section", actionLabel: "Review settings", tone: "store" });
-  }
-  const failedBuild = state.mobileReleaseBuildJobs.jobs.some((job) => job.status === "failed");
-  if (failedBuild) {
-    items.push({ title: "Mobile release needs attention", copy: "The latest mobile build failed and needs review.", action: "set-section", actionLabel: "Review release", tone: "experience" });
-  }
-  return items.slice(0, 3);
-}
-
 function renderAttention(loading: boolean) {
-  if (loading) return `<section class="owner-home-panel owner-home-attention"><span class="owner-home-skeleton owner-home-skeleton--title"></span><div class="owner-home-attention__skeletons"><span></span><span></span></div></section>`;
-  const items = getAttentionItems();
-  if (!items.length) return `<section class="owner-home-panel owner-home-attention" aria-labelledby="owner-home-attention-title">
+  if (loading) {
+    return `<section class="owner-home-panel owner-home-attention owner-home-attention--loading" aria-label="Needs attention loading" aria-busy="true">
+      <span class="owner-home-skeleton owner-home-skeleton--title" aria-hidden="true"></span>
+      <div class="owner-home-attention__skeletons" aria-hidden="true"><span></span><span></span></div>
+    </section>`;
+  }
+  return `<section class="owner-home-panel owner-home-attention owner-home-attention--planned" aria-labelledby="owner-home-attention-title">
     <div class="owner-home-panel__heading"><div><h2 id="owner-home-attention-title">Needs attention</h2></div></div>
-    <div class="owner-home-healthy"><strong>Everything looks good</strong><span>No issues need your attention right now.</span></div>
-  </section>`;
-  return `<section class="owner-home-panel owner-home-attention" aria-labelledby="owner-home-attention-title">
-    <div class="owner-home-panel__heading"><div><h2 id="owner-home-attention-title">Needs attention</h2></div></div>
-    <div class="owner-home-attention__items">${items.map((item) => `<div class="owner-home-attention__item"><div><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.copy)}</p></div><button type="button" data-action="${item.action}" ${item.tone ? `data-section="${item.tone}"` : ""}>${escapeHtml(item.actionLabel)}</button></div>`).join("")}</div>
-  </section>`;
-}
-
-function renderRightNow(loading: boolean) {
-  if (loading) return `<section class="owner-home-panel owner-home-right-now"><span class="owner-home-skeleton owner-home-skeleton--title"></span><span class="owner-home-skeleton owner-home-skeleton--count"></span></section>`;
-  if (state.ownerHome.ordersError) return `<section class="owner-home-panel owner-home-right-now" role="status"><div class="owner-home-panel__heading"><div><h2 id="owner-home-right-now-title">Right now</h2></div></div><div class="owner-home-module-error">We couldn’t load operational counts. Reporting is still available.</div></section>`;
-  const counts = getRightNowCounts(state.orders);
-  return `<section class="owner-home-panel owner-home-right-now" aria-labelledby="owner-home-right-now-title">
-    <div class="owner-home-panel__heading"><div><h2 id="owner-home-right-now-title">Right now</h2></div></div>
-    <div class="owner-home-right-now__count"><strong>${counts.active}</strong><span>${counts.active === 0 ? "No active orders" : "Active orders"}</span></div>
-    <div class="owner-home-right-now__breakdown"><div><span>Needs action</span><strong>${counts.needsAction}</strong></div><div><span>In prep</span><strong>${counts.inPrep}</strong></div><div><span>Ready</span><strong>${counts.ready}</strong></div></div>
-    <button class="owner-home-link-button" type="button" data-action="set-section" data-section="orders">View orders</button>
+    <div class="owner-home-attention__planned"><span class="owner-home-planned-pill">Planned</span></div>
   </section>`;
 }
 
@@ -219,10 +171,11 @@ function renderReportingError(mixedTimezone = false) {
 
 export function renderOwnerHome() {
   if (!shouldRenderOwnerHome(state.session?.operator)) return "";
-  const loading = state.loading || state.ownerHome.loading;
+  const pageLoading = state.loading;
+  const reportingLoading = pageLoading || state.ownerHome.loading;
   const report = state.ownerHome.report;
   const timezoneState = resolveOwnerReportingTimezone();
-  const reportingUnavailable = !loading && (state.ownerHome.error || timezoneState === "mixed");
+  const reportingUnavailable = !reportingLoading && (state.ownerHome.error || timezoneState === "mixed");
   const summary = report?.summary;
   const comparison = report?.comparison;
   const netSalesUnavailable = summary ? summary.netSales === null : false;
@@ -241,16 +194,16 @@ export function renderOwnerHome() {
       ? "Some paid orders are missing their quote details, so merchandise metrics cannot be calculated yet."
       : "Some reporting metrics are unavailable. Valid metrics continue to display.";
   const noPaidOrders = Boolean(summary && summary.paidOrders === 0);
-  const showDataQualityNotice = Boolean(summary && (netSalesUnavailable || averageUnavailable));
+  const showDataQualityNotice = Boolean(!reportingLoading && summary && (netSalesUnavailable || averageUnavailable));
   const experienceClass = isAllLocationsSelected() ? "owner-home--all-locations" : "owner-home--single-location";
   const emptyClass = noPaidOrders ? " owner-home--empty" : "";
   return `<div class="owner-home ${experienceClass}${emptyClass}" aria-label="Owner home">
     <div class="owner-home__controls"><div class="owner-home-period"><div role="group" aria-label="Reporting period">${(["today", "7d", "30d"] as OwnerPeriod[]).map((period) => `<button type="button" class="${state.ownerHome.period === period ? "is-active" : ""}" data-action="set-owner-period" data-period="${period}">${periodLabels[period]}</button>`).join("")}</div></div></div>
-    ${timezoneState === "mixed" && !loading ? renderReportingError(true) : reportingUnavailable ? renderUnavailableKpis() : `<section class="owner-home-kpis" aria-label="Business performance">${loading || !summary || !comparison ? `${renderKpiSkeleton()}${renderKpiSkeleton()}${renderKpiSkeleton()}` : `${renderKpi("Net sales", formatMetric(summary.netSales), comparisonLabel(comparison.netSales.percentChange, netSalesUnavailable), comparison.netSales.percentChange === null ? "neutral" : comparison.netSales.percentChange > 0 ? "positive" : "negative")}${renderKpi("Orders", formatCompactCount(summary.paidOrders), comparisonLabel(comparison.paidOrders.percentChange, false), comparison.paidOrders.percentChange === null ? "neutral" : comparison.paidOrders.percentChange > 0 ? "positive" : "negative")}${renderKpi("Avg order", formatMetric(summary.averageOrderValue), comparisonLabel(comparison.averageOrderValue.percentChange, averageUnavailable), comparison.averageOrderValue.percentChange === null ? "neutral" : comparison.averageOrderValue.percentChange > 0 ? "positive" : "negative")}`}</section>`}
+    ${timezoneState === "mixed" && !reportingLoading ? renderReportingError(true) : reportingUnavailable ? renderUnavailableKpis() : `<section class="owner-home-kpis" aria-label="Business performance">${reportingLoading || !summary || !comparison ? `${renderKpiSkeleton()}${renderKpiSkeleton()}${renderKpiSkeleton()}` : `${renderKpi("Net sales", formatMetric(summary.netSales), comparisonLabel(comparison.netSales.percentChange, netSalesUnavailable), comparison.netSales.percentChange === null ? "neutral" : comparison.netSales.percentChange > 0 ? "positive" : "negative")}${renderKpi("Orders", formatCompactCount(summary.paidOrders), comparisonLabel(comparison.paidOrders.percentChange, false), comparison.paidOrders.percentChange === null ? "neutral" : comparison.paidOrders.percentChange > 0 ? "positive" : "negative")}${renderKpi("Avg order", formatMetric(summary.averageOrderValue), comparisonLabel(comparison.averageOrderValue.percentChange, averageUnavailable), comparison.averageOrderValue.percentChange === null ? "neutral" : comparison.averageOrderValue.percentChange > 0 ? "positive" : "negative")}`}</section>`}
     ${showDataQualityNotice ? `<p class="owner-home-data-quality" role="status">${dataQualityMessage}</p>` : ""}
-    ${timezoneState === "mixed" && !loading ? "" : reportingUnavailable ? renderChartError(state.ownerHome.error ?? "We couldn’t load performance data right now.") : renderChart(report, loading)}
-    <div class="owner-home-operations">${renderAttention(loading)}${renderRightNow(loading)}</div>
-    ${timezoneState === "mixed" && !loading ? "" : reportingUnavailable ? "" : renderLocations(report, loading)}
+    ${timezoneState === "mixed" && !reportingLoading ? "" : reportingUnavailable ? renderChartError(state.ownerHome.error ?? "We couldn’t load performance data right now.") : renderChart(report, reportingLoading)}
+    <div class="owner-home-operations">${renderAttention(pageLoading)}</div>
+    ${timezoneState === "mixed" && !reportingLoading ? "" : reportingUnavailable ? "" : renderLocations(report, reportingLoading)}
   </div>`;
 }
 

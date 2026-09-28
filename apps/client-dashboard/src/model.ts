@@ -199,7 +199,14 @@ function toRecord(value: unknown) {
 }
 
 function isTerminalOrderStatus(status: OperatorOrderStatus) {
-  return status === "COMPLETED" || status === "CANCELED";
+  return status === "COMPLETED" || status === "CANCELED" || status === "REFUNDED" || status === "PARTIALLY_REFUNDED";
+}
+
+export function canRefundOrder(
+  operator: Pick<OperatorUser, "role" | "capabilities"> | null | undefined,
+  order: Pick<OperatorOrder, "status"> | null | undefined
+) {
+  return Boolean(order?.status === "COMPLETED" && operator?.role !== "store" && canAccessCapability(operator, "payments:refund"));
 }
 
 export function isStoreOperator(

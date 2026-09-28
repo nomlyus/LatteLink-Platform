@@ -1766,8 +1766,8 @@ describe("orders service", () => {
     expect(refundReconcile.statusCode).toBe(200);
     expect(refundReconcile.json()).toMatchObject({
       accepted: true,
-      applied: false,
-      orderStatus: "COMPLETED"
+      applied: true,
+      orderStatus: "REFUNDED"
     });
 
     const finalOrder = await app.inject({
@@ -1775,7 +1775,7 @@ describe("orders service", () => {
       url: `/v1/orders/${order.id}`
     });
     expect(finalOrder.statusCode).toBe(200);
-    expect(orderSchema.parse(finalOrder.json()).status).toBe("COMPLETED");
+    expect(orderSchema.parse(finalOrder.json()).status).toBe("REFUNDED");
 
     await app.close();
   });

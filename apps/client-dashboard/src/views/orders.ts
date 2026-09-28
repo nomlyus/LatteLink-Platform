@@ -3,11 +3,9 @@ import { escapeHtml, formatDateTime, formatMoney, formatRelativeRefresh } from "
 import {
   canAdvanceOrderStatus,
   canCancelOrder,
-  filterOrdersByView,
+  canRefundOrder,
   formatOrderStatus,
   getOrderActions,
-  getOrderCustomerLabel,
-  getOrderDetailActionUnavailableMessage,
   isStoreOperator,
   type OperatorOrder
 } from "../model";
@@ -17,12 +15,12 @@ import {
   resolveAppConfigFulfillmentMode,
   type AppConfig
 } from "@lattelink/contracts-catalog";
-import { getSelectedOrder, getVisibleOrders } from "../orders-runtime";
 import { isNewOrderSoundEnabled } from "../order-alert";
 import { renderLocationSelectionNotice, renderOrderStatusBadge, renderSectionHeading } from "./common";
 
 type StoreLaneTone = "needs-action" | "in-progress" | "ready" | "closed" | "canceled";
 type StoreTicketFilter = "all" | "needs_action" | "in_progress" | "ready" | "closed";
+const ordersPageSize = 15;
 
 function renderOrderConnection() {
   const offline = typeof navigator !== "undefined" && navigator.onLine === false;
@@ -40,27 +38,19 @@ function renderOrderConnection() {
   return `<span class="dash-order-connection dash-order-connection--${offline ? "unavailable" : state.orderConnectionState}" role="status" aria-live="polite">${escapeHtml(stateLabel)}</span>`;
 }
 
-function renderOrderFilterRow(activeOrderCount: number, completedOrderCount: number) {
-  return (
-    [
-      { key: "active", label: "Active", count: activeOrderCount },
-      { key: "all", label: "All", count: state.orders.length },
-      { key: "completed", label: "Completed", count: completedOrderCount }
-    ] as const
-  )
-    .map(
-      (filter) => `
-        <button
-          class="dash-segment-button ${state.orderFilter === filter.key ? "dash-segment-button--active" : ""}"
-          type="button"
-          data-action="set-order-filter"
-          data-order-filter="${filter.key}"
-        >
-          ${escapeHtml(filter.label)} <span>${filter.count}</span>
-        </button>
-      `
-    )
-    .join("");
+function renderOrderToolbar() {
+  return `
+    <div class="dash-order-toolbar">
+      <div class="dash-order-toolbar__status">
+        ${renderOrderConnection()}
+        <span class="dash-inline-note">${escapeHtml(formatRelativeRefresh(state.lastRefreshedAt, state.loading || state.ordersRefreshing))}</span>
+        ${state.orderRefreshError ? `<span class="dash-order-refresh-error" role="alert">${escapeHtml(state.orderRefreshError)}</span>` : ""}
+      </div>
+      <button class="button button--ghost" type="button" data-action="refresh" ${state.loading || state.ordersRefreshing ? "disabled" : ""}>
+        ${state.loading || state.ordersRefreshing ? '<span class="spinner"></span>' : "Refresh"}
+      </button>
+    </div>
+  `;
 }
 
 function getOrderElapsedLabel(order: OperatorOrder) {
@@ -76,11 +66,77 @@ function getOrderElapsedLabel(order: OperatorOrder) {
   if (deltaMinutes < 60) {
     return `${deltaMinutes}m ago`;
   }
-  return `${Math.floor(deltaMinutes / 60)}h ago`;
+  if (deltaMinutes <= 12 * 60) {
+    return `${Math.floor(deltaMinutes / 60)}h ago`;
+  }
+  return `${Math.max(1, Math.floor(deltaMinutes / (24 * 60)))}d ago`;
 }
 
 function getOrderItemCount(order: OperatorOrder) {
   return order.items.reduce((count, item) => count + item.quantity, 0);
+}
+
+function getOrderSubtotalCents(order: OperatorOrder) {
+  return order.items.reduce((total, item) => total + (item.lineTotalCents ?? item.unitPriceCents * item.quantity), 0);
+}
+
+function getOrderTaxCents(order: OperatorOrder) {
+  return Math.max(order.total.amountCents - getOrderSubtotalCents(order), 0);
+}
+
+function getOrderPlacedAt(order: OperatorOrder) {
+  return order.timeline[0]?.occurredAt ?? "";
+}
+
+function formatOrderHeaderDate(value: string) {
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) {
+    return value;
+  }
+
+  const date = new Date(parsed);
+  const dateLabel = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  }).format(date);
+  const timeLabel = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(date);
+  return `${dateLabel} • ${timeLabel}`;
+}
+
+function formatOrderActivityTime(value: string) {
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit"
+  }).format(new Date(parsed));
+}
+
+function formatOrderActivityStatus(status: OperatorOrder["status"]) {
+  return formatOrderStatus(status)
+    .toLowerCase()
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function getOrderDisplayStatus(order: OperatorOrder) {
+  return formatOrderStatus(order.status);
+}
+
+function getOrderLocationLabel(order: OperatorOrder) {
+  return (
+    state.availableLocations.find((location) => location.locationId === order.locationId)?.locationName ??
+    (getSelectedLocation()?.locationId === order.locationId ? getSelectedLocation()?.locationName : undefined) ??
+    state.storeConfig?.locationName ??
+    order.locationId
+  );
 }
 
 function getStoreTicketCustomerName(order: OperatorOrder) {
@@ -106,6 +162,8 @@ function getStoreLaneTone(status: OperatorOrder["status"]): StoreLaneTone {
     case "COMPLETED":
       return "closed";
     case "CANCELED":
+    case "REFUNDED":
+    case "PARTIALLY_REFUNDED":
       return "canceled";
     case "PAID":
     default:
@@ -162,7 +220,7 @@ function filterStoreTickets(orders: readonly OperatorOrder[], filter: StoreTicke
     case "ready":
       return orders.filter((order) => order.status === "READY");
     case "closed":
-      return orders.filter((order) => order.status === "COMPLETED" || order.status === "CANCELED");
+      return orders.filter((order) => order.status === "COMPLETED" || order.status === "CANCELED" || order.status === "REFUNDED" || order.status === "PARTIALLY_REFUNDED");
     case "all":
     default:
       return orders.filter((order) => order.status === "PAID" || order.status === "IN_PREP" || order.status === "READY");
@@ -223,7 +281,7 @@ function renderOrderItems(order: OperatorOrder, variant: "detail" | "ticket") {
 }
 
 function renderCancelButton(order: OperatorOrder) {
-  if (order.status === "COMPLETED" || order.status === "CANCELED") {
+  if (order.status === "COMPLETED" || order.status === "CANCELED" || order.status === "REFUNDED" || order.status === "PARTIALLY_REFUNDED") {
     return "";
   }
   const disabled = state.busyOrderId === order.id ? "disabled" : "";
@@ -252,111 +310,6 @@ function renderCancelButton(order: OperatorOrder) {
       ${state.busyOrderId === order.id ? `<span class="spinner"></span> ${isUnpaid ? "Canceling order…" : "Canceling and refunding…"}` : actionLabel}
     </button>
   `;
-}
-
-function renderOrderDetail(order: OperatorOrder, appConfig: AppConfig | null) {
-  const specificLocationSelected = !isAllLocationsSelected();
-  const manualStatusControlsEnabled = specificLocationSelected && canAdvanceOrderStatus(state.session?.operator ?? null, appConfig);
-  const cancelControlsEnabled = specificLocationSelected && canCancelOrder(state.session?.operator ?? null, appConfig, order);
-  const fulfillmentMode = resolveAppConfigFulfillmentMode(appConfig);
-  const actions = getOrderActions(order, fulfillmentMode);
-  const timeline = order.timeline
-    .map(
-      (entry) => `
-        <div class="timeline-row">
-          <strong>${escapeHtml(formatOrderStatus(entry.status))}</strong>
-          <span>${escapeHtml(formatDateTime(entry.occurredAt))}</span>
-          ${entry.note ? `<p>${escapeHtml(entry.note)}</p>` : ""}
-        </div>
-      `
-    )
-    .join("");
-
-  const actionButtons = actions
-    .map(
-      (action) => `
-        <button
-          class="button ${action.tone === "primary" ? "button--primary" : "button--secondary"}"
-          type="button"
-          data-action="advance-order"
-          data-order-id="${order.id}"
-          data-order-status="${action.status}"
-          data-order-note="${escapeHtml(action.note ?? "")}"
-          ${state.busyOrderId === order.id ? "disabled" : ""}
-        >
-          ${state.busyOrderId === order.id ? '<span class="spinner"></span> Updating order…' : escapeHtml(action.label)}
-        </button>
-      `
-    )
-    .join("");
-  const controlButtons = [
-    manualStatusControlsEnabled ? actionButtons : "",
-    cancelControlsEnabled ? renderCancelButton(order) : ""
-  ]
-    .filter((markup) => markup.length > 0)
-    .join("");
-  const latestTimelineEntry = order.timeline[order.timeline.length - 1];
-
-  return `
-    <div class="dash-detail-header">
-      <div>
-        <div class="dash-panel-title">Order detail</div>
-        <h3 class="dash-surface-title">${escapeHtml(order.pickupCode)}</h3>
-        <p class="muted-copy">${escapeHtml(getOrderCustomerLabel(order))}</p>
-      </div>
-      ${renderOrderStatusBadge(order.status)}
-    </div>
-    <div class="dash-detail-grid">
-      <div class="dash-detail-metric">
-        <span>Store</span>
-        <strong>${escapeHtml(order.locationId)}</strong>
-      </div>
-      <div class="dash-detail-metric">
-        <span>Total</span>
-        <strong>${formatMoney(order.total.amountCents)}</strong>
-      </div>
-      <div class="dash-detail-metric">
-        <span>Last update</span>
-        <strong>${escapeHtml(latestTimelineEntry ? formatDateTime(latestTimelineEntry.occurredAt) : "Just now")}</strong>
-      </div>
-    </div>
-    <div class="dash-detail-block">
-      <div class="dash-detail-block__label">Items</div>
-      <div class="detail-stack">${renderOrderItems(order, "detail")}</div>
-    </div>
-    ${
-      controlButtons
-        ? `<div class="button-row">${controlButtons}</div>`
-        : `<p class="muted-copy">${escapeHtml(
-            specificLocationSelected
-              ? getOrderDetailActionUnavailableMessage(state.session?.operator ?? null, appConfig, order)
-              : "Choose a specific location before taking order actions."
-          )}</p>`
-    }
-    <div class="dash-detail-block">
-      <div class="dash-detail-block__label">Timeline</div>
-      <div class="timeline-stack">${timeline}</div>
-    </div>
-  `;
-}
-
-function renderQueueRows(orders: readonly OperatorOrder[], selectedOrderId: string | null) {
-  return orders.length > 0
-    ? orders
-        .map(
-          (order) => `
-            <button class="dash-order-row ${selectedOrderId === order.id ? "dash-order-row--selected" : ""}" type="button" data-action="select-order" data-order-id="${order.id}">
-              <span class="dash-order-row__main">
-                <strong>${escapeHtml(order.pickupCode)}</strong>
-                <span class="dash-order-row__meta">${escapeHtml(getOrderCustomerLabel(order))}</span>
-              </span>
-              ${renderOrderStatusBadge(order.status)}
-              <span class="dash-order-row__amount">${formatMoney(order.total.amountCents)}</span>
-            </button>
-          `
-        )
-        .join("")
-    : `<p class="muted-copy">No orders are loaded for the selected view.</p>`;
 }
 
 function renderStoreTicket(order: OperatorOrder, appConfig: AppConfig | null) {
@@ -429,9 +382,291 @@ function renderStoreTicket(order: OperatorOrder, appConfig: AppConfig | null) {
   `;
 }
 
+function renderOrderDetailActions(order: OperatorOrder, appConfig: AppConfig | null) {
+  const specificLocationSelected = !isAllLocationsSelected();
+  const manualStatusControlsEnabled = specificLocationSelected && canAdvanceOrderStatus(state.session?.operator ?? null, appConfig);
+  const cancelControlsEnabled = specificLocationSelected && canCancelOrder(state.session?.operator ?? null, appConfig, order);
+  const nextAction = getOrderActions(order, resolveAppConfigFulfillmentMode(appConfig))[0];
+  const controls = [
+    canRefundOrder(state.session?.operator ?? null, order) && (state.session?.operator.role === "owner" || specificLocationSelected)
+      ? `<button class="button button--secondary dash-order-detail__action" type="button" data-action="refund-order" data-order-id="${order.id}" ${state.busyOrderId === order.id ? "disabled" : ""}>${state.busyOrderId === order.id ? "Refunding…" : "Refund"}</button>`
+      : "",
+    manualStatusControlsEnabled && nextAction
+      ? `
+          <button
+            class="button button--secondary dash-order-detail__action"
+            type="button"
+            data-action="advance-order"
+            data-order-id="${order.id}"
+            data-order-status="${nextAction.status}"
+            data-order-note="${escapeHtml(nextAction.note ?? "")}"
+            ${state.busyOrderId === order.id ? "disabled" : ""}
+          >
+            ${state.busyOrderId === order.id ? '<span class="spinner"></span> Updating order…' : escapeHtml(nextAction.label)}
+          </button>
+        `
+      : "",
+    cancelControlsEnabled ? renderCancelButton(order) : ""
+  ]
+    .filter((markup) => markup.length > 0)
+    .join("");
+
+  if (controls) return controls;
+  if (order.status === "CANCELED") return `<span class="dash-order-detail__read-only">Already canceled</span>`;
+  if (order.status === "REFUNDED") return `<span class="dash-order-detail__read-only">Already refunded</span>`;
+  if (order.status === "PARTIALLY_REFUNDED") return `<span class="dash-order-detail__read-only">Partially refunded</span>`;
+  if (order.status === "COMPLETED") return `<span class="dash-order-detail__read-only">Refund unavailable</span>`;
+  return `<span class="dash-order-detail__read-only">Read-only order details</span>`;
+}
+
+function renderOrderDetailsButton(order: OperatorOrder) {
+  return `
+    <button
+      class="dash-order-table__details-button"
+      type="button"
+      data-action="open-order-details"
+      data-order-id="${order.id}"
+      aria-label="${escapeHtml(`View order details for ${order.pickupCode}`)}"
+      title="View order details"
+    >
+      <svg class="dash-order-table__details-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M4.25 2.25h5.5l2 2v9.5l-1.5-.8-1.5.8-1.5-.8-1.5.8-1.5-.8-1.5.8v-10a.7.7 0 0 1 .7-.7Z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+        <path d="M9.5 2.5v2h2M5.5 7h4.75M5.5 9.25h4.75M5.5 11.5h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    </button>
+  `;
+}
+
+function renderOrderTable(
+  orders: readonly OperatorOrder[],
+  appConfig: AppConfig | null,
+  includeLocation: boolean
+) {
+  if (orders.length === 0) {
+    return `<div class="dash-empty-surface"><p class="muted-copy">No orders are loaded for the selected view.</p></div>`;
+  }
+
+  return `
+    <div class="dash-order-table-wrap">
+      <table class="dash-order-table">
+        <thead>
+          <tr>
+            <th scope="col">Order</th>
+            ${includeLocation ? '<th scope="col">Location</th>' : ""}
+            <th scope="col">Customer</th>
+            <th scope="col">Items</th>
+            <th scope="col">Status</th>
+            <th scope="col">Placed</th>
+            <th scope="col" class="dash-order-table__amount-heading">Total</th>
+            <th scope="col" class="dash-order-table__details-heading">Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${orders
+            .map(
+              (order) => `
+                <tr class="dash-order-table__row">
+                  <td>
+                    <div class="dash-order-table__order">
+                      <strong>${escapeHtml(order.pickupCode)}</strong>
+                    </div>
+                  </td>
+                  ${includeLocation ? `<td><span class="dash-order-table__location">${escapeHtml(order.locationId)}</span></td>` : ""}
+                  <td><span class="dash-order-table__customer">${escapeHtml(order.customer?.name ?? "Customer details unavailable")}</span></td>
+                  <td><span class="dash-order-table__items">${getOrderItemCount(order)} ${getOrderItemCount(order) === 1 ? "item" : "items"}</span></td>
+                  <td>${renderOrderStatusBadge(order.status)}</td>
+                  <td><span class="dash-order-table__date">${escapeHtml(formatDateTime(order.timeline[0]?.occurredAt ?? ""))}</span></td>
+                  <td class="dash-order-table__amount">${formatMoney(order.total.amountCents)}</td>
+                  <td class="dash-order-table__details">${renderOrderDetailsButton(order)}</td>
+                </tr>
+              `
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderOrderDetailsModal(appConfig: AppConfig | null) {
+  if (!state.orderDetailsOpen || !state.selectedOrderId) {
+    return "";
+  }
+
+  const order = state.orders.find((candidate) => candidate.id === state.selectedOrderId);
+  if (!order) {
+    return "";
+  }
+
+  const timeline = order.timeline
+    .map(
+      (entry) => `
+        <div class="dash-order-activity__row">
+          <span class="dash-order-activity__dot" aria-hidden="true"></span>
+          <div class="dash-order-activity__content">
+            <div class="dash-order-activity__meta">
+              <strong>${escapeHtml(formatOrderActivityStatus(entry.status))}</strong>
+              <span>${escapeHtml(formatOrderActivityTime(entry.occurredAt))}</span>
+            </div>
+            ${entry.note ? `<p>${escapeHtml(entry.note)}</p>` : ""}
+          </div>
+        </div>
+      `
+    )
+    .join("");
+  const customerName = order.customer?.name ?? "Customer details unavailable";
+  const customerEmail = order.customer?.email;
+  const itemCount = getOrderItemCount(order);
+  const orderPlacedAt = getOrderPlacedAt(order);
+
+  return `
+    <div class="dash-modal dash-order-detail-modal${state.orderDetailsOpening ? " dash-order-detail-modal--opening" : ""}${state.orderDetailsClosing ? " dash-order-detail-modal--closing" : ""}" role="presentation">
+      <button
+        class="dash-modal__backdrop"
+        type="button"
+        data-action="close-order-details"
+        aria-label="Close order details"
+      ></button>
+      <div class="dash-modal__dialog dash-modal__dialog--order" role="dialog" aria-modal="true" aria-labelledby="order-detail-title">
+        <div class="dash-modal__header">
+          <div class="dash-order-detail__title-group">
+            <h3 class="dash-order-detail__title" id="order-detail-title">${escapeHtml(order.pickupCode)}</h3>
+            <div class="dash-order-detail__date">${escapeHtml(formatOrderHeaderDate(orderPlacedAt))}</div>
+          </div>
+          <div class="dash-order-detail__status" aria-label="Order status">${escapeHtml(getOrderDisplayStatus(order))}</div>
+          <button
+            class="dash-order-detail__close"
+            type="button"
+            data-action="close-order-details"
+            aria-label="Close order details"
+          >
+            <svg class="dash-order-detail__close-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M8 3v10M4.5 9.5 8 13l3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+        </div>
+        <div class="dash-order-detail__body">
+          <section class="dash-order-detail__customer">
+            <div class="dash-order-detail__customer-heading">Customer Details</div>
+            <div class="dash-order-detail__identity">
+              <strong>${escapeHtml(customerName)}</strong>
+              ${customerEmail ? `<a class="dash-order-detail__email" href="mailto:${escapeHtml(customerEmail)}">${escapeHtml(customerEmail)}</a>` : ""}
+            </div>
+          </section>
+          <div class="dash-detail-grid dash-order-detail__summary">
+            <div class="dash-detail-metric">
+              <span>Location</span>
+              <strong>${escapeHtml(getOrderLocationLabel(order))}</strong>
+            </div>
+            <div class="dash-detail-metric">
+              <span>Total</span>
+              <strong>${formatMoney(order.total.amountCents)}</strong>
+            </div>
+            <div class="dash-detail-metric">
+              <span>Fulfillment</span>
+              <strong>Pickup</strong>
+            </div>
+          </div>
+          <section class="dash-order-detail__section">
+            <div class="dash-order-detail__section-heading">
+              <span>Items</span>
+              <strong>${itemCount} ${itemCount === 1 ? "item" : "items"}</strong>
+            </div>
+            <div class="detail-stack">${renderOrderItems(order, "detail")}</div>
+          </section>
+          <section class="dash-order-detail__totals" aria-label="Order totals">
+            <div><span>Subtotal</span><strong>${formatMoney(getOrderSubtotalCents(order))}</strong></div>
+            <div><span>Tax</span><strong>${formatMoney(getOrderTaxCents(order))}</strong></div>
+            <div><span>Total</span><strong>${formatMoney(order.total.amountCents)}</strong></div>
+          </section>
+          <section class="dash-order-detail__section dash-order-detail__activity">
+            <div class="dash-order-detail__section-heading">Order Activity</div>
+            <div class="timeline-stack">${timeline || '<p class="muted-copy">No timeline events recorded.</p>'}</div>
+          </section>
+          <section class="dash-order-detail__section dash-order-detail__actions">
+            <div class="dash-order-detail__section-heading">Order Controls</div>
+            <div class="button-row">${renderOrderDetailActions(order, appConfig)}</div>
+          </section>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function paginateOrders(orders: readonly OperatorOrder[]) {
+  const pageCount = Math.max(1, Math.ceil(orders.length / ordersPageSize));
+  const page = Math.min(Math.max(state.ordersPage, 1), pageCount);
+  if (page !== state.ordersPage) {
+    state.ordersPage = page;
+  }
+
+  const start = (page - 1) * ordersPageSize;
+  return {
+    orders: orders.slice(start, start + ordersPageSize),
+    page,
+    pageCount
+  };
+}
+
+function renderOrderPagination(page: number, pageCount: number) {
+  if (pageCount <= 1) {
+    return "";
+  }
+
+  return `
+    <nav class="dash-order-pagination" aria-label="Orders pagination">
+      <button
+        class="dash-order-pagination__control"
+        type="button"
+        data-action="set-orders-page"
+        data-orders-page="1"
+        aria-label="First page"
+        title="First page"
+        ${page === 1 ? "disabled" : ""}
+      >
+        <span aria-hidden="true">&laquo;</span>
+      </button>
+      <button
+        class="dash-order-pagination__control"
+        type="button"
+        data-action="set-orders-page"
+        data-orders-page="${page - 1}"
+        aria-label="Previous page"
+        title="Previous page"
+        ${page === 1 ? "disabled" : ""}
+      >
+        <span aria-hidden="true">&lsaquo;</span>
+      </button>
+      <span class="dash-order-pagination__page" aria-current="page">${page} / ${pageCount}</span>
+      <button
+        class="dash-order-pagination__control"
+        type="button"
+        data-action="set-orders-page"
+        data-orders-page="${page + 1}"
+        aria-label="Next page"
+        title="Next page"
+        ${page === pageCount ? "disabled" : ""}
+      >
+        <span aria-hidden="true">&rsaquo;</span>
+      </button>
+      <button
+        class="dash-order-pagination__control"
+        type="button"
+        data-action="set-orders-page"
+        data-orders-page="${pageCount}"
+        aria-label="Last page"
+        title="Last page"
+        ${page === pageCount ? "disabled" : ""}
+      >
+        <span aria-hidden="true">&raquo;</span>
+      </button>
+    </nav>
+  `;
+}
+
 function renderStoreModeBoard(appConfig: AppConfig | null) {
   const storeOrders = [...state.orders];
-  const completedOrders = storeOrders.filter((order) => order.status === "COMPLETED" || order.status === "CANCELED");
+  const completedOrders = storeOrders.filter((order) => order.status === "COMPLETED" || order.status === "CANCELED" || order.status === "REFUNDED" || order.status === "PARTIALLY_REFUNDED");
   const orderedTickets = sortStoreTickets(filterStoreTickets(storeOrders, state.storeTicketFilter), state.storeTicketFilter);
 
   return `
@@ -464,96 +699,33 @@ function renderStoreModeBoard(appConfig: AppConfig | null) {
 }
 
 function renderAllLocationsOrders() {
-  const activeOrders = filterOrdersByView(state.orders, "active");
-  const completedOrders = filterOrdersByView(state.orders, "completed");
-  const visibleOrders = getVisibleOrders();
-  const selectedOrder = getSelectedOrder();
+  const paginatedOrders = paginateOrders(state.orders);
 
   return `
-    <section class="dash-section">
-      ${renderSectionHeading({
-        eyebrow: "Orders",
-        title: "Multi-location queue",
-        description: "Review orders across all accessible locations. Switch to a specific location to update fulfillment states.",
-        actions: `
-          <div class="dash-segmented-control">
-            ${renderOrderFilterRow(activeOrders.length, completedOrders.length)}
-          </div>
-          ${renderOrderConnection()}
-          <button class="button button--ghost" type="button" data-action="refresh" ${state.loading ? "disabled" : ""}>
-            ${state.loading ? '<span class="spinner"></span>' : "Refresh"}
-          </button>
-        `
-      })}
+    <section class="dash-section dash-section--orders">
       ${renderLocationSelectionNotice("This all-locations board is read-only. Choose one location from the workspace picker to move orders through prep or completion.")}
-      <div class="dash-split-layout dash-split-layout--orders">
-        <article class="dash-surface">
-          <div class="dash-surface-head">
-            <div>
-              <div class="dash-panel-title">Queue</div>
-              <h3 class="dash-surface-title">${visibleOrders.length} in view</h3>
-            </div>
-            <span class="dash-inline-note">${escapeHtml(formatRelativeRefresh(state.lastRefreshedAt, state.loading))}</span>
-          </div>
-          <div class="dash-order-list">${renderQueueRows(visibleOrders, selectedOrder?.id ?? null)}</div>
-        </article>
-
-        <article class="dash-surface">
-          ${
-            selectedOrder
-              ? renderOrderDetail(selectedOrder, null)
-              : `<div class="dash-empty-surface"><p class="muted-copy">Select an order to inspect its items and fulfillment timeline.</p></div>`
-          }
-        </article>
-      </div>
+      ${renderOrderToolbar()}
+      <article class="dash-surface dash-order-table-surface">
+        ${renderOrderTable(paginatedOrders.orders, null, true)}
+      </article>
+      ${renderOrderPagination(paginatedOrders.page, paginatedOrders.pageCount)}
     </section>
+    ${renderOrderDetailsModal(null)}
   `;
 }
 
 function renderDashboardOrders(appConfig: AppConfig | null) {
-  const activeOrders = filterOrdersByView(state.orders, "active");
-  const completedOrders = filterOrdersByView(state.orders, "completed");
-  const visibleOrders = getVisibleOrders();
-  const selectedOrder = getSelectedOrder();
-  const selectedLocation = getSelectedLocation();
+  const paginatedOrders = paginateOrders(state.orders);
 
   return `
-    <section class="dash-section">
-      ${renderSectionHeading({
-        eyebrow: "Orders",
-        title: selectedLocation?.locationName ? `${selectedLocation.locationName} orders` : "Orders overview",
-        description: "Track incoming orders and open any ticket when you need a deeper fulfillment timeline.",
-        actions: `
-          <div class="dash-segmented-control">
-            ${renderOrderFilterRow(activeOrders.length, completedOrders.length)}
-          </div>
-          ${renderOrderConnection()}
-          <button class="button button--ghost" type="button" data-action="refresh" ${state.loading ? "disabled" : ""}>
-            ${state.loading ? '<span class="spinner"></span>' : "Refresh"}
-          </button>
-        `
-      })}
-      <div class="dash-split-layout dash-split-layout--orders">
-        <article class="dash-surface">
-          <div class="dash-surface-head">
-            <div>
-              <div class="dash-panel-title">Queue</div>
-              <h3 class="dash-surface-title">${visibleOrders.length} in view</h3>
-            </div>
-            <span class="dash-inline-note">${escapeHtml(formatRelativeRefresh(state.lastRefreshedAt, state.loading))}</span>
-          </div>
-          <div class="dash-order-list">${renderQueueRows(visibleOrders, selectedOrder?.id ?? null)}</div>
-        </article>
-
-        <article class="dash-surface">
-          ${
-            selectedOrder
-              ? renderOrderDetail(selectedOrder, appConfig)
-              : `<div class="dash-empty-surface"><p class="muted-copy">Select an order to inspect its items and fulfillment timeline.</p></div>`
-          }
-        </article>
-      </div>
+    <section class="dash-section dash-section--orders">
+      ${renderOrderToolbar()}
+      <article class="dash-surface dash-order-table-surface">
+        ${renderOrderTable(paginatedOrders.orders, appConfig, false)}
+      </article>
+      ${renderOrderPagination(paginatedOrders.page, paginatedOrders.pageCount)}
     </section>
+    ${renderOrderDetailsModal(appConfig)}
   `;
 }
 

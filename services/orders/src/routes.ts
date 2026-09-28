@@ -106,6 +106,9 @@ const cancelSourceHeadersSchema = z.object({
 const operatorLocationHeadersSchema = z.object({
   "x-operator-location-id": z.string().min(1).optional()
 });
+const operatorRoleHeadersSchema = z.object({
+  "x-operator-role": z.enum(["owner", "manager", "store"]).optional()
+});
 
 const supportLookupQuerySchema = z.object({
   query: z.string().min(1),
@@ -1043,6 +1046,41 @@ export async function registerRoutes(app: FastifyInstance) {
           cancelSource,
           reason: input.reason
         }
+      });
+      return result.order;
+    }
+  );
+
+  app.post(
+    "/v1/orders/:orderId/refund",
+    { preHandler: app.rateLimit(ordersWriteRateLimit) },
+    async (request, reply) => {
+      if (!authorizeGatewayRequest(request, reply, gatewayApiToken, { allowUnauthenticated: allowUnauthenticatedGatewayAccess })) return;
+      const { orderId } = orderIdParamsSchema.parse(request.params);
+      const input = cancelOrderRequestSchema.parse(request.body);
+      const locationHeaders = operatorLocationHeadersSchema.safeParse(request.headers);
+      const roleHeaders = operatorRoleHeadersSchema.safeParse(request.headers);
+      const requestUserContext = parseRequestUserContext(request);
+      const result = await cancelOrder({
+        orderId,
+        input,
+        cancelSource: "staff",
+        operation: "refund",
+        locationId: locationHeaders.success ? locationHeaders.data["x-operator-location-id"] : undefined,
+        operatorRole: roleHeaders.success ? roleHeaders.data["x-operator-role"] : undefined,
+        requestId: request.id,
+        requestUserContext,
+        deps: getServiceDeps(request)
+      });
+      if ("error" in result) return sendServiceError(reply, request, result.error);
+      await recordAuditLog(request, repository, {
+        locationId: result.order.locationId,
+        actorId: requestUserContext.userId ?? "operator",
+        actorType: "operator",
+        action: "order.refunded",
+        targetId: result.order.id,
+        targetType: "order",
+        payload: { to: result.order.status, reason: input.reason }
       });
       return result.order;
     }

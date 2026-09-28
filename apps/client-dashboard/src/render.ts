@@ -1,5 +1,6 @@
 import { renderAuthScreen } from "./views/auth";
 import { renderDashboard } from "./views/layout";
+import { renderOrdersSection } from "./views/orders";
 import { renderToasts } from "./views/toasts";
 import { state } from "./state";
 import { setToastRenderHandler } from "./toast-runtime";
@@ -11,7 +12,49 @@ if (!appRoot) {
 
 export const root: HTMLDivElement = appRoot;
 
+export function renderOrdersSectionOnly() {
+  const currentSection = root.querySelector<HTMLElement>(".dash-section--orders");
+  if (!currentSection) return;
+
+  const focusedRefreshButton = currentSection.querySelector('[data-action="refresh"]') === document.activeElement;
+  const tableScrollLeft = currentSection.querySelector<HTMLElement>(".dash-order-table-wrap")?.scrollLeft ?? 0;
+  const template = document.createElement("template");
+  template.innerHTML = renderOrdersSection().trim();
+  const nextSection = template.content.querySelector<HTMLElement>(".dash-section--orders");
+  if (!nextSection) return;
+
+  currentSection.replaceWith(nextSection);
+  const nextTable = nextSection.querySelector<HTMLElement>(".dash-order-table-wrap");
+  if (nextTable) nextTable.scrollLeft = tableScrollLeft;
+  if (focusedRefreshButton) {
+    nextSection.querySelector<HTMLButtonElement>('[data-action="refresh"]')?.focus({ preventScroll: true });
+  }
+}
+
+function captureMenuTableImages() {
+  const images = new Map<string, { element: HTMLImageElement; src: string }>();
+  root.querySelectorAll<HTMLImageElement>(".dash-order-table--menu img.dash-menu-table__image[data-item-id]").forEach((image) => {
+    const itemId = image.dataset.itemId;
+    const src = image.getAttribute("src");
+    if (itemId && src) {
+      images.set(itemId, { element: image, src });
+    }
+  });
+  return images;
+}
+
+function restoreMenuTableImages(images: Map<string, { element: HTMLImageElement; src: string }>) {
+  root.querySelectorAll<HTMLImageElement>(".dash-order-table--menu img.dash-menu-table__image[data-item-id]").forEach((nextImage) => {
+    const itemId = nextImage.dataset.itemId;
+    const previous = itemId ? images.get(itemId) : undefined;
+    if (previous && previous.src === nextImage.getAttribute("src")) {
+      nextImage.replaceWith(previous.element);
+    }
+  });
+}
+
 export function render() {
+  const previousMenuImages = captureMenuTableImages();
   const previousSidebar = root.querySelector<HTMLElement>(".dash-sidebar");
   const previousSidebarClass = previousSidebar?.className ?? null;
   const previousSection = previousSidebar?.querySelector<HTMLElement>(".dash-nav-item--active")?.dataset.section ?? null;
@@ -22,6 +65,7 @@ export function render() {
   const prevIndex = prevRail?.style.getPropertyValue("--store-summary-active-index").trim() ?? null;
 
   root.innerHTML = (state.session ? renderDashboard() : renderAuthScreen()) + renderToasts();
+  restoreMenuTableImages(previousMenuImages);
 
   const nextSidebar = root.querySelector<HTMLElement>(".dash-sidebar");
   const nextTopbar = root.querySelector<HTMLElement>(".dash-topbar");

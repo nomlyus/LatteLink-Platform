@@ -9,7 +9,7 @@ import {
   canCreateMenuItems,
   canToggleMenuItemVisibility
 } from "../model";
-import { setError, state } from "../state";
+import { resetMenuItemDetails, setError, state } from "../state";
 import { addToast } from "../toast-runtime";
 import { handleOperatorActionError, loadDashboard } from "../lifecycle";
 import { render } from "../render";
@@ -155,6 +155,7 @@ export async function handleMenuItemDelete(itemId: string) {
     setError(null);
     render();
     await deleteOperatorMenuItem(state.session, state.selectedLocationId === "all" ? null : state.selectedLocationId, itemId);
+    resetMenuItemDetails();
     addToast("Menu item removed.", "success");
     await loadDashboard();
   } catch (error) {

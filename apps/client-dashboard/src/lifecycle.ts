@@ -32,10 +32,11 @@ import {
 import { resetNewOrderAlert } from "./order-alert";
 import { ensureSectionIsAvailable } from "./sections";
 import { mergePendingTeamUserUpdates } from "./team-state";
-import { render } from "./render";
+import { render, renderOrdersSectionOnly } from "./render";
 import { getOwnerReportingLocationIds, getReportingDateRange, reportingErrorCode, resolveOwnerReportingTimezone } from "./views/owner-home";
 
 let dashboardLoadInFlight = false;
+let ordersRefreshInFlight = false;
 
 export async function loadOwnerHomeReport(options: { renderStart?: boolean } = {}) {
   const session = state.session;
@@ -134,6 +135,60 @@ async function ensureFreshSession() {
   state.session = refreshedSession;
   persistSession(refreshedSession);
   return refreshedSession;
+}
+
+export async function refreshOrdersOnly() {
+  if (!state.session || dashboardLoadInFlight || ordersRefreshInFlight) return;
+
+  const requestedLocationId = state.selectedLocationId;
+  const locationIds = requestedLocationId === "all"
+    ? state.availableLocations.map((location) => location.locationId)
+    : requestedLocationId
+      ? [requestedLocationId]
+      : [];
+  if (locationIds.length === 0) {
+    state.orderRefreshError = "No location is available to refresh orders.";
+    renderOrdersSectionOnly();
+    return;
+  }
+
+  ordersRefreshInFlight = true;
+  state.ordersRefreshing = true;
+  state.orderRefreshError = null;
+  renderOrdersSectionOnly();
+
+  try {
+    const session = await ensureFreshSession();
+    if (!session) return;
+
+    const orderGroups = await Promise.all(locationIds.map((locationId) => fetchOperatorOrders(session, locationId)));
+    if (
+      state.session?.operator.operatorUserId !== session.operator.operatorUserId ||
+      state.selectedLocationId !== requestedLocationId
+    ) {
+      return;
+    }
+
+    state.orders = orderGroups.flat();
+    state.lastRefreshedAt = Date.now();
+    state.orderRefreshError = null;
+    alertForCurrentOrders();
+    reconcileSelectedOrder();
+  } catch (error) {
+    if (isSessionAuthFailure(error)) {
+      await signOut("Your client dashboard session expired. Sign in again to continue.");
+      return;
+    }
+    if (state.selectedLocationId === requestedLocationId) {
+      state.orderRefreshError = error instanceof Error ? error.message : "Unable to refresh orders.";
+    }
+  } finally {
+    ordersRefreshInFlight = false;
+    state.ordersRefreshing = false;
+    if (state.section === "orders") {
+      renderOrdersSectionOnly();
+    }
+  }
 }
 
 function resolveSelectedLocationId() {
@@ -252,6 +307,7 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
   } else {
     state.section = loadStoredSection();
   }
+  state.orderRefreshError = null;
 
   if (!silent) {
     state.loading = true;
@@ -260,7 +316,6 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
   }
 
   try {
-    state.ownerHome.ordersError = null;
     const session = await ensureFreshSession();
     if (!session) {
       return;
@@ -311,7 +366,6 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
     } catch (error) {
       if (isSessionAuthFailure(error)) throw error;
       if (!silent) state.orders = [];
-      state.ownerHome.ordersError = error instanceof Error ? error.message : "Unable to load current orders.";
     }
 
     alertForCurrentOrders();

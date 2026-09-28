@@ -5,7 +5,6 @@ import {
   getOwnerReportingLocationIds,
   getChartBarHeight,
   getReportingDateRange,
-  getRightNowCounts,
   renderOwnerHome,
   shouldRenderOwnerHome
 } from "../src/views/owner-home";
@@ -30,6 +29,7 @@ const session = (role: "owner" | "manager" | "store"): OperatorSession => ({
 });
 
 afterEach(() => {
+  state.loading = false;
   state.session = null;
   state.selectedLocationId = null;
   state.availableLocations = [];
@@ -37,7 +37,7 @@ afterEach(() => {
   state.menuCategories = [];
   state.onboardingSummary = null;
   state.appConfig = null;
-  state.ownerHome = { period: "today", chartMetric: "netSales", loading: false, report: null, error: null, ordersError: null };
+  state.ownerHome = { period: "today", chartMetric: "netSales", loading: false, report: null, error: null };
 });
 
 describe("Owner Home policy and reporting periods", () => {
@@ -85,17 +85,6 @@ describe("Owner Home policy and reporting periods", () => {
 });
 
 describe("Owner Home operational and state rendering", () => {
-  it("counts PAID, IN_PREP, and READY as active and excludes pending payment", () => {
-    expect(getRightNowCounts([
-      { status: "PAID" },
-      { status: "PAID" },
-      { status: "IN_PREP" },
-      { status: "READY" },
-      { status: "PENDING_PAYMENT" },
-      { status: "COMPLETED" }
-    ])).toEqual({ needsAction: 2, inPrep: 1, ready: 1, active: 4 });
-  });
-
   it("uses canonical series values and preserves zero buckets", () => {
     expect(getChartBarHeight(50, 100)).toBe(52);
     expect(getChartBarHeight(0, 100)).toBe(0);
@@ -107,21 +96,54 @@ describe("Owner Home operational and state rendering", () => {
     expect(renderOwnerHome()).toBe("");
   });
 
-  it("renders the loading skeleton without replacing the shell", () => {
+  it("keeps the needs-attention card visible while reporting metrics reload", () => {
     state.session = session("owner");
     state.ownerHome.loading = true;
-    expect(renderOwnerHome()).toContain("owner-home-kpi--skeleton");
-    expect(renderOwnerHome()).toContain("owner-home-chart__loading");
+    const html = renderOwnerHome();
+    expect(html).toContain("owner-home-kpi--skeleton");
+    expect(html).toContain("owner-home-chart__loading");
+    expect(html).toContain("owner-home-attention--planned");
+    expect(html).toContain('class="owner-home-planned-pill">Planned</span>');
+    expect(html).not.toContain("owner-home-right-now");
+    expect(html).not.toContain("owner-home-skeleton--count");
+    expect(html).not.toContain("owner-home-attention__skeletons");
+    expect(html).not.toContain("owner-home-attention__items");
   });
 
-  it("renders a reporting error state without hiding Right Now", () => {
+  it("shows the needs-attention loading skeleton during the initial page load", () => {
+    state.session = session("owner");
+    state.loading = true;
+    const html = renderOwnerHome();
+    expect(html).toContain("owner-home-attention--loading");
+    expect(html).toContain("owner-home-attention__skeletons");
+    expect(html).not.toContain("owner-home-planned-pill");
+  });
+
+  it("places each metric title below its value", () => {
+    state.session = session("owner");
+    state.selectedLocationId = "loc_a";
+    state.ownerHome.report = {
+      query: { locationIds: ["loc_a"], start: "2026-09-09T04:00:00.000Z", end: "2026-09-10T04:00:00.000Z", previousStart: "2026-09-08T04:00:00.000Z", previousEnd: "2026-09-09T04:00:00.000Z", timezone: "America/Detroit", granularity: "hour" },
+      summary: { netSales: { amountCents: 12500, currency: "USD" }, averageOrderValue: { amountCents: 6250, currency: "USD" }, paidOrders: 2, grossSales: null, discounts: null, tax: null, collected: null, refunds: null, netCollected: null, dataQuality: { missingQuotePaidOrders: 0, unallocatableRefunds: 0, merchandiseMetricsComplete: true } },
+      previous: { netSales: null, averageOrderValue: null, paidOrders: 0, grossSales: null, discounts: null, tax: null, collected: null, refunds: null, netCollected: null, dataQuality: { missingQuotePaidOrders: 0, unallocatableRefunds: 0, merchandiseMetricsComplete: true } },
+      comparison: { netSales: { current: { amountCents: 12500, currency: "USD" }, previous: null, percentChange: null }, averageOrderValue: { current: { amountCents: 6250, currency: "USD" }, previous: null, percentChange: null }, paidOrders: { current: 2, previous: 0, percentChange: null }, grossSales: { current: null, previous: null, percentChange: null }, discounts: { current: null, previous: null, percentChange: null }, tax: { current: null, previous: null, percentChange: null }, collected: { current: null, previous: null, percentChange: null }, refunds: { current: null, previous: null, percentChange: null }, netCollected: { current: null, previous: null, percentChange: null } },
+      series: [], locations: []
+    };
+
+    const html = renderOwnerHome();
+    expect(html.indexOf("owner-home-kpi__value")).toBeLessThan(html.indexOf("owner-home-kpi__label"));
+  });
+
+  it("renders a reporting error state without a Right now card", () => {
     state.session = session("owner");
     state.ownerHome.error = "Reporting unavailable";
     const html = renderOwnerHome();
     expect(html).toContain("Reporting is unavailable");
     expect(html).toContain("owner-home-chart--error");
     expect(html).toContain("owner-home-kpis--unavailable");
-    expect(html).toContain("Right now");
+    expect(html).toContain("owner-home-attention--planned");
+    expect(html).toContain("Planned");
+    expect(html).not.toContain("Right now");
   });
 
   it("renders an explicit mixed-timezone state", () => {

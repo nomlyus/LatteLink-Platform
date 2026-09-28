@@ -751,6 +751,25 @@
         }
       }
     },
+    "/admin/orders/{orderId}/refund": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orderId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/admin/discount-codes": {
       "get": {
         "responses": {

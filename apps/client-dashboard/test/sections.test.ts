@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { OperatorSession } from "../src/api";
-import { getAvailableDashboardSections } from "../src/sections";
+import { ensureSectionIsAvailable, getAvailableDashboardSections } from "../src/sections";
 import { state } from "../src/state";
 import { renderOnboardingWizard } from "../src/views/onboarding";
 import { renderExperienceSection } from "../src/views/experience";
@@ -63,6 +63,7 @@ const storeConfig = {
 
 describe("dashboard sections", () => {
   afterEach(() => {
+    state.section = "overview";
     state.session = null;
     state.onboardingSummary = null;
     state.onboardingWizardOpen = false;
@@ -70,6 +71,7 @@ describe("dashboard sections", () => {
     state.availableLocations = [];
     state.appConfig = null;
     state.storeConfig = null;
+    state.lastRefreshedAt = null;
     state.selectedLocationId = null;
     state.teamUsers = [];
     state.mobileExperience = null;
@@ -106,6 +108,18 @@ describe("dashboard sections", () => {
     };
     expect(getAvailableDashboardSections()).not.toContain("onboarding");
     expect(renderStoreSection()).toContain("Launch approved");
+  });
+
+  it("preserves the saved section until location capabilities have loaded", () => {
+    state.session = ownerSession;
+    state.section = "orders";
+    state.availableLocations = [];
+    state.appConfig = null;
+    state.lastRefreshedAt = null;
+
+    ensureSectionIsAvailable();
+
+    expect(state.section).toBe("orders");
   });
 
   it("renders incomplete owner onboarding as a popup wizard when opened", () => {

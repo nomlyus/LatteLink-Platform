@@ -1,5 +1,5 @@
 import { setError, state } from "../state";
-import { cancelAndRefundOperatorOrder, updateOperatorOrderStatus } from "../api";
+import { cancelAndRefundOperatorOrder, refundOperatorOrder, updateOperatorOrderStatus } from "../api";
 import {
   canAdvanceOrderStatus,
   canCancelOrder,
@@ -86,6 +86,29 @@ export async function handleOrderCancel(orderId: string, reason: string) {
     applyUpdatedOrder(updatedOrder);
   } catch (error) {
     await handleOperatorActionError(error, "Unable to cancel and refund order.");
+  } finally {
+    state.busyOrderId = null;
+    render();
+  }
+}
+
+export async function handleOrderRefund(orderId: string, reason: string) {
+  if (!state.session) return;
+  const selectedOrder = state.orders.find((order) => order.id === orderId);
+  if (!selectedOrder || selectedOrder.status !== "COMPLETED") return;
+  try {
+    state.busyOrderId = orderId;
+    setError(null);
+    render();
+    const updatedOrder = await refundOperatorOrder(
+      state.session,
+      state.selectedLocationId === "all" ? null : state.selectedLocationId,
+      orderId,
+      { reason }
+    );
+    applyUpdatedOrder(updatedOrder);
+  } catch (error) {
+    await handleOperatorActionError(error, "Unable to refund completed order.");
   } finally {
     state.busyOrderId = null;
     render();

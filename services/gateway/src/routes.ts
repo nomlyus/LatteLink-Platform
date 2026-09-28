@@ -798,6 +798,11 @@ function operatorActorHeader(request: FastifyRequest): Record<string, string> {
   return operatorUserId ? { "x-user-id": operatorUserId } : {};
 }
 
+function operatorRoleHeader(request: FastifyRequest): Record<string, string> {
+  const role = request.authenticatedOperator?.role;
+  return role ? { "x-operator-role": role } : {};
+}
+
 function internalAdminActorHeader(request: FastifyRequest): Record<string, string> {
   const internalAdminUserId = trimToUndefined(request.authenticatedInternalAdmin?.internalAdminUserId);
   return internalAdminUserId ? { "x-user-id": internalAdminUserId } : {};
@@ -1497,7 +1502,7 @@ async function fetchOrdersForStream(params: {
 }
 
 function isTerminalOrderStatus(status: z.output<typeof orderSchema>["status"]) {
-  return status === "COMPLETED" || status === "CANCELED";
+  return status === "COMPLETED" || status === "CANCELED" || status === "REFUNDED" || status === "PARTIALLY_REFUNDED";
 }
 
 function buildOrderStreamRevision(order: z.output<typeof orderSchema>) {
@@ -3809,6 +3814,36 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
             "order canceled and refunded by authorized operator"
           );
         }
+      });
+    }
+  );
+
+  app.post(
+    "/v1/admin/orders/:orderId/refund",
+    {
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("payments:refund"), app.rateLimit(staffWriteRateLimit)]
+    },
+    async (request, reply) => {
+      const { orderId } = orderIdParamsSchema.parse(request.params);
+      const input = cancelOrderRequestSchema.parse(request.body);
+      const locationContext = resolveRequestedOperatorLocationId(request);
+      if (locationContext.error) return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: ordersBaseUrl,
+        serviceLabel: "Orders",
+        method: "POST",
+        path: `/v1/orders/${orderId}/refund`,
+        body: input,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken,
+          ...operatorActorHeader(request),
+          ...operatorRoleHeader(request),
+          ...operatorLocationHeader(locationContext.locationId)
+        },
+        forwardUserIdHeader: false,
+        responseSchema: orderSchema
       });
     }
   );

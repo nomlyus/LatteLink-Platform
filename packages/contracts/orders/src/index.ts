@@ -8,7 +8,9 @@ export const orderStatusSchema = z.enum([
   "IN_PREP",
   "READY",
   "COMPLETED",
-  "CANCELED"
+  "CANCELED",
+  "REFUNDED",
+  "PARTIALLY_REFUNDED"
 ]);
 
 export const orderItemCustomizationSelectionSnapshotSchema = z.object({

@@ -10,14 +10,16 @@ export const orderTransitionSourceSchema = z.enum(["system", "staff", "webhook",
 export type OrderTransitionSource = z.output<typeof orderTransitionSourceSchema>;
 
 const orderLifecycleSequence = ["PENDING_PAYMENT", "PAID", "IN_PREP", "READY", "COMPLETED"] as const;
-const terminalOrderStatuses = new Set<OrderStatus>(["COMPLETED", "CANCELED"]);
+const terminalOrderStatuses = new Set<OrderStatus>(["COMPLETED", "CANCELED", "REFUNDED", "PARTIALLY_REFUNDED"]);
 const orderLifecycleNotes: Record<OrderStatus, string> = {
   PENDING_PAYMENT: "Order created from quote",
   PAID: "Payment confirmed.",
   IN_PREP: "Order moved into preparation.",
   READY: "Order is ready for pickup.",
   COMPLETED: "Order completed.",
-  CANCELED: "Order canceled."
+  CANCELED: "Order canceled.",
+  REFUNDED: "Order fully refunded.",
+  PARTIALLY_REFUNDED: "Order partially refunded."
 };
 
 export type OrderLifecycleStepMetadata = {
@@ -93,6 +95,14 @@ export function isTerminalOrderStatus(status: OrderStatus) {
 
 export function canTransitionOrderStatus(currentStatus: OrderStatus, nextStatus: OrderStatus) {
   if (currentStatus === nextStatus) {
+    return true;
+  }
+
+  if (currentStatus === "COMPLETED" && (nextStatus === "REFUNDED" || nextStatus === "PARTIALLY_REFUNDED")) {
+    return true;
+  }
+
+  if (currentStatus === "PARTIALLY_REFUNDED" && nextStatus === "REFUNDED") {
     return true;
   }
 
