@@ -20,7 +20,6 @@ import { renderDiscountsSection } from "./discounts";
 import { renderExperienceSection } from "./experience";
 import { renderStoreSection } from "./store";
 import { renderTeamSection } from "./team";
-import { renderOwnerHome } from "./owner-home";
 
 function renderNavIcon(section: DashboardSection) {
   return `<img class="dash-nav-icon" src="${getDashboardSectionIcon(section)}" alt="" aria-hidden="true" />`;
@@ -196,8 +195,10 @@ function renderDashboardContent() {
     case "team":
       return renderTeamSection();
     case "overview":
+      // Owner Home is React-owned; legacy sign-in can render once before React observes the persisted session.
+      return isOwnerOperator(state.session?.operator ?? null) ? "" : renderOverviewSection();
     default:
-      return isOwnerOperator(state.session?.operator ?? null) ? renderOwnerHome() : renderOverviewSection();
+      return renderOverviewSection();
   }
 }
 

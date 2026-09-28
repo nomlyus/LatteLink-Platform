@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { OperatorSession } from "../src/api";
 import { state } from "../src/state";
+import { renderDashboard } from "../src/views/layout";
 import {
   getOwnerReportingLocationIds,
   getChartBarHeight,
@@ -29,7 +30,9 @@ const session = (role: "owner" | "manager" | "store"): OperatorSession => ({
 });
 
 afterEach(() => {
+  state.initializing = true;
   state.loading = false;
+  state.section = "overview";
   state.session = null;
   state.selectedLocationId = null;
   state.availableLocations = [];
@@ -37,6 +40,9 @@ afterEach(() => {
   state.menuCategories = [];
   state.onboardingSummary = null;
   state.appConfig = null;
+  state.authApiBaseUrl = "";
+  state.errorMessage = null;
+  state.lastRefreshedAt = null;
   state.ownerHome = { period: "today", chartMetric: "netSales", loading: false, report: null, error: null };
 });
 
@@ -94,6 +100,18 @@ describe("Owner Home operational and state rendering", () => {
   it("renders nothing for non-owner sessions", () => {
     state.session = session("manager");
     expect(renderOwnerHome()).toBe("");
+  });
+
+  it("does not let the legacy dashboard renderer render Owner Home at its React-owned root", () => {
+    state.session = session("owner");
+    state.section = "overview";
+    state.initializing = false;
+
+    const html = renderDashboard();
+
+    expect(html).toContain('class="dash-shell"');
+    expect(html).not.toContain("owner-home-kpis");
+    expect(html).not.toContain("owner-home-chart");
   });
 
   it("keeps the needs-attention card visible while reporting metrics reload", () => {
