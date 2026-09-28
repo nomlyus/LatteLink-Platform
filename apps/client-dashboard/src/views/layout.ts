@@ -337,6 +337,10 @@ export function renderDashboard() {
     `;
   }
 
+  const isHomeSection = state.section === "overview";
+  const isOrdersSection = state.section === "orders";
+  const dashboardContent = `${renderBanner()}${renderDashboardContent()}`;
+
   return `
     <div class="dash-shell">
       <aside class="dash-sidebar${isSidebarLoading() ? " dash-sidebar--loading" : ""}">
@@ -421,11 +425,12 @@ export function renderDashboard() {
           </div>
         </div>
 
-        <div class="dash-content">
-          <div class="dash-content__scroll">
-            ${renderBanner()}
-            ${renderDashboardContent()}
-          </div>
+        <div class="dash-content${isHomeSection ? " dash-content--home" : ""}">
+          ${
+            isHomeSection
+              ? dashboardContent
+              : `<div class="dash-content__scroll${isOrdersSection ? " dash-content__scroll--orders" : ""}">${dashboardContent}</div>`
+          }
         </div>
       </div>
       ${renderMenuCreateWizard()}

@@ -1,5 +1,5 @@
 import { root, render } from "./render";
-import { setError, state } from "./state";
+import { resetMenuItemDetails, setError, state } from "./state";
 import { addToast, dismissToast } from "./toast-runtime";
 import { persistSection } from "./storage";
 import {
@@ -24,7 +24,7 @@ import {
 } from "./orders-runtime";
 import { canCreateMenuItems } from "./model";
 import { enableNewOrderSound } from "./order-alert";
-import { loadDashboard, loadOwnerHomeReport, signOut } from "./lifecycle";
+import { loadDashboard, loadOwnerHomeReport, refreshOrdersOnly, signOut } from "./lifecycle";
 import { getAvailableDashboardSections } from "./sections";
 import {
   handleGoogleSignInStart,
@@ -54,7 +54,7 @@ import {
   handleMobileExperienceSubmit
 } from "./controllers/experience";
 import { handleTeamCreateSubmit, handleTeamUserDelete, handleTeamUserSubmit } from "./controllers/team";
-import { handleOrderAdvance, handleOrderCancel } from "./controllers/orders";
+import { handleOrderAdvance, handleOrderCancel, handleOrderRefund } from "./controllers/orders";
 import {
   handleOnboardingBusinessProfileSubmit,
   handleOnboardingAppIdentitySubmit,
@@ -76,6 +76,62 @@ function closeOpenAccountMenus(target?: Node) {
   });
 }
 
+const orderDetailsAnimationMs = 420;
+const menuItemDetailsAnimationMs = 420;
+
+function openOrderDetails(orderId: string) {
+  if (state.orderDetailsClosingTimeoutHandle !== null) {
+    clearTimeout(state.orderDetailsClosingTimeoutHandle);
+    state.orderDetailsClosingTimeoutHandle = null;
+  }
+  state.orderDetailsOpen = true;
+  state.orderDetailsOpening = true;
+  state.orderDetailsClosing = false;
+  selectOrder(orderId);
+  render();
+  state.orderDetailsOpening = false;
+}
+
+function closeOrderDetails() {
+  if (!state.orderDetailsOpen || !state.selectedOrderId || state.orderDetailsClosing) {
+    return;
+  }
+
+  state.orderDetailsClosing = true;
+  state.orderDetailsOpening = false;
+  state.orderDetailsClosingTimeoutHandle = setTimeout(() => {
+    state.orderDetailsClosingTimeoutHandle = null;
+    state.orderDetailsOpen = false;
+    state.orderDetailsClosing = false;
+    selectOrder(null);
+    render();
+  }, orderDetailsAnimationMs);
+  render();
+}
+
+function openMenuItemDetails(itemId: string) {
+  resetMenuItemDetails();
+  state.selectedMenuItemId = itemId;
+  state.menuItemDetailsOpen = true;
+  state.menuItemDetailsOpening = true;
+  render();
+  state.menuItemDetailsOpening = false;
+}
+
+function closeMenuItemDetails() {
+  if (!state.menuItemDetailsOpen || !state.selectedMenuItemId || state.menuItemDetailsClosing) {
+    return;
+  }
+
+  state.menuItemDetailsClosing = true;
+  state.menuItemDetailsOpening = false;
+  state.menuItemDetailsClosingTimeoutHandle = setTimeout(() => {
+    resetMenuItemDetails();
+    render();
+  }, menuItemDetailsAnimationMs);
+  render();
+}
+
 export function registerEvents() {
   document.addEventListener("click", (event) => {
     if (event.target instanceof Node) {
@@ -85,6 +141,12 @@ export function registerEvents() {
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
+      if (state.orderDetailsOpen && state.selectedOrderId) {
+        closeOrderDetails();
+      }
+      if (state.menuItemDetailsOpen && state.selectedMenuItemId) {
+        closeMenuItemDetails();
+      }
       closeOpenAccountMenus();
     }
   });
@@ -183,6 +245,9 @@ export function registerEvents() {
       }
 
       state.selectedLocationId = nextLocationId;
+      state.ordersPage = 1;
+      state.menuItemsPage = 1;
+      resetMenuItemDetails();
       stopAutoRefresh();
       clearPendingCancel();
       void loadDashboard();
@@ -191,7 +256,7 @@ export function registerEvents() {
 
   root.addEventListener("click", (event) => {
     const target = event.target;
-    if (!(target instanceof HTMLElement)) {
+    if (!(target instanceof Element)) {
       return;
     }
     const actionElement = target.closest<HTMLElement>("[data-action]");
@@ -240,7 +305,11 @@ export function registerEvents() {
         });
         return;
       case "refresh":
-        void loadDashboard();
+        if (state.section === "orders" && root.querySelector(".dash-section--orders")) {
+          void refreshOrdersOnly();
+        } else {
+          void loadDashboard();
+        }
         return;
       case "open-menu-create-wizard":
         openMenuCreateWizard();
@@ -338,6 +407,9 @@ export function registerEvents() {
           render();
           return;
         }
+        if (section !== "menu") {
+          resetMenuItemDetails();
+        }
         if (section !== "orders") {
           stopAutoRefresh();
           clearPendingCancel();
@@ -386,6 +458,50 @@ export function registerEvents() {
       return;
     }
 
+    if (action === "set-orders-page") {
+      const page = Number(actionElement.dataset.ordersPage);
+      if (Number.isInteger(page) && page > 0 && page !== state.ordersPage) {
+        state.ordersPage = page;
+        render();
+      }
+      return;
+    }
+
+    if (action === "set-menu-items-page") {
+      const page = Number(actionElement.dataset.menuItemsPage);
+      if (Number.isInteger(page) && page > 0 && page !== state.menuItemsPage) {
+        state.menuItemsPage = page;
+        render();
+      }
+      return;
+    }
+
+    if (action === "open-order-details") {
+      const orderId = actionElement.dataset.orderId;
+      if (orderId) {
+        openOrderDetails(orderId);
+      }
+      return;
+    }
+
+    if (action === "close-order-details") {
+      closeOrderDetails();
+      return;
+    }
+
+    if (action === "open-menu-item-details") {
+      const itemId = actionElement.dataset.itemId;
+      if (itemId) {
+        openMenuItemDetails(itemId);
+      }
+      return;
+    }
+
+    if (action === "close-menu-item-details") {
+      closeMenuItemDetails();
+      return;
+    }
+
     if (action === "set-store-ticket-filter") {
       const filter = actionElement.dataset.storeTicketFilter;
       if (
@@ -428,6 +544,15 @@ export function registerEvents() {
       if (orderId) {
         armPendingCancel(orderId);
         render();
+      }
+      return;
+    }
+
+    if (action === "refund-order") {
+      const orderId = actionElement.dataset.orderId;
+      if (orderId) {
+        const reason = window.prompt("Reason for refund", "Customer requested a refund")?.trim();
+        if (reason) void handleOrderRefund(orderId, reason);
       }
       return;
     }

@@ -44,7 +44,8 @@ const notificationOrderStatusSchema = z.enum([
   "READY",
   "COMPLETED",
   "CANCELED",
-  "REFUNDED"
+  "REFUNDED",
+  "PARTIALLY_REFUNDED"
 ]);
 
 const orderStateNotificationSchema = z.object({
@@ -194,6 +195,7 @@ export type OrderServiceDeps = {
 };
 
 export type CancelOrderSource = "customer" | "staff" | "system";
+export type OperatorOrderOperation = "cancel" | "refund";
 export type OrderStatusUpdateInput = {
   status: "IN_PREP" | "READY" | "COMPLETED";
   note?: string;
@@ -1834,9 +1836,15 @@ export async function cancelOrder(params: {
   locationId?: string;
   requestId: string;
   requestUserContext?: RequestUserContext;
+  operatorRole?: "owner" | "manager" | "store";
+  operation?: OperatorOrderOperation;
   deps: OrderServiceDeps;
 }): Promise<{ order: Order } | { error: ServiceError }> {
-  const { orderId, input, cancelSource, locationId, requestId, requestUserContext, deps } = params;
+  const { orderId, input, cancelSource, locationId, requestId, requestUserContext, operatorRole, operation = "cancel", deps } = params;
+  const isCompletedRefund = operation === "refund";
+  if (isCompletedRefund && operatorRole !== "owner" && operatorRole !== "manager") {
+    return { error: buildServiceError({ statusCode: 403, code: "REFUND_AUTHORIZATION_REQUIRED", message: "Only owners and managers can refund completed orders", details: { orderId } }) };
+  }
   const existingOrder = await deps.repository.getOrder(orderId);
 
   if (!existingOrder) {
@@ -1851,6 +1859,10 @@ export async function cancelOrder(params: {
     };
   }
 
+  if (isCompletedRefund && operatorRole === "manager" && (!locationId || existingOrder.locationId !== locationId)) {
+    return { error: buildServiceError({ statusCode: 403, code: "OPERATOR_LOCATION_FORBIDDEN", message: "Managers can only refund orders from their scoped location", details: { orderId, locationId: existingOrder.locationId } }) };
+  }
+
   if (cancelSource === "customer") {
     const ownershipError = await verifyCustomerOrderOwnership({
       orderId,
@@ -1862,7 +1874,15 @@ export async function cancelOrder(params: {
     }
   }
 
-  if (existingOrder.status === "COMPLETED") {
+  if (isCompletedRefund && existingOrder.status === "REFUNDED") {
+    return { order: existingOrder };
+  }
+
+  if (isCompletedRefund && existingOrder.status !== "COMPLETED") {
+    return { error: buildServiceError({ statusCode: 409, code: "ORDER_NOT_REFUNDABLE", message: "Only completed orders can be fully refunded", details: { orderId, status: existingOrder.status } }) };
+  }
+
+  if (!isCompletedRefund && existingOrder.status === "COMPLETED") {
     return {
       error: buildServiceError({
         statusCode: 409,
@@ -1888,15 +1908,15 @@ export async function cancelOrder(params: {
     };
   }
 
-  const fulfillmentConfig = await deps.getFulfillmentConfig(existingOrder.locationId);
-  if (cancelSource === "staff" && existingOrder.status !== "PENDING_PAYMENT" && fulfillmentConfig.mode !== "staff") {
+  const fulfillmentConfig = isCompletedRefund ? undefined : await deps.getFulfillmentConfig(existingOrder.locationId);
+  if (!isCompletedRefund && cancelSource === "staff" && existingOrder.status !== "PENDING_PAYMENT" && fulfillmentConfig?.mode !== "staff") {
     return {
       error: buildServiceError({
         statusCode: 409,
         code: "STAFF_FULFILLMENT_DISABLED",
         message: "Staff-driven order status changes are only allowed when fulfillment mode is staff",
         details: {
-          fulfillmentMode: fulfillmentConfig.mode
+          fulfillmentMode: fulfillmentConfig?.mode
         }
       })
     };
@@ -2032,11 +2052,12 @@ export async function cancelOrder(params: {
     refundConfirmed = true;
   }
 
-  const canceledTransition = transitionOrderStatus(existingOrder, "CANCELED", {
-    note: `Canceled by ${cancelActorLabel}: ${input.reason}.${refundNote}`,
+  const targetStatus = isCompletedRefund ? "REFUNDED" : "CANCELED";
+  const canceledTransition = transitionOrderStatus(existingOrder, targetStatus, {
+    note: `${isCompletedRefund ? "Refunded" : "Canceled"} by ${cancelActorLabel}: ${input.reason}.${refundNote}`,
     source: cancelSource
   });
-  await deps.repository.releaseDiscountForOrder(orderId);
+  if (!isCompletedRefund) await deps.repository.releaseDiscountForOrder(orderId);
   await deps.repository.updateOrder(orderId, canceledTransition.order);
 
   const notificationUserId = await resolveOrderUserId({
@@ -2230,12 +2251,12 @@ export async function reconcilePaymentWebhook(params: {
       })
     };
   }
-  if (input.status === "REFUNDED" && refundAmountCents !== existingOrder.total.amountCents) {
+  if (input.status === "REFUNDED" && refundAmountCents !== existingOrder.total.amountCents && existingOrder.status !== "COMPLETED" && existingOrder.status !== "PARTIALLY_REFUNDED") {
     return {
       error: buildServiceError({
         statusCode: 409,
         code: "REFUND_ALLOCATION_REQUIRED",
-        message: "Partial refunds must include an item-level allocation before they can enter reporting",
+        message: "Partial refunds must include an item-level allocation before they can be applied to a canceling order",
         details: { orderId: input.orderId, amountCents: refundAmountCents }
       })
     };
@@ -2312,15 +2333,15 @@ export async function reconcilePaymentWebhook(params: {
     };
   }
 
-  if (existingOrder.status === "COMPLETED") {
-    return {
-      result: ordersPaymentReconciliationResultSchema.parse({
-        accepted: true,
-        applied: false,
-        orderStatus: existingOrder.status,
-        note: "Completed orders require manual refund review and do not auto-transition"
-      })
-    };
+  if (existingOrder.status === "REFUNDED") {
+    return { result: ordersPaymentReconciliationResultSchema.parse({ accepted: true, applied: false, orderStatus: existingOrder.status, note: "Order is already fully refunded" }) };
+  }
+
+  const refundTargetStatus = existingOrder.status === "COMPLETED" || existingOrder.status === "PARTIALLY_REFUNDED"
+    ? (refundAmountCents >= existingOrder.total.amountCents ? "REFUNDED" : "PARTIALLY_REFUNDED")
+    : "CANCELED";
+  if (existingOrder.status === "PARTIALLY_REFUNDED" && refundTargetStatus === "PARTIALLY_REFUNDED") {
+    return { result: ordersPaymentReconciliationResultSchema.parse({ accepted: true, applied: false, orderStatus: existingOrder.status, note: "Order is already partially refunded" }) };
   }
 
   const orderUserId = await resolveStoredOrderUserId({ orderId: input.orderId, repository: deps.repository });
@@ -2375,17 +2396,17 @@ export async function reconcilePaymentWebhook(params: {
     orderQuote.pointsToRedeem > 0 ? `refunded ${orderQuote.pointsToRedeem} redeemed points` : undefined
   ].filter((value): value is string => Boolean(value));
   const eventNote = input.eventId ? `event ${input.eventId}` : "webhook event";
-  const canceledTransition = transitionOrderStatus(existingOrder, "CANCELED", {
+  const refundTransition = transitionOrderStatus(existingOrder, refundTargetStatus, {
     note: `Refund reconciled from ${input.provider} ${eventNote}${reversalParts.length > 0 ? `; ${reversalParts.join("; ")}` : ""}.`,
     source: "webhook"
   });
-  await deps.repository.updateOrder(input.orderId, canceledTransition.order);
+  await deps.repository.updateOrder(input.orderId, refundTransition.order);
   await sendOrderStateNotification({
     requestId,
     deps,
     userId: orderUserId,
-    order: canceledTransition.order,
-    timelineEntry: canceledTransition.appliedTransitions[0]?.timelineEntry,
+    order: refundTransition.order,
+    timelineEntry: refundTransition.appliedTransitions[0]?.timelineEntry,
     notificationStatus: "REFUNDED"
   });
 
@@ -2393,7 +2414,7 @@ export async function reconcilePaymentWebhook(params: {
     result: ordersPaymentReconciliationResultSchema.parse({
       accepted: true,
       applied: true,
-      orderStatus: canceledTransition.order.status
+      orderStatus: refundTransition.order.status
     })
   };
 }

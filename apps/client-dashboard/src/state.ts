@@ -55,6 +55,8 @@ export type AppState = {
   updatingOnboarding: boolean;
   initializing: boolean;
   loading: boolean;
+  ordersRefreshing: boolean;
+  orderRefreshError: string | null;
   signingIn: boolean;
   errorMessage: string | null;
   notice: string | null;
@@ -66,11 +68,12 @@ export type AppState = {
     loading: boolean;
     report: OperatorReportingResponse | null;
     error: string | null;
-    ordersError: string | null;
   };
   orderFilter: OperatorOrderFilter;
+  ordersPage: number;
   storeTicketFilter: "all" | "needs_action" | "in_progress" | "ready" | "closed";
   menuCategories: OperatorMenuCategory[];
+  menuItemsPage: number;
   menuCustomizationDrafts: Record<string, MenuItemCustomizationGroup[]>;
   newsCards: OperatorNewsCard[];
   discountCodes: OperatorDiscountCode[];
@@ -80,6 +83,15 @@ export type AppState = {
   mobileReleaseBuildJobs: MobileReleaseBuildJobListResponse;
   teamUsers: OperatorUser[];
   selectedOrderId: string | null;
+  orderDetailsOpen: boolean;
+  orderDetailsOpening: boolean;
+  orderDetailsClosing: boolean;
+  orderDetailsClosingTimeoutHandle: ReturnType<typeof setTimeout> | null;
+  selectedMenuItemId: string | null;
+  menuItemDetailsOpen: boolean;
+  menuItemDetailsOpening: boolean;
+  menuItemDetailsClosing: boolean;
+  menuItemDetailsClosingTimeoutHandle: ReturnType<typeof setTimeout> | null;
   busyOrderId: string | null;
   busyMenuItemId: string | null;
   busyMenuVisibilityItemId: string | null;
@@ -158,6 +170,8 @@ export const state: AppState = {
   updatingOnboarding: false,
   initializing: true,
   loading: false,
+  ordersRefreshing: false,
+  orderRefreshError: null,
   signingIn: false,
   errorMessage: null,
   notice: null,
@@ -168,12 +182,13 @@ export const state: AppState = {
     chartMetric: "netSales",
     loading: false,
     report: null,
-    error: null,
-    ordersError: null
+    error: null
   },
   orderFilter: "active",
+  ordersPage: 1,
   storeTicketFilter: "all",
   menuCategories: [],
+  menuItemsPage: 1,
   menuCustomizationDrafts: {},
   newsCards: [],
   discountCodes: [],
@@ -183,6 +198,15 @@ export const state: AppState = {
   mobileReleaseBuildJobs: { jobs: [] },
   teamUsers: [],
   selectedOrderId: null,
+  orderDetailsOpen: false,
+  orderDetailsOpening: false,
+  orderDetailsClosing: false,
+  orderDetailsClosingTimeoutHandle: null,
+  selectedMenuItemId: null,
+  menuItemDetailsOpen: false,
+  menuItemDetailsOpening: false,
+  menuItemDetailsClosing: false,
+  menuItemDetailsClosingTimeoutHandle: null,
   busyOrderId: null,
   busyMenuItemId: null,
   busyMenuVisibilityItemId: null,
@@ -270,16 +294,18 @@ export function resetDashboardData() {
     : null;
   state.appConfig = null;
   state.orders = [];
+  state.ordersRefreshing = false;
+  state.orderRefreshError = null;
   state.ownerHome = {
     period: "today",
     chartMetric: "netSales",
     loading: false,
     report: null,
-    error: null,
-    ordersError: null
+    error: null
   };
   state.storeTicketFilter = "all";
   state.menuCategories = [];
+  state.menuItemsPage = 1;
   state.menuCustomizationDrafts = {};
   state.newsCards = [];
   state.discountCodes = [];
@@ -294,7 +320,15 @@ export function resetDashboardData() {
   state.onboardingWizardOpen = false;
   state.onboardingWizardStep = 1;
   state.updatingOnboarding = false;
+  if (state.orderDetailsClosingTimeoutHandle !== null) {
+    clearTimeout(state.orderDetailsClosingTimeoutHandle);
+  }
+  state.orderDetailsClosingTimeoutHandle = null;
+  state.orderDetailsOpen = false;
+  state.orderDetailsOpening = false;
+  state.orderDetailsClosing = false;
   state.selectedOrderId = null;
+  resetMenuItemDetails();
   state.lastRefreshedAt = null;
   state.orderConnectionState = "connecting";
   state.busyOrderId = null;
@@ -311,4 +345,15 @@ export function resetDashboardData() {
   state.creatingMenuItem = false;
   state.creatingNewsCard = false;
   state.creatingTeamUser = false;
+}
+
+export function resetMenuItemDetails() {
+  if (state.menuItemDetailsClosingTimeoutHandle !== null) {
+    clearTimeout(state.menuItemDetailsClosingTimeoutHandle);
+  }
+  state.menuItemDetailsClosingTimeoutHandle = null;
+  state.selectedMenuItemId = null;
+  state.menuItemDetailsOpen = false;
+  state.menuItemDetailsOpening = false;
+  state.menuItemDetailsClosing = false;
 }

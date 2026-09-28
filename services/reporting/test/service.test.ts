@@ -32,7 +32,7 @@ describe("reporting metric semantics", () => {
 
   it("excludes pending payment, failed payment, and canceled unpaid orders because they create no successful-charge aggregate", () => {
     const value = report([]);
-    expect(value.summary).toMatchObject({ grossSales: { amountCents: 0 }, collected: { amountCents: 0 }, paidOrders: 0 });
+    expect(value.summary).toMatchObject({ grossSales: { amountCents: 0 }, collected: { amountCents: 0 }, paidOrders: 0, averageOrderValue: { amountCents: 0 } });
   });
 
   it("uses only one canonical successful charge for payment retries and multiple accidental successes", () => {

@@ -56,7 +56,11 @@ function toMetrics(raw: RawMetrics) {
     netCollected: money(raw.collected - raw.refunds),
     paidOrders: raw.paidOrders,
     // Integer-cents, half-up rounding; no float currency arithmetic.
-    averageOrderValue: netSales === null || raw.paidOrders === 0 ? null : money(Math.floor((netSales + Math.floor(raw.paidOrders / 2)) / raw.paidOrders)),
+    averageOrderValue: raw.paidOrders === 0
+      ? money(0)
+      : netSales === null
+        ? null
+        : money(Math.floor((netSales + Math.floor(raw.paidOrders / 2)) / raw.paidOrders)),
     dataQuality: {
       missingQuotePaidOrders: raw.missingQuotePaidOrders,
       unallocatableRefunds: raw.unallocatableRefunds,

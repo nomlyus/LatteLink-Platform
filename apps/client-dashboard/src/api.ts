@@ -888,6 +888,23 @@ export function cancelAndRefundOperatorOrder(
   });
 }
 
+export function refundOperatorOrder(
+  session: OperatorSession,
+  locationId: string | null,
+  orderId: string,
+  input: { reason: string }
+) {
+  return requestJson({
+    apiBaseUrl: session.apiBaseUrl,
+    accessToken: session.accessToken,
+    path: `/admin/orders/${orderId}/refund`,
+    query: locationId ? { locationId } : {},
+    method: "POST",
+    body: { reason: input.reason.trim() },
+    schema: orderSchema
+  });
+}
+
 export function createOperatorMenuItem(
   session: OperatorSession,
   locationId: string | null,
