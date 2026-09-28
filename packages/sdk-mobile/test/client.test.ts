@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { GazelleApiClient, UNABLE_TO_REACH_BACKEND_MESSAGE, isBackendReachabilityError } from "../src";
+import {
+  GazelleApiClient,
+  UNABLE_TO_REACH_BACKEND_MESSAGE,
+  isBackendReachabilityError
+} from "../src";
 
 describe("sdk-mobile", () => {
   const fetchMock = vi.fn<typeof fetch>();
@@ -212,6 +216,93 @@ describe("sdk-mobile", () => {
       "https://api.gazellecoffee.com/v1/store/cards?locationId=flagship-01",
       expect.objectContaining({ method: "GET" })
     );
+  });
+
+  it("fetches the canonical branded bootstrap contract without a location parameter", async () => {
+    const bootstrap = {
+      schemaVersion: 1,
+      status: "ready",
+      brand: { brandId: "northside coffee", displayName: "Northside Coffee" },
+      locations: [
+        { locationId: "northside-01", displayName: "Flagship", marketLabel: "Detroit, MI", timezone: "America/Detroit" }
+      ],
+      primaryLocationId: "northside-01",
+      orderingEnabled: true,
+      compatibility: {}
+    };
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify(bootstrap), { status: 200, headers: { "content-type": "application/json" } })
+    );
+
+    const client = new GazelleApiClient({ baseUrl: "https://api.nomly.us/v1", locationId: "compiled-location" });
+    await expect(client.mobileBrandBootstrap("northside coffee")).resolves.toEqual(bootstrap);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.nomly.us/v1/mobile/bootstrap?brandId=northside%20coffee",
+      expect.objectContaining({ method: "GET" })
+    );
+  });
+
+  it("preserves typed unavailable bootstrap responses", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({
+        schemaVersion: 1,
+        status: "unavailable",
+        brand: { brandId: "northside", displayName: "Northside Coffee" },
+        locations: [],
+        primaryLocationId: null,
+        orderingEnabled: false,
+        compatibility: {}
+      }), { status: 200, headers: { "content-type": "application/json" } })
+    );
+
+    const result = await new GazelleApiClient({ baseUrl: "https://api.nomly.us/v1" }).mobileBrandBootstrap("northside");
+    expect(result.status).toBe("unavailable");
+    expect(result.primaryLocationId).toBeNull();
+  });
+
+  it("requires a brand selector and fails closed for unknown or malformed bootstrap responses", async () => {
+    const client = new GazelleApiClient({ baseUrl: "https://api.nomly.us/v1" });
+    await expect(client.mobileBrandBootstrap("  ")).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ code: "MOBILE_BRAND_NOT_FOUND" }), { status: 404 }));
+    await expect(client.mobileBrandBootstrap("unknown")).rejects.toMatchObject({
+      name: "MobileBrandBootstrapError",
+      kind: "brand_not_found"
+    });
+
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ status: "ready" }), { status: 200 }));
+    await expect(client.mobileBrandBootstrap("northside")).rejects.toMatchObject({
+      name: "MobileBrandBootstrapError",
+      kind: "invalid_response"
+    });
+
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      schemaVersion: 1,
+      status: "ready",
+      brand: { brandId: "other-brand", displayName: "Other Brand" },
+      locations: [{ locationId: "other-01", displayName: "Flagship", marketLabel: "Detroit, MI", timezone: "America/Detroit" }],
+      primaryLocationId: "other-01",
+      orderingEnabled: true,
+      compatibility: {}
+    }), { status: 200 }));
+    await expect(client.mobileBrandBootstrap("northside")).rejects.toMatchObject({
+      name: "MobileBrandBootstrapError",
+      kind: "invalid_response"
+    });
+  });
+
+  it("uses existing reachability handling for network and server failures", async () => {
+    const client = new GazelleApiClient({ baseUrl: "https://api.nomly.us/v1" });
+    fetchMock.mockRejectedValueOnce(new TypeError("Network request failed"));
+    const networkError = await client.mobileBrandBootstrap("northside").catch((error) => error);
+    expect(networkError).toMatchObject({ message: UNABLE_TO_REACH_BACKEND_MESSAGE });
+    expect(isBackendReachabilityError(networkError)).toBe(true);
+
+    fetchMock.mockResolvedValueOnce(new Response("service unavailable", { status: 503 }));
+    const serverError = await client.mobileBrandBootstrap("northside").catch((error) => error);
+    expect(serverError).toMatchObject({ message: UNABLE_TO_REACH_BACKEND_MESSAGE });
+    expect(isBackendReachabilityError(serverError)).toBe(true);
   });
 
   it("supports quote, create, and Stripe payment session flow", async () => {

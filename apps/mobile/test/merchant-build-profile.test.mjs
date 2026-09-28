@@ -14,6 +14,7 @@ describe("merchant mobile build preparation", () => {
       await writeFile(
         inputPath,
         JSON.stringify({
+          brandId: "rawaqcoffee",
           locationId: "rawaqcoffee01",
           appName: "Rawaq",
           displayName: "Rawaq",
@@ -51,8 +52,11 @@ describe("merchant mobile build preparation", () => {
       expect(env).toContain("APP_VARIANT='beta'");
       expect(env).toContain("APP_DISPLAY_NAME='Rawaq Beta'");
       expect(env).toContain("IOS_BUNDLE_IDENTIFIER='com.lattelink.rawaq.beta'");
+      expect(env).toContain("EXPO_PUBLIC_BRAND_ID='rawaqcoffee'");
       expect(env).toContain("EXPO_PUBLIC_LOCATION_ID='rawaqcoffee01'");
+      expect(env).toContain("EXPO_SLUG='rawaqcoffee01-beta'");
       expect(manifest).toMatchObject({
+        brandId: "rawaqcoffee",
         locationId: "rawaqcoffee01",
         profile: "beta",
         sourceCommitSha: SOURCE_COMMIT,

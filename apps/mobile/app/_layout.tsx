@@ -31,6 +31,8 @@ import { useOrdersRealtimeSync } from "../src/orders/useOrdersRealtimeSync";
 import { Button, ScreenBackdrop, uiPalette, uiTypography } from "../src/ui/system";
 import { usePushNotificationRegistration } from "../src/notifications/usePushNotificationRegistration";
 import { prefetchCatalogQueries, useAppConfigQuery } from "../src/menu/catalog";
+import { LocationProvider, useLocationContext } from "../src/location/LocationProvider";
+import { canStartLocationSensitiveQueries } from "../src/location/model";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -66,12 +68,17 @@ void SplashScreen.preventAutoHideAsync();
 
 function AppInitializer() {
   const { isAuthenticated } = useAuthSession();
+  const location = useLocationContext();
+  const canStartLocationSensitiveData = canStartLocationSensitiveQueries(location);
   usePushNotificationRegistration(isAuthenticated);
   useOrdersRealtimeSync(isAuthenticated);
 
   useEffect(() => {
+    if (!canStartLocationSensitiveData) {
+      return;
+    }
     prefetchCatalogQueries(queryClient);
-  }, []);
+  }, [canStartLocationSensitiveData]);
 
   return null;
 }
@@ -83,12 +90,87 @@ function StartupCatalogGate({
   children: ReactNode;
   onReadyToDisplay: () => void;
 }) {
+  const location = useLocationContext();
+  const isInitialLoading = location.bootstrapStatus === "loading" || location.isResolvingSelection;
+  const canStartLocationSensitiveData = canStartLocationSensitiveQueries(location);
+
+  useEffect(() => {
+    if (!isInitialLoading) {
+      onReadyToDisplay();
+    }
+  }, [isInitialLoading, onReadyToDisplay]);
+
+  if (isInitialLoading) {
+    return (
+      <View style={styles.startupScreen}>
+        <ScreenBackdrop />
+        <View style={styles.startupCard}>
+          <ActivityIndicator color={uiPalette.primary} />
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.startupTitle}>Loading store locations</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.startupBody}>Connecting to the configured brand before showing the app.</Text>
+        </View>
+      </View>
+    );
+  }
+
+  let errorMessage: string | null = null;
+  let retryDisabled = false;
+  if (location.bootstrapStatus === "configuration_error") {
+    errorMessage = "This app is not configured correctly. Please contact the app provider.";
+    retryDisabled = true;
+  } else if (location.bootstrapStatus === "brand_not_found") {
+    errorMessage = "This app is not available. Please contact the app provider.";
+  } else if (location.bootstrapStatus === "unavailable") {
+    errorMessage = "This store is not available for ordering yet. Please try again later.";
+  } else if (location.bootstrapStatus === "error") {
+    errorMessage = location.bootstrapErrorKind === "reachability"
+      ? UNABLE_TO_REACH_BACKEND_MESSAGE
+      : "Branded app configuration could not be loaded. Retry before continuing.";
+  } else if (location.bootstrapStatus === "ready" && !canStartLocationSensitiveData) {
+    errorMessage = !location.isReady
+      ? "Store locations could not be resolved for this app. Retry before continuing."
+      : location.locationCompatibilityError ?? "This app’s store configuration is out of date. Update the app to continue.";
+    retryDisabled = Boolean(location.isReady);
+  }
+
+  if (errorMessage) {
+    return (
+      <View style={styles.startupScreen}>
+        <ScreenBackdrop />
+        <View style={styles.startupCard}>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.startupEyebrow}>Configuration required</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.startupTitle}>Store unavailable.</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.startupBody}>{errorMessage}</Text>
+          <Button
+            label="Retry"
+            variant="secondary"
+            disabled={retryDisabled}
+            onPress={() => {
+              void location.retryBootstrap();
+            }}
+            style={styles.startupAction}
+          />
+        </View>
+      </View>
+    );
+  }
+
+  return <StartupAppConfigGate onReadyToDisplay={onReadyToDisplay}>{children}</StartupAppConfigGate>;
+}
+
+function StartupAppConfigGate({
+  children,
+  onReadyToDisplay
+}: {
+  children: ReactNode;
+  onReadyToDisplay: () => void;
+}) {
   const appConfigQuery = useAppConfigQuery();
   const apiConfigurationError = MOBILE_API_ENVIRONMENT.apiConfigurationError;
   const hasBlockingError = Boolean(apiConfigurationError) || (!!appConfigQuery.error && !appConfigQuery.data);
   const isInitialLoading = appConfigQuery.isLoading && !appConfigQuery.data && !apiConfigurationError;
   const errorMessage = apiConfigurationError
-    ? apiConfigurationError
+    ? "This app is not configured correctly. Please contact the app provider."
     : isBackendReachabilityError(appConfigQuery.error)
       ? UNABLE_TO_REACH_BACKEND_MESSAGE
       : "Live store configuration could not be loaded. Retry before continuing.";
@@ -197,93 +279,95 @@ function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <BottomSheetModalProvider>
             <AuthSessionProvider>
-              <StartupCatalogGate onReadyToDisplay={hideSplash}>
-                <AppInitializer />
-                <CartProvider>
-                  <CheckoutFlowProvider>
-                    <Stack
-                      screenOptions={{
-                        headerShown: false,
-                        contentStyle: { backgroundColor: uiPalette.background }
-                      }}
-                    >
-                      <Stack.Screen name="(tabs)" options={{ animation: "none" }} />
-                      <Stack.Screen
-                        name="cart"
-                        options={{
-                          presentation: "modal",
-                          animation: "slide_from_bottom",
-                          contentStyle: { backgroundColor: "transparent" }
+              <LocationProvider>
+                <StartupCatalogGate onReadyToDisplay={hideSplash}>
+                  <AppInitializer />
+                  <CartProvider>
+                    <CheckoutFlowProvider>
+                      <Stack
+                        screenOptions={{
+                          headerShown: false,
+                          contentStyle: { backgroundColor: uiPalette.background }
                         }}
-                      />
-                      <Stack.Screen
-                        name="auth"
-                        options={{
-                          presentation: "modal",
-                          animation: "slide_from_bottom",
-                          contentStyle: { backgroundColor: "transparent" }
-                        }}
-                      />
-                      <Stack.Screen
-                        name="profile-setup"
-                        options={{
-                          presentation: "modal",
-                          animation: "slide_from_bottom",
-                          contentStyle: { backgroundColor: "transparent" }
-                        }}
-                      />
-                      <Stack.Screen
-                        name="checkout"
-                        options={{
-                          presentation: "modal",
-                          animation: "slide_from_bottom",
-                          contentStyle: { backgroundColor: "transparent" }
-                        }}
-                      />
-                      <Stack.Screen
-                        name="menu-customize"
-                        options={{
-                          presentation: "modal",
-                          animation: "slide_from_bottom",
-                          contentStyle: { backgroundColor: "transparent" }
-                        }}
-                      />
-                      <Stack.Screen
-                        name="checkout-success"
-                        options={{
-                          presentation: "modal",
-                          animation: "slide_from_bottom",
-                          contentStyle: { backgroundColor: uiPalette.surfaceStrong }
-                        }}
-                      />
-                      <Stack.Screen
-                        name="checkout-failure"
-                        options={{
-                          presentation: "modal",
-                          animation: "slide_from_bottom",
-                          contentStyle: { backgroundColor: uiPalette.surfaceStrong }
-                        }}
-                      />
-                      <Stack.Screen
-                        name="refunds/[orderId]"
-                        options={{
-                          presentation: "modal",
-                          animation: "slide_from_bottom",
-                          contentStyle: { backgroundColor: uiPalette.surfaceStrong }
-                        }}
-                      />
-                      <Stack.Screen
-                        name="orders/[orderId]"
-                        options={{
-                          presentation: "modal",
-                          animation: "slide_from_bottom",
-                          contentStyle: { backgroundColor: "transparent" }
-                        }}
-                      />
-                    </Stack>
-                  </CheckoutFlowProvider>
-                </CartProvider>
-              </StartupCatalogGate>
+                      >
+                        <Stack.Screen name="(tabs)" options={{ animation: "none" }} />
+                        <Stack.Screen
+                          name="cart"
+                          options={{
+                            presentation: "modal",
+                            animation: "slide_from_bottom",
+                            contentStyle: { backgroundColor: "transparent" }
+                          }}
+                        />
+                        <Stack.Screen
+                          name="auth"
+                          options={{
+                            presentation: "modal",
+                            animation: "slide_from_bottom",
+                            contentStyle: { backgroundColor: "transparent" }
+                          }}
+                        />
+                        <Stack.Screen
+                          name="profile-setup"
+                          options={{
+                            presentation: "modal",
+                            animation: "slide_from_bottom",
+                            contentStyle: { backgroundColor: "transparent" }
+                          }}
+                        />
+                        <Stack.Screen
+                          name="checkout"
+                          options={{
+                            presentation: "modal",
+                            animation: "slide_from_bottom",
+                            contentStyle: { backgroundColor: "transparent" }
+                          }}
+                        />
+                        <Stack.Screen
+                          name="menu-customize"
+                          options={{
+                            presentation: "modal",
+                            animation: "slide_from_bottom",
+                            contentStyle: { backgroundColor: "transparent" }
+                          }}
+                        />
+                        <Stack.Screen
+                          name="checkout-success"
+                          options={{
+                            presentation: "modal",
+                            animation: "slide_from_bottom",
+                            contentStyle: { backgroundColor: uiPalette.surfaceStrong }
+                          }}
+                        />
+                        <Stack.Screen
+                          name="checkout-failure"
+                          options={{
+                            presentation: "modal",
+                            animation: "slide_from_bottom",
+                            contentStyle: { backgroundColor: uiPalette.surfaceStrong }
+                          }}
+                        />
+                        <Stack.Screen
+                          name="refunds/[orderId]"
+                          options={{
+                            presentation: "modal",
+                            animation: "slide_from_bottom",
+                            contentStyle: { backgroundColor: uiPalette.surfaceStrong }
+                          }}
+                        />
+                        <Stack.Screen
+                          name="orders/[orderId]"
+                          options={{
+                            presentation: "modal",
+                            animation: "slide_from_bottom",
+                            contentStyle: { backgroundColor: "transparent" }
+                          }}
+                        />
+                      </Stack>
+                    </CheckoutFlowProvider>
+                  </CartProvider>
+                </StartupCatalogGate>
+              </LocationProvider>
             </AuthSessionProvider>
           </BottomSheetModalProvider>
         </QueryClientProvider>

@@ -14,6 +14,8 @@ import {
   appConfigSchema,
   homeNewsCardsResponseSchema,
   menuResponseSchema,
+  mobileBrandBootstrapRequestSchema,
+  mobileBrandBootstrapSchema,
   mobileExperienceDocumentSchema,
   storeConfigResponseSchema
 } from "@lattelink/contracts-catalog";
@@ -42,6 +44,25 @@ export type ApiClientOptions = {
   accessToken?: string;
   locationId?: string;
 };
+
+export class ApiHttpError extends Error {
+  constructor(
+    readonly statusCode: number,
+    message: string
+  ) {
+    super(message);
+    this.name = "ApiHttpError";
+  }
+}
+
+export type MobileBrandBootstrapErrorKind = "brand_not_found" | "invalid_response";
+
+export class MobileBrandBootstrapError extends Error {
+  constructor(readonly kind: MobileBrandBootstrapErrorKind) {
+    super(kind === "brand_not_found" ? "Branded app configuration was not found." : "Branded app configuration response is invalid.");
+    this.name = "MobileBrandBootstrapError";
+  }
+}
 
 type SessionRefreshHandler = () => Promise<z.output<typeof authSessionSchema> | null>;
 
@@ -201,6 +222,31 @@ export class GazelleApiClient {
     return mobileExperienceDocumentSchema.parse(data);
   }
 
+  async mobileBrandBootstrap(brandId: string): Promise<z.output<typeof mobileBrandBootstrapSchema>> {
+    const request = mobileBrandBootstrapRequestSchema.parse({ brandId });
+    let data: unknown;
+    try {
+      data = await this.get<unknown>(`/mobile/bootstrap?brandId=${encodeURIComponent(request.brandId)}`);
+    } catch (error) {
+      if (isBackendReachabilityError(error)) {
+        throw error;
+      }
+      if (error instanceof ApiHttpError && error.statusCode === 404) {
+        throw new MobileBrandBootstrapError("brand_not_found");
+      }
+      if (error instanceof ApiHttpError && error.statusCode >= 500) {
+        throw toReachabilityError(error);
+      }
+      throw new MobileBrandBootstrapError("invalid_response");
+    }
+
+    const parsed = mobileBrandBootstrapSchema.safeParse(data);
+    if (!parsed.success || parsed.data.brand.brandId !== request.brandId) {
+      throw new MobileBrandBootstrapError("invalid_response");
+    }
+    return parsed.data;
+  }
+
   async quoteOrder(input: z.input<typeof quoteRequestSchema>): Promise<z.output<typeof orderQuoteSchema>> {
     quoteRequestSchema.parse(input);
     const data = await this.post<unknown>("/orders/quote", input);
@@ -319,7 +365,7 @@ export class GazelleApiClient {
     if (!response.ok) {
       const text = await response.text();
       const suffix = text ? `: ${text}` : "";
-      throw new Error(`Request failed (${response.status})${suffix}`);
+      throw new ApiHttpError(response.status, `Request failed (${response.status})${suffix}`);
     }
 
     if (response.status === 204) {

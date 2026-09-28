@@ -5,6 +5,7 @@ type RuntimeConfig = {
   bundleIdentifier?: string;
   apiBaseUrl?: string;
   catalogApiBaseUrl?: string;
+  brandId?: string;
   locationId?: string;
   nodeEnv?: string;
 };
@@ -26,6 +27,7 @@ async function loadApiClientEnvironment(config: RuntimeConfig) {
   if (config.catalogApiBaseUrl) {
     vi.stubEnv("EXPO_PUBLIC_CATALOG_SERVICE_BASE_URL", config.catalogApiBaseUrl);
   }
+  vi.stubEnv("EXPO_PUBLIC_BRAND_ID", config.brandId ?? "");
   if (config.locationId) {
     vi.stubEnv("EXPO_PUBLIC_LOCATION_ID", config.locationId);
   }
@@ -44,10 +46,12 @@ describe("mobile API environment guard", () => {
       appVariant: "beta",
       bundleIdentifier: "com.lattelink.rawaq.beta",
       apiBaseUrl: "https://api-dev.nomly.us/v1",
+      brandId: "northside-coffee",
       locationId: "rawaqcoffee01"
     });
 
     expect(API_BASE_URL).toBe("https://api-dev.nomly.us/v1");
+    expect(MOBILE_API_ENVIRONMENT.brandId).toBe("northside-coffee");
     expect(MOBILE_API_ENVIRONMENT.locationId).toBe("rawaqcoffee01");
     expect(MOBILE_API_ENVIRONMENT.apiConfigurationError).toBeNull();
   });
@@ -57,6 +61,7 @@ describe("mobile API environment guard", () => {
       appVariant: "beta",
       bundleIdentifier: "com.lattelink.rawaq.beta",
       apiBaseUrl: "https://api.nomly.us/v1",
+      brandId: "northside-coffee",
       locationId: "rawaqcoffee01"
     });
 
@@ -69,6 +74,7 @@ describe("mobile API environment guard", () => {
       appVariant: "production",
       bundleIdentifier: "com.lattelink.rawaq",
       apiBaseUrl: "https://api-dev.nomly.us/v1",
+      brandId: "northside-coffee",
       locationId: "rawaqcoffee01"
     });
 
@@ -80,6 +86,7 @@ describe("mobile API environment guard", () => {
     const { API_BASE_URL, MOBILE_API_ENVIRONMENT } = await loadApiClientEnvironment({
       appVariant: "beta",
       bundleIdentifier: "com.lattelink.rawaq.beta",
+      brandId: "northside-coffee",
       locationId: "rawaqcoffee01"
     });
 
@@ -93,6 +100,7 @@ describe("mobile API environment guard", () => {
       appVariant: "beta",
       bundleIdentifier: "com.lattelink.rawaq.beta",
       apiBaseUrl: "http://127.0.0.1:8080/v1",
+      brandId: "northside-coffee",
       locationId: "rawaqcoffee01"
     });
 
@@ -100,14 +108,45 @@ describe("mobile API environment guard", () => {
     expect(MOBILE_API_ENVIRONMENT.apiConfigurationError).toBeNull();
   });
 
-  it("reports a missing location id as a startup configuration error", async () => {
+  it("keeps the missing legacy location as a separate compatibility error", async () => {
     const { MOBILE_API_ENVIRONMENT } = await loadApiClientEnvironment({
+      appVariant: "beta",
+      bundleIdentifier: "com.lattelink.rawaq.beta",
+      apiBaseUrl: "https://api-dev.nomly.us/v1",
+      brandId: "northside-coffee"
+    });
+
+    expect(MOBILE_API_ENVIRONMENT.locationId).toBe("");
+    expect(MOBILE_API_ENVIRONMENT.locationCompatibilityError).toContain("EXPO_PUBLIC_LOCATION_ID is not configured.");
+    expect(MOBILE_API_ENVIRONMENT.apiConfigurationError).toBeNull();
+  });
+
+  it("fails closed when the public brand selector is missing or malformed without Rawaq fallback", async () => {
+    const missing = await loadApiClientEnvironment({
       appVariant: "beta",
       bundleIdentifier: "com.lattelink.rawaq.beta",
       apiBaseUrl: "https://api-dev.nomly.us/v1"
     });
+    expect(missing.MOBILE_API_ENVIRONMENT.brandId).toBe("");
+    expect(missing.MOBILE_API_ENVIRONMENT.brandConfigurationError).toContain("EXPO_PUBLIC_BRAND_ID is not configured.");
+    expect(missing.MOBILE_API_ENVIRONMENT.apiConfigurationError).toContain("EXPO_PUBLIC_BRAND_ID is not configured.");
 
-    expect(MOBILE_API_ENVIRONMENT.locationId).toBe("");
-    expect(MOBILE_API_ENVIRONMENT.apiConfigurationError).toContain("EXPO_PUBLIC_LOCATION_ID is not configured.");
+    const invalid = await loadApiClientEnvironment({
+      appVariant: "beta",
+      bundleIdentifier: "com.lattelink.rawaq.beta",
+      apiBaseUrl: "https://api-dev.nomly.us/v1",
+      brandId: "   "
+    });
+    expect(invalid.MOBILE_API_ENVIRONMENT.brandId).toBe("");
+    expect(invalid.MOBILE_API_ENVIRONMENT.brandConfigurationError).toContain("EXPO_PUBLIC_BRAND_ID is not configured.");
+
+    const tooLong = await loadApiClientEnvironment({
+      appVariant: "beta",
+      bundleIdentifier: "com.lattelink.rawaq.beta",
+      apiBaseUrl: "https://api-dev.nomly.us/v1",
+      brandId: "b".repeat(161)
+    });
+    expect(tooLong.MOBILE_API_ENVIRONMENT.brandId).toBe("");
+    expect(tooLong.MOBILE_API_ENVIRONMENT.brandConfigurationError).toContain("EXPO_PUBLIC_BRAND_ID is invalid.");
   });
 });

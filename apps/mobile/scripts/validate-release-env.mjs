@@ -9,6 +9,9 @@ const REQUIRED_KEYS = [
   "IOS_BUNDLE_IDENTIFIER",
   "EXPO_PUBLIC_IOS_BUNDLE_IDENTIFIER",
   "EXPO_PUBLIC_API_BASE_URL",
+  "EXPO_PUBLIC_BRAND_ID",
+  // Transitional until Phase 3 removes the fixed-location catalog clients.
+  "EXPO_PUBLIC_LOCATION_ID",
   "EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID",
   "EXPO_PUBLIC_BRAND_NAME",
   "EXPO_PUBLIC_SENTRY_DSN",
@@ -34,6 +37,11 @@ for (const key of REQUIRED_KEYS) {
   if (!process.env[key]?.trim()) {
     errors.push(`Missing required env: ${key}`);
   }
+}
+
+const brandId = process.env.EXPO_PUBLIC_BRAND_ID?.trim() ?? "";
+if (brandId.length > 160) {
+  errors.push("EXPO_PUBLIC_BRAND_ID must not exceed 160 characters.");
 }
 
 const variant = process.env.APP_VARIANT?.trim();

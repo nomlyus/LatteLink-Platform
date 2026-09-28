@@ -1,3 +1,4 @@
+import { mobileBrandBootstrapRequestSchema } from "@lattelink/contracts-catalog";
 import { orderSchema } from "@lattelink/contracts-orders";
 import {
   GazelleApiClient,
@@ -108,9 +109,16 @@ const catalogApiBaseUrlEnvironmentError = resolveApiEnvironmentError(
   normalizeApiBaseUrl(process.env.EXPO_PUBLIC_CATALOG_API_BASE_URL),
   "EXPO_PUBLIC_CATALOG_API_BASE_URL"
 );
+const rawBrandId = process.env.EXPO_PUBLIC_BRAND_ID?.trim() ?? "";
+const parsedBrandRequest = mobileBrandBootstrapRequestSchema.safeParse({ brandId: rawBrandId });
+const configuredBrandId = parsedBrandRequest.success ? parsedBrandRequest.data.brandId : "";
+const brandConfigurationError = parsedBrandRequest.success
+  ? null
+  : rawBrandId.length === 0
+    ? "EXPO_PUBLIC_BRAND_ID is not configured."
+    : "EXPO_PUBLIC_BRAND_ID is invalid.";
 const configuredLocationId = process.env.EXPO_PUBLIC_LOCATION_ID?.trim() ?? "";
-const locationConfigurationError =
-  configuredLocationId.length > 0 ? null : "EXPO_PUBLIC_LOCATION_ID is not configured.";
+const locationCompatibilityError = configuredLocationId.length > 0 ? null : "EXPO_PUBLIC_LOCATION_ID is not configured.";
 
 function toReachabilityError(error: unknown) {
   if (isBackendReachabilityError(error)) {
@@ -141,16 +149,20 @@ export const CATALOG_API_BASE_URL =
 export const MOBILE_API_ENVIRONMENT = {
   variant: resolveRuntimeVariant(),
   bundleIdentifier: readBundleIdentifier(),
+  brandId: configuredBrandId,
+  brandConfigurationError,
   apiBaseUrl: API_BASE_URL,
   catalogApiBaseUrl: CATALOG_API_BASE_URL,
   locationId: configuredLocationId,
+  locationCompatibilityError,
   apiConfigurationError:
     apiBaseUrlEnvironmentError ??
     catalogServiceBaseUrlEnvironmentError ??
     catalogApiBaseUrlEnvironmentError ??
-    locationConfigurationError
+    brandConfigurationError
 };
 
+/** Transitional build-time catalog binding; remove once the Phase 3 client factory is location-aware. */
 export const MOBILE_LOCATION_ID = MOBILE_API_ENVIRONMENT.locationId;
 
 const ordersStreamSnapshotSchema = z.object({
@@ -394,6 +406,9 @@ export const apiClient = Object.assign(baseApiClient, {
     };
   }
 }) as MobileApiClient;
+
+// Bootstrap is brand-scoped discovery and deliberately has no compiled location bound to its client.
+export const mobileBootstrapApiClient = new GazelleApiClient({ baseUrl: API_BASE_URL });
 
 export const catalogApiClient = new GazelleApiClient({
   baseUrl: CATALOG_API_BASE_URL,

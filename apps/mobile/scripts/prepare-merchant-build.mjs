@@ -13,6 +13,7 @@ const DEFAULT_OUTPUT_DIR = resolve(REPO_ROOT, ".nomly/mobile-builds");
 
 const profileSchema = z.enum(["beta", "production"]);
 const merchantBuildInputSchema = z.object({
+  brandId: z.string().trim().min(1).max(160),
   locationId: z.string().trim().min(1),
   appName: z.string().trim().min(2).max(30),
   displayName: z.string().trim().min(2).max(30).optional(),
@@ -107,6 +108,7 @@ function slugify(value) {
 
 function buildConfigHash(input) {
   const payload = {
+    brandId: input.brandId,
     locationId: input.locationId,
     appName: input.appName,
     displayName: input.displayName,
@@ -148,6 +150,7 @@ function buildEnv(input, profile) {
     EXPO_PUBLIC_API_BASE_URL: apiBaseUrl,
     EXPO_PUBLIC_CATALOG_SERVICE_BASE_URL: apiBaseUrl,
     EXPO_PUBLIC_CATALOG_API_BASE_URL: apiBaseUrl,
+    EXPO_PUBLIC_BRAND_ID: input.brandId,
     EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID: input.applePayMerchantId,
     EXPO_PUBLIC_BRAND_NAME: input.appName,
     EXPO_PUBLIC_LOCATION_ID: input.locationId,
@@ -221,6 +224,7 @@ export async function prepareMerchantBuild(rawArgs) {
   };
   const commands = buildCommands(paths, profile, input);
   const manifest = {
+    brandId: input.brandId,
     locationId: input.locationId,
     profile,
     sourceCommitSha: args.sourceCommit,
