@@ -145,6 +145,18 @@ describe("operator menu view", () => {
     expect(html).not.toContain("data-action=\"open-menu-item-details\"");
   });
 
+  it("keeps menu mutations unavailable in All Locations mode", () => {
+    setMenu();
+    state.selectedLocationId = "all";
+
+    const html = renderMenuSection();
+
+    expect(html).toContain("Choose one location");
+    expect(html).not.toContain('data-action="open-menu-item"');
+    expect(html).not.toContain('data-form="menu-item-create-quick"');
+    expect(html).not.toContain('data-action="create-menu-category"');
+  });
+
   it("filters items by search metadata, category membership, availability, and visibility", () => {
     const latte = item("latte", "Latte", { badgeCodes: ["popular"], modifierGroupAssignments: [{ modifierGroupId: "milk-group", sortOrder: 0 }] });
     const pastry = item("croissant", "Butter Croissant", { categoryId: "pastries", categoryTitle: "Pastries", categoryIds: ["pastries"], visible: false, available: false });

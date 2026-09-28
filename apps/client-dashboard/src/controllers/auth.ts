@@ -12,7 +12,8 @@ import { setError, state } from "../state";
 import { clearStoredSession, persistApiBaseUrl } from "../storage";
 import { applyVerifiedSession } from "../lifecycle";
 import { render } from "../render";
-import { readOwnerInviteTokenFromUrl } from "./invite-url";
+import { clearOwnerInviteUrl, readOwnerInviteTokenFromUrl } from "./invite-url";
+import { clearLocationContext } from "../features/location/location-compat";
 export { readOwnerInviteTokenFromUrl } from "./invite-url";
 import {
   clearGoogleCallbackParams,
@@ -25,10 +26,7 @@ function isGoogleSignInConfigured() {
 }
 
 function clearInviteUrl() {
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.history.replaceState({}, document.title, "/");
+  clearOwnerInviteUrl();
 }
 
 export function showSignInScreen() {
@@ -62,6 +60,7 @@ export async function handleOwnerInviteFromUrl() {
   clearInviteUrl();
 
   clearStoredSession();
+  clearLocationContext();
   state.session = null;
   state.ownerInvite = {
     token,

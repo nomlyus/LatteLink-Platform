@@ -5,14 +5,21 @@ import { renderToasts } from "./views/toasts";
 import { state } from "./state";
 import { setToastRenderHandler } from "./toast-runtime";
 
-const appRoot = document.querySelector<HTMLDivElement>("#app");
-if (!appRoot) {
-  throw new Error("Client dashboard root element was not found.");
+export let root = {} as HTMLDivElement;
+let activeRoot: HTMLDivElement | null = null;
+
+export function bindDashboardRoot(nextRoot: HTMLDivElement | null) {
+  if (nextRoot) {
+    root = nextRoot;
+    activeRoot = nextRoot;
+    setToastRenderHandler(render);
+  } else {
+    activeRoot = null;
+  }
 }
 
-export const root: HTMLDivElement = appRoot;
-
 export function renderOrdersSectionOnly() {
+  if (!activeRoot) return;
   const currentSection = root.querySelector<HTMLElement>(".dash-section--orders");
   if (!currentSection) return;
 
@@ -54,6 +61,7 @@ function restoreMenuTableImages(images: Map<string, { element: HTMLImageElement;
 }
 
 export function render() {
+  if (!activeRoot) return;
   const previousMenuImages = captureMenuTableImages();
   const previousSidebar = root.querySelector<HTMLElement>(".dash-sidebar");
   const previousSidebarClass = previousSidebar?.className ?? null;
@@ -147,5 +155,3 @@ export function render() {
     }
   }
 }
-
-setToastRenderHandler(render);

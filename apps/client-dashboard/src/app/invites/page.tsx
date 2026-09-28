@@ -1,5 +1,5 @@
 import { ClientDashboardRoot } from "../ClientDashboardRoot";
 
-export default function ClientDashboardPage() {
+export default function OperatorInviteCompatibilityPage() {
   return <ClientDashboardRoot />;
 }

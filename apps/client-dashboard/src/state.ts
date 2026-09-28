@@ -26,7 +26,7 @@ import type {
 import type { OperatorReportingResponse } from "./api";
 import type { AdminOrderStreamState } from "./api";
 import { isStoreOperator } from "./model";
-import { loadStoredApiBaseUrl, loadStoredSection, loadStoredSession } from "./storage";
+import { loadStoredApiBaseUrl, loadStoredLocationSelection, loadStoredSection, loadStoredSession } from "./storage";
 
 export type AppState = {
   section: DashboardSection;
@@ -159,6 +159,8 @@ const initialSection =
 const initialSelectedLocationId =
   initialStoredSession && isStoreOperator(initialStoredSession.operator)
     ? initialStoredSession.operator.locationId
+    : initialStoredSession && loadStoredLocationSelection(initialStoredSession.operator.operatorUserId)
+      ? loadStoredLocationSelection(initialStoredSession.operator.operatorUserId)
     : initialStoredSession && (initialStoredSession.operator.locationIds?.length ?? 1) > 1
     ? "all"
     : (initialStoredSession?.operator.locationId ?? null);

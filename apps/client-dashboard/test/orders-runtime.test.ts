@@ -70,4 +70,44 @@ describe("operator order runtime", () => {
     expect(state.orderConnectionState).toBe("connected");
     expect(state.autoRefreshHandle).toBeNull();
   });
+
+  it("does not duplicate an active order stream and unsubscribes it on legacy-host unmount", async () => {
+    vi.stubGlobal("window", {});
+    const unsubscribe = vi.fn();
+    subscribeToAdminOrderStream.mockReturnValue(unsubscribe);
+    state.session = {
+      operator: { operatorUserId: "operator-1", role: "owner", capabilities: ["orders:read"] }
+    } as unknown as OperatorSession;
+    state.selectedLocationId = "location-a";
+    const { startAutoRefresh, stopAutoRefresh } = await import("../src/orders-runtime");
+
+    startAutoRefresh(vi.fn());
+    startAutoRefresh(vi.fn());
+    expect(subscribeToAdminOrderStream).toHaveBeenCalledTimes(1);
+
+    stopAutoRefresh();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    expect(state.orderStreamUnsubscribe).toBeNull();
+  });
+
+  it("clears the all-location polling timer when the legacy host unmounts", async () => {
+    vi.stubGlobal("window", {});
+    vi.useFakeTimers();
+    state.session = {
+      operator: { operatorUserId: "operator-1", role: "owner", capabilities: ["orders:read"] }
+    } as unknown as OperatorSession;
+    state.selectedLocationId = "all";
+    const { startAutoRefresh, stopAutoRefresh } = await import("../src/orders-runtime");
+
+    startAutoRefresh(vi.fn());
+    const interval = state.autoRefreshHandle;
+    startAutoRefresh(vi.fn());
+    expect(interval).not.toBeNull();
+    expect(state.autoRefreshHandle).toBe(interval);
+    expect(vi.getTimerCount()).toBe(1);
+
+    stopAutoRefresh();
+    expect(state.autoRefreshHandle).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

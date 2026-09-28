@@ -152,6 +152,25 @@ describe("operator orders view", () => {
     expect(html).not.toContain('class="dash-order-detail-modal');
   });
 
+  it("keeps All Locations order status controls read-only", () => {
+    state.session = {
+      operator: {
+        role: "manager",
+        capabilities: ["orders:read", "orders:write", "payments:refund"]
+      }
+    } as never;
+    state.selectedLocationId = "all";
+    state.availableLocations = [{ locationId: "loc_a" }, { locationId: "loc_b" }] as never;
+    state.appConfig = appConfig;
+    state.orders = [order("11111111-1111-4111-8111-111111111111", "A1")];
+
+    const html = renderOrdersSection();
+
+    expect(html).toContain("This all-locations board is read-only");
+    expect(html).not.toContain('data-action="start-prep"');
+    expect(html).not.toContain('data-action="complete-order"');
+  });
+
   it("shows only the order code without elapsed time in the selected-location Orders tab", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-25T00:00:00.000Z"));

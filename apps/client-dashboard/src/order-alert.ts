@@ -138,3 +138,16 @@ export function resetNewOrderAlert() {
   newOrderTracker.reset();
   soundEnabled = false;
 }
+
+export async function disposeNewOrderAlertRuntime() {
+  resetNewOrderAlert();
+  const context = audioContext;
+  audioContext = null;
+  if (context && context.state !== "closed") {
+    try {
+      await context.close();
+    } catch {
+      // Browser audio teardown is best-effort during route unmount.
+    }
+  }
+}

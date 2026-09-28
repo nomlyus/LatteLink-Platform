@@ -2,6 +2,8 @@ import { root, render } from "./render";
 import { resetMenuItemDetails, setError, state } from "./state";
 import { addToast, dismissToast } from "./toast-runtime";
 import { persistSection } from "./storage";
+import { selectLocationInContext } from "./features/location/location-compat";
+import { syncLegacySectionPath } from "./lib/navigation/dashboard-navigation";
 import {
   syncMenuCreateDraft,
   advanceMenuCreateWizard,
@@ -304,12 +306,15 @@ function focusTrapKeydown(event: KeyboardEvent) {
   }
 }
 
-export function registerEvents() {
+export function registerEvents(parentSignal?: AbortSignal) {
+  const controller = parentSignal ? null : new AbortController();
+  const signal = parentSignal ?? controller!.signal;
+
   document.addEventListener("click", (event) => {
     if (event.target instanceof Node) {
       closeOpenAccountMenus(event.target);
     }
-  });
+  }, { signal });
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
@@ -325,7 +330,7 @@ export function registerEvents() {
       return;
     }
     focusTrapKeydown(event);
-  });
+  }, { signal });
 
   root.addEventListener("keydown", (event) => {
     const target = event.target;
@@ -345,7 +350,7 @@ export function registerEvents() {
       const itemId = target.dataset.menuItemRow;
       if (itemId) openMenuDialog("item", itemId, target);
     }
-  });
+  }, { signal });
 
   root.addEventListener("submit", (event) => {
     const target = event.target;
@@ -430,7 +435,7 @@ export function registerEvents() {
         return;
       }
     }
-  });
+  }, { signal });
 
   root.addEventListener("input", (event) => {
     syncMenuCreateDraft(event.target);
@@ -462,7 +467,7 @@ export function registerEvents() {
         row.hidden = !row.dataset.itemName?.includes(query);
       });
     }
-  });
+  }, { signal });
 
   root.addEventListener("change", (event) => {
     syncMenuCreateDraft(event.target);
@@ -477,6 +482,12 @@ export function registerEvents() {
     if (target instanceof HTMLSelectElement && target.dataset.control === "location-scope") {
       const nextLocationId = target.value === "all" ? "all" : target.value || null;
       if (nextLocationId === state.selectedLocationId) {
+        return;
+      }
+
+      if (!state.session || !nextLocationId || !selectLocationInContext(state.session, nextLocationId)) {
+        setError("That location is no longer available for this operator session.");
+        render();
         return;
       }
 
@@ -504,7 +515,7 @@ export function registerEvents() {
       state.menuItemsPage = 1;
       renderPreservingControl(target);
     }
-  });
+  }, { signal });
 
   root.addEventListener("click", (event) => {
     const target = event.target;
@@ -668,6 +679,7 @@ export function registerEvents() {
         }
         state.section = section;
         persistSection(section);
+        syncLegacySectionPath(section);
         render();
         if (section === "overview" && state.session?.operator.role === "owner") {
           void loadOwnerHomeReport();
@@ -1127,5 +1139,7 @@ export function registerEvents() {
       }
       return;
     }
-  });
+  }, { signal });
+
+  return () => controller?.abort();
 }

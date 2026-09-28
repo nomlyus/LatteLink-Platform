@@ -15,3 +15,9 @@ export function readOwnerInviteTokenFromUrl() {
     return fragmentToken;
   }
 }
+
+export function clearOwnerInviteUrl() {
+  if (typeof window !== "undefined") {
+    window.history.replaceState({}, document.title, "/");
+  }
+}
