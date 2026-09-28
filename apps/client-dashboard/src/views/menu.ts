@@ -208,7 +208,7 @@ function renderMenuItemForm(
 ) {
   const customizationGroups = ensureMenuCustomizationDraft(item.itemId);
   const categoryIds = new Set(item.categoryIds?.length ? item.categoryIds : [item.categoryId]);
-  const modifierGroupIds = new Set(item.modifierGroupAssignments.map((assignment) => assignment.modifierGroupId));
+  const modifierGroupIds = new Set((item.modifierGroupAssignments ?? []).map((assignment) => assignment.modifierGroupId));
   const visibilityButton = canToggleVisibility
     ? `
         <button class="button button--secondary" type="button" data-action="toggle-menu-visibility" data-item-id="${escapeHtml(item.itemId)}" data-visible="${item.visible ? "false" : "true"}" ${state.busyMenuVisibilityItemId === item.itemId ? "disabled" : ""}>
@@ -236,7 +236,7 @@ function renderMenuItemForm(
         </label>
         <label class="field dash-field-inline">
           <span>Badges</span>
-          <input name="badgeCodes" value="${escapeHtml(item.badgeCodes.join(", "))}" ${canWrite ? "" : "disabled"} placeholder="new, popular" />
+          <input name="badgeCodes" value="${escapeHtml((item.badgeCodes ?? []).join(", "))}" ${canWrite ? "" : "disabled"} placeholder="new, popular" />
         </label>
         <label class="field dash-field-inline">
           <span>Item order</span>
@@ -396,7 +396,11 @@ function renderModifierGroupForm(group: (typeof state.menuModifierGroups)[number
 
 function renderModifierGroupPanel(canWrite: boolean) {
   const usage = new Map<string, number>();
-  for (const item of uniqueMenuItems()) for (const assignment of item.modifierGroupAssignments) usage.set(assignment.modifierGroupId, (usage.get(assignment.modifierGroupId) ?? 0) + 1);
+  for (const item of uniqueMenuItems()) {
+    for (const assignment of item.modifierGroupAssignments ?? []) {
+      usage.set(assignment.modifierGroupId, (usage.get(assignment.modifierGroupId) ?? 0) + 1);
+    }
+  }
   return `<article class="dash-surface"><div class="dash-surface-head"><div><div class="dash-panel-title">Modifier Groups</div><h3 class="dash-surface-title">Reusable customer choices</h3><p class="muted-copy">Create a group once, then assign it to as many items as need it.</p></div></div>${canWrite ? renderModifierGroupForm(null, 0, true) : ""}<div class="dash-data-group__rows">${state.menuModifierGroups.length === 0 ? `<div class="dash-empty-surface"><p class="muted-copy">No modifier groups have been configured.</p></div>` : state.menuModifierGroups.map((group) => renderModifierGroupForm(group, usage.get(group.id) ?? 0, canWrite)).join("")}</div></article>`;
 }
 
