@@ -4,6 +4,7 @@ import {
   getDashboardPathOwner,
   getDashboardRouteOwner,
   isLegacyDashboardSection,
+  shouldAutoOpenOwnerOnboarding,
   syncLegacySectionPath
 } from "../src/lib/navigation/dashboard-navigation";
 afterEach(() => vi.unstubAllGlobals());
@@ -31,6 +32,13 @@ describe("dashboard route ownership compatibility", () => {
     expect(getDashboardPathOwner("/legacy/orders")).toBe("legacy");
     expect(getDashboardPathOwner("/legacy/not-a-section")).toBe("unknown");
     expect(getDashboardPathOwner("/orders")).toBe("unknown");
+  });
+
+  it("does not let automatic owner setup override an explicit legacy destination", () => {
+    expect(shouldAutoOpenOwnerOnboarding("/")).toBe(true);
+    expect(shouldAutoOpenOwnerOnboarding("/legacy/orders")).toBe(false);
+    expect(shouldAutoOpenOwnerOnboarding("/legacy/store")).toBe(false);
+    expect(shouldAutoOpenOwnerOnboarding("/invites")).toBe(false);
   });
 
   it("keeps the temporary legacy URL aligned with SPA section navigation without adding history entries", () => {

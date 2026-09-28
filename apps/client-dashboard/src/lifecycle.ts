@@ -35,6 +35,7 @@ import { mergePendingTeamUserUpdates } from "./team-state";
 import { render, renderOrdersSectionOnly } from "./render";
 import { getOwnerReportingLocationIds, getReportingDateRange, reportingErrorCode, resolveOwnerReportingTimezone } from "./views/owner-home";
 import { isSessionAuthFailure } from "./features/auth/session-compat";
+import { shouldAutoOpenOwnerOnboarding } from "./lib/navigation/dashboard-navigation";
 import {
   clearLocationContext,
   initializeLocationContext,
@@ -221,6 +222,10 @@ async function loadOwnerOnboarding(session: OperatorSession) {
 }
 
 function autoOpenOwnerOnboarding() {
+  if (typeof window !== "undefined" && !shouldAutoOpenOwnerOnboarding(window.location.pathname)) {
+    return;
+  }
+
   const operator = state.session?.operator ?? null;
   if (
     state.onboardingAutoOpened ||

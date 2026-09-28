@@ -39,6 +39,10 @@ export function getDashboardPathOwner(pathname: string): DashboardPathOwner {
   return "unknown";
 }
 
+export function shouldAutoOpenOwnerOnboarding(pathname: string) {
+  return getDashboardPathOwner(pathname) === "react";
+}
+
 export function navigateToDashboardSection(section: DashboardSection) {
   if (typeof window !== "undefined") {
     window.location.assign(getDashboardDestination(section).href);
