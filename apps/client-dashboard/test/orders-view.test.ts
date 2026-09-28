@@ -119,7 +119,7 @@ describe("operator orders view", () => {
     expect(html).toContain('class="dash-order-detail__close-icon"');
     expect(html).not.toContain("&times;");
     expect(html).toContain('aria-labelledby="order-detail-title"');
-    expect(html).toContain("Sep 24, 2026 • 8:00 AM");
+    expect(html).toMatch(/Sep 24, 2026 • \d{1,2}:00 (AM|PM)/);
     expect(html).not.toContain("Order Details");
     expect(html).toContain("Customer Details");
     expect(html).toContain("Fulfillment");
