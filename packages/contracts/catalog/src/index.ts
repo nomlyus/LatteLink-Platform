@@ -65,7 +65,7 @@ function trimToUndefined(value: string | undefined) {
 }
 
 function normalizeSelectionType(selectionType: CustomizationSelectionTypeInput): CustomizationSelectionType {
-  return selectionType === "single" ? "single" : "multiple";
+  return selectionType === "single" || selectionType === "boolean" ? "single" : "multiple";
 }
 
 function dedupeById<TValue extends { id: string }>(values: TValue[]): TValue[] {
@@ -74,6 +74,20 @@ function dedupeById<TValue extends { id: string }>(values: TValue[]): TValue[] {
     map.set(value.id, value);
   }
   return Array.from(map.values());
+}
+
+function addDuplicateIdIssues(values: readonly string[], path: (string | number)[], label: string, context: z.RefinementCtx) {
+  const seen = new Set<string>();
+  for (const value of values) {
+    if (seen.has(value)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path,
+        message: `${label} contains duplicate id "${value}".`
+      });
+    }
+    seen.add(value);
+  }
 }
 
 function dedupeSelections(
@@ -208,6 +222,82 @@ export const menuItemCustomizationGroupSchema = z
   })
   .transform((value) => normalizeCustomizationGroup(value));
 
+/**
+ * Canonical catalog terminology. The older customization schemas above remain
+ * as a compatibility boundary for deployed mobile clients and imported menu
+ * payloads, but new persistence and admin contracts use these types.
+ */
+export const modifierOptionSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  description: z.string().default(""),
+  priceDeltaCents: z.number().int(),
+  default: z.boolean().default(false),
+  available: z.boolean().default(true),
+  sortOrder: z.number().int().nonnegative().default(0),
+  displayStyle: customizationOptionDisplayStyleSchema
+});
+
+export const modifierGroupSelectionTypeSchema = z.enum(["single", "multiple"]);
+
+export const modifierGroupSchema = z
+  .object({
+    id: z.string().min(1),
+    sourceGroupId: z.string().min(1).optional(),
+    label: z.string().min(1),
+    description: z.string().default(""),
+    selectionType: modifierGroupSelectionTypeSchema,
+    required: z.boolean().default(false),
+    minSelections: z.number().int().nonnegative().default(0),
+    maxSelections: z.number().int().positive().default(1),
+    sortOrder: z.number().int().nonnegative().default(0),
+    displayStyle: customizationDisplayStyleSchema,
+    options: z.array(modifierOptionSchema).min(1)
+  })
+  .superRefine((value, context) => {
+    addDuplicateIdIssues(value.options.map((option) => option.id), ["options"], "Modifier options", context);
+    if (value.selectionType === "single" && value.maxSelections !== 1) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["maxSelections"],
+        message: "Single-selection modifier groups must have maxSelections equal to 1."
+      });
+    }
+    if (value.minSelections > value.maxSelections) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["minSelections"],
+        message: "minSelections cannot exceed maxSelections."
+      });
+    }
+  });
+
+export const itemModifierGroupAssignmentSchema = z.object({
+  modifierGroupId: z.string().min(1),
+  sortOrder: z.number().int().nonnegative().default(0),
+  requiredOverride: z.boolean().nullable().optional(),
+  minSelectionsOverride: z.number().int().nonnegative().nullable().optional(),
+  maxSelectionsOverride: z.number().int().positive().nullable().optional()
+}).superRefine((value, context) => {
+  if (
+    value.minSelectionsOverride !== null &&
+    value.minSelectionsOverride !== undefined &&
+    value.maxSelectionsOverride !== null &&
+    value.maxSelectionsOverride !== undefined &&
+    value.minSelectionsOverride > value.maxSelectionsOverride
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["minSelectionsOverride"],
+      message: "minSelectionsOverride cannot exceed maxSelectionsOverride."
+    });
+  }
+});
+
+export type ModifierOption = z.output<typeof modifierOptionSchema>;
+export type ModifierGroup = z.output<typeof modifierGroupSchema>;
+export type ItemModifierGroupAssignment = z.output<typeof itemModifierGroupAssignmentSchema>;
+
 export const menuItemCustomizationSelectionSchema = z.object({
   groupId: z.string().min(1),
   optionId: z.string().min(1)
@@ -228,12 +318,17 @@ export const menuItemSchema = z.object({
   priceCents: z.number().int().nonnegative(),
   badgeCodes: z.array(z.string()).default([]),
   visible: z.boolean(),
+  available: z.boolean().default(true),
+  featured: z.boolean().default(false),
   customizationGroups: z.array(menuItemCustomizationGroupSchema).default([])
 });
 
 export const menuCategorySchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
+  description: z.string().default(""),
+  visible: z.boolean().default(true),
+  sortOrder: z.number().int().nonnegative().default(0),
   items: z.array(menuItemSchema)
 });
 
@@ -320,43 +415,141 @@ export const adminMenuItemSchema = z.object({
   itemId: z.string().min(1),
   categoryId: z.string().min(1),
   categoryTitle: z.string().min(1),
+  categoryIds: z.array(z.string().min(1)).default([]),
   name: z.string().min(1),
   description: z.string().optional(),
   imageUrl: z.string().min(1).optional(),
   priceCents: z.number().int().nonnegative(),
+  badgeCodes: z.array(z.string()).default([]),
   visible: z.boolean(),
+  available: z.boolean().default(true),
+  featured: z.boolean().default(false),
+  modifierGroupAssignments: z.array(itemModifierGroupAssignmentSchema).default([]),
+  // Compatibility projection for older dashboard/mobile tooling. It is no
+  // longer the canonical persistence representation.
+  customizationGroups: z.array(menuItemCustomizationGroupSchema).default([]),
   sortOrder: z.number().int().nonnegative()
 });
 
 export const adminMenuCategorySchema = z.object({
   categoryId: z.string().min(1),
   title: z.string().min(1),
+  description: z.string().default(""),
+  visible: z.boolean().default(true),
+  sortOrder: z.number().int().nonnegative().default(0),
   items: z.array(adminMenuItemSchema)
 });
 
 export const adminMenuResponseSchema = z.object({
   locationId: z.string().min(1),
-  categories: z.array(adminMenuCategorySchema)
+  categories: z.array(adminMenuCategorySchema),
+  modifierGroups: z.array(modifierGroupSchema).default([])
 });
 
 export const adminMenuItemUpdateSchema = z.object({
   name: z.string().min(1),
+  description: z.string().optional(),
   priceCents: z.number().int().nonnegative(),
   visible: z.boolean(),
-  imageUrl: z.string().url().nullable().optional()
+  available: z.boolean().optional(),
+  featured: z.boolean().optional(),
+  badgeCodes: z.array(z.string()).optional(),
+  categoryIds: z.array(z.string().min(1)).optional(),
+  modifierGroupAssignments: z.array(itemModifierGroupAssignmentSchema).optional(),
+  customizationGroups: z.array(menuItemCustomizationGroupSchema).optional(),
+  imageUrl: z.string().url().nullable().optional(),
+  sortOrder: z.number().int().nonnegative().optional()
+}).superRefine((value, context) => {
+  if (value.categoryIds) {
+    addDuplicateIdIssues(value.categoryIds, ["categoryIds"], "Category memberships", context);
+  }
+  if (value.modifierGroupAssignments) {
+    addDuplicateIdIssues(
+      value.modifierGroupAssignments.map((assignment) => assignment.modifierGroupId),
+      ["modifierGroupAssignments"],
+      "Modifier group assignments",
+      context
+    );
+  }
 });
 
 export const adminMenuItemCreateSchema = z.object({
-  categoryId: z.string().min(1),
+  categoryId: z.string().min(1).optional(),
+  categoryIds: z.array(z.string().min(1)).min(1).optional(),
   name: z.string().min(1),
-  description: z.string().optional(),
+  description: z.string().default(""),
   imageUrl: z.string().url().nullable().optional(),
   priceCents: z.number().int().nonnegative(),
-  visible: z.boolean()
+  badgeCodes: z.array(z.string()).default([]),
+  visible: z.boolean().default(true),
+  available: z.boolean().default(true),
+  featured: z.boolean().default(false),
+  modifierGroupAssignments: z.array(itemModifierGroupAssignmentSchema).default([]),
+  sortOrder: z.number().int().nonnegative().optional()
+}).superRefine((value, context) => {
+  if (value.categoryIds) {
+    addDuplicateIdIssues(value.categoryIds, ["categoryIds"], "Category memberships", context);
+  }
+  addDuplicateIdIssues(
+    value.modifierGroupAssignments.map((assignment) => assignment.modifierGroupId),
+    ["modifierGroupAssignments"],
+    "Modifier group assignments",
+    context
+  );
+  if (!value.categoryId && (!value.categoryIds || value.categoryIds.length === 0)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["categoryIds"], message: "At least one category is required." });
+  }
 });
 
 export const adminMenuItemVisibilityUpdateSchema = z.object({
   visible: z.boolean()
+});
+
+export const adminMenuCategoryCreateSchema = z.object({
+  title: z.string().trim().min(1),
+  description: z.string().default(""),
+  visible: z.boolean().default(true),
+  sortOrder: z.number().int().nonnegative().optional()
+});
+
+export const adminMenuCategoryUpdateSchema = adminMenuCategoryCreateSchema.extend({
+  categoryId: z.string().min(1),
+  sortOrder: z.number().int().nonnegative()
+});
+
+export const adminMenuCategoryReorderSchema = z.object({
+  categoryIds: z.array(z.string().min(1))
+});
+
+export const adminModifierGroupCreateSchema = z.object({
+  id: z.string().min(1).optional(),
+  sourceGroupId: z.string().min(1).optional(),
+  label: z.string().min(1),
+  description: z.string().default(""),
+  selectionType: modifierGroupSelectionTypeSchema,
+  required: z.boolean().default(false),
+  minSelections: z.number().int().nonnegative().default(0),
+  maxSelections: z.number().int().positive().default(1),
+  sortOrder: z.number().int().nonnegative().default(0),
+  displayStyle: customizationDisplayStyleSchema,
+  options: z.array(modifierOptionSchema).min(1)
+}).superRefine((value, context) => {
+  addDuplicateIdIssues(value.options.map((option) => option.id), ["options"], "Modifier options", context);
+  if (value.selectionType === "single" && value.maxSelections !== 1) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["maxSelections"], message: "Single-selection modifier groups must have maxSelections equal to 1." });
+  }
+  if (value.minSelections > value.maxSelections) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["minSelections"], message: "minSelections cannot exceed maxSelections." });
+  }
+});
+
+export const adminModifierGroupUpdateSchema = z.intersection(
+  adminModifierGroupCreateSchema,
+  z.object({ id: z.string().min(1) })
+);
+
+export const adminModifierGroupReorderSchema = z.object({
+  modifierGroupIds: z.array(z.string().min(1))
 });
 
 export const adminMutationSuccessSchema = z.object({
@@ -1259,6 +1452,12 @@ export type AdminStoreConfig = z.output<typeof adminStoreConfigSchema>;
 export type AdminMenuItemUpdate = z.output<typeof adminMenuItemUpdateSchema>;
 export type AdminMenuItemCreate = z.output<typeof adminMenuItemCreateSchema>;
 export type AdminMenuItemVisibilityUpdate = z.output<typeof adminMenuItemVisibilityUpdateSchema>;
+export type AdminMenuCategoryCreate = z.output<typeof adminMenuCategoryCreateSchema>;
+export type AdminMenuCategoryUpdate = z.output<typeof adminMenuCategoryUpdateSchema>;
+export type AdminMenuCategoryReorder = z.output<typeof adminMenuCategoryReorderSchema>;
+export type AdminModifierGroupCreate = z.output<typeof adminModifierGroupCreateSchema>;
+export type AdminModifierGroupUpdate = z.output<typeof adminModifierGroupUpdateSchema>;
+export type AdminModifierGroupReorder = z.output<typeof adminModifierGroupReorderSchema>;
 export type AppConfigTheme = z.output<typeof appConfigThemeSchema>;
 export type AppConfigHeader = z.output<typeof appConfigHeaderSchema>;
 export type AppConfigBrand = z.output<typeof appConfigBrandSchema>;
@@ -1664,6 +1863,54 @@ export const catalogContract = {
       path: "/admin/menu/:itemId/image-upload",
       request: adminMenuItemImageUploadRequestSchema,
       response: adminMenuItemImageUploadResponseSchema
+    },
+    adminMenuCategoryCreate: {
+      method: "POST",
+      path: "/admin/menu/categories",
+      request: adminMenuCategoryCreateSchema,
+      response: adminMenuCategorySchema
+    },
+    adminMenuCategoryUpdate: {
+      method: "PUT",
+      path: "/admin/menu/categories/:categoryId",
+      request: adminMenuCategoryUpdateSchema,
+      response: adminMenuCategorySchema
+    },
+    adminMenuCategoryReorder: {
+      method: "POST",
+      path: "/admin/menu/categories/reorder",
+      request: adminMenuCategoryReorderSchema,
+      response: adminMenuResponseSchema
+    },
+    adminMenuCategoryDelete: {
+      method: "DELETE",
+      path: "/admin/menu/categories/:categoryId",
+      request: z.undefined(),
+      response: adminMutationSuccessSchema
+    },
+    adminModifierGroups: {
+      method: "GET",
+      path: "/admin/menu/modifier-groups",
+      request: z.undefined(),
+      response: z.array(modifierGroupSchema)
+    },
+    adminModifierGroupCreate: {
+      method: "POST",
+      path: "/admin/menu/modifier-groups",
+      request: adminModifierGroupCreateSchema,
+      response: modifierGroupSchema
+    },
+    adminModifierGroupUpdate: {
+      method: "PUT",
+      path: "/admin/menu/modifier-groups/:modifierGroupId",
+      request: adminModifierGroupUpdateSchema,
+      response: modifierGroupSchema
+    },
+    adminModifierGroupDelete: {
+      method: "DELETE",
+      path: "/admin/menu/modifier-groups/:modifierGroupId",
+      request: z.undefined(),
+      response: adminMutationSuccessSchema
     },
     adminCards: {
       method: "GET",

@@ -48,9 +48,16 @@ These helpers are the shared source of truth for:
 
 ### Storage Shape
 
-Catalog storage remains relational plus JSON:
-- menu items live in relational catalog tables
-- customization configuration is carried in `catalog_menu_items.customization_groups_json`
+Catalog storage is relational, with a temporary legacy JSON column retained for
+migration, rollback, and older write-payload compatibility:
+- menu items and category memberships live in relational catalog tables
+- reusable modifier groups, options, and item assignments live in relational catalog tables
+- `catalog_menu_items.customization_groups_json` is not authoritative after migration 0053
+- public Catalog reads, operator reads, Orders quoting, and external replacement syncs use the relational model
+
+The retained JSON column may drift after relational mutations. No active
+production read path should use it as a fallback; it is scheduled for removal
+only after the relational model has been proven in production.
 
 The JSON field should serialize cleanly to the contract schema. Example reusable group:
 

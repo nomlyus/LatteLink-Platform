@@ -81,6 +81,8 @@ export function sanitizeCustomizationGroupsForSubmit(
     description: group.description,
     selectionType: group.selectionType,
     required: group.required,
+    minSelections: group.minSelections,
+    maxSelections: group.maxSelections,
     sortOrder: group.sortOrder,
     displayStyle: group.displayStyle,
     options: group.options.map((option) => ({

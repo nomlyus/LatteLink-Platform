@@ -6,6 +6,7 @@ import {
   type OperatorMenuCategory,
   type OperatorMenuItem
 } from "../model";
+import { isPlatformManagedMenu } from "@lattelink/contracts-catalog";
 import { ensureMenuCustomizationDraft } from "../customizations";
 import { renderLocationSelectionNotice, renderSectionHeading } from "./common";
 
@@ -206,6 +207,8 @@ function renderMenuItemForm(
   canToggleVisibility: boolean
 ) {
   const customizationGroups = ensureMenuCustomizationDraft(item.itemId);
+  const categoryIds = new Set(item.categoryIds?.length ? item.categoryIds : [item.categoryId]);
+  const modifierGroupIds = new Set(item.modifierGroupAssignments.map((assignment) => assignment.modifierGroupId));
   const visibilityButton = canToggleVisibility
     ? `
         <button class="button button--secondary" type="button" data-action="toggle-menu-visibility" data-item-id="${escapeHtml(item.itemId)}" data-visible="${item.visible ? "false" : "true"}" ${state.busyMenuVisibilityItemId === item.itemId ? "disabled" : ""}>
@@ -227,10 +230,48 @@ function renderMenuItemForm(
           <span>Price (cents)</span>
           <input name="priceCents" type="number" min="0" step="1" value="${item.priceCents}" ${canWrite ? "" : "disabled"} required />
         </label>
+        <label class="field dash-field-inline">
+          <span>Description</span>
+          <input name="description" value="${escapeHtml(item.description ?? "")}" ${canWrite ? "" : "disabled"} />
+        </label>
+        <label class="field dash-field-inline">
+          <span>Badges</span>
+          <input name="badgeCodes" value="${escapeHtml(item.badgeCodes.join(", "))}" ${canWrite ? "" : "disabled"} placeholder="new, popular" />
+        </label>
+        <label class="field dash-field-inline">
+          <span>Item order</span>
+          <input name="sortOrder" type="number" min="0" step="1" value="${item.sortOrder}" ${canWrite ? "" : "disabled"} />
+        </label>
         <label class="toggle dash-toggle-inline">
           <input type="checkbox" name="visible" ${item.visible ? "checked" : ""} ${canWrite ? "" : "disabled"} />
           <span>${item.visible ? "Visible in app" : "Hidden from app"}</span>
         </label>
+        <label class="toggle dash-toggle-inline">
+          <input type="checkbox" name="available" ${item.available ? "checked" : ""} ${canWrite ? "" : "disabled"} />
+          <span>Available to order</span>
+        </label>
+        <label class="toggle dash-toggle-inline">
+          <input type="checkbox" name="featured" ${item.featured ? "checked" : ""} ${canWrite ? "" : "disabled"} />
+          <span>Featured</span>
+        </label>
+        <div class="dash-menu-assignment-field">
+          <strong>Categories</strong>
+          ${state.menuCategories
+            .map(
+              (category) => `<label class="toggle dash-toggle-inline"><input type="checkbox" name="categoryIds" value="${escapeHtml(category.categoryId)}" ${categoryIds.has(category.categoryId) ? "checked" : ""} ${canWrite ? "" : "disabled"} /><span>${escapeHtml(category.title)}</span></label>`
+            )
+            .join("")}
+        </div>
+        <div class="dash-menu-assignment-field">
+          <strong>Modifier groups</strong>
+          ${state.menuModifierGroups.length > 0
+            ? state.menuModifierGroups
+                .map(
+                  (group) => `<label class="toggle dash-toggle-inline"><input type="checkbox" name="modifierGroupIds" value="${escapeHtml(group.id)}" ${modifierGroupIds.has(group.id) ? "checked" : ""} ${canWrite ? "" : "disabled"} /><span>${escapeHtml(group.label)}</span></label>`
+                )
+                .join("")
+            : `<span class="muted-copy">Create a modifier group below first.</span>`}
+        </div>
         <div class="dash-menu-image-field dash-field-span-full">
           <div class="dash-menu-image-preview">
             ${item.imageUrl ? `<img src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.name)}" loading="lazy" />` : `<div class="dash-menu-image-preview__empty">No image uploaded</div>`}
@@ -307,6 +348,65 @@ function renderMenuItemDetailsModal(canWrite: boolean, canToggleVisibility: bool
   `;
 }
 
+function checked(value: boolean) {
+  return value ? "checked" : "";
+}
+
+function uniqueMenuItems() {
+  const items = new Map<string, OperatorMenuItem>();
+  for (const category of state.menuCategories) {
+    for (const item of category.items) {
+      if (!items.has(item.itemId)) items.set(item.itemId, item);
+    }
+  }
+  return [...items.values()];
+}
+
+function renderCategoryPanel(canWrite: boolean) {
+  const categories = state.menuCategories;
+  return `
+    <article class="dash-surface">
+      <div class="dash-surface-head"><div><div class="dash-panel-title">Categories</div><h3 class="dash-surface-title">Organize the customer menu</h3><p class="muted-copy">Categories are presentation containers. Removing one never removes its items.</p></div></div>
+      ${canWrite ? `<form class="dash-data-row" data-form="menu-category-create"><div class="dash-data-row__identity"><strong>New category</strong><span>Add a category without creating any items.</span></div><div class="dash-data-row__fields"><label class="field dash-field-inline"><span>Name</span><input name="title" required placeholder="Seasonal drinks" /></label><label class="field dash-field-inline"><span>Description</span><input name="description" placeholder="Optional description" /></label><label class="field dash-field-inline"><span>Order</span><input name="sortOrder" type="number" min="0" step="1" value="${categories.length}" /></label><label class="toggle dash-toggle-inline"><input type="checkbox" name="visible" checked /><span>Visible</span></label></div><div class="dash-data-row__actions"><button class="button button--primary" type="submit">Create category</button></div></form>` : ""}
+      <div class="dash-data-group__rows">
+        ${categories.length === 0 ? `<div class="dash-empty-surface"><p class="muted-copy">No categories have been configured.</p></div>` : categories.map((category, index) => `
+          <form class="dash-data-row" data-form="menu-category" data-category-id="${escapeHtml(category.categoryId)}">
+            <div class="dash-data-row__identity"><strong>${escapeHtml(category.title)}</strong><span>${category.items.length} item${category.items.length === 1 ? "" : "s"}</span></div>
+            <div class="dash-data-row__fields"><label class="field dash-field-inline"><span>Name</span><input name="title" value="${escapeHtml(category.title)}" ${canWrite ? "" : "disabled"} required /></label><label class="field dash-field-inline"><span>Description</span><input name="description" value="${escapeHtml(category.description)}" ${canWrite ? "" : "disabled"} /></label><label class="field dash-field-inline"><span>Order</span><input name="sortOrder" type="number" min="0" step="1" value="${category.sortOrder}" ${canWrite ? "" : "disabled"} /></label><label class="toggle dash-toggle-inline"><input type="checkbox" name="visible" ${checked(category.visible)} ${canWrite ? "" : "disabled"} /><span>${category.visible ? "Visible" : "Hidden"}</span></label></div>
+            <div class="dash-data-row__actions">${canWrite ? `<button class="button button--secondary" type="submit">Save</button>${index > 0 ? `<button class="button button--ghost" type="button" data-action="reorder-menu-category" data-category-id="${escapeHtml(category.categoryId)}" data-direction="up">Move up</button>` : ""}${index < categories.length - 1 ? `<button class="button button--ghost" type="button" data-action="reorder-menu-category" data-category-id="${escapeHtml(category.categoryId)}" data-direction="down">Move down</button>` : ""}<button class="button button--ghost" type="button" data-action="delete-menu-category" data-category-id="${escapeHtml(category.categoryId)}">Delete</button>` : ""}</div>
+          </form>`).join("")}
+      </div>
+    </article>
+  `;
+}
+
+function renderModifierGroupForm(group: (typeof state.menuModifierGroups)[number] | null, itemCount = 0, canWrite = true) {
+  const id = group?.id ?? "";
+  const disabled = canWrite ? "" : "disabled";
+  const options = group?.options ?? [{ id: `option-${Date.now()}`, label: "New option", description: "", priceDeltaCents: 0, default: false, available: true, sortOrder: 0 }];
+  return `
+    <form class="dash-data-row" data-form="modifier-group" data-modifier-group-id="${escapeHtml(id)}">
+      <div class="dash-data-row__identity"><strong>${escapeHtml(group?.label ?? "New modifier group")}</strong><span>${itemCount ? `Used by ${itemCount} item${itemCount === 1 ? "" : "s"}` : "Not assigned to items"}</span></div>
+      <div class="dash-data-row__fields"><label class="field dash-field-inline"><span>Group name</span><input name="label" value="${escapeHtml(group?.label ?? "")}" ${disabled} required /></label><label class="field dash-field-inline"><span>Description</span><input name="description" value="${escapeHtml(group?.description ?? "")}" ${disabled} /></label><label class="field dash-field-inline"><span>Selection</span><select name="selectionType" ${disabled}><option value="single" ${group?.selectionType === "single" ? "selected" : ""}>Single</option><option value="multiple" ${group?.selectionType === "multiple" ? "selected" : ""}>Multiple</option></select></label><label class="toggle dash-toggle-inline"><input type="checkbox" name="required" ${checked(group?.required ?? false)} ${disabled} /><span>Required</span></label><label class="field dash-field-inline"><span>Minimum</span><input name="minSelections" type="number" min="0" step="1" value="${group?.minSelections ?? 0}" ${disabled} /></label><label class="field dash-field-inline"><span>Maximum</span><input name="maxSelections" type="number" min="1" step="1" value="${group?.maxSelections ?? 1}" ${disabled} /></label><label class="field dash-field-inline"><span>Order</span><input name="sortOrder" type="number" min="0" step="1" value="${group?.sortOrder ?? 0}" ${disabled} /></label></div>
+      <div class="dash-customization-options-stack">${options.map((option, index) => `<div class="dash-customization-option-row"><label class="field dash-field-inline"><span>Option</span><input name="optionLabel" value="${escapeHtml(option.label)}" ${disabled} /></label><label class="field dash-field-inline"><span>Description</span><input name="optionDescription" value="${escapeHtml(option.description ?? "")}" ${disabled} /></label><label class="field dash-field-inline"><span>Price delta (cents)</span><input name="optionPriceDeltaCents" type="number" step="1" value="${option.priceDeltaCents}" ${disabled} /></label><label class="field dash-field-inline"><span>Order</span><input name="optionSortOrder" type="number" min="0" step="1" value="${option.sortOrder ?? index}" ${disabled} /></label><label class="toggle dash-toggle-inline"><input name="optionDefault_${index}" type="checkbox" ${checked(option.default ?? false)} ${disabled} /><span>Default</span></label><label class="toggle dash-toggle-inline"><input name="optionAvailable_${index}" type="checkbox" ${checked(option.available ?? true)} ${disabled} /><span>Available</span></label><label class="toggle dash-toggle-inline"><input name="optionRemove_${index}" type="checkbox" ${disabled} /><span>Remove</span></label><input type="hidden" name="optionId" value="${escapeHtml(option.id)}" /></div>`).join("")}</div>${canWrite ? `<button class="button button--ghost" type="button" data-action="add-modifier-option">Add option</button>` : ""}
+      <div class="dash-data-row__actions">${canWrite ? `<button class="button button--secondary" type="submit">${id ? "Save group" : "Create group"}</button>${id ? `<button class="button button--ghost" type="button" data-action="delete-modifier-group" data-modifier-group-id="${escapeHtml(id)}">Delete</button>` : ""}` : `<span class="muted-copy">Read only</span>`}</div>
+    </form>
+  `;
+}
+
+function renderModifierGroupPanel(canWrite: boolean) {
+  const usage = new Map<string, number>();
+  for (const item of uniqueMenuItems()) for (const assignment of item.modifierGroupAssignments) usage.set(assignment.modifierGroupId, (usage.get(assignment.modifierGroupId) ?? 0) + 1);
+  return `<article class="dash-surface"><div class="dash-surface-head"><div><div class="dash-panel-title">Modifier Groups</div><h3 class="dash-surface-title">Reusable customer choices</h3><p class="muted-copy">Create a group once, then assign it to as many items as need it.</p></div></div>${canWrite ? renderModifierGroupForm(null, 0, true) : ""}<div class="dash-data-group__rows">${state.menuModifierGroups.length === 0 ? `<div class="dash-empty-surface"><p class="muted-copy">No modifier groups have been configured.</p></div>` : state.menuModifierGroups.map((group) => renderModifierGroupForm(group, usage.get(group.id) ?? 0, canWrite)).join("")}</div></article>`;
+}
+
+function renderItemForm(item: OperatorMenuItem, canWrite: boolean, canToggleVisibility: boolean) {
+  const categoryIds = new Set(item.categoryIds.length > 0 ? item.categoryIds : [item.categoryId]);
+  const groupIds = new Set(item.modifierGroupAssignments.map((assignment) => assignment.modifierGroupId));
+  const visibilityButton = canToggleVisibility ? `<button class="button ${item.visible ? "button--secondary" : "button--ghost"}" type="button" data-action="toggle-menu-visibility" data-item-id="${escapeHtml(item.itemId)}" data-visible="${item.visible ? "false" : "true"}" ${state.busyMenuVisibilityItemId === item.itemId ? "disabled" : ""}>${state.busyMenuVisibilityItemId === item.itemId ? "Saving…" : item.visible ? "Hide" : "Show"}</button>` : "";
+  return `<form class="dash-data-row" data-form="menu-item" data-item-id="${escapeHtml(item.itemId)}"><div class="dash-data-row__identity"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.description || item.itemId)}</span></div><div class="dash-data-row__fields"><label class="field dash-field-inline"><span>Name</span><input name="name" value="${escapeHtml(item.name)}" ${canWrite ? "" : "disabled"} required /></label><label class="field dash-field-inline"><span>Description</span><input name="description" value="${escapeHtml(item.description ?? "")}" ${canWrite ? "" : "disabled"} /></label><label class="field dash-field-inline"><span>Price (cents)</span><input name="priceCents" type="number" min="0" step="1" value="${item.priceCents}" ${canWrite ? "" : "disabled"} required /></label><label class="field dash-field-inline"><span>Badges</span><input name="badgeCodes" value="${escapeHtml(item.badgeCodes.join(", "))}" ${canWrite ? "" : "disabled"} placeholder="new, popular" /></label><label class="field dash-field-inline"><span>Item order</span><input name="sortOrder" type="number" min="0" step="1" value="${item.sortOrder}" ${canWrite ? "" : "disabled"} /></label><label class="toggle dash-toggle-inline"><input type="checkbox" name="visible" ${checked(item.visible)} ${canWrite ? "" : "disabled"} /><span>Visible</span></label><label class="toggle dash-toggle-inline"><input type="checkbox" name="available" ${checked(item.available)} ${canWrite ? "" : "disabled"} /><span>Available to order</span></label><label class="toggle dash-toggle-inline"><input type="checkbox" name="featured" ${checked(item.featured)} ${canWrite ? "" : "disabled"} /><span>Featured</span></label><div class="dash-menu-assignment-field"><strong>Categories</strong>${state.menuCategories.map((category) => `<label class="toggle dash-toggle-inline"><input type="checkbox" name="categoryIds" value="${escapeHtml(category.categoryId)}" ${checked(categoryIds.has(category.categoryId))} ${canWrite ? "" : "disabled"} /><span>${escapeHtml(category.title)}</span></label>`).join("")}</div><div class="dash-menu-assignment-field"><strong>Modifier groups</strong>${state.menuModifierGroups.length > 0 ? state.menuModifierGroups.map((group) => `<label class="toggle dash-toggle-inline"><input type="checkbox" name="modifierGroupIds" value="${escapeHtml(group.id)}" ${checked(groupIds.has(group.id))} ${canWrite ? "" : "disabled"} /><span>${escapeHtml(group.label)}</span></label>`).join("") : `<span class="muted-copy">Create a group below first.</span>`}${canWrite ? `<button class="button button--ghost" type="button" data-action="focus-modifier-group-create">Create new modifier group</button>` : ""}</div><div class="dash-menu-image-field"><div class="dash-menu-image-preview">${item.imageUrl ? `<img src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.name)}" loading="lazy" />` : `<div class="dash-menu-image-preview__empty">No image uploaded</div>`}</div><div class="dash-menu-image-field__controls"><label class="field dash-field-inline dash-field-span-full"><span>${item.imageUrl ? "Replace image" : "Upload image"}</span><input name="imageFile" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" ${canWrite ? "" : "disabled"} /></label>${item.imageUrl ? `<label class="toggle dash-toggle-inline"><input type="checkbox" name="removeImage" ${canWrite ? "" : "disabled"} /><span>Remove current image</span></label>` : ""}</div></div></div><div class="dash-data-row__actions"><span class="dash-status-badge dash-status-badge--${item.visible ? "success" : "neutral"}">${item.visible ? "Visible" : "Hidden"}${item.available ? "" : " · Unavailable"}</span>${canWrite ? `<button class="button button--secondary" type="submit" ${state.busyMenuItemId === item.itemId ? "disabled" : ""}>${state.busyMenuItemId === item.itemId ? "Saving…" : "Save"}</button><button class="button button--ghost" type="button" data-action="delete-menu-item" data-item-id="${escapeHtml(item.itemId)}" ${state.busyDeleteMenuItemId === item.itemId ? "disabled" : ""}>${state.busyDeleteMenuItemId === item.itemId ? "Removing…" : "Remove"}</button>` : ""}${visibilityButton}</div></form>`;
+}
+
 export function renderMenuSection() {
   if (isAllLocationsSelected()) {
     return `
@@ -314,7 +414,7 @@ export function renderMenuSection() {
         ${renderSectionHeading({
           eyebrow: "Menu",
           title: "Location-specific menu management",
-          description: "Choose one location to edit items, pricing, visibility, and customizations."
+          description: "Choose one location to edit items, categories, pricing, visibility, and reusable modifiers."
         })}
         ${renderLocationSelectionNotice("Menu controls stay scoped to a single location so edits do not accidentally affect the wrong storefront.")}
       </section>
@@ -323,12 +423,16 @@ export function renderMenuSection() {
 
   const canWrite = canCreateMenuItems(state.session?.operator ?? null, state.appConfig);
   const canToggleVisibility = canToggleMenuItemVisibility(state.session?.operator ?? null, state.appConfig);
+  const accessNotice = !isPlatformManagedMenu(state.appConfig)
+    ? `<article class="dash-surface dash-empty-surface"><p class="muted-copy">This store is using an external menu sync. Dashboard catalog mutations are disabled until the source is platform-managed.</p></article>`
+    : "";
   const entries = getMenuTableEntries();
   const paginatedItems = paginateMenuItems(entries);
   const canCreateIntoExistingCategory = canWrite && state.menuCategories.length > 0;
 
   return `
     <section class="dash-section dash-section--menu">
+      ${accessNotice}
       <div class="dash-order-toolbar dash-menu-toolbar">
         ${canCreateIntoExistingCategory ? `
           <button class="button button--ghost dash-menu-add-button" type="button" data-action="open-menu-create-wizard" aria-label="Add menu item" title="Add menu item">
@@ -340,6 +444,8 @@ export function renderMenuSection() {
         ${renderMenuTable(paginatedItems.items)}
       </article>
       ${renderMenuPagination(paginatedItems.page, paginatedItems.pageCount)}
+      ${renderCategoryPanel(canWrite)}
+      ${renderModifierGroupPanel(canWrite)}
     </section>
     ${renderMenuItemDetailsModal(canWrite, canToggleVisibility)}
   `;

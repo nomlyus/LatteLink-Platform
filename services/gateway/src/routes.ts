@@ -44,13 +44,18 @@ import {
   refreshRequestSchema
 } from "@lattelink/contracts-auth";
 import {
+  adminMenuCategoryCreateSchema,
+  adminMenuCategoryReorderSchema,
+  adminMenuCategoryUpdateSchema,
+  adminMenuCategorySchema,
   adminMenuItemCreateSchema,
   adminMenuItemImageUploadRequestSchema,
   adminMenuItemImageUploadResponseSchema,
   adminMenuItemSchema,
   adminMenuItemUpdateSchema,
   adminMenuItemVisibilityUpdateSchema,
-  menuItemCustomizationGroupSchema,
+  adminMenuResponseSchema,
+  adminModifierGroupCreateSchema,
   adminMutationSuccessSchema,
   adminStoreConfigSchema,
   adminStoreConfigUpdateSchema,
@@ -98,6 +103,7 @@ import {
   stripeConnectStatusRefreshRequestSchema,
   stripeConnectStatusRefreshResponseSchema,
   menuResponseSchema,
+  modifierGroupSchema,
   storeConfigResponseSchema
 } from "@lattelink/contracts-catalog";
 import {
@@ -156,21 +162,8 @@ const tenantParamsSchema = z.object({ tenantId: z.string().min(1) });
 const adminLocationQuerySchema = z.object({
   locationId: z.string().trim().min(1).optional()
 });
-const adminMenuItemWithCustomizationsSchema = adminMenuItemSchema.extend({
-  customizationGroups: z.array(menuItemCustomizationGroupSchema).default([])
-});
-const adminMenuCategoryWithCustomizationsSchema = z.object({
-  categoryId: z.string().min(1),
-  title: z.string().min(1),
-  items: z.array(adminMenuItemWithCustomizationsSchema)
-});
-const adminMenuResponseWithCustomizationsSchema = z.object({
-  locationId: z.string().min(1),
-  categories: z.array(adminMenuCategoryWithCustomizationsSchema)
-});
-const adminMenuItemUpdateWithCustomizationsSchema = adminMenuItemUpdateSchema.extend({
-  customizationGroups: z.array(menuItemCustomizationGroupSchema).optional()
-});
+const categoryParamsSchema = z.object({ categoryId: z.string().min(1) });
+const modifierGroupParamsSchema = z.object({ modifierGroupId: z.string().min(1) });
 const cancelOrderRequestSchema = z.object({ reason: z.string().min(1) });
 const supportCancelOrderRequestSchema = cancelOrderRequestSchema.extend({
   locationId: z.string().min(1).optional()
@@ -4193,7 +4186,184 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
           "x-gateway-token": gatewayInternalApiToken,
           ...operatorLocationHeader(locationContext.locationId)
         },
-        responseSchema: adminMenuResponseWithCustomizationsSchema
+        responseSchema: adminMenuResponseSchema
+      });
+    }
+  );
+
+  app.post(
+    "/v1/admin/menu/categories",
+    {
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("menu:write"), app.rateLimit(staffWriteRateLimit)]
+    },
+    async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "POST",
+        path: "/v1/catalog/admin/menu/categories",
+        body: adminMenuCategoryCreateSchema.parse(request.body),
+        additionalHeaders: { "x-gateway-token": gatewayInternalApiToken, ...operatorActorHeader(request), ...operatorLocationHeader(locationContext.locationId) },
+        responseSchema: adminMenuCategorySchema
+      });
+    }
+  );
+
+  app.put(
+    "/v1/admin/menu/categories/:categoryId",
+    {
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("menu:write"), app.rateLimit(staffWriteRateLimit)]
+    },
+    async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      const { categoryId } = categoryParamsSchema.parse(request.params);
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "PUT",
+        path: `/v1/catalog/admin/menu/categories/${categoryId}`,
+        body: { categoryId, ...adminMenuCategoryUpdateSchema.omit({ categoryId: true }).parse(request.body) },
+        additionalHeaders: { "x-gateway-token": gatewayInternalApiToken, ...operatorActorHeader(request), ...operatorLocationHeader(locationContext.locationId) },
+        responseSchema: adminMenuCategorySchema
+      });
+    }
+  );
+
+  app.post(
+    "/v1/admin/menu/categories/reorder",
+    {
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("menu:write"), app.rateLimit(staffWriteRateLimit)]
+    },
+    async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "POST",
+        path: "/v1/catalog/admin/menu/categories/reorder",
+        body: adminMenuCategoryReorderSchema.parse(request.body),
+        additionalHeaders: { "x-gateway-token": gatewayInternalApiToken, ...operatorActorHeader(request), ...operatorLocationHeader(locationContext.locationId) },
+        responseSchema: adminMenuResponseSchema
+      });
+    }
+  );
+
+  app.delete(
+    "/v1/admin/menu/categories/:categoryId",
+    {
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("menu:write"), app.rateLimit(staffWriteRateLimit)]
+    },
+    async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      const { categoryId } = categoryParamsSchema.parse(request.params);
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "DELETE",
+        path: `/v1/catalog/admin/menu/categories/${categoryId}`,
+        additionalHeaders: { "x-gateway-token": gatewayInternalApiToken, ...operatorActorHeader(request), ...operatorLocationHeader(locationContext.locationId) },
+        responseSchema: adminMutationSuccessSchema
+      });
+    }
+  );
+
+  app.get(
+    "/v1/admin/menu/modifier-groups",
+    {
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("menu:read"), app.rateLimit(staffReadRateLimit)]
+    },
+    async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "GET",
+        path: "/v1/catalog/admin/menu/modifier-groups",
+        additionalHeaders: { "x-gateway-token": gatewayInternalApiToken, ...operatorLocationHeader(locationContext.locationId) },
+        responseSchema: z.array(modifierGroupSchema)
+      });
+    }
+  );
+
+  app.post(
+    "/v1/admin/menu/modifier-groups",
+    {
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("menu:write"), app.rateLimit(staffWriteRateLimit)]
+    },
+    async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "POST",
+        path: "/v1/catalog/admin/menu/modifier-groups",
+        body: adminModifierGroupCreateSchema.parse(request.body),
+        additionalHeaders: { "x-gateway-token": gatewayInternalApiToken, ...operatorActorHeader(request), ...operatorLocationHeader(locationContext.locationId) },
+        responseSchema: modifierGroupSchema
+      });
+    }
+  );
+
+  app.put(
+    "/v1/admin/menu/modifier-groups/:modifierGroupId",
+    {
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("menu:write"), app.rateLimit(staffWriteRateLimit)]
+    },
+    async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      const { modifierGroupId } = modifierGroupParamsSchema.parse(request.params);
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "PUT",
+        path: `/v1/catalog/admin/menu/modifier-groups/${modifierGroupId}`,
+        body: { ...adminModifierGroupCreateSchema.parse(request.body), id: modifierGroupId },
+        additionalHeaders: { "x-gateway-token": gatewayInternalApiToken, ...operatorActorHeader(request), ...operatorLocationHeader(locationContext.locationId) },
+        responseSchema: modifierGroupSchema
+      });
+    }
+  );
+
+  app.delete(
+    "/v1/admin/menu/modifier-groups/:modifierGroupId",
+    {
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("menu:write"), app.rateLimit(staffWriteRateLimit)]
+    },
+    async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      const { modifierGroupId } = modifierGroupParamsSchema.parse(request.params);
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "DELETE",
+        path: `/v1/catalog/admin/menu/modifier-groups/${modifierGroupId}`,
+        additionalHeaders: { "x-gateway-token": gatewayInternalApiToken, ...operatorActorHeader(request), ...operatorLocationHeader(locationContext.locationId) },
+        responseSchema: adminMutationSuccessSchema
       });
     }
   );
@@ -4408,7 +4578,7 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
       }
 
       const { itemId } = menuItemParamsSchema.parse(request.params);
-      const parsedBody = adminMenuItemUpdateWithCustomizationsSchema.safeParse(request.body);
+      const parsedBody = adminMenuItemUpdateSchema.safeParse(request.body);
       if (!parsedBody.success) {
         return reply.status(400).send(
           invalidRequest(request.id, "Admin menu update payload is invalid", {
@@ -4430,7 +4600,7 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
           ...operatorActorHeader(request),
           ...operatorLocationHeader(locationContext.locationId)
         },
-        responseSchema: adminMenuItemWithCustomizationsSchema
+        responseSchema: adminMenuItemSchema
       });
     }
   );
@@ -4493,7 +4663,7 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
           ...operatorActorHeader(request),
           ...operatorLocationHeader(locationContext.locationId)
         },
-        responseSchema: adminMenuItemWithCustomizationsSchema
+        responseSchema: adminMenuItemSchema
       });
     }
   );
@@ -4525,7 +4695,7 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
           ...operatorActorHeader(request),
           ...operatorLocationHeader(locationContext.locationId)
         },
-        responseSchema: adminMenuItemWithCustomizationsSchema
+        responseSchema: adminMenuItemSchema
       });
     }
   );

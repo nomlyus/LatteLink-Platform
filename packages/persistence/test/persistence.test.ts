@@ -35,6 +35,8 @@ import * as migration0038 from "../src/migrations/0038_mobile_experience_builder
 import * as migration0045 from "../src/migrations/0045_operator_authenticators.js";
 import * as migration0046 from "../src/migrations/0046_reporting_locations_and_indexes.js";
 import * as migration0047 from "../src/migrations/0047_backfill_refund_allocations.js";
+import * as migration0053 from "../src/migrations/0053_catalog_relational_model.js";
+import * as migration0054 from "../src/migrations/0054_catalog_modifier_metadata.js";
 import { resolveMigrationFolderPath } from "../src/migrate.js";
 
 describe("persistence", () => {
@@ -162,7 +164,9 @@ describe("persistence", () => {
       "0038_mobile_experience_builder": migration0038,
       "0045_operator_authenticators": migration0045,
       "0046_reporting_locations_and_indexes": migration0046,
-      "0047_backfill_refund_allocations": migration0047
+      "0047_backfill_refund_allocations": migration0047,
+      "0053_catalog_relational_model": migration0053,
+      "0054_catalog_modifier_metadata": migration0054
     };
 
     expect(basename(resolveMigrationFolderPath())).toBe("migrations");
@@ -192,7 +196,9 @@ describe("persistence", () => {
       "0038_mobile_experience_builder",
       "0045_operator_authenticators",
       "0046_reporting_locations_and_indexes",
-      "0047_backfill_refund_allocations"
+      "0047_backfill_refund_allocations",
+      "0053_catalog_relational_model",
+      "0054_catalog_modifier_metadata"
     ]);
 
     for (const migration of Object.values(migrations)) {

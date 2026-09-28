@@ -101,6 +101,237 @@ describe("catalog service", () => {
     await app.close();
   });
 
+  it("keeps visible unavailable items in the public menu without allowing them to be hidden by availability", async () => {
+    process.env.GATEWAY_INTERNAL_API_TOKEN = "catalog-gateway-token";
+    const app = await buildApp();
+    const updateResponse = await app.inject({
+      method: "PUT",
+      url: "/v1/catalog/admin/menu/latte",
+      headers: {
+        "x-gateway-token": "catalog-gateway-token",
+        "x-operator-location-id": DEFAULT_LOCATION_ID
+      },
+      payload: {
+        name: "Latte",
+        description: "Temporarily paused",
+        priceCents: 525,
+        visible: true,
+        available: false,
+        featured: false,
+        badgeCodes: [],
+        categoryIds: ["espresso"],
+        modifierGroupAssignments: []
+      }
+    });
+    expect(updateResponse.statusCode).toBe(200);
+
+    const publicResponse = await app.inject({ method: "GET", url: `/v1/menu?locationId=${DEFAULT_LOCATION_ID}` });
+    const menu = menuResponseSchema.parse(publicResponse.json());
+    expect(menu.categories.flatMap((category) => category.items).find((item) => item.id === "latte")).toMatchObject({
+      visible: true,
+      available: false
+    });
+    await app.close();
+  });
+
+  it("rejects operator catalog mutations when the location uses external menu sync", async () => {
+    process.env.GATEWAY_INTERNAL_API_TOKEN = "catalog-gateway-token";
+    const app = await buildApp();
+    const headers = {
+      "x-gateway-token": "catalog-gateway-token",
+      "x-operator-location-id": DEFAULT_LOCATION_ID
+    };
+    const configResponse = await app.inject({
+      method: "PUT",
+      url: "/v1/catalog/admin/store/config",
+      headers,
+      payload: {
+        storeName: DEFAULT_BRAND_NAME,
+        locationName: DEFAULT_LOCATION_NAME,
+        hours: "Daily · 7:00 AM - 6:00 PM",
+        pickupInstructions: "Pickup at the counter.",
+        taxRateBasisPoints: 600,
+        capabilities: {
+          menu: { source: "external_sync" },
+          operations: { fulfillmentMode: "staff", liveOrderTrackingEnabled: true, dashboardEnabled: true },
+          loyalty: { visible: true }
+        }
+      }
+    });
+    expect(configResponse.statusCode).toBe(200);
+    const mutationResponse = await app.inject({
+      method: "PUT",
+      url: "/v1/catalog/admin/menu/latte",
+      headers,
+      payload: {
+        name: "Blocked Latte",
+        description: "",
+        priceCents: 600,
+        visible: true,
+        available: true,
+        featured: false,
+        badgeCodes: [],
+        categoryIds: ["espresso"],
+        modifierGroupAssignments: []
+      }
+    });
+    expect(mutationResponse.statusCode).toBe(409);
+    expect(mutationResponse.json()).toMatchObject({ code: "CATALOG_EXTERNAL_SYNC_READ_ONLY" });
+    await app.close();
+  });
+
+  it("does not delete a category that would orphan its items", async () => {
+    process.env.GATEWAY_INTERNAL_API_TOKEN = "catalog-gateway-token";
+    const app = await buildApp();
+    const headers = {
+      "x-gateway-token": "catalog-gateway-token",
+      "x-operator-location-id": DEFAULT_LOCATION_ID
+    };
+    const menuResponse = await app.inject({ method: "GET", url: "/v1/catalog/admin/menu", headers });
+    const menu = adminMenuResponseSchema.parse(menuResponse.json());
+    const populatedCategory = menu.categories.find((category) => category.items.length > 0);
+    expect(populatedCategory).toBeTruthy();
+    const deleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/v1/catalog/admin/menu/categories/${populatedCategory?.categoryId}`,
+      headers
+    });
+    expect(deleteResponse.statusCode).toBe(409);
+    expect(deleteResponse.json()).toMatchObject({ code: "CATEGORY_HAS_ORPHANED_ITEMS" });
+    await app.close();
+  });
+
+  it("manages category membership without making categories own item records", async () => {
+    process.env.GATEWAY_INTERNAL_API_TOKEN = "catalog-gateway-token";
+    const app = await buildApp();
+    const headers = {
+      "x-gateway-token": "catalog-gateway-token",
+      "x-operator-location-id": DEFAULT_LOCATION_ID
+    };
+
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/v1/catalog/admin/menu/categories",
+      headers,
+      payload: { title: "Seasonal", description: "Limited releases", visible: true, sortOrder: 99 }
+    });
+    expect(createResponse.statusCode).toBe(200);
+    const createdCategory = createResponse.json() as { categoryId: string };
+
+    const updateResponse = await app.inject({
+      method: "PUT",
+      url: `/v1/catalog/admin/menu/categories/${createdCategory.categoryId}`,
+      headers,
+      payload: { title: "Seasonal Drinks", description: "Limited releases", visible: true, sortOrder: 1 }
+    });
+    expect(updateResponse.statusCode).toBe(200);
+
+    const itemUpdateResponse = await app.inject({
+      method: "PUT",
+      url: "/v1/catalog/admin/menu/latte",
+      headers,
+      payload: {
+        name: "Latte",
+        description: "Espresso with steamed milk.",
+        priceCents: 575,
+        visible: true,
+        available: true,
+        featured: false,
+        badgeCodes: [],
+        categoryIds: ["espresso", createdCategory.categoryId],
+        modifierGroupAssignments: []
+      }
+    });
+    expect(itemUpdateResponse.statusCode).toBe(200);
+
+    const reorderResponse = await app.inject({
+      method: "POST",
+      url: "/v1/catalog/admin/menu/categories/reorder",
+      headers,
+      payload: { categoryIds: [createdCategory.categoryId, "espresso"] }
+    });
+    expect(reorderResponse.statusCode).toBe(200);
+    expect(adminMenuResponseSchema.parse(reorderResponse.json()).categories[0]?.categoryId).toBe(createdCategory.categoryId);
+
+    const deleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/v1/catalog/admin/menu/categories/${createdCategory.categoryId}`,
+      headers
+    });
+    expect(deleteResponse.statusCode).toBe(200);
+
+    const publicResponse = await app.inject({ method: "GET", url: `/v1/menu?locationId=${DEFAULT_LOCATION_ID}` });
+    expect(menuResponseSchema.parse(publicResponse.json()).categories.flatMap((category) => category.items).some((item) => item.id === "latte")).toBe(true);
+    await app.close();
+  });
+
+  it("supports reusable modifier groups with negative deltas and item assignments", async () => {
+    process.env.GATEWAY_INTERNAL_API_TOKEN = "catalog-gateway-token";
+    const app = await buildApp();
+    const headers = {
+      "x-gateway-token": "catalog-gateway-token",
+      "x-operator-location-id": DEFAULT_LOCATION_ID
+    };
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/v1/catalog/admin/menu/modifier-groups",
+      headers,
+      payload: {
+        label: "Milk",
+        description: "Choose a milk",
+        selectionType: "multiple",
+        required: true,
+        minSelections: 1,
+        maxSelections: 2,
+        sortOrder: 0,
+        options: [
+          { id: "whole", label: "Whole", priceDeltaCents: 0, default: true, available: true, sortOrder: 0 },
+          { id: "skim", label: "Skim", priceDeltaCents: -25, default: false, available: true, sortOrder: 1 }
+        ]
+      }
+    });
+    expect(createResponse.statusCode).toBe(200);
+    const group = createResponse.json() as { id: string; options: Array<{ priceDeltaCents: number }> };
+    expect(group.options[1]?.priceDeltaCents).toBe(-25);
+
+    const updateResponse = await app.inject({
+      method: "PUT",
+      url: "/v1/catalog/admin/menu/latte",
+      headers,
+      payload: {
+        name: "Latte",
+        description: "",
+        priceCents: 525,
+        visible: true,
+        available: true,
+        featured: false,
+        badgeCodes: [],
+        categoryIds: ["espresso"],
+        modifierGroupAssignments: [{ modifierGroupId: group.id, sortOrder: 0 }]
+      }
+    });
+    expect(updateResponse.statusCode).toBe(200);
+    expect(updateResponse.json()).toMatchObject({ modifierGroupAssignments: [{ modifierGroupId: group.id }] });
+
+    const publicResponse = await app.inject({ method: "GET", url: `/v1/menu?locationId=${DEFAULT_LOCATION_ID}` });
+    const publicItem = menuResponseSchema
+      .parse(publicResponse.json())
+      .categories
+      .flatMap((category) => category.items)
+      .find((item) => item.id === "latte");
+    expect(publicItem?.customizationGroups).toMatchObject([
+      {
+        id: group.id,
+        options: [{ id: "whole" }, { id: "skim", priceDeltaCents: -25 }]
+      }
+    ]);
+
+    const deleteResponse = await app.inject({ method: "DELETE", url: `/v1/catalog/admin/menu/modifier-groups/${group.id}`, headers });
+    expect(deleteResponse.statusCode).toBe(409);
+    expect(deleteResponse.json()).toMatchObject({ code: "MODIFIER_GROUP_IN_USE" });
+    await app.close();
+  });
+
   it("rejects public catalog requests without locationId unless an explicit fallback is configured", async () => {
     const app = await buildApp();
     const missingLocationResponse = await app.inject({ method: "GET", url: "/v1/menu" });

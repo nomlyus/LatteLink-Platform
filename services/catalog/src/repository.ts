@@ -2,8 +2,16 @@ import { randomUUID } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
 import {
   adminClientCreateRequestSchema,
+  adminMenuCategoryCreateSchema,
+  adminMenuCategoryUpdateSchema,
+  adminMenuCategoryReorderSchema,
+  adminMenuCategorySchema,
   adminMenuItemCreateSchema,
   adminMenuItemSchema,
+  adminMenuResponseSchema,
+  adminModifierGroupCreateSchema,
+  adminModifierGroupUpdateSchema,
+  itemModifierGroupAssignmentSchema,
   appIdentityProfileSchema,
   internalAppIdentityProfileUpdateSchema,
   clientPaymentProfileSchema,
@@ -40,6 +48,7 @@ import {
   type AdminStoreConfig,
   type AppConfig,
   type AppConfigStoreCapabilities,
+  type AdminMenuResponse,
   type AppIdentityProfile,
   type ClientPaymentProfile,
   type InternalAppIdentityProfileUpdate,
@@ -67,8 +76,9 @@ import {
   type OperatorOnboardingUpdate,
   type OperatorAppIdentityProfileUpdate,
   menuItemCustomizationGroupSchema,
-  menuItemSchema,
   menuResponseSchema,
+  modifierGroupSchema,
+  isPlatformManagedMenu,
   storeConfigResponseSchema
 } from "@lattelink/contracts-catalog";
 import {
@@ -93,6 +103,25 @@ import {
   resolveProvisionedAppConfigPayload
 } from "./tenant.js";
 import { resolveStoreHoursState } from "./store-hours.js";
+import {
+  CatalogMutationError,
+  createRelationalCategory,
+  createRelationalModifierGroup,
+  deleteRelationalCategory,
+  deleteRelationalModifierGroup,
+  getRelationalAdminMenu,
+  getRelationalPublicMenu,
+  replaceRelationalMenuFromExternal,
+  replaceRelationalMenuFromExternalInTransaction,
+  replaceRelationalItemEmbeddedGroupsInTransaction,
+  reorderRelationalCategories,
+  assertRelationalPlatformManaged,
+  validateModifierGroupAssignmentOverrides,
+  updateRelationalCategory,
+  updateRelationalModifierGroup
+} from "./menu-relational.js";
+
+export { CatalogMutationError };
 
 const espressoCustomizationGroups = [
   {
@@ -150,7 +179,7 @@ const matchaCustomizationGroups = [
     id: "size",
     sourceGroupId: "core:size",
     label: "Size",
-    description: "Choose the pour size for this drink.",
+    description: "Choose the cup that fits the order.",
     selectionType: "single" as const,
     required: true,
     minSelections: 1,
@@ -166,7 +195,7 @@ const matchaCustomizationGroups = [
     id: "milk",
     sourceGroupId: "core:milk",
     label: "Milk",
-    description: "Choose the milk that will be whisked into the matcha.",
+    description: "Keep it classic or switch the texture.",
     selectionType: "single" as const,
     required: true,
     minSelections: 1,
@@ -444,22 +473,9 @@ const defaultHomeNewsCardsPayload = homeNewsCardsResponseSchema.parse({
 
 type MenuResponse = z.output<typeof menuResponseSchema>;
 type StoreConfigResponse = z.output<typeof storeConfigResponseSchema>;
-type MenuItem = z.output<typeof menuItemSchema>;
 type HomeNewsCardsResponse = z.output<typeof homeNewsCardsResponseSchema>;
-const adminMenuItemWithCustomizationsSchema = adminMenuItemSchema.extend({
-  customizationGroups: z.array(menuItemCustomizationGroupSchema).default([])
-});
-const adminMenuCategoryWithCustomizationsSchema = z.object({
-  categoryId: z.string().min(1),
-  title: z.string().min(1),
-  items: z.array(adminMenuItemWithCustomizationsSchema)
-});
-const adminMenuResponseWithCustomizationsSchema = z.object({
-  locationId: z.string().min(1),
-  categories: z.array(adminMenuCategoryWithCustomizationsSchema)
-});
-type AdminMenuItemWithCustomizations = z.output<typeof adminMenuItemWithCustomizationsSchema>;
-type AdminMenuResponseWithCustomizations = z.output<typeof adminMenuResponseWithCustomizationsSchema>;
+type AdminMenuItemWithCustomizations = z.output<typeof adminMenuItemSchema>;
+type AdminMenuResponseWithCustomizations = AdminMenuResponse;
 type AdminHomeNewsCard = z.output<typeof homeNewsCardSchema>;
 type AdminHomeNewsCardsResponse = z.output<typeof homeNewsCardsResponseSchema>;
 
@@ -513,6 +529,13 @@ type CatalogRepository = {
     input: InternalLocationPaymentProfileUpdate
   ): Promise<ClientPaymentProfile>;
   getAdminMenu(locationId: string): Promise<AdminMenuResponseWithCustomizations>;
+  createAdminMenuCategory(locationId: string, input: z.output<typeof adminMenuCategoryCreateSchema>): Promise<z.output<typeof adminMenuCategorySchema> | undefined>;
+  updateAdminMenuCategory(locationId: string, input: z.output<typeof adminMenuCategoryUpdateSchema>): Promise<z.output<typeof adminMenuCategorySchema> | undefined>;
+  reorderAdminMenuCategories(locationId: string, input: z.output<typeof adminMenuCategoryReorderSchema>): Promise<AdminMenuResponseWithCustomizations>;
+  deleteAdminMenuCategory(locationId: string, categoryId: string): Promise<z.output<typeof adminMutationSuccessSchema>>;
+  createAdminModifierGroup(locationId: string, input: z.output<typeof adminModifierGroupCreateSchema>): Promise<z.output<typeof modifierGroupSchema> | undefined>;
+  updateAdminModifierGroup(locationId: string, input: z.output<typeof adminModifierGroupUpdateSchema>): Promise<z.output<typeof modifierGroupSchema> | undefined>;
+  deleteAdminModifierGroup(locationId: string, modifierGroupId: string): Promise<z.output<typeof adminMutationSuccessSchema>>;
   getHomeNewsCards(locationId: string): Promise<HomeNewsCardsResponse>;
   getAdminHomeNewsCards(locationId: string): Promise<AdminHomeNewsCardsResponse>;
   replaceAdminHomeNewsCards(locationId: string, input: HomeNewsCardsResponse): Promise<AdminHomeNewsCardsResponse>;
@@ -535,8 +558,15 @@ type CatalogRepository = {
   updateAdminMenuItem(locationId: string, input: {
     itemId: string;
     name: string;
+    description?: string;
     priceCents: number;
     visible: boolean;
+    available?: boolean;
+    featured?: boolean;
+    badgeCodes?: string[];
+    categoryIds?: string[];
+    modifierGroupAssignments?: z.output<typeof itemModifierGroupAssignmentSchema>[];
+    sortOrder?: number;
     imageUrl?: string | null;
     customizationGroups?: unknown[];
   }): Promise<AdminMenuItemWithCustomizations | undefined>;
@@ -634,11 +664,21 @@ function toAdminMenuItem(input: {
   priceCents: number;
   visible: boolean;
   sortOrder: number;
+  available?: boolean;
+  featured?: boolean;
+  badgeCodes?: string[];
+  categoryIds?: string[];
+  modifierGroupAssignments?: unknown[];
   customizationGroups?: unknown;
 }) {
   const { customizationGroups, ...adminFields } = input;
-  return adminMenuItemWithCustomizationsSchema.parse({
-    ...adminMenuItemSchema.parse(adminFields),
+  return adminMenuItemSchema.parse({
+    ...adminFields,
+    available: input.available ?? true,
+    featured: input.featured ?? false,
+    badgeCodes: input.badgeCodes ?? [],
+    categoryIds: input.categoryIds ?? [input.categoryId],
+    modifierGroupAssignments: input.modifierGroupAssignments ?? [],
     customizationGroups: customizationGroups === undefined ? [] : toCustomizationGroups(customizationGroups)
   });
 }
@@ -662,16 +702,24 @@ function buildAdminMenuResponse(params: {
   categories: Array<{
     categoryId: string;
     title: string;
+    description?: string;
+    visible?: boolean;
+    sortOrder?: number;
     items: AdminMenuItemWithCustomizations[];
   }>;
+  modifierGroups?: z.output<typeof modifierGroupSchema>[];
 }) {
-  return adminMenuResponseWithCustomizationsSchema.parse({
+  return adminMenuResponseSchema.parse({
     locationId: params.locationId,
     categories: params.categories.map((category) => ({
       categoryId: category.categoryId,
       title: category.title,
+      description: category.description ?? "",
+      visible: category.visible ?? true,
+      sortOrder: category.sortOrder ?? 0,
       items: category.items
-    }))
+    })),
+    modifierGroups: params.modifierGroups ?? []
   });
 }
 
@@ -1151,6 +1199,36 @@ function createInMemoryRepository(): CatalogRepository {
   const defaultAppConfig = structuredClone(resolveDefaultAppConfigPayload());
   const appConfigsByLocation = new Map<string, AppConfig>([[DEFAULT_LOCATION_ID, defaultAppConfig]]);
   const menusByLocation = new Map<string, MenuResponse>([[DEFAULT_LOCATION_ID, structuredClone(defaultMenuPayload)]]);
+  const modifierGroupsByLocation = new Map<string, z.output<typeof modifierGroupSchema>[]>();
+  const itemModifierAssignmentsByLocation = new Map<string, Map<string, z.output<typeof itemModifierGroupAssignmentSchema>[]>>();
+  function resolveMemoryItemCustomizationGroups(locationId: string, item: MenuResponse["categories"][number]["items"][number]) {
+    const assignments = itemModifierAssignmentsByLocation.get(locationId)?.get(item.id);
+    if (!assignments) {
+      return item.customizationGroups;
+    }
+
+    const groupsById = new Map((modifierGroupsByLocation.get(locationId) ?? []).map((group) => [group.id, group] as const));
+    return assignments
+      .slice()
+      .sort((left, right) => left.sortOrder - right.sortOrder || left.modifierGroupId.localeCompare(right.modifierGroupId))
+      .map((assignment) => {
+        const group = groupsById.get(assignment.modifierGroupId) ?? item.customizationGroups.find((candidate) => candidate.id === assignment.modifierGroupId);
+        if (!group) return undefined;
+        return menuItemCustomizationGroupSchema.parse({
+          ...group,
+          required: assignment.requiredOverride ?? group.required,
+          minSelections: assignment.minSelectionsOverride ?? group.minSelections,
+          maxSelections: assignment.maxSelectionsOverride ?? group.maxSelections,
+          sortOrder: assignment.sortOrder
+        });
+      })
+      .filter((group): group is z.output<typeof menuItemCustomizationGroupSchema> => Boolean(group));
+  }
+  function assertPlatformManagedForMemory(locationId: string) {
+    if (!isPlatformManagedMenu(appConfigsByLocation.get(locationId) ?? defaultAppConfig)) {
+      throw new CatalogMutationError("CATALOG_EXTERNAL_SYNC_READ_ONLY", "This catalog is managed by an external sync source and cannot be edited through operator APIs.", 409, { locationId });
+    }
+  }
   const storeConfigsByLocation = new Map<string, StoreConfigRecord>([
     [DEFAULT_LOCATION_ID, structuredClone(defaultStoreConfigRecord)]
   ]);
@@ -1828,7 +1906,122 @@ function createInMemoryRepository(): CatalogRepository {
         locationId
       });
       menusByLocation.set(locationId, nextMenu);
+      modifierGroupsByLocation.set(
+        locationId,
+        nextMenu.categories.flatMap((category) => category.items.flatMap((item) => item.customizationGroups.map((group) => modifierGroupSchema.parse(group))))
+      );
+      itemModifierAssignmentsByLocation.set(
+        locationId,
+        new Map(
+          nextMenu.categories.flatMap((category) =>
+            category.items.map((item) => [
+              item.id,
+              item.customizationGroups.map((group) => itemModifierGroupAssignmentSchema.parse({ modifierGroupId: group.id, sortOrder: group.sortOrder }))
+            ] as const)
+          )
+        )
+      );
       return nextMenu;
+    },
+    async createAdminMenuCategory(locationId, input) {
+      assertPlatformManagedForMemory(locationId);
+      const currentMenu = menusByLocation.get(locationId) ?? buildProvisionedMenuPayload(locationId);
+      const categoryId = `category_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
+      const sortOrder = input.sortOrder ?? currentMenu.categories.length;
+      const nextMenu = menuResponseSchema.parse({
+        ...currentMenu,
+        categories: [
+          ...currentMenu.categories,
+          {
+            id: categoryId,
+            title: input.title,
+            description: input.description,
+            visible: input.visible,
+            sortOrder,
+            items: []
+          }
+        ].sort((left, right) => left.sortOrder - right.sortOrder)
+      });
+      menusByLocation.set(locationId, nextMenu);
+      return {
+        categoryId,
+        title: input.title,
+        description: input.description,
+        visible: input.visible,
+        sortOrder,
+        items: []
+      };
+    },
+    async updateAdminMenuCategory(locationId, input) {
+      assertPlatformManagedForMemory(locationId);
+      const currentMenu = menusByLocation.get(locationId) ?? buildProvisionedMenuPayload(locationId);
+      if (!currentMenu.categories.some((category) => category.id === input.categoryId)) return undefined;
+      const nextMenu = menuResponseSchema.parse({
+        ...currentMenu,
+        categories: currentMenu.categories.map((category) =>
+          category.id === input.categoryId
+            ? { ...category, title: input.title, description: input.description, visible: input.visible, sortOrder: input.sortOrder }
+            : category
+        ).sort((left, right) => left.sortOrder - right.sortOrder)
+      });
+      menusByLocation.set(locationId, nextMenu);
+      const category = nextMenu.categories.find((entry) => entry.id === input.categoryId)!;
+      return {
+        categoryId: category.id,
+        title: category.title,
+        description: category.description,
+        visible: category.visible,
+        sortOrder: category.sortOrder,
+        items: []
+      };
+    },
+    async reorderAdminMenuCategories(locationId, input) {
+      assertPlatformManagedForMemory(locationId);
+      const currentMenu = menusByLocation.get(locationId) ?? buildProvisionedMenuPayload(locationId);
+      const requested = new Set(input.categoryIds);
+      const ordered = [...input.categoryIds, ...currentMenu.categories.map((category) => category.id).filter((id) => !requested.has(id))];
+      const nextMenu = menuResponseSchema.parse({
+        ...currentMenu,
+        categories: currentMenu.categories.map((category) => ({ ...category, sortOrder: ordered.indexOf(category.id) }))
+          .sort((left, right) => left.sortOrder - right.sortOrder)
+      });
+      menusByLocation.set(locationId, nextMenu);
+      return this.getAdminMenu(locationId);
+    },
+    async deleteAdminMenuCategory(locationId, categoryId) {
+      assertPlatformManagedForMemory(locationId);
+      const currentMenu = menusByLocation.get(locationId) ?? buildProvisionedMenuPayload(locationId);
+      const target = currentMenu.categories.find((category) => category.id === categoryId);
+      if (!target) return { success: true };
+      const targetItemIds = new Set(target.items.map((item) => item.id));
+      const orphaned = [...targetItemIds].filter((itemId) => currentMenu.categories.every((category) => category.id === categoryId || !category.items.some((item) => item.id === itemId)));
+      if (orphaned.length > 0) {
+        throw new CatalogMutationError("CATEGORY_HAS_ORPHANED_ITEMS", "Move items to another category before deleting this category.", 409, { itemIds: orphaned });
+      }
+      menusByLocation.set(locationId, menuResponseSchema.parse({ ...currentMenu, categories: currentMenu.categories.filter((category) => category.id !== categoryId) }));
+      return { success: true };
+    },
+    async createAdminModifierGroup(locationId, input) {
+      assertPlatformManagedForMemory(locationId);
+      const group = modifierGroupSchema.parse({ ...input, id: input.id ?? `modifier_${randomUUID().replaceAll("-", "").slice(0, 16)}` });
+      modifierGroupsByLocation.set(locationId, [...(modifierGroupsByLocation.get(locationId) ?? []), group]);
+      return group;
+    },
+    async updateAdminModifierGroup(locationId, input) {
+      assertPlatformManagedForMemory(locationId);
+      const current = modifierGroupsByLocation.get(locationId) ?? [];
+      if (!current.some((group) => group.id === input.id)) return undefined;
+      const group = modifierGroupSchema.parse(input);
+      modifierGroupsByLocation.set(locationId, current.map((entry) => entry.id === group.id ? group : entry));
+      return group;
+    },
+    async deleteAdminModifierGroup(locationId, modifierGroupId) {
+      assertPlatformManagedForMemory(locationId);
+      const current = modifierGroupsByLocation.get(locationId) ?? [];
+      const inUse = [...(itemModifierAssignmentsByLocation.get(locationId)?.values() ?? [])].some((assignments) => assignments.some((assignment) => assignment.modifierGroupId === modifierGroupId)) || [...menusByLocation.values()].some((menu) => menu.categories.some((category) => category.items.some((item) => item.customizationGroups.some((group) => group.id === modifierGroupId))));
+      if (inUse) throw new CatalogMutationError("MODIFIER_GROUP_IN_USE", "Remove this modifier group from its items before deleting it.");
+      modifierGroupsByLocation.set(locationId, current.filter((group) => group.id !== modifierGroupId));
+      return { success: true };
     },
     async getAdminMenu(locationId) {
       const menu = menusByLocation.get(locationId) ?? defaultMenuPayload;
@@ -1837,6 +2030,9 @@ function createInMemoryRepository(): CatalogRepository {
         categories: menu.categories.map((category) => ({
           categoryId: category.id,
           title: category.title,
+          description: category.description,
+          visible: category.visible,
+          sortOrder: category.sortOrder,
           items: category.items.map((item, index) =>
             toAdminMenuItem({
               itemId: item.id,
@@ -1847,11 +2043,17 @@ function createInMemoryRepository(): CatalogRepository {
               imageUrl: item.imageUrl,
               priceCents: item.priceCents,
               visible: item.visible,
+              available: item.available,
+              featured: item.featured,
+              badgeCodes: item.badgeCodes,
+              categoryIds: menu.categories.filter((candidate) => candidate.items.some((candidateItem) => candidateItem.id === item.id)).map((candidate) => candidate.id),
               sortOrder: index,
-              customizationGroups: item.customizationGroups
+              customizationGroups: resolveMemoryItemCustomizationGroups(locationId, item),
+              modifierGroupAssignments: itemModifierAssignmentsByLocation.get(locationId)?.get(item.id) ?? item.customizationGroups.map((group) => ({ modifierGroupId: group.id, sortOrder: group.sortOrder }))
             })
           )
-        }))
+        })),
+        modifierGroups: modifierGroupsByLocation.get(locationId) ?? []
       });
     },
     async getHomeNewsCards(locationId) {
@@ -1963,95 +2165,153 @@ function createInMemoryRepository(): CatalogRepository {
       return { success: true };
     },
     async createAdminMenuItem(locationId, input) {
+      assertPlatformManagedForMemory(locationId);
       const currentMenu = menusByLocation.get(locationId) ?? defaultMenuPayload;
       let menu = currentMenu;
-      const category = menu.categories.find((entry) => entry.id === input.categoryId);
-      if (!category) {
-        return undefined;
+      const categoryIds = Array.from(new Set([...(input.categoryIds ?? []), ...(input.categoryId ? [input.categoryId] : [])]));
+      const categoryId = categoryIds[0];
+      const category = menu.categories.find((entry) => entry.id === categoryId);
+      if (!category || categoryIds.some((candidate) => !menu.categories.some((entry) => entry.id === candidate))) {
+        throw new CatalogMutationError("CATEGORY_HAS_ORPHANED_ITEMS", "One or more category memberships do not exist for this location.", 422, { categoryIds });
       }
-
+      const modifierGroupAssignments = input.modifierGroupAssignments ?? [];
+      const knownModifierGroupIds = new Set((modifierGroupsByLocation.get(locationId) ?? []).map((group) => group.id));
+      if (modifierGroupAssignments.some((assignment) => !knownModifierGroupIds.has(assignment.modifierGroupId))) {
+        throw new CatalogMutationError("MODIFIER_GROUP_CONFLICT", "One or more modifier group assignments do not exist for this location.", 422, {
+          modifierGroupIds: modifierGroupAssignments.map((assignment) => assignment.modifierGroupId)
+        });
+      }
+      for (const assignment of modifierGroupAssignments) {
+        const group = (modifierGroupsByLocation.get(locationId) ?? []).find((candidate) => candidate.id === assignment.modifierGroupId);
+        if (group) validateModifierGroupAssignmentOverrides(group, [assignment]);
+      }
       const nextItem = {
         id: createMenuItemId(input.name),
         name: input.name,
         description: input.description ?? "",
         imageUrl: input.imageUrl ?? undefined,
         priceCents: input.priceCents,
-        badgeCodes: [],
+        badgeCodes: input.badgeCodes,
         visible: input.visible,
+        available: input.available,
+        featured: input.featured,
         customizationGroups: []
       };
 
       menu = menuResponseSchema.parse({
         ...menu,
         categories: menu.categories.map((entry) =>
-          entry.id === input.categoryId
+          categoryIds.includes(entry.id)
             ? {
                 ...entry,
-                items: [...entry.items, nextItem]
+                items: [
+                  ...entry.items.slice(0, Math.min(input.sortOrder ?? entry.items.length, entry.items.length)),
+                  nextItem,
+                  ...entry.items.slice(Math.min(input.sortOrder ?? entry.items.length, entry.items.length))
+                ]
               }
             : entry
         )
       });
       menusByLocation.set(locationId, menu);
+      const locationAssignments = itemModifierAssignmentsByLocation.get(locationId) ?? new Map();
+      locationAssignments.set(nextItem.id, modifierGroupAssignments);
+      itemModifierAssignmentsByLocation.set(locationId, locationAssignments);
 
-      return toAdminMenuItem({
-        itemId: nextItem.id,
-        categoryId: category.id,
-        categoryTitle: category.title,
-        name: nextItem.name,
-        description: nextItem.description,
-        imageUrl: nextItem.imageUrl,
-        priceCents: nextItem.priceCents,
-        visible: nextItem.visible,
-        sortOrder: category.items.length,
-        customizationGroups: nextItem.customizationGroups
-      });
+      return (await this.getAdminMenu(locationId)).categories
+        .flatMap((entry) => entry.items)
+        .find((item) => item.itemId === nextItem.id);
     },
     async updateAdminMenuItem(locationId, input) {
+      assertPlatformManagedForMemory(locationId);
       let menu = menusByLocation.get(locationId) ?? defaultMenuPayload;
       let updatedItem: AdminMenuItemWithCustomizations | undefined;
+      const existingItem = menu.categories.flatMap((category) => category.items).find((item) => item.id === input.itemId);
+      if (!existingItem) return undefined;
+      const currentCategoryIds = menu.categories.filter((category) => category.items.some((item) => item.id === input.itemId)).map((category) => category.id);
+      const nextCategoryIds = input.categoryIds ?? currentCategoryIds;
+      if (nextCategoryIds.length === 0) return undefined;
+      if (nextCategoryIds.some((categoryId) => !menu.categories.some((category) => category.id === categoryId))) {
+        throw new CatalogMutationError("CATEGORY_HAS_ORPHANED_ITEMS", "One or more category memberships do not exist for this location.", 422, { categoryIds: nextCategoryIds });
+      }
+      const customizationGroups = input.customizationGroups === undefined ? existingItem.customizationGroups : toCustomizationGroups(input.customizationGroups);
+      if (input.modifierGroupAssignments?.some((assignment) => !(modifierGroupsByLocation.get(locationId) ?? []).some((group) => group.id === assignment.modifierGroupId))) {
+        throw new CatalogMutationError("MODIFIER_GROUP_CONFLICT", "One or more modifier group assignments do not exist for this location.", 422, {
+          modifierGroupIds: input.modifierGroupAssignments.map((assignment) => assignment.modifierGroupId)
+        });
+      }
+      for (const assignment of input.modifierGroupAssignments ?? []) {
+        const group = (modifierGroupsByLocation.get(locationId) ?? []).find((candidate) => candidate.id === assignment.modifierGroupId);
+        if (group) validateModifierGroupAssignmentOverrides(group, [assignment]);
+      }
+      const nextItem = {
+        ...existingItem,
+        name: input.name,
+        description: input.description ?? existingItem.description,
+        priceCents: input.priceCents,
+        visible: input.visible,
+        available: input.available ?? existingItem.available,
+        featured: input.featured ?? existingItem.featured,
+        badgeCodes: input.badgeCodes ?? existingItem.badgeCodes,
+        imageUrl: input.imageUrl === undefined ? existingItem.imageUrl : input.imageUrl ?? undefined,
+        customizationGroups
+      };
       menu = menuResponseSchema.parse({
         ...menu,
         categories: menu.categories.map((category) => ({
           ...category,
-          items: category.items.map((item, index) => {
-            if (item.id !== input.itemId) {
-              return item;
-            }
-            const customizationGroups =
-              input.customizationGroups === undefined
-                ? item.customizationGroups
-                : toCustomizationGroups(input.customizationGroups);
-
+          items: category.items
+            .filter((item) => item.id !== input.itemId || nextCategoryIds.includes(category.id))
+            .map((item, index) => {
+            if (item.id !== input.itemId) return item;
             updatedItem = toAdminMenuItem({
-              itemId: item.id,
+              itemId: nextItem.id,
               categoryId: category.id,
               categoryTitle: category.title,
-              name: input.name,
-              description: item.description,
-              imageUrl: input.imageUrl === undefined ? item.imageUrl : input.imageUrl ?? undefined,
-              priceCents: input.priceCents,
-              visible: input.visible,
+              name: nextItem.name,
+              description: nextItem.description,
+              imageUrl: nextItem.imageUrl,
+              priceCents: nextItem.priceCents,
+              visible: nextItem.visible,
+              available: nextItem.available,
+              featured: nextItem.featured,
+              badgeCodes: nextItem.badgeCodes,
+              categoryIds: nextCategoryIds,
               sortOrder: index,
-              customizationGroups
+              customizationGroups,
+              modifierGroupAssignments: input.modifierGroupAssignments ?? itemModifierAssignmentsByLocation.get(locationId)?.get(item.id)
             });
-
-            return {
-              ...item,
-              name: input.name,
-              priceCents: input.priceCents,
-              visible: input.visible,
-              imageUrl: input.imageUrl === undefined ? item.imageUrl : input.imageUrl ?? undefined,
-              customizationGroups
-            };
+            return nextItem;
           })
+          .concat(category.id === nextCategoryIds[0] && !category.items.some((item) => item.id === input.itemId) ? [nextItem] : [])
         }))
       });
+      if (input.sortOrder !== undefined) {
+        menu = menuResponseSchema.parse({
+          ...menu,
+          categories: menu.categories.map((category) => {
+            if (!nextCategoryIds.includes(category.id)) return category;
+            const itemIndex = category.items.findIndex((item) => item.id === input.itemId);
+            if (itemIndex < 0) return category;
+            const items = [...category.items];
+            const [movedItem] = items.splice(itemIndex, 1);
+            items.splice(Math.min(input.sortOrder!, items.length), 0, movedItem!);
+            return { ...category, items };
+          })
+        });
+      }
       menusByLocation.set(locationId, menu);
+      if (input.modifierGroupAssignments !== undefined || input.customizationGroups !== undefined) {
+        const locationAssignments = itemModifierAssignmentsByLocation.get(locationId) ?? new Map();
+        locationAssignments.set(input.itemId, input.modifierGroupAssignments ?? customizationGroups.map((group) => ({ modifierGroupId: group.id, sortOrder: group.sortOrder })));
+        itemModifierAssignmentsByLocation.set(locationId, locationAssignments);
+      }
 
-      return updatedItem;
+      const adminMenu = await this.getAdminMenu(locationId);
+      return adminMenu.categories.flatMap((category) => category.items).find((item) => item.itemId === input.itemId) ?? updatedItem;
     },
     async updateAdminMenuItemVisibility(locationId, input) {
+      assertPlatformManagedForMemory(locationId);
       let menu = menusByLocation.get(locationId) ?? defaultMenuPayload;
       let updatedItem: AdminMenuItemWithCustomizations | undefined;
       menu = menuResponseSchema.parse({
@@ -2072,6 +2332,10 @@ function createInMemoryRepository(): CatalogRepository {
               imageUrl: item.imageUrl,
               priceCents: item.priceCents,
               visible: input.visible,
+              available: item.available,
+              featured: item.featured,
+              badgeCodes: item.badgeCodes,
+              categoryIds: [category.id],
               sortOrder: index,
               customizationGroups: item.customizationGroups
             });
@@ -2088,6 +2352,7 @@ function createInMemoryRepository(): CatalogRepository {
       return updatedItem;
     },
     async deleteAdminMenuItem(locationId, itemId) {
+      assertPlatformManagedForMemory(locationId);
       let menu = menusByLocation.get(locationId) ?? defaultMenuPayload;
       menu = menuResponseSchema.parse({
         ...menu,
@@ -2097,6 +2362,7 @@ function createInMemoryRepository(): CatalogRepository {
         }))
       });
       menusByLocation.set(locationId, menu);
+      itemModifierAssignmentsByLocation.get(locationId)?.delete(itemId);
 
       return { success: true };
     },
@@ -2239,10 +2505,24 @@ function createInMemoryRepository(): CatalogRepository {
       });
     },
     async getMenu(locationId) {
-      return menusByLocation.get(locationId) ?? menuResponseSchema.parse({
+      const menu = menusByLocation.get(locationId) ?? menuResponseSchema.parse({
         locationId,
         currency: defaultMenuPayload.currency,
         categories: []
+      });
+      return menuResponseSchema.parse({
+        ...menu,
+        categories: menu.categories
+          .filter((category) => category.visible)
+          .map((category) => ({
+            ...category,
+            items: category.items
+              .filter((item) => item.visible)
+              .map((item) => ({
+                ...item,
+                customizationGroups: resolveMemoryItemCustomizationGroups(locationId, item)
+              }))
+          }))
       });
     },
     async getStoreConfig(locationId) {
@@ -2287,6 +2567,8 @@ async function seedCatalogDefaults(db: PersistenceDb) {
             location_id: seedMenuPayload.locationId,
             category_id: category.id,
             title: category.title,
+            description: "",
+            visible: true,
             sort_order: index
           }))
         )
@@ -2309,12 +2591,21 @@ async function seedCatalogDefaults(db: PersistenceDb) {
               badge_codes_json: JSON.stringify(item.badgeCodes),
               customization_groups_json: JSON.stringify(item.customizationGroups ?? []),
               visible: item.visible,
+              available: item.available,
+              featured: item.featured,
               sort_order: index
             }))
           )
         )
         .onConflict((oc) => oc.columns(["location_id", "item_id"]).doNothing())
         .execute();
+
+      await replaceRelationalMenuFromExternalInTransaction(
+        trx as unknown as PersistenceDb,
+        seedMenuPayload.locationId,
+        seedMenuPayload,
+        defaultAppConfigPayload.brand.brandId
+      );
 
     });
   }
@@ -3006,6 +3297,7 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         .executeTakeFirst();
 
       const persistedBrandId = existingAppConfigRow?.brand_id ?? input.brandId ?? generateInternalId("brd");
+      const shouldSeedCatalog = !existingStoreConfigRow && !existingAppConfigRow;
       const existingAppConfig = existingAppConfigRow ? appConfigSchema.parse(existingAppConfigRow.app_config_json) : undefined;
       const nextAppConfig = existingAppConfig
         ? appConfigSchema.parse({
@@ -3095,7 +3387,7 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
             .execute();
         }
 
-        if (!existingStoreConfigRow && !existingAppConfigRow) {
+        if (shouldSeedCatalog) {
           await trx
             .insertInto("catalog_menu_categories")
             .values(
@@ -3104,6 +3396,8 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
                 location_id: locationId,
                 category_id: category.id,
                 title: category.title,
+                description: "",
+                visible: true,
                 sort_order: index
               }))
             )
@@ -3126,12 +3420,24 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
                   badge_codes_json: JSON.stringify(item.badgeCodes),
                   customization_groups_json: JSON.stringify(item.customizationGroups ?? []),
                   visible: item.visible,
+                  available: item.available,
+                  featured: item.featured,
                   sort_order: index
                 }))
               )
             )
             .onConflict((oc) => oc.columns(["location_id", "item_id"]).doNothing())
             .execute();
+
+          // Keep the legacy-compatible seed and its relational materialization
+          // in the same PostgreSQL transaction. A failed materialization must
+          // not leave bootstrap state that makes a retry appear complete.
+          await replaceRelationalMenuFromExternalInTransaction(
+            trx as unknown as PersistenceDb,
+            locationId,
+            seededMenu,
+            persistedBrandId
+          );
         }
 
       });
@@ -3769,118 +4075,33 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         ...input,
         locationId
       });
-      const appConfigRow = await db
-        .selectFrom("catalog_app_configs")
-        .select("brand_id")
-        .where("location_id", "=", locationId)
-        .executeTakeFirst();
-      const existingCategoryRow = await db
-        .selectFrom("catalog_menu_categories")
-        .select("brand_id")
-        .where("location_id", "=", locationId)
-        .executeTakeFirst();
-      const brandId = appConfigRow?.brand_id ?? existingCategoryRow?.brand_id ?? DEFAULT_BRAND_ID;
-
-      await db.transaction().execute(async (trx) => {
-        await trx
-          .deleteFrom("catalog_menu_items")
-          .where("brand_id", "=", brandId)
-          .where("location_id", "=", locationId)
-          .execute();
-
-        await trx
-          .deleteFrom("catalog_menu_categories")
-          .where("brand_id", "=", brandId)
-          .where("location_id", "=", locationId)
-          .execute();
-
-        if (nextMenu.categories.length > 0) {
-          await trx
-            .insertInto("catalog_menu_categories")
-            .values(
-              nextMenu.categories.map((category, categoryIndex) => ({
-                brand_id: brandId,
-                location_id: locationId,
-                category_id: category.id,
-                title: category.title,
-                sort_order: categoryIndex
-              }))
-            )
-            .execute();
-
-          const menuItems = nextMenu.categories.flatMap((category) =>
-            category.items.map((item, itemIndex) => ({
-              brand_id: brandId,
-              location_id: locationId,
-              item_id: item.id,
-              category_id: category.id,
-              name: item.name,
-              description: item.description,
-              image_url: item.imageUrl ?? null,
-              price_cents: item.priceCents,
-              badge_codes_json: JSON.stringify(item.badgeCodes ?? []),
-              customization_groups_json: JSON.stringify(item.customizationGroups ?? []),
-              visible: item.visible,
-              sort_order: itemIndex
-            }))
-          );
-
-          if (menuItems.length > 0) {
-            await trx
-              .insertInto("catalog_menu_items")
-              .values(menuItems)
-              .execute();
-          }
-        }
-      });
-
-      return nextMenu;
+      return replaceRelationalMenuFromExternal(db, locationId, nextMenu);
     },
     async getAdminMenu(locationId) {
-      const categories = await db
-        .selectFrom("catalog_menu_categories")
-        .selectAll()
-        .where("location_id", "=", locationId)
-        .orderBy("sort_order", "asc")
-        .execute();
-
-      const items = await db
-        .selectFrom("catalog_menu_items")
-        .selectAll()
-        .where("location_id", "=", locationId)
-        .orderBy("category_id", "asc")
-        .orderBy("sort_order", "asc")
-        .execute();
-
-      const itemsByCategory = new Map<string, AdminMenuItemWithCustomizations[]>();
-      const categoryTitles = new Map(categories.map((category) => [category.category_id, category.title]));
-      for (const item of items) {
-        const existing = itemsByCategory.get(item.category_id) ?? [];
-        existing.push(
-          toAdminMenuItem({
-            itemId: item.item_id,
-            categoryId: item.category_id,
-            categoryTitle: categoryTitles.get(item.category_id) ?? item.category_id,
-            name: item.name,
-            description: item.description,
-            imageUrl: item.image_url ?? undefined,
-            priceCents: item.price_cents,
-            visible: item.visible,
-            sortOrder: item.sort_order,
-            customizationGroups: item.customization_groups_json
-          })
-        );
-        itemsByCategory.set(item.category_id, existing);
-      }
-
-      return buildAdminMenuResponse({
-        locationId,
-        categories: categories.map((category) => ({
-          categoryId: category.category_id,
-          title: category.title,
-          items: itemsByCategory.get(category.category_id) ?? []
-        }))
-      });
+      return getRelationalAdminMenu(db, locationId);
+    },
+    async createAdminMenuCategory(locationId, input) {
+      return createRelationalCategory(db, locationId, input);
+    },
+    async updateAdminMenuCategory(locationId, input) {
+      return updateRelationalCategory(db, locationId, input);
+    },
+    async reorderAdminMenuCategories(locationId, input) {
+      return reorderRelationalCategories(db, locationId, input.categoryIds);
+    },
+    async deleteAdminMenuCategory(locationId, categoryId) {
+      await deleteRelationalCategory(db, locationId, categoryId);
+      return { success: true };
+    },
+    async createAdminModifierGroup(locationId, input) {
+      return createRelationalModifierGroup(db, locationId, input);
+    },
+    async updateAdminModifierGroup(locationId, input) {
+      return updateRelationalModifierGroup(db, locationId, input);
+    },
+    async deleteAdminModifierGroup(locationId, modifierGroupId) {
+      await deleteRelationalModifierGroup(db, locationId, modifierGroupId);
+      return { success: true };
     },
     async getHomeNewsCards(locationId) {
       return buildHomeNewsCardsResponse({
@@ -4089,59 +4310,83 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
       return { success: true };
     },
     async createAdminMenuItem(locationId, input) {
+      await assertRelationalPlatformManaged(db, locationId);
       const brandId = await getBrandIdForLocation(db, locationId);
-      const category = await db
+      const categoryIds = Array.from(new Set([...(input.categoryIds ?? []), ...(input.categoryId ? [input.categoryId] : [])]));
+      const categories = await db
         .selectFrom("catalog_menu_categories")
         .selectAll()
         .where("location_id", "=", locationId)
-        .where("category_id", "=", input.categoryId)
-        .executeTakeFirst();
-
-      if (!category) {
+        .where("category_id", "in", categoryIds)
+        .execute();
+      if (categories.length !== categoryIds.length || categoryIds.length === 0) {
         return undefined;
       }
-
       const nextSortOrderResult = await db
-        .selectFrom("catalog_menu_items")
+        .selectFrom("catalog_menu_category_items")
         .select((eb) => eb.fn.max<number>("sort_order").as("max_sort_order"))
         .where("location_id", "=", locationId)
-        .where("category_id", "=", input.categoryId)
+        .where("category_id", "=", categoryIds[0]!)
         .executeTakeFirst();
-      const nextSortOrder = (nextSortOrderResult?.max_sort_order ?? -1) + 1;
+      const nextSortOrder = input.sortOrder ?? (nextSortOrderResult?.max_sort_order ?? -1) + 1;
       const itemId = createMenuItemId(input.name);
-
-      await db
-        .insertInto("catalog_menu_items")
-        .values({
+      await db.transaction().execute(async (trx) => {
+        await trx.insertInto("catalog_menu_items").values({
           brand_id: brandId,
           location_id: locationId,
           item_id: itemId,
-          category_id: input.categoryId,
+          category_id: categoryIds[0]!,
           name: input.name,
-          description: input.description ?? "",
-          image_url: null,
+          description: input.description,
+          image_url: input.imageUrl ?? null,
           price_cents: input.priceCents,
-          badge_codes_json: JSON.stringify([]),
+          badge_codes_json: JSON.stringify(input.badgeCodes),
           customization_groups_json: JSON.stringify([]),
           visible: input.visible,
+          available: input.available,
+          featured: input.featured,
           sort_order: nextSortOrder
-        })
-        .execute();
-
-      return toAdminMenuItem({
-        itemId,
-        categoryId: input.categoryId,
-        categoryTitle: category.title,
-        name: input.name,
-        description: input.description ?? "",
-        imageUrl: input.imageUrl ?? undefined,
-        priceCents: input.priceCents,
-        visible: input.visible,
-        sortOrder: nextSortOrder,
-        customizationGroups: []
+        }).execute();
+        await trx.insertInto("catalog_menu_category_items").values(categoryIds.map((categoryId) => ({
+          brand_id: brandId,
+          location_id: locationId,
+          category_id: categoryId,
+          item_id: itemId,
+          sort_order: nextSortOrder
+        }))).execute();
+        if (input.modifierGroupAssignments.length > 0) {
+          const knownGroups = await trx.selectFrom("catalog_modifier_groups").selectAll().where("location_id", "=", locationId).where("modifier_group_id", "in", input.modifierGroupAssignments.map((assignment) => assignment.modifierGroupId)).execute();
+          if (knownGroups.length !== input.modifierGroupAssignments.length) {
+            throw new CatalogMutationError("MODIFIER_GROUP_CONFLICT", "One or more modifier group assignments do not exist for this location.", 422, {
+              modifierGroupIds: input.modifierGroupAssignments.map((assignment) => assignment.modifierGroupId)
+              });
+          }
+          for (const assignment of input.modifierGroupAssignments) {
+            const group = knownGroups.find((candidate) => candidate.modifier_group_id === assignment.modifierGroupId);
+            if (group) {
+              validateModifierGroupAssignmentOverrides(
+                { id: group.modifier_group_id, selectionType: group.selection_type, minSelections: group.min_selections, maxSelections: group.max_selections },
+                [assignment]
+              );
+            }
+          }
+          await trx.insertInto("catalog_item_modifier_groups").values(input.modifierGroupAssignments.map((assignment) => ({
+            brand_id: brandId,
+            location_id: locationId,
+            item_id: itemId,
+            modifier_group_id: assignment.modifierGroupId,
+            sort_order: assignment.sortOrder,
+            required_override: assignment.requiredOverride ?? null,
+            min_selections_override: assignment.minSelectionsOverride ?? null,
+            max_selections_override: assignment.maxSelectionsOverride ?? null
+          }))).execute();
+        }
       });
+      const adminMenu = await getRelationalAdminMenu(db, locationId);
+      return adminMenu.categories.flatMap((category) => category.items).find((item) => item.itemId === itemId);
     },
     async updateAdminMenuItem(locationId, input) {
+      await assertRelationalPlatformManaged(db, locationId);
       const existingRow = await db
         .selectFrom("catalog_menu_items")
         .selectAll()
@@ -4152,46 +4397,96 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
       if (!existingRow) {
         return undefined;
       }
-      const customizationGroups =
-        input.customizationGroups === undefined
-          ? toCustomizationGroups(existingRow.customization_groups_json)
-          : toCustomizationGroups(input.customizationGroups);
       const nextImageUrl = input.imageUrl === undefined ? existingRow.image_url : input.imageUrl;
-
-      await db
-        .updateTable("catalog_menu_items")
-        .set({
+      const categoryIds = input.categoryIds;
+      const brandId = await getBrandIdForLocation(db, locationId);
+      await db.transaction().execute(async (trx) => {
+        if (categoryIds) {
+          const categories = await trx.selectFrom("catalog_menu_categories").select("category_id").where("location_id", "=", locationId).where("category_id", "in", categoryIds).execute();
+          if (categories.length !== categoryIds.length || categoryIds.length === 0) {
+            throw new CatalogMutationError("CATEGORY_HAS_ORPHANED_ITEMS", "One or more category memberships do not exist for this location.", 422, {
+              categoryIds
+            });
+          }
+          await trx.deleteFrom("catalog_menu_category_items").where("location_id", "=", locationId).where("item_id", "=", input.itemId).execute();
+          await trx.insertInto("catalog_menu_category_items").values(categoryIds.map((categoryId, index) => ({
+            brand_id: brandId,
+            location_id: locationId,
+            category_id: categoryId,
+            item_id: input.itemId,
+            sort_order: categoryId === categoryIds[0] ? input.sortOrder ?? existingRow.sort_order : index
+          }))).execute();
+        } else if (input.sortOrder !== undefined) {
+          await trx
+            .updateTable("catalog_menu_category_items")
+            .set({ sort_order: input.sortOrder, updated_at: new Date().toISOString() })
+            .where("location_id", "=", locationId)
+            .where("item_id", "=", input.itemId)
+            .where("category_id", "=", existingRow.category_id)
+            .execute();
+        }
+        await trx.updateTable("catalog_menu_items").set({
+          category_id: categoryIds?.[0] ?? existingRow.category_id,
+          sort_order: input.sortOrder ?? existingRow.sort_order,
           name: input.name,
+          description: input.description ?? existingRow.description,
           image_url: nextImageUrl,
           price_cents: input.priceCents,
+          badge_codes_json: JSON.stringify(input.badgeCodes ?? toBadgeCodes(existingRow.badge_codes_json)),
+          customization_groups_json:
+            input.customizationGroups === undefined
+              ? existingRow.customization_groups_json
+              : JSON.stringify(input.customizationGroups),
           visible: input.visible,
-          customization_groups_json: JSON.stringify(customizationGroups)
-        })
-        .where("location_id", "=", locationId)
-        .where("item_id", "=", input.itemId)
-        .executeTakeFirst();
+          available: input.available ?? existingRow.available,
+          featured: input.featured ?? existingRow.featured
+        }).where("location_id", "=", locationId).where("item_id", "=", input.itemId).executeTakeFirst();
+        if (input.modifierGroupAssignments) {
+          await trx.deleteFrom("catalog_item_modifier_groups").where("location_id", "=", locationId).where("item_id", "=", input.itemId).execute();
+          if (input.modifierGroupAssignments.length > 0) {
+            const knownGroups = await trx.selectFrom("catalog_modifier_groups").selectAll().where("location_id", "=", locationId).where("modifier_group_id", "in", input.modifierGroupAssignments.map((assignment) => assignment.modifierGroupId)).execute();
+            if (knownGroups.length !== input.modifierGroupAssignments.length) {
+              throw new CatalogMutationError("MODIFIER_GROUP_CONFLICT", "One or more modifier group assignments do not exist for this location.", 422, {
+                modifierGroupIds: input.modifierGroupAssignments.map((assignment) => assignment.modifierGroupId)
+                });
+            }
+            for (const assignment of input.modifierGroupAssignments) {
+              const group = knownGroups.find((candidate) => candidate.modifier_group_id === assignment.modifierGroupId);
+              if (group) {
+                validateModifierGroupAssignmentOverrides(
+                  { id: group.modifier_group_id, selectionType: group.selection_type, minSelections: group.min_selections, maxSelections: group.max_selections },
+                  [assignment]
+                );
+              }
+            }
+            await trx.insertInto("catalog_item_modifier_groups").values(input.modifierGroupAssignments.map((assignment) => ({
+              brand_id: brandId,
+              location_id: locationId,
+              item_id: input.itemId,
+              modifier_group_id: assignment.modifierGroupId,
+              sort_order: assignment.sortOrder,
+              required_override: assignment.requiredOverride ?? null,
+              min_selections_override: assignment.minSelectionsOverride ?? null,
+              max_selections_override: assignment.maxSelectionsOverride ?? null
+            }))).execute();
+          }
+        }
 
-      const category = await db
-        .selectFrom("catalog_menu_categories")
-        .selectAll()
-        .where("location_id", "=", locationId)
-        .where("category_id", "=", existingRow.category_id)
-        .executeTakeFirst();
-
-      return toAdminMenuItem({
-        itemId: existingRow.item_id,
-        categoryId: existingRow.category_id,
-        categoryTitle: category?.title ?? existingRow.category_id,
-        name: input.name,
-        description: existingRow.description,
-        imageUrl: nextImageUrl ?? undefined,
-        priceCents: input.priceCents,
-        visible: input.visible,
-        sortOrder: existingRow.sort_order,
-        customizationGroups
+        if (input.customizationGroups !== undefined && input.modifierGroupAssignments === undefined) {
+          await replaceRelationalItemEmbeddedGroupsInTransaction(
+            trx as unknown as PersistenceDb,
+            locationId,
+            input.itemId,
+            input.customizationGroups,
+            brandId
+          );
+        }
       });
+      const adminMenu = await getRelationalAdminMenu(db, locationId);
+      return adminMenu.categories.flatMap((category) => category.items).find((item) => item.itemId === input.itemId);
     },
     async updateAdminMenuItemVisibility(locationId, input) {
+      await assertRelationalPlatformManaged(db, locationId);
       const existingRow = await db
         .selectFrom("catalog_menu_items")
         .selectAll()
@@ -4211,28 +4506,11 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         .where("location_id", "=", locationId)
         .where("item_id", "=", input.itemId)
         .executeTakeFirst();
-
-      const category = await db
-        .selectFrom("catalog_menu_categories")
-        .selectAll()
-        .where("location_id", "=", locationId)
-        .where("category_id", "=", existingRow.category_id)
-        .executeTakeFirst();
-
-      return toAdminMenuItem({
-        itemId: existingRow.item_id,
-        categoryId: existingRow.category_id,
-        categoryTitle: category?.title ?? existingRow.category_id,
-        name: existingRow.name,
-        description: existingRow.description,
-        imageUrl: existingRow.image_url ?? undefined,
-        priceCents: existingRow.price_cents,
-        visible: input.visible,
-        sortOrder: existingRow.sort_order,
-        customizationGroups: existingRow.customization_groups_json
-      });
+      const adminMenu = await getRelationalAdminMenu(db, locationId);
+      return adminMenu.categories.flatMap((category) => category.items).find((item) => item.itemId === input.itemId);
     },
     async deleteAdminMenuItem(locationId, itemId) {
+      await assertRelationalPlatformManaged(db, locationId);
       await db
         .deleteFrom("catalog_menu_items")
         .where("location_id", "=", locationId)
@@ -4242,54 +4520,7 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
       return { success: true };
     },
     async getMenu(locationId) {
-      const categories = await db
-        .selectFrom("catalog_menu_categories")
-        .selectAll()
-        .where("location_id", "=", locationId)
-        .orderBy("sort_order", "asc")
-        .execute();
-
-      if (categories.length === 0) {
-        return menuResponseSchema.parse({
-          locationId,
-          currency: defaultMenuPayload.currency,
-          categories: []
-        });
-      }
-
-      const items = await db
-        .selectFrom("catalog_menu_items")
-        .selectAll()
-        .where("location_id", "=", locationId)
-        .orderBy("category_id", "asc")
-        .orderBy("sort_order", "asc")
-        .execute();
-
-      const itemsByCategory = new Map<string, MenuItem[]>();
-      for (const item of items) {
-        const existing = itemsByCategory.get(item.category_id) ?? [];
-        existing.push({
-          id: item.item_id,
-          name: item.name,
-          description: item.description,
-          imageUrl: item.image_url ?? undefined,
-          priceCents: item.price_cents,
-          badgeCodes: toBadgeCodes(item.badge_codes_json),
-          visible: item.visible,
-          customizationGroups: toCustomizationGroups(item.customization_groups_json)
-        });
-        itemsByCategory.set(item.category_id, existing);
-      }
-
-      return menuResponseSchema.parse({
-        locationId,
-        currency: defaultMenuPayload.currency,
-        categories: categories.map((category) => ({
-          id: category.category_id,
-          title: category.title,
-          items: itemsByCategory.get(category.category_id) ?? []
-        }))
-      });
+      return getRelationalPublicMenu(db, locationId);
     },
     async getAdminStoreConfig(locationId) {
       const row = await db

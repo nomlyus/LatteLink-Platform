@@ -282,6 +282,9 @@ describe("dashboard sections", () => {
       {
         categoryId: "espresso",
         title: "Espresso",
+        description: "",
+        visible: true,
+        sortOrder: 0,
         items: [
           {
             itemId: "latte",
@@ -291,6 +294,11 @@ describe("dashboard sections", () => {
             priceCents: 525,
             visible: true,
             sortOrder: 0,
+            available: true,
+            featured: false,
+            badgeCodes: [],
+            categoryIds: ["espresso"],
+            modifierGroupAssignments: [],
             customizationGroups: []
           }
         ]

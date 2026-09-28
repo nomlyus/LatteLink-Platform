@@ -59,7 +59,7 @@ function MenuItemArtwork({
 
 export function MenuItemRow({ item, isLast, onPress, onImageReady }: MenuItemRowProps) {
   return (
-    <Pressable onPress={() => onPress(item)} style={({ pressed }) => [styles.menuRow, pressed ? styles.pressed : null]}>
+    <Pressable disabled={!item.available} onPress={() => onPress(item)} style={({ pressed }) => [styles.menuRow, !item.available ? styles.unavailable : null, pressed ? styles.pressed : null]}>
       <View style={styles.menuRowMain}>
         <MenuItemArtwork imageUrl={item.imageUrl} onReady={onImageReady} />
         <View style={[styles.menuBodyWrap, !isLast ? styles.menuBodyWrapWithDivider : null]}>
@@ -70,7 +70,7 @@ export function MenuItemRow({ item, isLast, onPress, onImageReady }: MenuItemRow
                 <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.menuMeta}>{formatUsd(item.priceCents)}</Text>
               </View>
               <Text allowFontScaling={false} maxFontSizeMultiplier={1} numberOfLines={3} style={styles.menuDescription}>
-                {item.description}
+                {item.available ? item.description : "Currently unavailable"}
               </Text>
             </View>
           </View>
@@ -155,5 +155,8 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.84
+  },
+  unavailable: {
+    opacity: 0.52
   }
 });

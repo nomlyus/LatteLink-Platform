@@ -413,7 +413,7 @@ export default function MenuCustomizeModalScreen() {
   }
 
   function addSelectedItem() {
-    if (!item) return;
+    if (!item || !item.available) return;
     if (!pricedCustomization?.valid) {
       setShowValidationErrors(true);
       return;
@@ -429,6 +429,17 @@ export default function MenuCustomizeModalScreen() {
     });
 
     closeModal();
+  }
+
+  if (item && !item.available && !showLoadingOverlay) {
+    return (
+      <SimpleModalState
+        title="This item is currently unavailable."
+        body="Return to the menu and choose another item."
+        actionLabel="Back to Menu"
+        onAction={closeModal}
+      />
+    );
   }
 
   if (!item && !showLoadingOverlay) {

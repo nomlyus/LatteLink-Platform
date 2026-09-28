@@ -370,6 +370,8 @@ export interface CatalogMenuCategoryTable {
   location_id: string;
   category_id: string;
   title: string;
+  description: string;
+  visible: boolean;
   sort_order: number;
   created_at: Generated<string>;
   updated_at: Generated<string>;
@@ -387,7 +389,65 @@ export interface CatalogMenuItemTable {
   badge_codes_json: unknown;
   customization_groups_json: unknown;
   visible: boolean;
+  available: boolean;
+  featured: boolean;
   sort_order: number;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
+export interface CatalogMenuCategoryItemTable {
+  brand_id: string;
+  location_id: string;
+  category_id: string;
+  item_id: string;
+  sort_order: number;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
+export interface CatalogModifierGroupTable {
+  brand_id: string;
+  location_id: string;
+  modifier_group_id: string;
+  label: string;
+  description: string;
+  source_group_id: string | null;
+  display_style: "chips" | "list" | "toggle" | null;
+  selection_type: "single" | "multiple";
+  required: boolean;
+  min_selections: number;
+  max_selections: number;
+  sort_order: number;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
+export interface CatalogModifierOptionTable {
+  brand_id: string;
+  location_id: string;
+  modifier_group_id: string;
+  option_id: string;
+  label: string;
+  description: string;
+  price_delta_cents: number;
+  is_default: boolean;
+  available: boolean;
+  display_style: "default" | "emphasis" | null;
+  sort_order: number;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
+export interface CatalogItemModifierGroupTable {
+  brand_id: string;
+  location_id: string;
+  item_id: string;
+  modifier_group_id: string;
+  sort_order: number;
+  required_override: boolean | null;
+  min_selections_override: number | null;
+  max_selections_override: number | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }
@@ -630,6 +690,10 @@ export interface PersistenceDatabase {
   notifications_outbox: NotificationsOutboxTable;
   catalog_menu_categories: CatalogMenuCategoryTable;
   catalog_menu_items: CatalogMenuItemTable;
+  catalog_menu_category_items: CatalogMenuCategoryItemTable;
+  catalog_modifier_groups: CatalogModifierGroupTable;
+  catalog_modifier_options: CatalogModifierOptionTable;
+  catalog_item_modifier_groups: CatalogItemModifierGroupTable;
   catalog_home_news_cards: CatalogHomeNewsCardTable;
   catalog_store_configs: CatalogStoreConfigTable;
   catalog_app_configs: CatalogAppConfigTable;

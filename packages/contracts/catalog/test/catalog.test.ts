@@ -4,6 +4,7 @@ import {
   adminMenuItemImageUploadRequestSchema,
   adminMenuItemImageUploadResponseSchema,
   adminMenuItemUpdateSchema,
+  adminModifierGroupCreateSchema,
   adminClientCreateRequestSchema,
   adminClientCreateResponseSchema,
   adminStoreConfigSchema,
@@ -28,6 +29,7 @@ import {
   isPlatformManagedMenu,
   launchApprovalRequestSchema,
   menuResponseSchema,
+  modifierGroupSchema,
   mobileReleaseBuildJobApprovalSchema,
   mobileReleaseBuildJobCreateSchema,
   mobileReleaseBuildJobListResponseSchema,
@@ -80,6 +82,26 @@ const espressoGroups = [
 ];
 
 describe("contracts-catalog", () => {
+  it("models reusable modifier groups with canonical selection rules", () => {
+    const group = modifierGroupSchema.parse({
+      id: "milk",
+      label: "Milk",
+      selectionType: "multiple",
+      required: true,
+      minSelections: 1,
+      maxSelections: 2,
+      options: [
+        { id: "whole", label: "Whole", priceDeltaCents: 0 },
+        { id: "skim", label: "Skim", priceDeltaCents: -25 }
+      ]
+    });
+
+    expect(group.options[1]?.priceDeltaCents).toBe(-25);
+    expect(group.minSelections).toBe(1);
+    expect(() => modifierGroupSchema.parse({ ...group, selectionType: "single", maxSelections: 2 })).toThrow();
+    expect(() => adminModifierGroupCreateSchema.parse({ ...group, minSelections: 3 })).toThrow();
+  });
+
   it("validates menu payload", () => {
     const payload = menuResponseSchema.parse({
       locationId: "flagship-01",

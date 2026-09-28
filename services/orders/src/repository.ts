@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
-import { normalizeCustomizationGroups, type MenuItemCustomizationGroup } from "@lattelink/contracts-catalog";
+import { menuItemCustomizationGroupSchema, normalizeCustomizationGroups, type MenuItemCustomizationGroup } from "@lattelink/contracts-catalog";
 import {
   checkoutDraftSchema,
   discountCodeRedemptionSchema,
@@ -301,6 +301,7 @@ export type QuoteCatalogItem = {
   itemId: string;
   itemName: string;
   basePriceCents: number;
+  available?: boolean;
   customizationGroups: MenuItemCustomizationGroup[];
 };
 
@@ -1020,10 +1021,6 @@ async function createPostgresRepository(
 
   function parseQuote(payload: unknown): OrderQuote {
     return orderQuoteSchema.parse(payload);
-  }
-
-  function parseCustomizationGroups(payload: unknown) {
-    return normalizeCustomizationGroups(typeof payload === "string" ? JSON.parse(payload) : payload);
   }
 
   async function getDiscountUsageById(discountCodeId: string): Promise<DiscountUsage> {
@@ -1912,19 +1909,77 @@ async function createPostgresRepository(
 
       const rows = await db
         .selectFrom("catalog_menu_items")
-        .select(["item_id", "name", "price_cents", "customization_groups_json", "visible"])
+        .select(["item_id", "name", "price_cents", "visible", "available"])
         .where("location_id", "=", locationId)
         .where("item_id", "in", itemIds)
         .where("visible", "=", true)
         .execute();
 
+      // A request containing only hidden or unknown items produces no catalog
+      // rows. Avoid emitting an invalid PostgreSQL `IN ()` query for the
+      // relational assignment lookup; the quote layer will turn the missing
+      // item into its normal MENU_ITEM_NOT_FOUND response.
+      if (rows.length === 0) {
+        return new Map<string, QuoteCatalogItem>();
+      }
+
+      const assignments = await db
+        .selectFrom("catalog_item_modifier_groups")
+        .selectAll()
+        .where("location_id", "=", locationId)
+        .where("item_id", "in", rows.map((row) => row.item_id))
+        .orderBy("sort_order", "asc")
+        .execute();
+      const modifierGroupIds = [...new Set(assignments.map((assignment) => assignment.modifier_group_id))];
+      const groups = modifierGroupIds.length > 0
+        ? await db.selectFrom("catalog_modifier_groups").selectAll().where("location_id", "=", locationId).where("modifier_group_id", "in", modifierGroupIds).execute()
+        : [];
+      const options = modifierGroupIds.length > 0
+        ? await db.selectFrom("catalog_modifier_options").selectAll().where("location_id", "=", locationId).where("modifier_group_id", "in", modifierGroupIds).orderBy("sort_order", "asc").execute()
+        : [];
+
       const items = new Map<string, QuoteCatalogItem>();
       for (const row of rows) {
+        const itemAssignments = assignments.filter((assignment) => assignment.item_id === row.item_id);
+        const relationalGroups = itemAssignments.flatMap((assignment) => {
+          const group = groups.find((candidate) => candidate.modifier_group_id === assignment.modifier_group_id);
+          if (!group) return [];
+          const groupOptions = options
+            .filter((option) => option.modifier_group_id === group.modifier_group_id)
+            .map((option) => ({
+              id: option.option_id,
+              label: option.label,
+              description: option.description,
+              priceDeltaCents: option.price_delta_cents,
+              default: option.is_default,
+              available: option.available,
+              displayStyle: option.display_style ?? undefined,
+              sortOrder: option.sort_order
+            }));
+          if (groupOptions.length === 0) return [];
+          return [menuItemCustomizationGroupSchema.parse({
+            id: group.modifier_group_id,
+            label: group.label,
+            description: group.description,
+            sourceGroupId: group.source_group_id ?? undefined,
+            displayStyle: group.display_style ?? undefined,
+            selectionType: group.selection_type,
+            required: assignment.required_override ?? group.required,
+            minSelections: assignment.min_selections_override ?? group.min_selections,
+            maxSelections: assignment.max_selections_override ?? group.max_selections,
+            sortOrder: assignment.sort_order,
+            options: groupOptions
+          })];
+        });
         items.set(row.item_id, {
           itemId: row.item_id,
           itemName: row.name,
           basePriceCents: row.price_cents,
-          customizationGroups: parseCustomizationGroups(row.customization_groups_json)
+          available: row.available,
+          // After migration 0053 the relational assignment set is authoritative,
+          // including an intentionally empty set. Falling back to the retained
+          // legacy JSON here would resurrect removed modifiers from stale data.
+          customizationGroups: relationalGroups
         });
       }
 

@@ -3,11 +3,16 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   adminClientCreateRequestSchema,
   adminClientCreateResponseSchema,
+  adminMenuCategoryCreateSchema,
+  adminMenuCategoryReorderSchema,
+  adminMenuCategorySchema,
+  adminMenuCategoryUpdateSchema,
   adminMenuItemCreateSchema,
   adminMenuItemImageUploadRequestSchema,
   adminMenuItemImageUploadResponseSchema,
   adminMenuItemUpdateSchema,
   adminMenuItemVisibilityUpdateSchema,
+  adminModifierGroupCreateSchema,
   adminMutationSuccessSchema,
   adminStoreConfigUpdateSchema,
   clientPaymentProfileSchema,
@@ -15,6 +20,7 @@ import {
   internalClientListResponseSchema,
   internalLocationCapabilitiesUpdateSchema,
   menuResponseSchema,
+  modifierGroupSchema,
   internalLocationBootstrapSchema,
   internalLocationListResponseSchema,
   internalLocationPaymentProfileUpdateSchema,
@@ -43,11 +49,12 @@ import {
   homeNewsCardUpdateSchema,
   homeNewsCardVisibilityUpdateSchema,
   homeNewsCardsResponseSchema,
-  homeNewsCardSchema
+  homeNewsCardSchema,
+  isPlatformManagedMenu
 } from "@lattelink/contracts-catalog";
 import { getPersistenceReadinessMetadata } from "@lattelink/persistence";
 import { z } from "zod";
-import { createCatalogRepository, MobileReleaseBuildJobError } from "./repository.js";
+import { CatalogMutationError, createCatalogRepository, MobileReleaseBuildJobError } from "./repository.js";
 import { resolveDefaultLocationId } from "./tenant.js";
 import {
   createMenuImageUploadService,
@@ -70,16 +77,18 @@ const menuItemParamsSchema = z.object({
 const cardParamsSchema = z.object({
   cardId: z.string().min(1)
 });
+const categoryParamsSchema = z.object({
+  categoryId: z.string().min(1)
+});
+const modifierGroupParamsSchema = z.object({
+  modifierGroupId: z.string().min(1)
+});
 const tenantParamsSchema = z.object({
   tenantId: z.string().min(1)
 });
 const mobileReleaseBuildJobParamsSchema = z.object({
   jobId: z.string().uuid()
 });
-const adminMenuItemUpdateWithCustomizationsSchema = adminMenuItemUpdateSchema.extend({
-  customizationGroups: z.array(z.unknown()).optional()
-});
-
 const serviceErrorSchema = z.object({
   code: z.string(),
   message: z.string(),
@@ -128,6 +137,20 @@ function sendError(
       details: input.details
     })
   );
+}
+
+function sendCatalogMutationError(reply: FastifyReply, request: FastifyRequest, error: unknown) {
+  if (!(error instanceof CatalogMutationError)) {
+    return undefined;
+  }
+
+  return sendError(reply, {
+    statusCode: error.statusCode,
+    code: error.code,
+    message: error.message,
+    requestId: request.id,
+    details: error.details
+  });
 }
 
 function isUniqueViolation(error: unknown) {
@@ -373,6 +396,131 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   );
 
+  app.post(
+    "/v1/catalog/admin/menu/categories",
+    { preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess] },
+    async (request, reply) => {
+      const locationId = getOperatorLocationId(request, reply);
+      if (!locationId) return reply;
+      try {
+        const category = await repository.createAdminMenuCategory(locationId, adminMenuCategoryCreateSchema.parse(request.body));
+        return category ? adminMenuCategorySchema.parse(category) : reply.status(500).send();
+      } catch (error) {
+        return sendCatalogMutationError(reply, request, error) ?? Promise.reject(error);
+      }
+    }
+  );
+
+  app.put(
+    "/v1/catalog/admin/menu/categories/:categoryId",
+    { preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess] },
+    async (request, reply) => {
+      const locationId = getOperatorLocationId(request, reply);
+      if (!locationId) return reply;
+      const { categoryId } = categoryParamsSchema.parse(request.params);
+      try {
+        const category = await repository.updateAdminMenuCategory(locationId, {
+          categoryId,
+          ...adminMenuCategoryUpdateSchema.omit({ categoryId: true }).parse(request.body)
+        });
+        if (!category) return sendError(reply, { statusCode: 404, code: "MENU_CATEGORY_NOT_FOUND", message: "Menu category not found", requestId: request.id, details: { categoryId } });
+        return adminMenuCategorySchema.parse(category);
+      } catch (error) {
+        return sendCatalogMutationError(reply, request, error) ?? Promise.reject(error);
+      }
+    }
+  );
+
+  app.post(
+    "/v1/catalog/admin/menu/categories/reorder",
+    { preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess] },
+    async (request, reply) => {
+      const locationId = getOperatorLocationId(request, reply);
+      if (!locationId) return reply;
+      try {
+        return repository.reorderAdminMenuCategories(locationId, adminMenuCategoryReorderSchema.parse(request.body));
+      } catch (error) {
+        return sendCatalogMutationError(reply, request, error) ?? Promise.reject(error);
+      }
+    }
+  );
+
+  app.delete(
+    "/v1/catalog/admin/menu/categories/:categoryId",
+    { preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess] },
+    async (request, reply) => {
+      const locationId = getOperatorLocationId(request, reply);
+      if (!locationId) return reply;
+      const { categoryId } = categoryParamsSchema.parse(request.params);
+      try {
+        return adminMutationSuccessSchema.parse(await repository.deleteAdminMenuCategory(locationId, categoryId));
+      } catch (error) {
+        return sendCatalogMutationError(reply, request, error) ?? Promise.reject(error);
+      }
+    }
+  );
+
+  app.get(
+    "/v1/catalog/admin/menu/modifier-groups",
+    { preHandler: [app.rateLimit(gatewayReadRateLimit), requireGatewayAccess] },
+    async (request, reply) => {
+      const locationId = getOperatorLocationId(request, reply);
+      if (!locationId) return reply;
+      const menu = await repository.getAdminMenu(locationId);
+      return menu.modifierGroups;
+    }
+  );
+
+  app.post(
+    "/v1/catalog/admin/menu/modifier-groups",
+    { preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess] },
+    async (request, reply) => {
+      const locationId = getOperatorLocationId(request, reply);
+      if (!locationId) return reply;
+      try {
+        const group = await repository.createAdminModifierGroup(locationId, adminModifierGroupCreateSchema.parse(request.body));
+        return group ? modifierGroupSchema.parse(group) : reply.status(500).send();
+      } catch (error) {
+        return sendCatalogMutationError(reply, request, error) ?? Promise.reject(error);
+      }
+    }
+  );
+
+  app.put(
+    "/v1/catalog/admin/menu/modifier-groups/:modifierGroupId",
+    { preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess] },
+    async (request, reply) => {
+      const locationId = getOperatorLocationId(request, reply);
+      if (!locationId) return reply;
+      const { modifierGroupId } = modifierGroupParamsSchema.parse(request.params);
+      try {
+        const group = await repository.updateAdminModifierGroup(locationId, {
+          ...adminModifierGroupCreateSchema.parse(request.body),
+          id: modifierGroupId
+        });
+        if (!group) return sendError(reply, { statusCode: 404, code: "MODIFIER_GROUP_NOT_FOUND", message: "Modifier group not found", requestId: request.id, details: { modifierGroupId } });
+        return modifierGroupSchema.parse(group);
+      } catch (error) {
+        return sendCatalogMutationError(reply, request, error) ?? Promise.reject(error);
+      }
+    }
+  );
+
+  app.delete(
+    "/v1/catalog/admin/menu/modifier-groups/:modifierGroupId",
+    { preHandler: [app.rateLimit(gatewayWriteRateLimit), requireGatewayAccess] },
+    async (request, reply) => {
+      const locationId = getOperatorLocationId(request, reply);
+      if (!locationId) return reply;
+      const { modifierGroupId } = modifierGroupParamsSchema.parse(request.params);
+      try {
+        return adminMutationSuccessSchema.parse(await repository.deleteAdminModifierGroup(locationId, modifierGroupId));
+      } catch (error) {
+        return sendCatalogMutationError(reply, request, error) ?? Promise.reject(error);
+      }
+    }
+  );
+
   app.get(
     "/v1/catalog/admin/cards",
     {
@@ -456,6 +604,16 @@ export async function registerRoutes(app: FastifyInstance) {
       const appConfig = await repository.getAppConfig(locationId);
       if (!appConfig) {
         return reply.status(404).send(locationNotFoundError(request.id, locationId));
+      }
+      if (!isPlatformManagedMenu(appConfig)) {
+        return sendCatalogMutationError(
+          reply,
+          request,
+          new CatalogMutationError(
+            "CATALOG_EXTERNAL_SYNC_READ_ONLY",
+            "This catalog is managed by an external synchronization source and cannot receive operator image changes."
+          )
+        );
       }
       const menu = await repository.getAdminMenu(locationId);
       const existingItem = menu.categories.flatMap((category) => category.items).find((item) => item.itemId === itemId);
@@ -564,12 +722,15 @@ export async function registerRoutes(app: FastifyInstance) {
       const locationId = getOperatorLocationId(request, reply);
       if (!locationId) return reply;
       const { itemId } = menuItemParamsSchema.parse(request.params);
-      const parsedInput = adminMenuItemUpdateWithCustomizationsSchema.safeParse(request.body);
+      const parsedInput = adminMenuItemUpdateSchema.safeParse(request.body);
       if (!parsedInput.success) {
+        const isCompatibilityCustomizationPayload = Boolean(
+          request.body && typeof request.body === "object" && "customizationGroups" in request.body
+        );
         return sendError(reply, {
           statusCode: 400,
-          code: "INVALID_MENU_ITEM_UPDATE_PAYLOAD",
-          message: "Menu item update payload is invalid",
+          code: isCompatibilityCustomizationPayload ? "INVALID_CUSTOMIZATION_GROUPS_PAYLOAD" : "INVALID_MENU_ITEM_UPDATE_PAYLOAD",
+          message: isCompatibilityCustomizationPayload ? "customizationGroups payload is invalid" : "Menu item update payload is invalid",
           requestId: request.id,
           details: {
             issues: parsedInput.error.issues
@@ -583,6 +744,8 @@ export async function registerRoutes(app: FastifyInstance) {
           ...parsedInput.data
         });
       } catch (error) {
+        const mutationError = sendCatalogMutationError(reply, request, error);
+        if (mutationError) return mutationError;
         if (error instanceof z.ZodError) {
           return sendError(reply, {
             statusCode: 400,
@@ -634,14 +797,21 @@ export async function registerRoutes(app: FastifyInstance) {
       const locationId = getOperatorLocationId(request, reply);
       if (!locationId) return reply;
       const input = adminMenuItemCreateSchema.parse(request.body);
-      const createdItem = await repository.createAdminMenuItem(locationId, input);
+      let createdItem;
+      try {
+        createdItem = await repository.createAdminMenuItem(locationId, input);
+      } catch (error) {
+        const mutationError = sendCatalogMutationError(reply, request, error);
+        if (mutationError) return mutationError;
+        throw error;
+      }
       if (!createdItem) {
         return reply.status(404).send(
           serviceErrorSchema.parse({
             code: "MENU_CATEGORY_NOT_FOUND",
             message: "Menu category not found",
             requestId: request.id,
-            details: { categoryId: input.categoryId }
+            details: { categoryId: input.categoryId ?? input.categoryIds?.[0] }
           })
         );
       }
