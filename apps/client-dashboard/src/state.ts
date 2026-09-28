@@ -76,6 +76,20 @@ export type AppState = {
   menuCategories: OperatorMenuCategory[];
   menuItemsPage: number;
   menuModifierGroups: OperatorMenuResponse["modifierGroups"];
+  menuActiveTab: "items" | "categories" | "modifier-groups";
+  menuSearch: string;
+  menuCategoryFilter: string;
+  menuAvailabilityFilter: "all" | "available" | "sold-out";
+  menuVisibilityFilter: "all" | "visible" | "hidden";
+  menuModifierGroupSearch: string;
+  menuCategoryItemSearch: string;
+  menuDialogKind: "item" | "create-item" | "category" | "create-category" | "modifier-group" | "create-modifier-group" | null;
+  menuDialogEntityId: string | null;
+  menuDialogOpening: boolean;
+  menuDialogClosing: boolean;
+  menuDialogClosingTimeoutHandle: ReturnType<typeof setTimeout> | null;
+  menuCreateModifierGroupForItemId: string | null;
+  menuLoadError: string | null;
   menuCustomizationDrafts: Record<string, MenuItemCustomizationGroup[]>;
   newsCards: OperatorNewsCard[];
   discountCodes: OperatorDiscountCode[];
@@ -192,6 +206,20 @@ export const state: AppState = {
   menuCategories: [],
   menuItemsPage: 1,
   menuModifierGroups: [],
+  menuActiveTab: "items",
+  menuSearch: "",
+  menuCategoryFilter: "all",
+  menuAvailabilityFilter: "all",
+  menuVisibilityFilter: "all",
+  menuModifierGroupSearch: "",
+  menuCategoryItemSearch: "",
+  menuDialogKind: null,
+  menuDialogEntityId: null,
+  menuDialogOpening: false,
+  menuDialogClosing: false,
+  menuDialogClosingTimeoutHandle: null,
+  menuCreateModifierGroupForItemId: null,
+  menuLoadError: null,
   menuCustomizationDrafts: {},
   newsCards: [],
   discountCodes: [],
@@ -310,6 +338,16 @@ export function resetDashboardData() {
   state.menuCategories = [];
   state.menuItemsPage = 1;
   state.menuModifierGroups = [];
+  state.menuActiveTab = "items";
+  state.menuSearch = "";
+  state.menuCategoryFilter = "all";
+  state.menuAvailabilityFilter = "all";
+  state.menuVisibilityFilter = "all";
+  state.menuModifierGroupSearch = "";
+  state.menuCategoryItemSearch = "";
+  resetMenuDialog();
+  state.menuCreateModifierGroupForItemId = null;
+  state.menuLoadError = null;
   state.menuCustomizationDrafts = {};
   state.newsCards = [];
   state.discountCodes = [];
@@ -360,4 +398,16 @@ export function resetMenuItemDetails() {
   state.menuItemDetailsOpen = false;
   state.menuItemDetailsOpening = false;
   state.menuItemDetailsClosing = false;
+  resetMenuDialog();
+}
+
+export function resetMenuDialog() {
+  if (state.menuDialogClosingTimeoutHandle !== null) {
+    clearTimeout(state.menuDialogClosingTimeoutHandle);
+  }
+  state.menuDialogClosingTimeoutHandle = null;
+  state.menuDialogKind = null;
+  state.menuDialogEntityId = null;
+  state.menuDialogOpening = false;
+  state.menuDialogClosing = false;
 }
