@@ -6,6 +6,8 @@ import {
   getAvailableDashboardSections,
   getDashboardSectionLabel
 } from "../sections";
+import { getDashboardSectionIcon } from "../lib/navigation/dashboard-sections";
+import { getDashboardDestination, getDashboardRouteOwner } from "../lib/navigation/dashboard-navigation";
 import { reconcileMenuCreateDraft } from "../menu-wizard";
 import { renderBanner } from "./common";
 import { renderHomeState, renderOverviewSection, type HomeState } from "./overview";
@@ -22,21 +24,6 @@ import { renderOwnerHome } from "./owner-home";
 
 function renderNavIcon(section: DashboardSection) {
   return `<img class="dash-nav-icon" src="${getDashboardSectionIcon(section)}" alt="" aria-hidden="true" />`;
-}
-
-function getDashboardSectionIcon(section: DashboardSection) {
-  const assets: Record<DashboardSection, string> = {
-    overview: "/icons/operator-v3/home.svg",
-    orders: "/icons/operator-v3/orders.svg",
-    menu: "/icons/operator-v3/menu.svg",
-    cards: "/icons/operator-v3/marketing.svg",
-    discounts: "/icons/operator-v3/analytics.svg",
-    experience: "/icons/operator-v3/home.svg",
-    store: "/icons/operator-v3/stores.svg",
-    team: "/icons/operator-v3/customers.svg"
-  };
-
-  return assets[section];
 }
 
 function getAccountStoreLabel() {
@@ -74,20 +61,27 @@ function renderNavItems(sections: DashboardSection[]) {
           ? `<span class="dash-nav-badge">${activeOrders}</span>`
           : "";
       const statusPill = section === "experience" ? `<span class="dash-nav-status">Planned</span>` : "";
+      const active = state.section === section;
+      const destination = getDashboardDestination(section);
+      const content = `
+            <span class="dash-nav-item__content">
+              ${renderNavIcon(section)}
+              <span class="dash-nav-label">${escapeHtml(getDashboardSectionLabel(section))}</span>
+            </span>
+            ${statusPill}
+            ${badge}`;
+      if (getDashboardRouteOwner(section) === "react") {
+        return `<a class="dash-nav-item ${active ? "dash-nav-item--active" : ""}" href="${destination.href}"${active ? ' aria-current="page"' : ""} title="${escapeHtml(getDashboardSectionLabel(section))}">${content}</a>`;
+      }
       return `
         <button
-          class="dash-nav-item ${state.section === section ? "dash-nav-item--active" : ""}"
+          class="dash-nav-item ${active ? "dash-nav-item--active" : ""}"
           type="button"
           data-action="set-section"
           data-section="${section}"
           title="${escapeHtml(getDashboardSectionLabel(section))}"
         >
-          <span class="dash-nav-item__content">
-            ${renderNavIcon(section)}
-            <span class="dash-nav-label">${escapeHtml(getDashboardSectionLabel(section))}</span>
-          </span>
-          ${statusPill}
-          ${badge}
+          ${content}
         </button>
       `;
     })

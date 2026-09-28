@@ -3,7 +3,7 @@ import { resetMenuItemDetails, setError, state } from "./state";
 import { addToast, dismissToast } from "./toast-runtime";
 import { persistSection } from "./storage";
 import { selectLocationInContext } from "./features/location/location-compat";
-import { syncLegacySectionPath } from "./lib/navigation/dashboard-navigation";
+import { navigateToDashboardSection, getDashboardRouteOwner, syncLegacySectionPath } from "./lib/navigation/dashboard-navigation";
 import {
   syncMenuCreateDraft,
   advanceMenuCreateWizard,
@@ -668,6 +668,10 @@ export function registerEvents(parentSignal?: AbortSignal) {
         if (!getAvailableDashboardSections().includes(section)) {
           setError("That dashboard section is unavailable for this store or your current role.");
           render();
+          return;
+        }
+        if (getDashboardRouteOwner(section) === "react") {
+          navigateToDashboardSection(section);
           return;
         }
         if (section !== "menu") {

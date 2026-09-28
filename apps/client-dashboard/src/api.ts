@@ -90,6 +90,7 @@ export type OperatorOnboardingSummary = z.output<typeof onboardingSummarySchema>
 export type DashboardLocation = {
   locationId: string;
   locationName: string;
+  storeName?: string;
   marketLabel: string;
   timezone?: string;
   appConfig: z.output<typeof appConfigSchema>;
@@ -252,9 +253,10 @@ async function requestJson<TSchema extends z.ZodTypeAny>(params: {
   query?: Record<string, string | undefined>;
   method?: RequestMethod;
   body?: unknown;
+  signal?: AbortSignal;
   schema: TSchema;
 }): Promise<z.output<TSchema>> {
-  const { apiBaseUrl, accessToken, path, query, method = "GET", body, schema } = params;
+  const { apiBaseUrl, accessToken, path, query, method = "GET", body, signal, schema } = params;
   const resolvedPath = buildPathWithQuery(path, query);
   const response = await (async () => {
     try {
@@ -265,9 +267,11 @@ async function requestJson<TSchema extends z.ZodTypeAny>(params: {
           : body !== undefined
             ? { "content-type": "application/json" }
             : undefined,
-        body: body === undefined ? undefined : JSON.stringify(body)
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal
       });
     } catch (error) {
+      if (signal?.aborted) throw error;
       throw new Error(unreachableBackendMessage, {
         cause: error instanceof Error ? error : undefined
       });
@@ -564,6 +568,7 @@ export async function fetchDashboardLocations(session: OperatorSession): Promise
   return locations.map(({ appConfig, storeConfig }) => ({
     locationId: appConfig.brand.locationId,
     locationName: appConfig.brand.locationName,
+    storeName: storeConfig?.storeName,
     marketLabel: appConfig.brand.marketLabel,
     timezone: storeConfig?.timezone ?? "America/Detroit",
     appConfig
@@ -573,7 +578,8 @@ export async function fetchDashboardLocations(session: OperatorSession): Promise
 export function fetchOperatorReporting(
   session: OperatorSession,
   locationIds: string[],
-  input: { start: string; end: string; granularity: "hour" | "day" }
+  input: { start: string; end: string; granularity: "hour" | "day" },
+  signal?: AbortSignal
 ) {
   return requestJson({
     apiBaseUrl: session.apiBaseUrl,
@@ -581,6 +587,7 @@ export function fetchOperatorReporting(
     path: "/admin/reporting/query",
     method: "POST",
     body: reportingQueryRequestSchema.parse({ locationIds, ...input }),
+    signal,
     schema: reportingResponseSchema
   });
 }

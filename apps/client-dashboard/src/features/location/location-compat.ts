@@ -6,12 +6,16 @@ export type LocationContextSnapshot = {
   operatorUserId: string | null;
   selectedLocationId: string | "all" | null;
   availableLocations: readonly DashboardLocation[];
+  status: "idle" | "loading" | "ready" | "error";
+  error: string | null;
 };
 
 const emptySnapshot: LocationContextSnapshot = {
   operatorUserId: null,
   selectedLocationId: null,
-  availableLocations: []
+  availableLocations: [],
+  status: "idle",
+  error: null
 };
 
 let snapshot = emptySnapshot;
@@ -42,7 +46,10 @@ export function resolveLocationSelection(
   preferred: string | "all" | null = loadStoredLocationSelection(session.operator.operatorUserId)
 ): string | "all" | null {
   const accessible = accessibleLocationIds(session);
-  const available = new Set(locations.map((location) => location.locationId).filter((id) => accessible.has(id)));
+  const available = new Set(
+    (locations.length > 0 ? locations.map((location) => location.locationId) : [...accessible])
+      .filter((id) => accessible.has(id))
+  );
   if (isStoreOperator(session.operator)) {
     return session.operator.locationId;
   }
@@ -69,7 +76,7 @@ export function initializeLocationContext(session: OperatorSession) {
           : snapshot.selectedLocationId && snapshot.selectedLocationId !== "all" && accessible.has(snapshot.selectedLocationId)
             ? snapshot.selectedLocationId
             : defaultLocationSelection(session);
-    snapshot = { operatorUserId: session.operator.operatorUserId, selectedLocationId, availableLocations };
+    snapshot = { ...snapshot, operatorUserId: session.operator.operatorUserId, selectedLocationId, availableLocations, error: null };
     notify();
     return snapshot;
   }
@@ -86,7 +93,9 @@ export function initializeLocationContext(session: OperatorSession) {
   snapshot = {
     operatorUserId: session.operator.operatorUserId,
     selectedLocationId,
-    availableLocations: []
+    availableLocations: [],
+    status: "idle",
+    error: null
   };
   notify();
   return snapshot;
@@ -106,10 +115,24 @@ export function publishLocationContext(
   snapshot = {
     operatorUserId: session.operator.operatorUserId,
     selectedLocationId,
-    availableLocations: [...locations]
+    availableLocations: [...locations],
+    status: "ready",
+    error: null
   };
   notify();
   return selectedLocationId;
+}
+
+export function markLocationContextLoading(session: OperatorSession) {
+  if (snapshot.operatorUserId !== session.operator.operatorUserId) return;
+  snapshot = { ...snapshot, status: "loading", error: null };
+  notify();
+}
+
+export function markLocationContextError(session: OperatorSession, error: string) {
+  if (snapshot.operatorUserId !== session.operator.operatorUserId) return;
+  snapshot = { ...snapshot, status: "error", error };
+  notify();
 }
 
 export function selectLocationInContext(session: OperatorSession, locationId: string | "all") {

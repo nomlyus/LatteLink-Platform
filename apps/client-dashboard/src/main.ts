@@ -1,4 +1,4 @@
-import { setNotice, state, resetMenuDialog, resetMenuItemDetails } from "./state";
+import { setNotice, state, resetDashboardData, resetMenuDialog, resetMenuItemDetails } from "./state";
 import { bindDashboardRoot, render } from "./render";
 import { registerEvents } from "./events";
 import { handleGoogleCallback, handleOwnerInviteFromUrl, loadAuthProviders } from "./controllers/auth";
@@ -7,10 +7,11 @@ import { cancelDashboardLoad, loadDashboard } from "./lifecycle";
 import { clearPendingCancel, refreshOrderConnection, stopAutoRefresh } from "./orders-runtime";
 import { disposeNewOrderAlertRuntime, resumeNewOrderSound } from "./order-alert";
 import { resetToastRuntime } from "./toast-runtime";
-import { persistSection } from "./storage";
+import { loadStoredApiBaseUrl, loadStoredSession, persistSection } from "./storage";
 import { registerLegacyBrowserLifecycle } from "./legacy/browser-lifecycle";
 import { stripStripeReturnParams, readStripeReturnParams } from "./lib/navigation/route-callbacks";
 import type { DashboardSection } from "./model";
+import { resolveLocationSelection } from "./features/location/location-compat";
 
 type LegacyRuntime = {
   root: HTMLDivElement;
@@ -96,6 +97,15 @@ export function mountLegacyDashboard(root: HTMLDivElement, initialSection?: Dash
   activeRuntime?.dispose();
 
   bindDashboardRoot(root);
+  const storedSession = loadStoredSession();
+  const sessionChanged = state.session?.operator.operatorUserId !== storedSession?.operator.operatorUserId ||
+    state.session?.accessToken !== storedSession?.accessToken;
+  state.session = storedSession;
+  state.authApiBaseUrl = storedSession?.apiBaseUrl ?? loadStoredApiBaseUrl();
+  state.authEmail = storedSession?.operator.email ?? "";
+  state.authPassword = "";
+  if (sessionChanged) resetDashboardData();
+  state.selectedLocationId = storedSession ? resolveLocationSelection(storedSession, []) : null;
   if (initialSection) {
     state.section = initialSection;
     persistSection(initialSection);

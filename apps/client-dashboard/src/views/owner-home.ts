@@ -1,77 +1,34 @@
 import type { ReportingResponse } from "@lattelink/contracts-reporting";
-import { isApiRequestError } from "../api";
-import { getSelectedLocation, hasMultipleLocations, isAllLocationsSelected, state } from "../state";
+import { hasMultipleLocations, isAllLocationsSelected, state } from "../state";
 import { escapeHtml, formatCompactCount, formatMoney } from "../ui/format";
+import {
+  getChartBarHeight,
+  getComparisonLabel,
+  getOwnerReportingLocationIds as getLocationIds,
+  resolveOwnerReportingTimezone as resolveTimezone,
+  type OwnerPeriod
+} from "../features/home/owner-home-domain";
 
-export type OwnerPeriod = "today" | "7d" | "30d";
-export type OwnerChartMetric = "netSales" | "orders";
+export type { OwnerChartMetric, OwnerPeriod } from "../features/home/owner-home-domain";
+export { getChartBarHeight, getReportingDateRange, reportingErrorCode } from "../features/home/owner-home-domain";
 
 export function shouldRenderOwnerHome(operator: { role?: string } | null | undefined) {
   return operator?.role === "owner";
 }
 
-const periodLabels: Record<OwnerPeriod, string> = { today: "Today", "7d": "7D", "30d": "30D" };
-
-function localDateParts(now: Date, timezone: string) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).formatToParts(now);
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return { year: Number(values.year), month: Number(values.month), day: Number(values.day) };
-}
-
-function dateKey(parts: { year: number; month: number; day: number }) {
-  return `${String(parts.year).padStart(4, "0")}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
-}
-
-function shiftDateKey(key: string, days: number) {
-  const date = new Date(`${key}T12:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-}
-
-export function getReportingDateRange(period: OwnerPeriod, timezone: string, now = new Date()) {
-  const current = dateKey(localDateParts(now, timezone));
-  const start = period === "today" ? current : shiftDateKey(current, period === "7d" ? -6 : -29);
-  return {
-    start,
-    end: shiftDateKey(current, 1),
-    granularity: period === "today" ? ("hour" as const) : ("day" as const)
-  };
-}
-
 export function resolveOwnerReportingTimezone() {
-  if (!isAllLocationsSelected()) {
-    return getSelectedLocation()?.timezone ?? null;
-  }
-  const timezones = [...new Set(state.availableLocations.map((location) => location.timezone).filter(Boolean))];
-  return timezones.length === 1 ? timezones[0] : timezones.length > 1 ? "mixed" : null;
+  return resolveTimezone(state.selectedLocationId, state.availableLocations);
 }
 
 export function getOwnerReportingLocationIds() {
-  if (isAllLocationsSelected()) {
-    return state.availableLocations.map((location) => location.locationId);
-  }
-  return state.selectedLocationId ? [state.selectedLocationId] : [];
-}
-
-export function getChartBarHeight(value: number, max: number, maxHeight = 104) {
-  return max > 0 ? Math.round((Math.abs(value) / max) * maxHeight) : 0;
+  return getLocationIds(state.selectedLocationId, state.availableLocations);
 }
 
 function formatMetric(metric: { amountCents: number } | null | undefined) {
   return metric ? formatMoney(metric.amountCents) : "Unavailable";
 }
 
-function comparisonLabel(percentChange: number | null, unavailable: boolean) {
-  if (unavailable) return "Unavailable";
-  if (percentChange === null) return "No prior data";
-  const sign = percentChange > 0 ? "+" : "";
-  return `${sign}${percentChange.toFixed(1)}%`;
-}
+const periodLabels: Record<OwnerPeriod, string> = { today: "Today", "7d": "7D", "30d": "30D" };
 
 function renderKpi(label: string, value: string, change: string, tone = "") {
   return `<article class="owner-home-kpi">
@@ -199,16 +156,10 @@ export function renderOwnerHome() {
   const emptyClass = noPaidOrders ? " owner-home--empty" : "";
   return `<div class="owner-home ${experienceClass}${emptyClass}" aria-label="Owner home">
     <div class="owner-home__controls"><div class="owner-home-period"><div role="group" aria-label="Reporting period">${(["today", "7d", "30d"] as OwnerPeriod[]).map((period) => `<button type="button" class="${state.ownerHome.period === period ? "is-active" : ""}" data-action="set-owner-period" data-period="${period}">${periodLabels[period]}</button>`).join("")}</div></div></div>
-    ${timezoneState === "mixed" && !reportingLoading ? renderReportingError(true) : reportingUnavailable ? renderUnavailableKpis() : `<section class="owner-home-kpis" aria-label="Business performance">${reportingLoading || !summary || !comparison ? `${renderKpiSkeleton()}${renderKpiSkeleton()}${renderKpiSkeleton()}` : `${renderKpi("Net sales", formatMetric(summary.netSales), comparisonLabel(comparison.netSales.percentChange, netSalesUnavailable), comparison.netSales.percentChange === null ? "neutral" : comparison.netSales.percentChange > 0 ? "positive" : "negative")}${renderKpi("Orders", formatCompactCount(summary.paidOrders), comparisonLabel(comparison.paidOrders.percentChange, false), comparison.paidOrders.percentChange === null ? "neutral" : comparison.paidOrders.percentChange > 0 ? "positive" : "negative")}${renderKpi("Avg order", formatMetric(summary.averageOrderValue), comparisonLabel(comparison.averageOrderValue.percentChange, averageUnavailable), comparison.averageOrderValue.percentChange === null ? "neutral" : comparison.averageOrderValue.percentChange > 0 ? "positive" : "negative")}`}</section>`}
+    ${timezoneState === "mixed" && !reportingLoading ? renderReportingError(true) : reportingUnavailable ? renderUnavailableKpis() : `<section class="owner-home-kpis" aria-label="Business performance">${reportingLoading || !summary || !comparison ? `${renderKpiSkeleton()}${renderKpiSkeleton()}${renderKpiSkeleton()}` : `${renderKpi("Net sales", formatMetric(summary.netSales), getComparisonLabel(comparison.netSales.percentChange, netSalesUnavailable), comparison.netSales.percentChange === null ? "neutral" : comparison.netSales.percentChange > 0 ? "positive" : "negative")}${renderKpi("Orders", formatCompactCount(summary.paidOrders), getComparisonLabel(comparison.paidOrders.percentChange, false), comparison.paidOrders.percentChange === null ? "neutral" : comparison.paidOrders.percentChange > 0 ? "positive" : "negative")}${renderKpi("Avg order", formatMetric(summary.averageOrderValue), getComparisonLabel(comparison.averageOrderValue.percentChange, averageUnavailable), comparison.averageOrderValue.percentChange === null ? "neutral" : comparison.averageOrderValue.percentChange > 0 ? "positive" : "negative")}`}</section>`}
     ${showDataQualityNotice ? `<p class="owner-home-data-quality" role="status">${dataQualityMessage}</p>` : ""}
     ${timezoneState === "mixed" && !reportingLoading ? "" : reportingUnavailable ? renderChartError(state.ownerHome.error ?? "We couldn’t load performance data right now.") : renderChart(report, reportingLoading)}
     <div class="owner-home-operations">${renderAttention(pageLoading)}</div>
     ${timezoneState === "mixed" && !reportingLoading ? "" : reportingUnavailable ? "" : renderLocations(report, reportingLoading)}
   </div>`;
-}
-
-export function reportingErrorCode(error: unknown) {
-  if (!isApiRequestError(error)) return null;
-  const payload = error.payload;
-  return typeof payload === "object" && payload !== null && "code" in payload && typeof payload.code === "string" ? payload.code : null;
 }

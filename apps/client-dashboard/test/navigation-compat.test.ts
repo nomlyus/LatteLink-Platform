@@ -10,7 +10,11 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("dashboard route ownership compatibility", () => {
   it("keeps all unmigrated product sections on the explicit legacy host", () => {
-    for (const section of ["overview", "orders", "menu", "cards", "discounts", "experience", "store", "team"] as const) {
+    expect(getDashboardRouteOwner("overview")).toBe("react");
+    expect(getDashboardDestination("overview")).toEqual({ ownership: "react", href: "/" });
+    expect(isLegacyDashboardSection("overview")).toBe(false);
+
+    for (const section of ["orders", "menu", "cards", "discounts", "experience", "store", "team"] as const) {
       expect(getDashboardRouteOwner(section)).toBe("legacy");
       expect(getDashboardDestination(section)).toEqual({ ownership: "legacy", href: `/legacy/${section}` });
       expect(isLegacyDashboardSection(section)).toBe(true);
