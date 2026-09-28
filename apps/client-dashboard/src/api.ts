@@ -14,10 +14,17 @@ import {
 } from "@lattelink/contracts-auth";
 import {
   adminMenuItemCreateSchema,
+  adminMenuCategoryCreateSchema,
+  adminMenuCategoryReorderSchema,
+  adminMenuCategorySchema,
+  adminMenuCategoryUpdateSchema,
   adminMenuItemImageUploadRequestSchema,
   adminMenuItemImageUploadResponseSchema,
   adminMenuItemVisibilityUpdateSchema,
   adminMutationSuccessSchema,
+  adminModifierGroupCreateSchema,
+  adminModifierGroupUpdateSchema,
+  modifierGroupSchema,
   adminStoreConfigSchema,
   adminStoreConfigUpdateSchema,
   appConfigSchema,
@@ -974,6 +981,106 @@ export function deleteOperatorMenuItem(session: OperatorSession, locationId: str
     apiBaseUrl: session.apiBaseUrl,
     accessToken: session.accessToken,
     path: `/admin/menu/${itemId}`,
+    query: { locationId: requireSelectedLocationId(locationId) },
+    method: "DELETE",
+    schema: adminMutationSuccessSchema
+  });
+}
+
+export function createOperatorMenuCategory(
+  session: OperatorSession,
+  locationId: string | null,
+  input: z.input<typeof adminMenuCategoryCreateSchema>
+) {
+  return requestJson({
+    apiBaseUrl: session.apiBaseUrl,
+    accessToken: session.accessToken,
+    path: "/admin/menu/categories",
+    query: { locationId: requireSelectedLocationId(locationId) },
+    method: "POST",
+    body: adminMenuCategoryCreateSchema.parse(input),
+    schema: adminMenuCategorySchema
+  });
+}
+
+export function updateOperatorMenuCategory(
+  session: OperatorSession,
+  locationId: string | null,
+  categoryId: string,
+  input: z.input<typeof adminMenuCategoryUpdateSchema>
+) {
+  return requestJson({
+    apiBaseUrl: session.apiBaseUrl,
+    accessToken: session.accessToken,
+    path: `/admin/menu/categories/${categoryId}`,
+    query: { locationId: requireSelectedLocationId(locationId) },
+    method: "PUT",
+    body: adminMenuCategoryUpdateSchema.parse({ ...input, categoryId }),
+    schema: adminMenuCategorySchema
+  });
+}
+
+export function reorderOperatorMenuCategories(session: OperatorSession, locationId: string | null, categoryIds: string[]) {
+  return requestJson({
+    apiBaseUrl: session.apiBaseUrl,
+    accessToken: session.accessToken,
+    path: "/admin/menu/categories/reorder",
+    query: { locationId: requireSelectedLocationId(locationId) },
+    method: "POST",
+    body: adminMenuCategoryReorderSchema.parse({ categoryIds }),
+    schema: operatorMenuResponseSchema
+  });
+}
+
+export function deleteOperatorMenuCategory(session: OperatorSession, locationId: string | null, categoryId: string) {
+  return requestJson({
+    apiBaseUrl: session.apiBaseUrl,
+    accessToken: session.accessToken,
+    path: `/admin/menu/categories/${categoryId}`,
+    query: { locationId: requireSelectedLocationId(locationId) },
+    method: "DELETE",
+    schema: adminMutationSuccessSchema
+  });
+}
+
+export function createOperatorModifierGroup(
+  session: OperatorSession,
+  locationId: string | null,
+  input: z.input<typeof adminModifierGroupCreateSchema>
+) {
+  return requestJson({
+    apiBaseUrl: session.apiBaseUrl,
+    accessToken: session.accessToken,
+    path: "/admin/menu/modifier-groups",
+    query: { locationId: requireSelectedLocationId(locationId) },
+    method: "POST",
+    body: adminModifierGroupCreateSchema.parse(input),
+    schema: modifierGroupSchema
+  });
+}
+
+export function updateOperatorModifierGroup(
+  session: OperatorSession,
+  locationId: string | null,
+  modifierGroupId: string,
+  input: z.input<typeof adminModifierGroupUpdateSchema>
+) {
+  return requestJson({
+    apiBaseUrl: session.apiBaseUrl,
+    accessToken: session.accessToken,
+    path: `/admin/menu/modifier-groups/${modifierGroupId}`,
+    query: { locationId: requireSelectedLocationId(locationId) },
+    method: "PUT",
+    body: adminModifierGroupUpdateSchema.parse({ ...input, id: modifierGroupId }),
+    schema: modifierGroupSchema
+  });
+}
+
+export function deleteOperatorModifierGroup(session: OperatorSession, locationId: string | null, modifierGroupId: string) {
+  return requestJson({
+    apiBaseUrl: session.apiBaseUrl,
+    accessToken: session.accessToken,
+    path: `/admin/menu/modifier-groups/${modifierGroupId}`,
     query: { locationId: requireSelectedLocationId(locationId) },
     method: "DELETE",
     schema: adminMutationSuccessSchema

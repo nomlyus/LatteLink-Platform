@@ -183,10 +183,11 @@ function LoadingMenuState({
 }
 
 function buildSections(categories: MenuCategory[]): MenuSection[] {
-  const allItems = categories.flatMap((category) => category.items);
+  const allItems = [...new Map(categories.flatMap((category) => category.items).map((item) => [item.id, item])).values()];
+  const featuredItems = allItems.filter((item) => item.featured);
 
   return [
-    { id: "featured", label: "Featured", items: allItems.slice(0, 4) },
+    ...(featuredItems.length > 0 ? [{ id: "featured", label: "Featured", items: featuredItems }] : []),
     ...categories.map((category) => ({
       id: category.id,
       label: category.title,

@@ -11,6 +11,7 @@ import {
   adminMenuItemSchema,
   adminMenuItemCreateSchema,
   adminMenuItemUpdateSchema,
+  adminMenuResponseSchema,
   adminStoreConfigUpdateSchema,
   appConfigSchema,
   homeNewsCardSchema,
@@ -40,23 +41,17 @@ export type OperatorOrderFilter = "all" | "active" | "completed";
 export type DashboardSection = "overview" | "orders" | "menu" | "cards" | "discounts" | "experience" | "store" | "team";
 export type OperatorCapability = z.output<typeof operatorCapabilitySchema>;
 export type OperatorUser = z.output<typeof operatorUserSchema>;
-export const operatorMenuItemSchema = adminMenuItemSchema.extend({
-  customizationGroups: z.array(menuItemCustomizationGroupSchema).default([])
-});
+export const operatorMenuItemSchema = adminMenuItemSchema;
 export const operatorMenuCategorySchema = adminMenuCategorySchema.extend({
   items: z.array(operatorMenuItemSchema)
 });
-export const operatorMenuResponseSchema = z.object({
-  locationId: z.string().min(1),
-  categories: z.array(operatorMenuCategorySchema)
-});
-export const operatorMenuItemUpdateSchema = adminMenuItemUpdateSchema.extend({
-  customizationGroups: z.array(menuItemCustomizationGroupSchema).optional()
-});
+export const operatorMenuResponseSchema = adminMenuResponseSchema;
+export const operatorMenuItemUpdateSchema = adminMenuItemUpdateSchema;
 export const operatorNewsCardSchema = homeNewsCardSchema;
 export type OperatorMenuItem = z.output<typeof operatorMenuItemSchema>;
 export type OperatorMenuCategory = z.output<typeof operatorMenuCategorySchema>;
 export type OperatorMenuResponse = z.output<typeof operatorMenuResponseSchema>;
+export type OperatorModifierGroup = OperatorMenuResponse["modifierGroups"][number];
 export type OperatorNewsCard = z.output<typeof operatorNewsCardSchema>;
 export type OperatorDiscountCode = z.output<typeof discountCodeSchema>;
 
@@ -69,10 +64,17 @@ export type OperatorOrderAction = {
 
 export type OperatorMenuItemFormInput = {
   name?: string;
+  description?: string;
   priceCents?: string | number;
   visible?: boolean | string;
+  available?: boolean | string;
+  featured?: boolean | string;
+  badgeCodes?: string | string[];
+  categoryIds?: string[];
+  modifierGroupAssignments?: unknown;
   imageUrl?: string | null;
   customizationGroups?: unknown;
+  sortOrder?: string | number;
 };
 
 export type OperatorMenuItemCreateFormInput = {
@@ -82,6 +84,9 @@ export type OperatorMenuItemCreateFormInput = {
   imageUrl?: string | null;
   priceCents?: string | number;
   visible?: boolean | string;
+  available?: boolean | string;
+  featured?: boolean | string;
+  badgeCodes?: string | string[];
 };
 
 export type OperatorStoreConfigFormInput = {
@@ -549,11 +554,25 @@ export function normalizeMenuItemForm(input: OperatorMenuItemFormInput | unknown
   const value = toRecord(input);
   const customizationGroups =
     value.customizationGroups === undefined ? undefined : z.array(menuItemCustomizationGroupSchema).parse(value.customizationGroups);
+  const modifierGroupAssignments = value.modifierGroupAssignments === undefined ? undefined : value.modifierGroupAssignments;
+  const badgeCodes = Array.isArray(value.badgeCodes)
+    ? value.badgeCodes.map((badge) => String(badge).trim()).filter(Boolean)
+    : String(value.badgeCodes ?? "")
+        .split(",")
+        .map((badge) => badge.trim())
+        .filter(Boolean);
 
   return operatorMenuItemUpdateSchema.parse({
     name: normalizeText(value.name),
+    description: normalizeText(value.description),
     priceCents: normalizeCents(value.priceCents),
     visible: normalizeBoolean(value.visible),
+    available: value.available === undefined ? true : normalizeBoolean(value.available),
+    featured: value.featured === undefined ? false : normalizeBoolean(value.featured),
+    badgeCodes,
+    ...(value.categoryIds !== undefined ? { categoryIds: z.array(z.string().min(1)).parse(value.categoryIds) } : {}),
+    ...(modifierGroupAssignments === undefined ? {} : { modifierGroupAssignments }),
+    sortOrder: value.sortOrder === undefined ? 0 : normalizeCents(value.sortOrder),
     ...(value.imageUrl !== undefined ? { imageUrl: normalizeNullableOptionalUrl(value.imageUrl) } : {}),
     ...(customizationGroups === undefined ? {} : { customizationGroups })
   });
@@ -568,7 +587,15 @@ export function normalizeMenuItemCreateForm(input: OperatorMenuItemCreateFormInp
     description: normalizeOptionalText(value.description),
     ...(value.imageUrl !== undefined ? { imageUrl: normalizeNullableOptionalUrl(value.imageUrl) } : {}),
     priceCents: normalizeCents(value.priceCents),
-    visible: normalizeBoolean(value.visible)
+    visible: normalizeBoolean(value.visible),
+    available: value.available === undefined ? true : normalizeBoolean(value.available),
+    featured: value.featured === undefined ? false : normalizeBoolean(value.featured),
+    badgeCodes: Array.isArray(value.badgeCodes)
+      ? value.badgeCodes.map((badge) => String(badge).trim()).filter(Boolean)
+      : String(value.badgeCodes ?? "")
+          .split(",")
+          .map((badge) => badge.trim())
+          .filter(Boolean)
   });
 }
 

@@ -17,6 +17,7 @@ import type {
 import type {
   DashboardSection,
   OperatorMenuCategory,
+  OperatorMenuResponse,
   OperatorDiscountCode,
   OperatorNewsCard,
   OperatorOrder,
@@ -71,6 +72,7 @@ export type AppState = {
   orderFilter: OperatorOrderFilter;
   storeTicketFilter: "all" | "needs_action" | "in_progress" | "ready" | "closed";
   menuCategories: OperatorMenuCategory[];
+  menuModifierGroups: OperatorMenuResponse["modifierGroups"];
   menuCustomizationDrafts: Record<string, MenuItemCustomizationGroup[]>;
   newsCards: OperatorNewsCard[];
   discountCodes: OperatorDiscountCode[];
@@ -174,6 +176,7 @@ export const state: AppState = {
   orderFilter: "active",
   storeTicketFilter: "all",
   menuCategories: [],
+  menuModifierGroups: [],
   menuCustomizationDrafts: {},
   newsCards: [],
   discountCodes: [],
@@ -280,6 +283,7 @@ export function resetDashboardData() {
   };
   state.storeTicketFilter = "all";
   state.menuCategories = [];
+  state.menuModifierGroups = [];
   state.menuCustomizationDrafts = {};
   state.newsCards = [];
   state.discountCodes = [];

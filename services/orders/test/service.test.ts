@@ -1,6 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_APP_CONFIG_FULFILLMENT } from "@lattelink/contracts-catalog";
+import { DEFAULT_APP_CONFIG_FULFILLMENT, menuResponseSchema } from "@lattelink/contracts-catalog";
 import type { OrdersRepository } from "../src/repository.js";
 import { createOrdersRepository } from "../src/repository.js";
 import {
@@ -15,6 +15,7 @@ import {
   type PosAdapter,
   type OrderServiceDeps
 } from "../src/service.js";
+import { buildApp as buildCatalogApp } from "../../catalog/src/app.js";
 
 const sampleQuotePayload = {
   locationId: "flagship-01",
@@ -367,6 +368,163 @@ describe("orders service layer", () => {
       orderStatus: "PAID"
     });
     expect(submitOrder).not.toHaveBeenCalled();
+  });
+
+  it("rejects unavailable catalog items while leaving hidden-item protection separate", async () => {
+    const { deps } = await createTestDeps(repositories);
+    deps.repository.getCatalogItemsForQuote = vi.fn().mockResolvedValue(
+      new Map([
+        [
+          "latte",
+          {
+            itemId: "latte",
+            itemName: "Latte",
+            basePriceCents: 525,
+            available: false,
+            customizationGroups: []
+          }
+        ]
+      ])
+    );
+
+    const result = await createQuote({
+      input: {
+        locationId: "flagship-01",
+        items: [{ itemId: "latte", quantity: 1 }],
+        pointsToRedeem: 0
+      },
+      deps
+    });
+
+    expect(result).toEqual({
+      error: expect.objectContaining({
+        code: "MENU_ITEM_UNAVAILABLE",
+        statusCode: 409
+      })
+    });
+  });
+
+  it("carries a catalog mutation through public menu data into an authoritative order snapshot", async () => {
+    vi.stubEnv("GATEWAY_INTERNAL_API_TOKEN", "catalog-gateway-token");
+    const catalogApp = await buildCatalogApp();
+    const catalogHeaders = {
+      "x-gateway-token": "catalog-gateway-token",
+      "x-operator-location-id": "flagship-01"
+    };
+
+    const bootstrapResponse = await catalogApp.inject({
+      method: "POST",
+      url: "/v1/catalog/internal/locations/bootstrap",
+      headers: { "x-gateway-token": "catalog-gateway-token" },
+      payload: {
+        brandId: "flagship-coffee",
+        brandName: "Flagship Coffee",
+        locationId: "flagship-01",
+        locationName: "Flagship",
+        marketLabel: "Detroit, MI",
+        storeName: "Flagship Coffee",
+        hours: "Daily · 7:00 AM - 6:00 PM",
+        pickupInstructions: "Pickup at the espresso counter.",
+        taxRateBasisPoints: 600,
+        capabilities: {
+          menu: { source: "platform_managed" },
+          operations: { fulfillmentMode: "staff", liveOrderTrackingEnabled: true, dashboardEnabled: true },
+          loyalty: { visible: true }
+        }
+      }
+    });
+    expect(bootstrapResponse.statusCode).toBe(200);
+
+    const mutationResponse = await catalogApp.inject({
+      method: "PUT",
+      url: "/v1/catalog/admin/menu/latte",
+      headers: catalogHeaders,
+      payload: {
+        name: "Relational Latte",
+        description: "A catalog-backed latte.",
+        priceCents: 640,
+        visible: true,
+        available: true,
+        featured: true,
+        badgeCodes: ["featured"],
+        categoryIds: ["espresso"],
+        modifierGroupAssignments: []
+      }
+    });
+    expect(mutationResponse.statusCode).toBe(200);
+
+    const publicMenuResponse = await catalogApp.inject({
+      method: "GET",
+      url: "/v1/menu?locationId=flagship-01"
+    });
+    const publicMenu = menuResponseSchema.parse(publicMenuResponse.json());
+    const publicItem = publicMenu.categories.flatMap((category) => category.items).find((item) => item.id === "latte");
+    expect(publicItem).toMatchObject({
+      name: "Relational Latte",
+      priceCents: 640,
+      featured: true
+    });
+    if (!publicItem) {
+      throw new Error("Catalog mutation did not produce a public menu item");
+    }
+
+    const { deps } = await createTestDeps(repositories);
+    deps.repository.getCatalogItemsForQuote = vi.fn().mockResolvedValue(
+      new Map([
+        [
+          publicItem.id,
+          {
+            itemId: publicItem.id,
+            itemName: publicItem.name,
+            basePriceCents: publicItem.priceCents,
+            available: publicItem.available,
+            customizationGroups: publicItem.customizationGroups
+          }
+        ]
+      ])
+    );
+
+    const quoteResult = await createQuote({
+      input: {
+        locationId: "flagship-01",
+        items: [{ itemId: publicItem.id, quantity: 1, customization: { selectedOptions: [], notes: "" } }],
+        pointsToRedeem: 0
+      },
+      deps
+    });
+    expect("error" in quoteResult).toBe(false);
+    if ("error" in quoteResult) {
+      throw new Error(`Quote creation failed: ${quoteResult.error.code}`);
+    }
+    expect(quoteResult.quote.items[0]).toMatchObject({
+      itemId: "latte",
+      itemName: "Relational Latte",
+      unitPriceCents: 640,
+      lineTotalCents: 640
+    });
+
+    await deps.repository.saveQuote(quoteResult.quote);
+    const orderResult = await createOrder({
+      input: {
+        quoteId: quoteResult.quote.quoteId,
+        quoteHash: quoteResult.quote.quoteHash
+      },
+      requestId: "catalog-orders-integration",
+      requestUserContext: { userId: defaultTestUserId },
+      deps
+    });
+    expect("error" in orderResult).toBe(false);
+    if ("error" in orderResult) {
+      throw new Error(`Order creation failed: ${orderResult.error.code}`);
+    }
+    expect(orderResult.order.items[0]).toMatchObject({
+      itemId: "latte",
+      itemName: "Relational Latte",
+      unitPriceCents: 640,
+      lineTotalCents: 640
+    });
+
+    await catalogApp.close();
   });
 
   it("cancelOrder cancels an unpaid order without issuing a refund", async () => {

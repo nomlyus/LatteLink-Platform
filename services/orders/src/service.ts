@@ -967,6 +967,18 @@ async function buildQuote(input: QuoteRequest, repository: OrdersRepository, use
       });
     }
 
+    if (catalogItem.available === false) {
+      throw new QuotePreparationError({
+        statusCode: 409,
+        code: "MENU_ITEM_UNAVAILABLE",
+        message: `Menu item "${catalogItem.itemId}" is currently unavailable for ordering.`,
+        details: {
+          itemId: catalogItem.itemId,
+          locationId: input.locationId
+        }
+      });
+    }
+
     return buildQuotedItem(item, catalogItem);
   });
 

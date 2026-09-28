@@ -285,6 +285,7 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
         state.appConfig = null;
         state.orders = orders;
         state.menuCategories = [];
+        state.menuModifierGroups = [];
         state.menuCustomizationDrafts = {};
         state.newsCards = [];
         state.discountCodes = [];
@@ -298,6 +299,7 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
         state.appConfig = snapshot.appConfig;
         state.orders = snapshot.orders;
         state.menuCategories = snapshot.menu.categories;
+        state.menuModifierGroups = snapshot.menu.modifierGroups;
         reconcileMenuCreateDraft();
         state.menuCustomizationDrafts = snapshotCustomizationDrafts(snapshot.menu.categories);
         state.newsCards = snapshot.cards;

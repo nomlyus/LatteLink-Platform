@@ -35,9 +35,15 @@ import {
 } from "./controllers/auth";
 import {
   handleMenuCreateSubmit,
+  handleMenuCategoryCreateSubmit,
+  handleMenuCategoryDelete,
+  handleMenuCategoryReorder,
+  handleMenuCategorySubmit,
   handleMenuItemSubmit,
   handleMenuItemDelete,
-  handleMenuVisibilityToggle
+  handleMenuVisibilityToggle,
+  handleModifierGroupDelete,
+  handleModifierGroupSubmit
 } from "./controllers/menu";
 import {
   handleNewsCardCreateSubmit,
@@ -111,6 +117,15 @@ export function registerEvents() {
         return;
       case "menu-item":
         void handleMenuItemSubmit(target);
+        return;
+      case "menu-category-create":
+        void handleMenuCategoryCreateSubmit(target);
+        return;
+      case "menu-category":
+        void handleMenuCategorySubmit(target);
+        return;
+      case "modifier-group":
+        void handleModifierGroupSubmit(target);
         return;
       case "news-card-create":
         void handleNewsCardCreateSubmit(target);
@@ -545,6 +560,45 @@ export function registerEvents() {
       if (itemId) {
         void handleMenuItemDelete(itemId);
       }
+      return;
+    }
+
+    if (action === "delete-menu-category") {
+      const categoryId = actionElement.dataset.categoryId;
+      if (categoryId) void handleMenuCategoryDelete(categoryId);
+      return;
+    }
+
+    if (action === "reorder-menu-category") {
+      const categoryId = actionElement.dataset.categoryId;
+      const direction = actionElement.dataset.direction === "down" ? "down" : "up";
+      if (categoryId) void handleMenuCategoryReorder(categoryId, direction);
+      return;
+    }
+
+    if (action === "delete-modifier-group") {
+      const modifierGroupId = actionElement.dataset.modifierGroupId;
+      if (modifierGroupId) void handleModifierGroupDelete(modifierGroupId);
+      return;
+    }
+
+    if (action === "add-modifier-option") {
+      const form = actionElement.closest<HTMLFormElement>('form[data-form="modifier-group"]');
+      const stack = form?.querySelector<HTMLElement>(".dash-customization-options-stack");
+      if (!stack) return;
+      const index = stack.querySelectorAll(".dash-customization-option-row").length;
+      const optionId = `option-${globalThis.crypto.randomUUID()}`;
+      stack.insertAdjacentHTML(
+        "beforeend",
+        `<div class="dash-customization-option-row"><label class="field dash-field-inline"><span>Option</span><input name="optionLabel" /></label><label class="field dash-field-inline"><span>Description</span><input name="optionDescription" /></label><label class="field dash-field-inline"><span>Price delta (cents)</span><input name="optionPriceDeltaCents" type="number" step="1" value="0" /></label><label class="field dash-field-inline"><span>Order</span><input name="optionSortOrder" type="number" min="0" step="1" value="${index}" /></label><label class="toggle dash-toggle-inline"><input name="optionDefault_${index}" type="checkbox" /><span>Default</span></label><label class="toggle dash-toggle-inline"><input name="optionAvailable_${index}" type="checkbox" checked /><span>Available</span></label><label class="toggle dash-toggle-inline"><input name="optionRemove_${index}" type="checkbox" /><span>Remove</span></label><input type="hidden" name="optionId" value="${optionId}" /></div>`
+      );
+      return;
+    }
+
+    if (action === "focus-modifier-group-create") {
+      const form = document.querySelector<HTMLFormElement>('form[data-form="modifier-group"][data-modifier-group-id=""]');
+      form?.scrollIntoView({ behavior: "smooth", block: "center" });
+      form?.querySelector<HTMLInputElement>('input[name="label"]')?.focus({ preventScroll: true });
       return;
     }
 

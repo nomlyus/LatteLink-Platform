@@ -134,6 +134,9 @@ const sampleMenuCategories: OperatorMenuCategory[] = [
   {
     categoryId: "featured",
     title: "Featured",
+    description: "",
+    visible: true,
+    sortOrder: 0,
     items: [
       {
         itemId: "drink-1",
@@ -145,6 +148,11 @@ const sampleMenuCategories: OperatorMenuCategory[] = [
         priceCents: 675,
         sortOrder: 0,
         visible: true,
+        available: true,
+        featured: true,
+        badgeCodes: [],
+        categoryIds: ["featured"],
+        modifierGroupAssignments: [],
         customizationGroups: []
       },
       {
@@ -157,6 +165,11 @@ const sampleMenuCategories: OperatorMenuCategory[] = [
         priceCents: 550,
         sortOrder: 1,
         visible: false,
+        available: true,
+        featured: false,
+        badgeCodes: [],
+        categoryIds: ["featured"],
+        modifierGroupAssignments: [],
         customizationGroups: []
       }
     ]
@@ -407,13 +420,20 @@ describe("client dashboard model", () => {
       })
     ).toEqual({
       name: "Brown Sugar Latte",
+      description: "",
       priceCents: 1250,
       visible: true,
+      available: true,
+      featured: false,
+      badgeCodes: [],
+      sortOrder: 0,
       imageUrl: null,
       customizationGroups: [
         {
           id: "milk",
+          sourceGroupId: undefined,
           label: "Milk",
+          description: undefined,
           selectionType: "single",
           required: true,
           minSelections: 1,
@@ -423,12 +443,15 @@ describe("client dashboard model", () => {
             {
               id: "whole",
               label: "Whole milk",
+              description: undefined,
               priceDeltaCents: 0,
               default: true,
               sortOrder: 0,
-              available: true
+              available: true,
+              displayStyle: undefined
             }
-          ]
+          ],
+          displayStyle: undefined
         }
       ]
     });
@@ -448,7 +471,11 @@ describe("client dashboard model", () => {
       description: "Bright and sweet",
       imageUrl: "https://media.example.com/honey-cortado.jpg",
       priceCents: 550,
-      visible: false
+      visible: false,
+      available: true,
+      featured: false,
+      badgeCodes: [],
+      modifierGroupAssignments: []
     });
 
     expect(
