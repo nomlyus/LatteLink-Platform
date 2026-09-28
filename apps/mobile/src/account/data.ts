@@ -3,7 +3,16 @@ import { z } from "zod";
 import { API_BASE_URL, MOBILE_LOCATION_ID, apiClient } from "../api/client";
 import { withCriticalDataLoadSentry } from "../observability/criticalDataLoad";
 
-const orderStatusSchema = z.enum(["PENDING_PAYMENT", "PAID", "IN_PREP", "READY", "COMPLETED", "CANCELED"]);
+const orderStatusSchema = z.enum([
+  "PENDING_PAYMENT",
+  "PAID",
+  "IN_PREP",
+  "READY",
+  "COMPLETED",
+  "CANCELED",
+  "REFUNDED",
+  "PARTIALLY_REFUNDED"
+]);
 const orderItemSchema = z.object({
   itemId: z.string(),
   itemName: z.string().min(1).optional(),
@@ -78,7 +87,13 @@ const pushTokenUpsertResponseSchema = z.object({
 
 const orderListSchema = z.array(orderSchema);
 const loyaltyLedgerSchema = z.array(loyaltyLedgerEntrySchema);
-const activeOrderStatusSchema = orderStatusSchema.exclude(["CANCELED", "COMPLETED", "PENDING_PAYMENT"]);
+const activeOrderStatusSchema = orderStatusSchema.exclude([
+  "CANCELED",
+  "COMPLETED",
+  "REFUNDED",
+  "PARTIALLY_REFUNDED",
+  "PENDING_PAYMENT"
+]);
 export const orderHistoryQueryKey = ["account", "orders"] as const;
 
 export type OrderHistoryEntry = z.output<typeof orderSchema>;
