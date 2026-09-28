@@ -341,6 +341,7 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
         state.orders = orders;
         state.menuCategories = [];
         state.menuModifierGroups = [];
+        state.menuLoadError = null;
         state.menuCustomizationDrafts = {};
         state.newsCards = [];
         state.discountCodes = [];
@@ -355,6 +356,7 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
         state.orders = snapshot.orders;
         state.menuCategories = snapshot.menu.categories;
         state.menuModifierGroups = snapshot.menu.modifierGroups;
+        state.menuLoadError = null;
         reconcileMenuCreateDraft();
         state.menuCustomizationDrafts = snapshotCustomizationDrafts(snapshot.menu.categories);
         state.newsCards = snapshot.cards;
@@ -367,6 +369,7 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
       }
     } catch (error) {
       if (isSessionAuthFailure(error)) throw error;
+      state.menuLoadError = "Unable to load this location’s menu. Try again.";
       if (!silent) state.orders = [];
     }
 

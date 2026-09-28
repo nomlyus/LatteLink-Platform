@@ -35,16 +35,21 @@ import {
 } from "./controllers/auth";
 import {
   handleMenuCreateSubmit,
+  handleMenuQuickCreateSubmit,
   handleMenuCategoryCreateSubmit,
   handleMenuCategoryDelete,
+  handleMenuCategoryItemReorder,
   handleMenuCategoryReorder,
   handleMenuCategorySubmit,
   handleMenuItemSubmit,
   handleMenuItemDelete,
+  handleMenuAvailabilityToggle,
   handleMenuVisibilityToggle,
   handleModifierGroupDelete,
   handleModifierGroupSubmit
 } from "./controllers/menu";
+import { renderModifierAssignmentRow } from "./views/menu-items";
+import { renderModifierOptionEditorRow } from "./views/menu-modifier-groups";
 import {
   handleNewsCardCreateSubmit,
   handleNewsCardDelete,
@@ -83,7 +88,8 @@ function closeOpenAccountMenus(target?: Node) {
 }
 
 const orderDetailsAnimationMs = 420;
-const menuItemDetailsAnimationMs = 420;
+const menuItemDetailsAnimationMs = 360;
+let menuDialogOpener: { action: string; keys: Record<string, string> } | null = null;
 
 function openOrderDetails(orderId: string) {
   if (state.orderDetailsClosingTimeoutHandle !== null) {
@@ -115,27 +121,187 @@ function closeOrderDetails() {
   render();
 }
 
-function openMenuItemDetails(itemId: string) {
-  resetMenuItemDetails();
-  state.selectedMenuItemId = itemId;
-  state.menuItemDetailsOpen = true;
-  state.menuItemDetailsOpening = true;
-  render();
-  state.menuItemDetailsOpening = false;
+function startMenuDialogEntrance() {
+  const dialog = root.querySelector<HTMLElement>("[data-menu-dialog-root]");
+  if (!dialog) return;
+  const panel = dialog.querySelector<HTMLElement>('[role="dialog"]');
+  panel?.querySelector<HTMLElement>("input:not([type=hidden]):not([type=file]):not([disabled]), button:not([disabled])")?.focus({ preventScroll: true });
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      state.menuDialogOpening = false;
+      dialog.classList.remove("dash-menu-modal--opening");
+    });
+  });
 }
 
-function closeMenuItemDetails() {
-  if (!state.menuItemDetailsOpen || !state.selectedMenuItemId || state.menuItemDetailsClosing) {
-    return;
-  }
+function syncItemPrimaryCategory(form: HTMLFormElement) {
+  const select = form.querySelector<HTMLSelectElement>('[data-control="item-primary-category"]');
+  if (!select) return;
+  const previousValue = select.value;
+  const selected = [...form.querySelectorAll<HTMLInputElement>('input[name="categoryIds"]:checked')];
+  select.replaceChildren(...selected.map((checkbox) => {
+    const option = document.createElement("option");
+    option.value = checkbox.value;
+    option.textContent = checkbox.closest("label")?.querySelector("span")?.textContent?.trim() ?? checkbox.value;
+    return option;
+  }));
+  if (selected.some((checkbox) => checkbox.value === previousValue)) select.value = previousValue;
+  else if (selected[0]) select.value = selected[0].value;
+}
 
+function openMenuDialog(kind: NonNullable<typeof state.menuDialogKind>, entityId: string | null = null, opener?: HTMLElement) {
+  if (opener?.dataset.action) {
+    const keys = Object.fromEntries(Object.entries(opener.dataset).filter(([key, value]) => key !== "action" && value !== undefined)) as Record<string, string>;
+    menuDialogOpener = { action: opener.dataset.action, keys };
+  } else {
+    menuDialogOpener = null;
+  }
+  resetMenuItemDetails();
+  state.menuDialogKind = kind;
+  state.menuDialogEntityId = entityId;
+  state.menuDialogOpening = true;
+  if (kind === "item") {
+    state.selectedMenuItemId = entityId;
+    state.menuItemDetailsOpen = true;
+    state.menuItemDetailsOpening = true;
+  }
+  if (kind === "category" || kind === "create-category") state.menuCategoryItemSearch = "";
+  setError(null);
+  render();
+  startMenuDialogEntrance();
+}
+
+function focusMenuDialogOpener() {
+  const opener = menuDialogOpener;
+  if (opener) {
+    const candidate = [...root.querySelectorAll<HTMLElement>("[data-action]")].find((element) =>
+      element.offsetParent !== null && element.dataset.action === opener.action &&
+      Object.entries(opener.keys).every(([key, value]) => element.dataset[key] === value)
+    );
+    if (candidate) {
+      candidate.focus({ preventScroll: true });
+      menuDialogOpener = null;
+      return;
+    }
+  }
+  root.querySelector<HTMLElement>(`#menu-tab-${state.menuActiveTab}`)?.focus({ preventScroll: true });
+  menuDialogOpener = null;
+}
+
+function closeNestedModifierGroupDialog() {
+  const nested = root.querySelector<HTMLElement>("[data-menu-group-create-dialog]:not([hidden])");
+  if (!nested) return false;
+  nested.hidden = true;
+  state.menuCreateModifierGroupForItemId = null;
+  root.querySelector<HTMLElement>(".dash-menu-group-picker summary")?.focus({ preventScroll: true });
+  return true;
+}
+
+function closeMenuDialog() {
+  if (!state.menuDialogKind || state.menuDialogClosing) return;
   state.menuItemDetailsClosing = true;
-  state.menuItemDetailsOpening = false;
-  state.menuItemDetailsClosingTimeoutHandle = setTimeout(() => {
+  state.menuDialogClosing = true;
+  state.menuDialogOpening = false;
+  if (state.menuDialogClosingTimeoutHandle !== null) clearTimeout(state.menuDialogClosingTimeoutHandle);
+  state.menuDialogClosingTimeoutHandle = setTimeout(() => {
     resetMenuItemDetails();
     render();
+    focusMenuDialogOpener();
   }, menuItemDetailsAnimationMs);
   render();
+}
+
+function renderPreservingControl(control: HTMLElement) {
+  const controlName = control.dataset.control;
+  if (!controlName) return render();
+  const start = control instanceof HTMLInputElement ? control.selectionStart : null;
+  const end = control instanceof HTMLInputElement ? control.selectionEnd : null;
+  render();
+  const next = root.querySelector<HTMLElement>(`[data-control="${CSS.escape(controlName)}"]`);
+  next?.focus({ preventScroll: true });
+  if (next instanceof HTMLInputElement && start !== null && end !== null) {
+    try { next.setSelectionRange(start, end); } catch { /* Search controls may not support text selection. */ }
+  }
+}
+
+function refreshItemModifierAssignmentControls(list: HTMLElement) {
+  const rows = [...list.querySelectorAll<HTMLElement>("[data-assignment-group-id]")];
+  const canWrite = list.dataset.canWrite === "true";
+  rows.forEach((row, index) => {
+    const buttons = row.querySelectorAll<HTMLButtonElement>('[data-action="move-item-modifier-group"]');
+    if (buttons[0]) buttons[0].disabled = !canWrite || index === 0;
+    if (buttons[1]) buttons[1].disabled = !canWrite || index === rows.length - 1;
+  });
+}
+
+function setModifierGroupPickerAssignment(form: HTMLFormElement, itemId: string, groupId: string, assigned: boolean) {
+  const options = form.querySelector<HTMLElement>(".dash-menu-group-picker__options");
+  if (!options) return;
+  let option = options.querySelector<HTMLElement>(`[data-modifier-group-id="${CSS.escape(groupId)}"]`);
+  const group = state.menuModifierGroups.find((candidate) => candidate.id === groupId);
+  if (!group) return;
+  if (!option) {
+    options.querySelector(".dash-menu-empty-inline")?.remove();
+    option = document.createElement("div");
+    option.className = "dash-menu-group-picker__option";
+    option.dataset.modifierGroupId = group.id;
+    option.dataset.groupSearch = `${group.label} ${group.selectionType}`.toLocaleLowerCase();
+    const copy = document.createElement("span");
+    const name = document.createElement("strong");
+    name.textContent = group.label;
+    const description = document.createElement("small");
+    description.textContent = `${group.selectionType === "multiple" ? "Multiple" : "Single"}${group.required ? " · Required" : " · Optional"}`;
+    copy.append(name, description);
+    const button = document.createElement("button");
+    button.className = "button button--ghost";
+    button.type = "button";
+    button.dataset.action = "add-item-modifier-group";
+    button.dataset.itemId = itemId;
+    button.dataset.modifierGroupId = group.id;
+    option.append(copy, button);
+    options.append(option);
+  }
+  const button = option.querySelector<HTMLButtonElement>("button[data-action=add-item-modifier-group]");
+  if (button) {
+    button.disabled = assigned;
+    button.textContent = assigned ? "Added" : "Add";
+  }
+  option.hidden = !option.dataset.groupSearch?.includes(form.querySelector<HTMLInputElement>('[data-control="item-modifier-search"]')?.value.trim().toLocaleLowerCase() ?? "");
+}
+
+function refreshModifierOptionControls(list: HTMLElement) {
+  const rows = [...list.querySelectorAll<HTMLElement>("[data-modifier-option-row]")];
+  rows.forEach((row, index) => {
+    const sortOrder = row.querySelector<HTMLInputElement>('[name="optionSortOrder"]');
+    if (sortOrder) sortOrder.value = String(index);
+    const buttons = row.querySelectorAll<HTMLButtonElement>('[data-action="move-modifier-option"]');
+    if (buttons[0]) buttons[0].disabled = index === 0;
+    if (buttons[1]) buttons[1].disabled = index === rows.length - 1;
+    const remove = row.querySelector<HTMLButtonElement>('[data-action="remove-modifier-option"]');
+    if (remove) remove.disabled = rows.length === 1;
+  });
+}
+
+function focusTrapKeydown(event: KeyboardEvent) {
+  const nested = root.querySelector<HTMLElement>("[data-menu-group-create-dialog]:not([hidden])");
+  const panel = nested?.querySelector<HTMLElement>('[role="dialog"]') ?? root.querySelector<HTMLElement>("[data-menu-dialog-root] [role=dialog]");
+  if (!panel || event.key !== "Tab") return;
+  const focusable = [...panel.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+    .filter((element) => element.offsetParent !== null);
+  if (focusable.length === 0) {
+    event.preventDefault();
+    panel.focus();
+    return;
+  }
+  const first = focusable[0]!;
+  const last = focusable[focusable.length - 1]!;
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
 }
 
 export function registerEvents() {
@@ -150,10 +316,34 @@ export function registerEvents() {
       if (state.orderDetailsOpen && state.selectedOrderId) {
         closeOrderDetails();
       }
-      if (state.menuItemDetailsOpen && state.selectedMenuItemId) {
-        closeMenuItemDetails();
+      if (!closeNestedModifierGroupDialog() && state.menuDialogKind) {
+        closeMenuDialog();
+      } else if (!state.menuDialogKind && state.menuItemDetailsOpen && state.selectedMenuItemId) {
+        closeMenuDialog();
       }
       closeOpenAccountMenus();
+      return;
+    }
+    focusTrapKeydown(event);
+  });
+
+  root.addEventListener("keydown", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.matches('[role="tab"]') && (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "Home" || event.key === "End")) {
+      event.preventDefault();
+      const tabIds = ["items", "categories", "modifier-groups"] as const;
+      const currentIndex = tabIds.indexOf(state.menuActiveTab);
+      const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? tabIds.length - 1 : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + tabIds.length) % tabIds.length;
+      state.menuActiveTab = tabIds[nextIndex]!;
+      render();
+      root.querySelector<HTMLElement>(`#menu-tab-${state.menuActiveTab}`)?.focus({ preventScroll: true });
+      return;
+    }
+    if (target.matches("tr[data-menu-item-row]") && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+      const itemId = target.dataset.menuItemRow;
+      if (itemId) openMenuDialog("item", itemId, target);
     }
   });
 
@@ -179,6 +369,9 @@ export function registerEvents() {
         return;
       case "menu-item":
         void handleMenuItemSubmit(target);
+        return;
+      case "menu-item-create-quick":
+        void handleMenuQuickCreateSubmit(target);
         return;
       case "menu-category-create":
         void handleMenuCategoryCreateSubmit(target);
@@ -242,6 +435,33 @@ export function registerEvents() {
   root.addEventListener("input", (event) => {
     syncMenuCreateDraft(event.target);
     updateCustomizationDraftFromInput(event.target);
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    if (target.dataset.control === "menu-search") {
+      state.menuSearch = target.value;
+      state.menuItemsPage = 1;
+      renderPreservingControl(target);
+      return;
+    }
+    if (target.dataset.control === "modifier-group-search") {
+      state.menuModifierGroupSearch = target.value;
+      renderPreservingControl(target);
+      return;
+    }
+    if (target.dataset.control === "item-modifier-search") {
+      const query = target.value.trim().toLocaleLowerCase();
+      target.closest(".dash-menu-group-picker__body")?.querySelectorAll<HTMLElement>(".dash-menu-group-picker__option").forEach((option) => {
+        option.hidden = !option.dataset.groupSearch?.includes(query);
+      });
+      return;
+    }
+    if (target.dataset.control === "category-item-search") {
+      state.menuCategoryItemSearch = target.value;
+      const query = target.value.trim().toLocaleLowerCase();
+      target.closest("form")?.querySelectorAll<HTMLElement>("[data-category-item-row]").forEach((row) => {
+        row.hidden = !row.dataset.itemName?.includes(query);
+      });
+    }
   });
 
   root.addEventListener("change", (event) => {
@@ -249,11 +469,12 @@ export function registerEvents() {
     updateCustomizationDraftFromInput(event.target);
 
     const target = event.target;
-    if (!(target instanceof HTMLSelectElement)) {
+    if (target instanceof HTMLInputElement && target.name === "categoryIds") {
+      const form = target.closest<HTMLFormElement>('form[data-form="menu-item"]');
+      if (form) syncItemPrimaryCategory(form);
       return;
     }
-
-    if (target.dataset.control === "location-scope") {
+    if (target instanceof HTMLSelectElement && target.dataset.control === "location-scope") {
       const nextLocationId = target.value === "all" ? "all" : target.value || null;
       if (nextLocationId === state.selectedLocationId) {
         return;
@@ -266,6 +487,22 @@ export function registerEvents() {
       stopAutoRefresh();
       clearPendingCancel();
       void loadDashboard();
+      return;
+    }
+
+    if (!(target instanceof HTMLSelectElement)) return;
+    if (target.dataset.control === "menu-category-filter") {
+      state.menuCategoryFilter = target.value;
+      state.menuItemsPage = 1;
+      renderPreservingControl(target);
+    } else if (target.dataset.control === "menu-availability-filter") {
+      state.menuAvailabilityFilter = target.value as typeof state.menuAvailabilityFilter;
+      state.menuItemsPage = 1;
+      renderPreservingControl(target);
+    } else if (target.dataset.control === "menu-visibility-filter") {
+      state.menuVisibilityFilter = target.value as typeof state.menuVisibilityFilter;
+      state.menuItemsPage = 1;
+      renderPreservingControl(target);
     }
   });
 
@@ -491,6 +728,186 @@ export function registerEvents() {
       return;
     }
 
+    if (action === "set-menu-tab") {
+      const tab = actionElement.dataset.menuTab;
+      if (tab === "items" || tab === "categories" || tab === "modifier-groups") {
+        state.menuActiveTab = tab;
+        render();
+        root.querySelector<HTMLElement>(`#menu-tab-${tab}`)?.focus({ preventScroll: true });
+      }
+      return;
+    }
+
+    if (action === "switch-menu-tab") {
+      const tab = actionElement.dataset.menuTab;
+      if (tab === "items" || tab === "categories" || tab === "modifier-groups") {
+        resetMenuItemDetails();
+        state.menuActiveTab = tab;
+        render();
+        root.querySelector<HTMLElement>(`#menu-tab-${tab}`)?.focus({ preventScroll: true });
+      }
+      return;
+    }
+
+    if (action === "open-menu-create-item") {
+      openMenuDialog("create-item", null, actionElement);
+      return;
+    }
+
+    if (action === "open-menu-create-category") {
+      openMenuDialog("create-category", null, actionElement);
+      return;
+    }
+
+    if (action === "open-menu-create-modifier-group") {
+      openMenuDialog("create-modifier-group", null, actionElement);
+      return;
+    }
+
+    if (action === "open-menu-item" || action === "open-menu-item-details") {
+      const itemId = actionElement.dataset.itemId ?? actionElement.dataset.menuItemRow;
+      if (itemId) openMenuDialog("item", itemId, actionElement);
+      return;
+    }
+
+    if (action === "open-menu-category") {
+      const categoryId = actionElement.dataset.categoryId;
+      if (categoryId) openMenuDialog("category", categoryId, actionElement);
+      return;
+    }
+
+    if (action === "open-modifier-group") {
+      const modifierGroupId = actionElement.dataset.modifierGroupId;
+      if (modifierGroupId) openMenuDialog("modifier-group", modifierGroupId, actionElement);
+      return;
+    }
+
+    if (action === "close-menu-dialog" || action === "close-menu-item-details") {
+      if (!closeNestedModifierGroupDialog()) closeMenuDialog();
+      return;
+    }
+
+    if (action === "stop-menu-row-action") return;
+
+    if (action === "retry-menu-load") {
+      state.menuLoadError = null;
+      void loadDashboard();
+      return;
+    }
+
+    if (action === "toggle-menu-availability") {
+      const itemId = actionElement.dataset.itemId;
+      const available = actionElement.dataset.available;
+      if (itemId && (available === "true" || available === "false")) {
+        void handleMenuAvailabilityToggle(itemId, available === "true");
+      }
+      return;
+    }
+
+    if (action === "open-item-modifier-group-create") {
+      const itemId = actionElement.dataset.itemId;
+      const nested = root.querySelector<HTMLElement>("[data-menu-group-create-dialog]");
+      if (itemId && nested) {
+        state.menuCreateModifierGroupForItemId = itemId;
+        nested.hidden = false;
+        nested.querySelector<HTMLElement>('[role="dialog"] input:not([disabled])')?.focus({ preventScroll: true });
+      }
+      return;
+    }
+
+    if (action === "close-item-modifier-group-create") {
+      closeNestedModifierGroupDialog();
+      return;
+    }
+
+    if (action === "add-item-modifier-group") {
+      const itemId = actionElement.dataset.itemId;
+      const groupId = actionElement.dataset.modifierGroupId;
+      const list = actionElement.closest("form")?.querySelector<HTMLElement>("[data-assignment-list]");
+      if (!itemId || !groupId || !list || list.querySelector(`[data-assignment-group-id="${CSS.escape(groupId)}"]`)) return;
+      list.querySelector(".dash-menu-empty-inline")?.remove();
+      list.dataset.canWrite = "true";
+      const count = list.querySelectorAll("[data-assignment-group-id]").length;
+      list.insertAdjacentHTML("beforeend", renderModifierAssignmentRow(itemId, groupId, count, count + 1, true));
+      const form = actionElement.closest<HTMLFormElement>("form");
+      if (form) setModifierGroupPickerAssignment(form, itemId, groupId, true);
+      refreshItemModifierAssignmentControls(list);
+      return;
+    }
+
+    if (action === "remove-item-modifier-group") {
+      const row = actionElement.closest<HTMLElement>("[data-assignment-group-id]");
+      const list = row?.parentElement;
+      const form = actionElement.closest<HTMLFormElement>("form");
+      const itemId = actionElement.dataset.itemId;
+      const groupId = row?.dataset.assignmentGroupId;
+      if (form && itemId && groupId) setModifierGroupPickerAssignment(form, itemId, groupId, false);
+      row?.remove();
+      if (list) {
+        if (list.querySelectorAll("[data-assignment-group-id]").length === 0) list.innerHTML = '<p class="dash-menu-empty-inline">No modifier groups assigned.</p>';
+        refreshItemModifierAssignmentControls(list);
+      }
+      return;
+    }
+
+    if (action === "move-item-modifier-group") {
+      const row = actionElement.closest<HTMLElement>("[data-assignment-group-id]");
+      const list = row?.parentElement;
+      if (!row || !list) return;
+      const rows = [...list.querySelectorAll<HTMLElement>("[data-assignment-group-id]")];
+      const index = rows.indexOf(row);
+      const direction = actionElement.dataset.direction;
+      const neighbor = rows[index + (direction === "up" ? -1 : 1)];
+      if (neighbor) {
+        if (direction === "up") list.insertBefore(row, neighbor);
+        else list.insertBefore(neighbor, row);
+        refreshItemModifierAssignmentControls(list);
+      }
+      return;
+    }
+
+    if (action === "add-modifier-option") {
+      const list = actionElement.closest("form")?.querySelector<HTMLElement>("[data-modifier-options]");
+      if (!list) return;
+      const index = list.querySelectorAll("[data-modifier-option-row]").length;
+      list.insertAdjacentHTML("beforeend", renderModifierOptionEditorRow(null, null, index, true, index + 1));
+      refreshModifierOptionControls(list);
+      list.querySelectorAll<HTMLInputElement>('[name="optionLabel"]')[index]?.focus({ preventScroll: true });
+      return;
+    }
+
+    if (action === "remove-modifier-option") {
+      const row = actionElement.closest<HTMLElement>("[data-modifier-option-row]");
+      const list = row?.parentElement;
+      if (!row || !list || list.querySelectorAll("[data-modifier-option-row]").length <= 1) return;
+      row.remove();
+      refreshModifierOptionControls(list);
+      return;
+    }
+
+    if (action === "move-modifier-option") {
+      const row = actionElement.closest<HTMLElement>("[data-modifier-option-row]");
+      const list = row?.parentElement;
+      if (!row || !list) return;
+      const rows = [...list.querySelectorAll<HTMLElement>("[data-modifier-option-row]")];
+      const index = rows.indexOf(row);
+      const neighbor = rows[index + (actionElement.dataset.direction === "up" ? -1 : 1)];
+      if (neighbor) {
+        if (actionElement.dataset.direction === "up") list.insertBefore(row, neighbor);
+        else list.insertBefore(neighbor, row);
+        refreshModifierOptionControls(list);
+      }
+      return;
+    }
+
+    if (action === "move-category-item") {
+      const categoryId = actionElement.dataset.categoryId;
+      const itemId = actionElement.dataset.itemId;
+      const direction = actionElement.dataset.direction === "down" ? "down" : "up";
+      if (categoryId && itemId) void handleMenuCategoryItemReorder(categoryId, itemId, direction);
+      return;
+    }
+
     if (action === "open-order-details") {
       const orderId = actionElement.dataset.orderId;
       if (orderId) {
@@ -501,19 +918,6 @@ export function registerEvents() {
 
     if (action === "close-order-details") {
       closeOrderDetails();
-      return;
-    }
-
-    if (action === "open-menu-item-details") {
-      const itemId = actionElement.dataset.itemId;
-      if (itemId) {
-        openMenuItemDetails(itemId);
-      }
-      return;
-    }
-
-    if (action === "close-menu-item-details") {
-      closeMenuItemDetails();
       return;
     }
 
@@ -704,26 +1108,6 @@ export function registerEvents() {
     if (action === "delete-modifier-group") {
       const modifierGroupId = actionElement.dataset.modifierGroupId;
       if (modifierGroupId) void handleModifierGroupDelete(modifierGroupId);
-      return;
-    }
-
-    if (action === "add-modifier-option") {
-      const form = actionElement.closest<HTMLFormElement>('form[data-form="modifier-group"]');
-      const stack = form?.querySelector<HTMLElement>(".dash-customization-options-stack");
-      if (!stack) return;
-      const index = stack.querySelectorAll(".dash-customization-option-row").length;
-      const optionId = `option-${globalThis.crypto.randomUUID()}`;
-      stack.insertAdjacentHTML(
-        "beforeend",
-        `<div class="dash-customization-option-row"><label class="field dash-field-inline"><span>Option</span><input name="optionLabel" /></label><label class="field dash-field-inline"><span>Description</span><input name="optionDescription" /></label><label class="field dash-field-inline"><span>Price delta (cents)</span><input name="optionPriceDeltaCents" type="number" step="1" value="0" /></label><label class="field dash-field-inline"><span>Order</span><input name="optionSortOrder" type="number" min="0" step="1" value="${index}" /></label><label class="toggle dash-toggle-inline"><input name="optionDefault_${index}" type="checkbox" /><span>Default</span></label><label class="toggle dash-toggle-inline"><input name="optionAvailable_${index}" type="checkbox" checked /><span>Available</span></label><label class="toggle dash-toggle-inline"><input name="optionRemove_${index}" type="checkbox" /><span>Remove</span></label><input type="hidden" name="optionId" value="${optionId}" /></div>`
-      );
-      return;
-    }
-
-    if (action === "focus-modifier-group-create") {
-      const form = document.querySelector<HTMLFormElement>('form[data-form="modifier-group"][data-modifier-group-id=""]');
-      form?.scrollIntoView({ behavior: "smooth", block: "center" });
-      form?.querySelector<HTMLInputElement>('input[name="label"]')?.focus({ preventScroll: true });
       return;
     }
 
