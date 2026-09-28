@@ -832,6 +832,87 @@ const appConfigSchemaBase = z.object({
 
 export const appConfigSchema = appConfigSchemaBase.transform((value) => normalizeAppConfig(value));
 
+export const mobileBrandBootstrapRequestSchema = z
+  .object({
+    brandId: z.string().trim().min(1).max(160)
+  })
+  .strict();
+
+export const mobileBrandBootstrapLocationSchema = z
+  .object({
+    locationId: z.string().trim().min(1),
+    displayName: z.string().trim().min(1),
+    marketLabel: z.string().trim().min(1),
+    timezone: ianaTimezoneSchema
+  })
+  .strict();
+
+export const mobileBrandBootstrapSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    status: z.enum(["ready", "unavailable"]),
+    brand: z
+      .object({
+        brandId: z.string().trim().min(1),
+        displayName: z.string().trim().min(1),
+        logoUrl: z.string().trim().url().optional()
+      })
+      .strict(),
+    locations: z.array(mobileBrandBootstrapLocationSchema),
+    primaryLocationId: z.string().trim().min(1).nullable(),
+    orderingEnabled: z.boolean(),
+    compatibility: z
+      .object({
+        minimumAppVersion: z.string().trim().min(1).optional(),
+        appConfigSchemaVersion: z.number().int().positive().optional()
+      })
+      .strict()
+  })
+  .strict()
+  .superRefine((bootstrap, context) => {
+    const locationIds = bootstrap.locations.map((location) => location.locationId);
+    if (new Set(locationIds).size !== locationIds.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["locations"],
+        message: "Bootstrap locations must be unique."
+      });
+    }
+
+    if (bootstrap.status === "ready") {
+      if (bootstrap.locations.length === 0) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["locations"],
+          message: "A ready bootstrap must include at least one launchable location."
+        });
+      }
+      if (!bootstrap.primaryLocationId || !locationIds.includes(bootstrap.primaryLocationId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["primaryLocationId"],
+          message: "A ready bootstrap must select a primary location from its launchable locations."
+        });
+      }
+      if (!bootstrap.orderingEnabled) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["orderingEnabled"],
+          message: "A ready bootstrap must enable ordering."
+        });
+      }
+      return;
+    }
+
+    if (bootstrap.locations.length > 0 || bootstrap.primaryLocationId !== null || bootstrap.orderingEnabled) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["status"],
+        message: "An unavailable bootstrap must not expose locations or enable ordering."
+      });
+    }
+  });
+
 export const adminStoreConfigUpdateSchema = z.object({
   storeName: z.string().min(1),
   locationName: z.string().min(1),
@@ -1469,6 +1550,9 @@ export type AppConfigFulfillment = z.output<typeof appConfigFulfillmentSchema>;
 export type AppConfigMenuSource = z.output<typeof appConfigMenuSourceSchema>;
 export type AppConfigStoreCapabilities = z.output<typeof appConfigStoreCapabilitiesSchema>;
 export type AppConfig = z.output<typeof appConfigSchema>;
+export type MobileBrandBootstrapRequest = z.output<typeof mobileBrandBootstrapRequestSchema>;
+export type MobileBrandBootstrapLocation = z.output<typeof mobileBrandBootstrapLocationSchema>;
+export type MobileBrandBootstrap = z.output<typeof mobileBrandBootstrapSchema>;
 export type ClientPaymentProfile = z.output<typeof clientPaymentProfileSchema>;
 export type InternalLocationPaymentProfileUpdate = z.output<typeof internalLocationPaymentProfileUpdateSchema>;
 export type PaymentReadiness = z.output<typeof paymentReadinessSchema>;
@@ -1810,6 +1894,12 @@ export function describeCustomizationSelection(input: {
 export const catalogContract = {
   basePath: "",
   routes: {
+    mobileBootstrap: {
+      method: "GET",
+      path: "/mobile/bootstrap",
+      request: mobileBrandBootstrapRequestSchema,
+      response: mobileBrandBootstrapSchema
+    },
     appConfig: {
       method: "GET",
       path: "/app-config",

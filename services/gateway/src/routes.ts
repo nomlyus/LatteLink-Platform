@@ -103,6 +103,8 @@ import {
   stripeConnectStatusRefreshRequestSchema,
   stripeConnectStatusRefreshResponseSchema,
   menuResponseSchema,
+  mobileBrandBootstrapRequestSchema,
+  mobileBrandBootstrapSchema,
   modifierGroupSchema,
   storeConfigResponseSchema
 } from "@lattelink/contracts-catalog";
@@ -2907,6 +2909,32 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
     })
   );
 
+  app.get("/v1/mobile/bootstrap", { preHandler: app.rateLimit(catalogReadRateLimit) }, async (request, reply) => {
+    reply.header("cache-control", "no-store");
+    const parsedRequest = mobileBrandBootstrapRequestSchema.safeParse(request.query);
+    if (!parsedRequest.success) {
+      return reply.status(400).send(
+        apiErrorSchema.parse({
+          code: "INVALID_MOBILE_BRAND_BOOTSTRAP_REQUEST",
+          message: "A valid brandId query parameter is required.",
+          requestId: request.id
+        })
+      );
+    }
+
+    return proxyUpstream({
+      request,
+      reply,
+      baseUrl: catalogBaseUrl,
+      serviceLabel: "Catalog",
+      method: "GET",
+      path: `/v1/mobile/bootstrap?brandId=${encodeURIComponent(parsedRequest.data.brandId)}`,
+      forwardCacheControl: true,
+      forwardUserIdHeader: false,
+      responseSchema: mobileBrandBootstrapSchema
+    });
+  });
+
   app.get("/v1/app-config", { preHandler: app.rateLimit(catalogReadRateLimit) }, async (request, reply) =>
     proxyUpstream({
       request,
@@ -2963,6 +2991,7 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
     })
   );
 
+  // Public self-service launch creates the initial onboarding draft only; additional commercial locations remain Nomly support/admin provisioned.
   app.post(
     "/v1/merchant/launch",
     {
@@ -5609,7 +5638,7 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
           return reply.status(404).send(resourceNotFound(request.id, "Location not found", { locationId }));
         }
 
-        const [ownerSummary, paymentProfile, menu, onboarding] = await Promise.all([
+        const [ownerSummary, paymentProfile, menu, onboarding, storeConfig] = await Promise.all([
           fetchInternalJson({
             baseUrl: identityBaseUrl,
             path: `/v1/identity/internal/locations/${locationId}/owner`,
@@ -5634,6 +5663,13 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
             path: `/v1/catalog/internal/locations/${locationId}/onboarding`,
             schema: onboardingSummarySchema,
             serviceLabel: "Catalog"
+          }),
+          fetchInternalJson({
+            baseUrl: catalogBaseUrl,
+            path: `/v1/store/config?locationId=${encodeURIComponent(locationId)}`,
+            schema: storeConfigResponseSchema,
+            serviceLabel: "Catalog",
+            allowNotFound: true
           })
         ]);
 
@@ -5681,8 +5717,10 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
           {
             id: "tax_configured" as const,
             label: "Tax rate configured",
-            passed: location.taxRateBasisPoints > 0,
-            detail: `${(location.taxRateBasisPoints / 100).toFixed(2)}%`
+            passed: storeConfig?.locationId === locationId,
+            detail: storeConfig?.locationId === locationId
+              ? `${(storeConfig.taxRateBasisPoints / 100).toFixed(2)}%`
+              : "A valid store tax configuration is required."
           },
           {
             id: "app_identity_ready" as const,
@@ -5985,12 +6023,16 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
           path: string;
           schema: TSchema;
           serviceLabel: string;
-        }): Promise<z.output<TSchema>> => {
+          allowNotFound?: boolean;
+        }): Promise<z.output<TSchema> | undefined> => {
           const response = await fetch(`${params.baseUrl}${params.path}`, {
             method: "GET",
             headers: internalHeaders
           });
           const body = parseJsonSafely(await response.text());
+          if (response.status === 404 && params.allowNotFound) {
+            return undefined;
+          }
           if (!response.ok) {
             throw new UpstreamHttpError(params.serviceLabel, response.status, body);
           }
@@ -5998,7 +6040,7 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
         };
 
         try {
-          const [onboarding, ownerSummary, location] = await Promise.all([
+          const [onboarding, ownerSummary, location, storeConfig] = await Promise.all([
             readInternal({
               baseUrl: catalogBaseUrl,
               path: `/v1/catalog/internal/locations/${locationId}/onboarding`,
@@ -6016,8 +6058,18 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
               path: `/v1/catalog/internal/locations/${locationId}`,
               schema: internalLocationSummarySchema,
               serviceLabel: "Catalog"
+            }),
+            readInternal({
+              baseUrl: catalogBaseUrl,
+              path: `/v1/store/config?locationId=${encodeURIComponent(locationId)}`,
+              schema: storeConfigResponseSchema,
+              serviceLabel: "Catalog",
+              allowNotFound: true
             })
           ]);
+          if (!onboarding || !ownerSummary || !location) {
+            return reply.status(404).send(resourceNotFound(request.id, "Location readiness data was not found", { locationId }));
+          }
           const readinessOwnedOnboardingChecks = new Set(["owner_invited", "owner_activated", "admin_launch_approved"]);
           const blockers = onboarding.checklist
             .filter((item) => !item.passed && !readinessOwnedOnboardingChecks.has(item.id))
@@ -6031,8 +6083,8 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
           if (location.hours.trim().length === 0) {
             blockers.push("Store hours must be configured.");
           }
-          if (location.taxRateBasisPoints <= 0) {
-            blockers.push("Tax rate must be configured.");
+          if (!storeConfig || storeConfig.locationId !== locationId) {
+            blockers.push("A valid store tax configuration is required.");
           }
           if (input.live && onboarding.status !== "approved" && onboarding.status !== "live") {
             blockers.push("Launch must be approved before marking the app live.");

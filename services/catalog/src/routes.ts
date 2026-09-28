@@ -29,6 +29,8 @@ import {
   internalAppIdentityProfileUpdateSchema,
   internalOwnerOnboardingUpdateSchema,
   launchApprovalRequestSchema,
+  mobileBrandBootstrapRequestSchema,
+  mobileBrandBootstrapSchema,
   mobileExperienceDocumentSchema,
   mobileExperienceDraftResponseSchema,
   mobileExperiencePublishRequestSchema,
@@ -55,6 +57,7 @@ import {
 import { getPersistenceReadinessMetadata } from "@lattelink/persistence";
 import { z } from "zod";
 import { CatalogMutationError, createCatalogRepository, MobileReleaseBuildJobError } from "./repository.js";
+import { MobileBrandBootstrapConfigurationError } from "./mobile-brand-bootstrap.js";
 import { resolveDefaultLocationId } from "./tenant.js";
 import {
   createMenuImageUploadService,
@@ -284,6 +287,50 @@ export async function registerRoutes(app: FastifyInstance) {
       };
     }
   });
+
+  app.get(
+    "/v1/mobile/bootstrap",
+    { preHandler: app.rateLimit(gatewayReadRateLimit) },
+    async (request, reply) => {
+      reply.header("cache-control", "no-store");
+      const parsedRequest = mobileBrandBootstrapRequestSchema.safeParse(request.query);
+      if (!parsedRequest.success) {
+        return reply.status(400).send(
+          serviceErrorSchema.parse({
+            code: "INVALID_MOBILE_BRAND_BOOTSTRAP_REQUEST",
+            message: "A valid brandId query parameter is required.",
+            requestId: request.id
+          })
+        );
+      }
+
+      try {
+        const bootstrap = await repository.getMobileBrandBootstrap(parsedRequest.data.brandId);
+        if (!bootstrap) {
+          return reply.status(404).send(
+            serviceErrorSchema.parse({
+              code: "MOBILE_BRAND_NOT_FOUND",
+              message: "Branded app configuration was not found.",
+              requestId: request.id
+            })
+          );
+        }
+
+        return mobileBrandBootstrapSchema.parse(bootstrap);
+      } catch (error) {
+        if (error instanceof MobileBrandBootstrapConfigurationError) {
+          return reply.status(503).send(
+            serviceErrorSchema.parse({
+              code: "MOBILE_BRAND_CONFIGURATION_UNAVAILABLE",
+              message: "Branded app configuration is temporarily unavailable.",
+              requestId: request.id
+            })
+          );
+        }
+        throw error;
+      }
+    }
+  );
 
   app.get("/v1/app-config", async (request, reply) => {
     reply.header("cache-control", publicCatalogCacheControl);

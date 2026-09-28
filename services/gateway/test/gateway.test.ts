@@ -1119,15 +1119,16 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
-      if (url.endsWith("/v1/store/config") && method === "GET") {
+      if (new URL(url).pathname === "/v1/store/config" && method === "GET") {
+        const locationId = new URL(url).searchParams.get("locationId") ?? "flagship-01";
         return new Response(
           JSON.stringify({
-            locationId: "flagship-01",
+            locationId,
             hoursText: "Daily · 7:00 AM - 6:00 PM",
             isOpen: true,
             nextOpenAt: null,
             prepEtaMinutes: 12,
-            taxRateBasisPoints: 600,
+            taxRateBasisPoints: locationId === "launch-ready-01" || locationId === "zero-tax-ready-01" ? 0 : 600,
             pickupInstructions: "Pickup at the flagship order counter."
           }),
           { status: 200, headers: { "content-type": "application/json" } }
@@ -2017,7 +2018,7 @@ let previousFreeClientDashboardDomain: string | undefined;
                     testOrderCompleted: true,
                     mobileReleaseStatus: "ready_for_launch"
                   }
-                : { locationId, appIdentityReady: locationId === "northside-01" }
+                : { locationId, appIdentityReady: locationId === "northside-01" || locationId === "zero-tax-ready-01" }
             )
           ),
           {
@@ -2850,6 +2851,55 @@ let previousFreeClientDashboardDomain: string | undefined;
     const requestedUrls = fetchMock.mock.calls.map(([input]) => (typeof input === "string" ? input : input.url));
     expect(requestedUrls).toContain("http://catalog.internal/v1/menu");
     expect(response.headers["cache-control"]).toBe("public, max-age=60");
+    await app.close();
+  });
+
+  it("forwards the public mobile bootstrap query without requiring internal identity", async () => {
+    const bootstrap = {
+      schemaVersion: 1,
+      status: "ready",
+      brand: { brandId: "northside-coffee", displayName: "Northside Coffee" },
+      locations: [
+        { locationId: "northside-01", displayName: "Flagship", marketLabel: "Detroit, MI", timezone: "America/Detroit" }
+      ],
+      primaryLocationId: "northside-01",
+      orderingEnabled: true,
+      compatibility: {}
+    };
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(bootstrap), {
+      status: 200,
+      headers: { "content-type": "application/json", "cache-control": "no-store" }
+    }));
+    const app = await buildApp();
+    const response = await app.inject({ method: "GET", url: "/v1/mobile/bootstrap?brandId=northside-coffee" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(response.json()).toEqual(bootstrap);
+    const [input, init] = fetchMock.mock.calls[0]!;
+    expect(typeof input === "string" ? input : input.url)
+      .toBe("http://catalog.internal/v1/mobile/bootstrap?brandId=northside-coffee");
+    const headers = new Headers(init?.headers as HeadersInit);
+    expect(headers.get("x-request-id")).toBeTruthy();
+    expect(headers.get("x-gateway-token")).toBeNull();
+    expect(headers.get("x-user-id")).toBeNull();
+    expect(headers.get("authorization")).toBeNull();
+    await app.close();
+  });
+
+  it("preserves safe mobile bootstrap error statuses from catalog", async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      code: "MOBILE_BRAND_NOT_FOUND",
+      message: "The requested brand is unavailable.",
+      requestId: "catalog-request-id"
+    }), { status: 404, headers: { "content-type": "application/json" } }));
+    const app = await buildApp();
+    const response = await app.inject({ method: "GET", url: "/v1/mobile/bootstrap?brandId=unknown-brand" });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(response.json()).toMatchObject({ code: "MOBILE_BRAND_NOT_FOUND" });
+    expect(response.body).not.toContain("tenantId");
     await app.close();
   });
 
@@ -4572,9 +4622,22 @@ let previousFreeClientDashboardDomain: string | undefined;
         expect.objectContaining({ id: "owner_provisioned", passed: true }),
         expect.objectContaining({ id: "stripe_onboarded", passed: true }),
         expect.objectContaining({ id: "menu_has_items", passed: true }),
+        expect.objectContaining({ id: "tax_configured", passed: true, detail: "6.00%" }),
         expect.objectContaining({ id: "fulfillment_mode_set", passed: true }),
         expect.objectContaining({ id: "test_order_confirmed", manual: true, passed: false })
       ])
+    });
+
+    const zeroTaxReadinessResponse = await app.inject({
+      method: "GET",
+      url: "/v1/internal/locations/zero-tax-ready-01/readiness",
+      headers: ownerInternalAdminHeaders
+    });
+    expect(zeroTaxReadinessResponse.statusCode, zeroTaxReadinessResponse.body).toBe(200);
+    expect(zeroTaxReadinessResponse.json()).toMatchObject({
+      locationId: "zero-tax-ready-01",
+      ready: true,
+      checks: expect.arrayContaining([expect.objectContaining({ id: "tax_configured", passed: true, detail: "0.00%" })])
     });
 
     const supportResponse = await app.inject({

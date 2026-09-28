@@ -90,6 +90,51 @@ describe("catalog service", () => {
     await app.close();
   });
 
+  it("provides public brand bootstrap without default-location fallback or internal metadata", async () => {
+    process.env.GATEWAY_INTERNAL_API_TOKEN = "catalog-gateway-token";
+    process.env.CATALOG_DEFAULT_LOCATION_ID = "fallback-location-must-not-be-used";
+    const app = await buildApp();
+
+    const missingBrand = await app.inject({ method: "GET", url: "/v1/mobile/bootstrap" });
+    expect(missingBrand.statusCode).toBe(400);
+    expect(missingBrand.json()).toMatchObject({ code: "INVALID_MOBILE_BRAND_BOOTSTRAP_REQUEST" });
+
+    const unknownBrand = await app.inject({ method: "GET", url: "/v1/mobile/bootstrap?brandId=unknown-brand" });
+    expect(unknownBrand.statusCode).toBe(404);
+    expect(unknownBrand.json()).toMatchObject({ code: "MOBILE_BRAND_NOT_FOUND" });
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/catalog/internal/clients",
+      headers: { "x-gateway-token": "catalog-gateway-token" },
+      payload: {
+        clientName: "Public Bootstrap Coffee",
+        locationName: "Draft Location",
+        marketLabel: "Detroit, MI",
+        timezone: "America/Detroit",
+        ownerEmail: "owner@public-bootstrap.example"
+      }
+    });
+    expect(created.statusCode).toBe(200);
+    const brandId = adminClientCreateResponseSchema.parse(created.json()).onboarding.brandId;
+
+    const bootstrap = await app.inject({ method: "GET", url: `/v1/mobile/bootstrap?brandId=${encodeURIComponent(brandId)}` });
+    expect(bootstrap.statusCode).toBe(200);
+    expect(bootstrap.headers["cache-control"]).toBe("no-store");
+    expect(bootstrap.json()).toMatchObject({
+      schemaVersion: 1,
+      status: "unavailable",
+      brand: { brandId, displayName: "Public Bootstrap Coffee" },
+      locations: [],
+      primaryLocationId: null,
+      orderingEnabled: false
+    });
+    expect(bootstrap.json()).not.toHaveProperty("tenantId");
+    expect(bootstrap.json()).not.toHaveProperty("ownerEmail");
+    expect(bootstrap.json()).not.toHaveProperty("billing");
+    await app.close();
+  });
+
   it("returns v1 menu payload", async () => {
     const app = await buildApp();
     const response = await app.inject({ method: "GET", url: `/v1/menu?locationId=${DEFAULT_LOCATION_ID}` });

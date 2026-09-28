@@ -43,6 +43,7 @@ import {
   adminStoreConfigSchema,
   adminMutationSuccessSchema,
   appConfigSchema,
+  type MobileBrandBootstrap,
   type AdminClientCreateRequest,
   type AdminClientCreateResponse,
   type AdminStoreConfig,
@@ -81,6 +82,12 @@ import {
   isPlatformManagedMenu,
   storeConfigResponseSchema
 } from "@lattelink/contracts-catalog";
+import {
+  buildMobileBrandBootstrap,
+  isCustomerLocationLaunchable,
+  type MobileBrandLocationMembership,
+  type MobileBrandRecord
+} from "./mobile-brand-bootstrap.js";
 import {
   allowsInMemoryPersistence,
   buildPersistenceStartupError,
@@ -484,6 +491,10 @@ type CatalogRepository = {
   createInternalClient(input: AdminClientCreateRequest): Promise<AdminClientCreateResponse>;
   listInternalClients(): Promise<InternalClientListResponse>;
   getInternalClient(tenantId: string): Promise<InternalClientDetail | undefined>;
+  /** Public discovery/configuration only; callers must not treat bootstrap as authorization for later location requests. */
+  getMobileBrandBootstrap(brandId: string): Promise<MobileBrandBootstrap | undefined>;
+  /** Checks canonical persisted membership; location-sensitive handlers must call this before processing. brandId is public, not a credential. */
+  doesLocationBelongToBrand(brandId: string, locationId: string): Promise<boolean>;
   getAppConfig(locationId: string): Promise<AppConfig | undefined>;
   listInternalLocations(): Promise<InternalLocationSummary[]>;
   getInternalLocationSummary(locationId: string): Promise<InternalLocationSummary | undefined>;
@@ -1438,6 +1449,51 @@ function createInMemoryRepository(): CatalogRepository {
         locations,
         onboarding: primaryLocation ? await buildMemoryOnboarding(primaryLocation.locationId) : undefined
       });
+    },
+    async getMobileBrandBootstrap(brandId) {
+      const client = Array.from(clientsByTenant.values()).find((candidate) => candidate.brandId === brandId);
+      if (!client) {
+        return undefined;
+      }
+
+      const brand: MobileBrandRecord = {
+        tenantId: client.tenantId,
+        brandId: client.brandId,
+        displayName: client.clientName
+      };
+      const memberships: MobileBrandLocationMembership[] = Array.from(clientLocationsByLocation.values())
+        .filter((location) => location.tenantId === client.tenantId)
+        .map((location) => ({
+          tenantId: location.tenantId,
+          brandId: location.brandId,
+          locationId: location.locationId,
+          locationName: location.locationName,
+          marketLabel: location.marketLabel,
+          timezone: location.timezone,
+          primaryLocation: location.primaryLocation
+        }));
+      const launchableLocationIds = new Set<string>();
+
+      // Client status is an onboarding rollup that can follow one location; determine availability per location.
+      // The legacy location summary can hydrate default config; bootstrap requires explicit per-location app and store records.
+      for (const membership of memberships) {
+        const [onboarding, locationSummary, appConfig, storeConfig] = await Promise.all([
+          this.getInternalLocationOnboarding(membership.locationId),
+          this.getInternalLocationSummary(membership.locationId),
+          this.getAppConfig(membership.locationId),
+          this.getStoreConfig(membership.locationId)
+        ]);
+        if (isCustomerLocationLaunchable({ brand, membership, onboarding, appConfig, storeConfig, locationSummary })) {
+          launchableLocationIds.add(membership.locationId);
+        }
+      }
+
+      return buildMobileBrandBootstrap({ brand, memberships, launchableLocationIds });
+    },
+    async doesLocationBelongToBrand(brandId, locationId) {
+      const location = clientLocationsByLocation.get(locationId);
+      const client = location ? clientsByTenant.get(location.tenantId) : undefined;
+      return Boolean(location && client && client.brandId === brandId && location.brandId === client.brandId);
     },
     async getAppConfig(locationId) {
       const appConfig = appConfigsByLocation.get(locationId);
@@ -3163,6 +3219,75 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         locations: locationRows.map(toClientLocationRecord),
         onboarding: primaryLocation ? await buildPostgresOnboarding(primaryLocation.location_id) : undefined
       });
+    },
+    async getMobileBrandBootstrap(brandId) {
+      const clientRow = await db
+        .selectFrom("catalog_clients")
+        .selectAll()
+        .where("brand_id", "=", brandId)
+        .executeTakeFirst();
+      if (!clientRow) {
+        return undefined;
+      }
+
+      const client = toClientRecord(clientRow);
+      const brand: MobileBrandRecord = {
+        tenantId: client.tenantId,
+        brandId: client.brandId,
+        displayName: client.clientName
+      };
+      const locationRows = await db
+        .selectFrom("catalog_client_locations")
+        .selectAll()
+        .where("tenant_id", "=", client.tenantId)
+        .execute();
+      const memberships: MobileBrandLocationMembership[] = locationRows.map((row) => {
+        const location = toClientLocationRecord(row);
+        return {
+          tenantId: location.tenantId,
+          brandId: location.brandId,
+          locationId: location.locationId,
+          locationName: location.locationName,
+          marketLabel: location.marketLabel,
+          timezone: location.timezone,
+          primaryLocation: location.primaryLocation
+        };
+      });
+      const launchableLocationIds = new Set<string>();
+
+      // Client status is an onboarding rollup that can follow one location; determine availability per location.
+      // The legacy location summary can hydrate default config; bootstrap requires explicit per-location app and store records.
+      const readinessByLocation = await Promise.all(
+        memberships.map(async (membership) => {
+          const [onboarding, locationSummary, appConfig, storeConfig] = await Promise.all([
+            this.getInternalLocationOnboarding(membership.locationId),
+            this.getInternalLocationSummary(membership.locationId),
+            this.getAppConfig(membership.locationId),
+            this.getStoreConfig(membership.locationId)
+          ]);
+          return isCustomerLocationLaunchable({ brand, membership, onboarding, appConfig, storeConfig, locationSummary })
+            ? membership.locationId
+            : undefined;
+        })
+      );
+      for (const locationId of readinessByLocation) {
+        if (locationId) {
+          launchableLocationIds.add(locationId);
+        }
+      }
+
+      return buildMobileBrandBootstrap({ brand, memberships, launchableLocationIds });
+    },
+    async doesLocationBelongToBrand(brandId, locationId) {
+      const membership = await db
+        .selectFrom("catalog_client_locations as memberships")
+        .innerJoin("catalog_clients as clients", "clients.tenant_id", "memberships.tenant_id")
+        .select("memberships.location_id")
+        .where("clients.brand_id", "=", brandId)
+        .where("memberships.location_id", "=", locationId)
+        .whereRef("memberships.brand_id", "=", "clients.brand_id")
+        .executeTakeFirst();
+      return Boolean(membership);
     },
     async getAppConfig(locationId) {
       const row = await db

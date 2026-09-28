@@ -504,6 +504,15 @@
         }
       }
     },
+    "/mobile/bootstrap": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/app-config": {
       "get": {
         "responses": {
