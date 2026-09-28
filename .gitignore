@@ -35,43 +35,6 @@ coverage
 .terraform.lock.hcl
 crash.log
 
-# Nomly coordination is Git-visible; generated mobile-build state remains ignored.
-.nomly/*
-!.nomly/README.md
-!.nomly/agents/
-.nomly/agents/*
-!.nomly/agents/*.md
-!.nomly/tasks/
-.nomly/tasks/*
-!.nomly/tasks/README.md
-!.nomly/tasks/inbox/
-.nomly/tasks/inbox/*
-!.nomly/tasks/inbox/*.md
-!.nomly/tasks/active/
-.nomly/tasks/active/*
-!.nomly/tasks/active/*.md
-!.nomly/tasks/review/
-.nomly/tasks/review/*
-!.nomly/tasks/review/*.md
-!.nomly/tasks/done/
-.nomly/tasks/done/*
-!.nomly/tasks/done/*.md
-!.nomly/handoffs/
-.nomly/handoffs/*
-!.nomly/handoffs/*.md
-!.nomly/decisions/
-.nomly/decisions/*
-!.nomly/decisions/*.md
-!.nomly/security/
-.nomly/security/*
-!.nomly/security/*.md
-!.nomly/status/
-.nomly/status/*
-!.nomly/status/*.md
-!.nomly/templates/
-.nomly/templates/*
-!.nomly/templates/*.md
-
 # misc
 openapi/*.json
 repo-files.md
