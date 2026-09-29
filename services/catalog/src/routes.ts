@@ -62,7 +62,7 @@ import { z } from "zod";
 import { CatalogMutationError, createCatalogRepository, MobileReleaseBuildJobError } from "./repository.js";
 import { MobileBrandBootstrapConfigurationError } from "./mobile-brand-bootstrap.js";
 import { isPublicCustomerLocationAccessible } from "./public-location-access.js";
-import { resolveDefaultLocationId } from "./tenant.js";
+import { resolveOperatorFallbackLocationId } from "./tenant.js";
 import {
   createMenuImageUploadService,
   MenuImageUploadUnavailableError,
@@ -244,7 +244,8 @@ export async function registerRoutes(app: FastifyInstance) {
   const repository = await createCatalogRepository(app.log);
   const menuImageUploads = createMenuImageUploadService();
   const gatewayApiToken = trimToUndefined(process.env.GATEWAY_INTERNAL_API_TOKEN);
-  const defaultLocationId = resolveDefaultLocationId();
+  // Operator-only compatibility fallback. Public customer routes require explicit brandId/locationId.
+  const operatorFallbackLocationId = resolveOperatorFallbackLocationId();
   const rateLimitWindowMs = toPositiveInteger(process.env.CATALOG_RATE_LIMIT_WINDOW_MS, defaultRateLimitWindowMs);
   const gatewayReadRateLimit = {
     max: toPositiveInteger(process.env.CATALOG_RATE_LIMIT_GATEWAY_READ_MAX, 120),
@@ -497,7 +498,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
   function getOperatorLocationId(request: FastifyRequest, reply: FastifyReply): string | undefined {
     const parsed = operatorLocationHeadersSchema.safeParse(request.headers);
-    const locationId = (parsed.success ? parsed.data["x-operator-location-id"] : undefined) ?? defaultLocationId;
+    const locationId = (parsed.success ? parsed.data["x-operator-location-id"] : undefined) ?? operatorFallbackLocationId;
     if (!locationId) {
       sendError(reply, {
         statusCode: 400,

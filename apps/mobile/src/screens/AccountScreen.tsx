@@ -155,7 +155,7 @@ export function AccountScreen() {
         bundleIdentifier: MOBILE_API_ENVIRONMENT.bundleIdentifier,
         locationId: location.selectedLocationId
       });
-      Sentry.captureException(new Error("LatteLink mobile Sentry diagnostic event"));
+      Sentry.captureException(new Error("Mobile app Sentry diagnostic event"));
     });
 
     void Sentry.flush().then(

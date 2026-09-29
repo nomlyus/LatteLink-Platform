@@ -1,7 +1,7 @@
 import Fastify from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import { createCatalogRepository } from "../src/repository.js";
-import { DEFAULT_LOCATION_ID } from "../src/tenant.js";
+import { LOCAL_FIXTURE_LOCATION_ID } from "../src/tenant.js";
 
 const previousDatabaseUrl = process.env.DATABASE_URL;
 const previousNodeEnv = process.env.NODE_ENV;
@@ -38,8 +38,8 @@ describe("catalog brand/location membership", () => {
       expect(await repository.doesLocationBelongToBrand(brandA.onboarding.brandId, brandA.locationId)).toBe(true);
       expect(await repository.doesLocationBelongToBrand(brandA.onboarding.brandId, brandB.locationId)).toBe(false);
       expect(await repository.doesLocationBelongToBrand(brandB.onboarding.brandId, "unknown-location")).toBe(false);
-      expect(await repository.getAppConfig(DEFAULT_LOCATION_ID)).toBeDefined();
-      expect(await repository.doesLocationBelongToBrand(brandA.onboarding.brandId, DEFAULT_LOCATION_ID)).toBe(false);
+      expect(await repository.getAppConfig(LOCAL_FIXTURE_LOCATION_ID)).toBeDefined();
+      expect(await repository.doesLocationBelongToBrand(brandA.onboarding.brandId, LOCAL_FIXTURE_LOCATION_ID)).toBe(false);
 
       const bootstrapA = await repository.getMobileBrandBootstrap(brandA.onboarding.brandId);
       const bootstrapB = await repository.getMobileBrandBootstrap(brandB.onboarding.brandId);

@@ -16,7 +16,7 @@ import {
   type OrderServiceDeps
 } from "../src/service.js";
 import { buildApp as buildCatalogApp } from "../../catalog/src/app.js";
-import { DEFAULT_LOCATION_ID } from "../../catalog/src/tenant.js";
+import { LOCAL_FIXTURE_LOCATION_ID } from "../../catalog/src/tenant.js";
 
 const sampleQuotePayload = {
   locationId: "flagship-01",
@@ -411,7 +411,7 @@ describe("orders service layer", () => {
     const catalogApp = await buildCatalogApp();
     const catalogHeaders = {
       "x-gateway-token": "catalog-gateway-token",
-      "x-operator-location-id": DEFAULT_LOCATION_ID
+      "x-operator-location-id": LOCAL_FIXTURE_LOCATION_ID
     };
 
     const mutationResponse = await catalogApp.inject({
@@ -434,7 +434,7 @@ describe("orders service layer", () => {
 
     const publicMenuResponse = await catalogApp.inject({
       method: "GET",
-      url: `/v1/menu?brandId=test-public-runtime-brand&locationId=${DEFAULT_LOCATION_ID}`
+      url: `/v1/menu?brandId=test-public-runtime-brand&locationId=${LOCAL_FIXTURE_LOCATION_ID}`
     });
     const publicMenu = menuResponseSchema.parse(publicMenuResponse.json());
     const publicItem = publicMenu.categories.flatMap((category) => category.items).find((item) => item.id === "latte");
@@ -466,7 +466,7 @@ describe("orders service layer", () => {
 
     const quoteResult = await createQuote({
       input: {
-        locationId: DEFAULT_LOCATION_ID,
+        locationId: LOCAL_FIXTURE_LOCATION_ID,
         items: [{ itemId: publicItem.id, quantity: 1, customization: { selectedOptions: [], notes: "" } }],
         pointsToRedeem: 0
       },

@@ -12,6 +12,7 @@ import { createPostgresDb, runMigrations, sql, type PersistenceDb } from "@latte
 import * as catalogRelationalMigration from "../../../packages/persistence/src/migrations/0053_catalog_relational_model.js";
 import * as catalogModifierMetadataMigration from "../../../packages/persistence/src/migrations/0054_catalog_modifier_metadata.js";
 import {
+  createRelationalCategory,
   deleteRelationalCategory,
   deleteRelationalModifierGroup,
   getRelationalAdminMenu,
@@ -370,6 +371,34 @@ describeWithPostgres("relational catalog migration and integrity (PostgreSQL)", 
     await db.destroy();
     await baseDb.schema.dropSchema(schema).cascade().execute();
     await baseDb.destroy();
+  });
+
+  it("uses canonical client/location membership for new menu brands and rejects missing membership", async () => {
+    const tenantId = `tenant-${randomUUID()}`;
+    const canonicalBrandId = `brand-${randomUUID()}`;
+    const canonicalLocationId = `location-${randomUUID()}`;
+    await db!.insertInto("catalog_clients").values({
+      tenant_id: tenantId,
+      brand_id: canonicalBrandId,
+      client_name: "Canonical Brand",
+      status: "live"
+    }).execute();
+    await db!.insertInto("catalog_client_locations").values({
+      tenant_id: tenantId,
+      location_id: canonicalLocationId,
+      brand_id: canonicalBrandId,
+      location_name: "Canonical Location",
+      market_label: "Detroit, MI"
+    }).execute();
+
+    await createRelationalCategory(db!, canonicalLocationId, { title: "Drinks" });
+    const category = await db!.selectFrom("catalog_menu_categories")
+      .select("brand_id")
+      .where("location_id", "=", canonicalLocationId)
+      .executeTakeFirst();
+    expect(category?.brand_id).toBe(canonicalBrandId);
+    await expect(createRelationalCategory(db!, `unknown-${randomUUID()}`, { title: "No fallback" }))
+      .rejects.toMatchObject({ code: "CATALOG_LOCATION_BRAND_NOT_FOUND", statusCode: 404 });
   });
 
   it("migrates legacy rows with semantic customization parity and stable conflict handling", async () => {

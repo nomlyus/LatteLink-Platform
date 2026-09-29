@@ -149,6 +149,7 @@
 			buildPhases = (
 				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
 				FC984FCA84A66960E8D38952 /* [Expo] Configure project */,
+				A1B2C3D4E5F60718293A4B5C /* Sync Merchant Native Identity Assets */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
@@ -326,6 +327,21 @@
 			shellPath = /bin/sh;
 			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-LatteLinkBeta/expo-configure-project.sh\"\n";
 		};
+		A1B2C3D4E5F60718293A4B5C /* Sync Merchant Native Identity Assets */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Sync Merchant Native Identity Assets";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "NODE_BINARY=\"${NODE_BINARY:-node}\"\n\"$NODE_BINARY\" \"$PROJECT_DIR/../scripts/sync-native-identity-assets.mjs\"\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -348,12 +364,11 @@
 			baseConfigurationReference = 1063BA7A2E6F440233129A67 /* Pods-LatteLinkBeta.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				APP_DISPLAY_NAME = "Rawaq Beta";
+				APP_DISPLAY_NAME = "$(EXPO_PUBLIC_APP_DISPLAY_NAME)";
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = LatteLinkBeta/LatteLinkBeta.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_BITCODE = NO;
-				EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID = merchant.com.lattelink.rawaq.beta;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
 					"FB_SONARKIT_ENABLED=1",
@@ -364,14 +379,14 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2.0;
+				MARKETING_VERSION = "$(APP_VERSION)";
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = com.lattelink.rawaq.beta;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(IOS_BUNDLE_IDENTIFIER)";
 				PRODUCT_NAME = LatteLinkBeta;
 				SWIFT_OBJC_BRIDGING_HEADER = "LatteLinkBeta/LatteLinkBeta-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -386,25 +401,24 @@
 			baseConfigurationReference = CA59014BE2F34A0685158F31 /* Pods-LatteLinkBeta.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				APP_DISPLAY_NAME = "Rawaq Beta";
+				APP_DISPLAY_NAME = "$(EXPO_PUBLIC_APP_DISPLAY_NAME)";
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = LatteLinkBeta/LatteLinkBeta.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
-				EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID = merchant.com.lattelink.rawaq.beta;
 				INFOPLIST_FILE = LatteLinkBeta/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2.0;
+				MARKETING_VERSION = "$(APP_VERSION)";
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
-				PRODUCT_BUNDLE_IDENTIFIER = com.lattelink.rawaq.beta;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(IOS_BUNDLE_IDENTIFIER)";
 				PRODUCT_NAME = LatteLinkBeta;
 				SWIFT_OBJC_BRIDGING_HEADER = "LatteLinkBeta/LatteLinkBeta-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
@@ -418,25 +432,24 @@
 			baseConfigurationReference = CA59014BE2F34A0685158F31 /* Pods-LatteLinkBeta.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				APP_DISPLAY_NAME = Rawaq;
+				APP_DISPLAY_NAME = "$(EXPO_PUBLIC_APP_DISPLAY_NAME)";
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = LatteLinkBeta/LatteLinkProduction.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
-				EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID = merchant.com.lattelink.rawaq;
 				INFOPLIST_FILE = LatteLinkBeta/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2.0;
+				MARKETING_VERSION = "$(APP_VERSION)";
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
-				PRODUCT_BUNDLE_IDENTIFIER = com.lattelink.rawaq;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(IOS_BUNDLE_IDENTIFIER)";
 				PRODUCT_NAME = LatteLinkBeta;
 				SWIFT_OBJC_BRIDGING_HEADER = "LatteLinkBeta/LatteLinkBeta-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;

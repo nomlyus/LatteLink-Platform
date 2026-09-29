@@ -54,7 +54,7 @@ if (sentryDsn) {
   Sentry.init({
     dsn: sentryDsn,
     environment: MOBILE_API_ENVIRONMENT.variant ?? (__DEV__ ? "development" : "unknown"),
-    release: `${Constants.expoConfig?.slug ?? "lattelink-mobile"}@${Constants.expoConfig?.version ?? "unknown"}`,
+    release: `${Constants.expoConfig?.slug ?? "mobile"}@${Constants.expoConfig?.version ?? "unknown"}`,
     tracesSampleRate: 0.1
   });
 }

@@ -19,9 +19,9 @@ import {
 import { buildApp } from "../src/app.js";
 import { serializeCatalogTimestamp } from "../src/repository.js";
 import {
-  DEFAULT_BRAND_NAME,
-  DEFAULT_LOCATION_ID,
-  DEFAULT_LOCATION_NAME
+  LOCAL_FIXTURE_BRAND_NAME,
+  LOCAL_FIXTURE_LOCATION_ID,
+  LOCAL_FIXTURE_LOCATION_NAME
 } from "../src/tenant.js";
 
 describe("catalog service", () => {
@@ -138,7 +138,7 @@ describe("catalog service", () => {
 
   it("returns v1 menu payload", async () => {
     const app = await buildApp();
-    const response = await app.inject({ method: "GET", url: `/v1/menu?brandId=${testBrandId}&locationId=${DEFAULT_LOCATION_ID}` });
+    const response = await app.inject({ method: "GET", url: `/v1/menu?brandId=${testBrandId}&locationId=${LOCAL_FIXTURE_LOCATION_ID}` });
 
     expect(response.statusCode).toBe(200);
     expect(response.headers["cache-control"]).toBe("public, max-age=60, stale-while-revalidate=300");
@@ -155,7 +155,7 @@ describe("catalog service", () => {
       url: "/v1/catalog/admin/menu/latte",
       headers: {
         "x-gateway-token": "catalog-gateway-token",
-        "x-operator-location-id": DEFAULT_LOCATION_ID
+        "x-operator-location-id": LOCAL_FIXTURE_LOCATION_ID
       },
       payload: {
         name: "Latte",
@@ -171,7 +171,7 @@ describe("catalog service", () => {
     });
     expect(updateResponse.statusCode).toBe(200);
 
-    const publicResponse = await app.inject({ method: "GET", url: `/v1/menu?brandId=${testBrandId}&locationId=${DEFAULT_LOCATION_ID}` });
+    const publicResponse = await app.inject({ method: "GET", url: `/v1/menu?brandId=${testBrandId}&locationId=${LOCAL_FIXTURE_LOCATION_ID}` });
     const menu = menuResponseSchema.parse(publicResponse.json());
     expect(menu.categories.flatMap((category) => category.items).find((item) => item.id === "latte")).toMatchObject({
       visible: true,
@@ -185,15 +185,15 @@ describe("catalog service", () => {
     const app = await buildApp();
     const headers = {
       "x-gateway-token": "catalog-gateway-token",
-      "x-operator-location-id": DEFAULT_LOCATION_ID
+      "x-operator-location-id": LOCAL_FIXTURE_LOCATION_ID
     };
     const configResponse = await app.inject({
       method: "PUT",
       url: "/v1/catalog/admin/store/config",
       headers,
       payload: {
-        storeName: DEFAULT_BRAND_NAME,
-        locationName: DEFAULT_LOCATION_NAME,
+        storeName: LOCAL_FIXTURE_BRAND_NAME,
+        locationName: LOCAL_FIXTURE_LOCATION_NAME,
         hours: "Daily · 7:00 AM - 6:00 PM",
         pickupInstructions: "Pickup at the counter.",
         taxRateBasisPoints: 600,
@@ -231,7 +231,7 @@ describe("catalog service", () => {
     const app = await buildApp();
     const headers = {
       "x-gateway-token": "catalog-gateway-token",
-      "x-operator-location-id": DEFAULT_LOCATION_ID
+      "x-operator-location-id": LOCAL_FIXTURE_LOCATION_ID
     };
     const menuResponse = await app.inject({ method: "GET", url: "/v1/catalog/admin/menu", headers });
     const menu = adminMenuResponseSchema.parse(menuResponse.json());
@@ -252,7 +252,7 @@ describe("catalog service", () => {
     const app = await buildApp();
     const headers = {
       "x-gateway-token": "catalog-gateway-token",
-      "x-operator-location-id": DEFAULT_LOCATION_ID
+      "x-operator-location-id": LOCAL_FIXTURE_LOCATION_ID
     };
 
     const createResponse = await app.inject({
@@ -306,7 +306,7 @@ describe("catalog service", () => {
     });
     expect(deleteResponse.statusCode).toBe(200);
 
-    const publicResponse = await app.inject({ method: "GET", url: `/v1/menu?brandId=${testBrandId}&locationId=${DEFAULT_LOCATION_ID}` });
+    const publicResponse = await app.inject({ method: "GET", url: `/v1/menu?brandId=${testBrandId}&locationId=${LOCAL_FIXTURE_LOCATION_ID}` });
     expect(menuResponseSchema.parse(publicResponse.json()).categories.flatMap((category) => category.items).some((item) => item.id === "latte")).toBe(true);
     await app.close();
   });
@@ -316,7 +316,7 @@ describe("catalog service", () => {
     const app = await buildApp();
     const headers = {
       "x-gateway-token": "catalog-gateway-token",
-      "x-operator-location-id": DEFAULT_LOCATION_ID
+      "x-operator-location-id": LOCAL_FIXTURE_LOCATION_ID
     };
     const createResponse = await app.inject({
       method: "POST",
@@ -359,7 +359,7 @@ describe("catalog service", () => {
     expect(updateResponse.statusCode).toBe(200);
     expect(updateResponse.json()).toMatchObject({ modifierGroupAssignments: [{ modifierGroupId: group.id }] });
 
-    const publicResponse = await app.inject({ method: "GET", url: `/v1/menu?brandId=${testBrandId}&locationId=${DEFAULT_LOCATION_ID}` });
+    const publicResponse = await app.inject({ method: "GET", url: `/v1/menu?brandId=${testBrandId}&locationId=${LOCAL_FIXTURE_LOCATION_ID}` });
     const publicItem = menuResponseSchema
       .parse(publicResponse.json())
       .categories
@@ -386,12 +386,12 @@ describe("catalog service", () => {
     expect(missingLocationResponse.json()).toMatchObject({
       code: "INVALID_PUBLIC_LOCATION_REQUEST"
     });
-    const missingBrandResponse = await app.inject({ method: "GET", url: `/v1/menu?locationId=${DEFAULT_LOCATION_ID}` });
+    const missingBrandResponse = await app.inject({ method: "GET", url: `/v1/menu?locationId=${LOCAL_FIXTURE_LOCATION_ID}` });
     expect(missingBrandResponse.statusCode).toBe(400);
     expect(missingBrandResponse.json()).toMatchObject({ code: "INVALID_PUBLIC_LOCATION_REQUEST" });
     await app.close();
 
-    process.env.CATALOG_DEFAULT_LOCATION_ID = DEFAULT_LOCATION_ID;
+    process.env.CATALOG_DEFAULT_LOCATION_ID = LOCAL_FIXTURE_LOCATION_ID;
     const fallbackApp = await buildApp();
     const fallbackResponse = await fallbackApp.inject({ method: "GET", url: "/v1/menu" });
 
@@ -428,13 +428,13 @@ describe("catalog service", () => {
     for (const path of paths) {
       const allowed = await app.inject({
         method: "GET",
-        url: `${path}?brandId=${testBrandId}&locationId=${DEFAULT_LOCATION_ID}`
+        url: `${path}?brandId=${testBrandId}&locationId=${LOCAL_FIXTURE_LOCATION_ID}`
       });
       expect(allowed.statusCode, path).toBe(200);
 
       const mismatchedBrand = await app.inject({
         method: "GET",
-        url: `${path}?brandId=another-brand&locationId=${DEFAULT_LOCATION_ID}`
+        url: `${path}?brandId=another-brand&locationId=${LOCAL_FIXTURE_LOCATION_ID}`
       });
       expect(mismatchedBrand.statusCode, path).toBe(404);
       expect(mismatchedBrand.json()).toMatchObject({ code: "PUBLIC_LOCATION_NOT_AVAILABLE", message: "Location not available." });
@@ -478,7 +478,7 @@ describe("catalog service", () => {
 
     const allowed = await app.inject({
       method: "GET",
-      url: `/v1/catalog/internal/public-location-access?brandId=${testBrandId}&locationId=${DEFAULT_LOCATION_ID}`,
+      url: `/v1/catalog/internal/public-location-access?brandId=${testBrandId}&locationId=${LOCAL_FIXTURE_LOCATION_ID}`,
       headers: { "x-gateway-token": "catalog-gateway-token", "x-request-id": "request-preflight-1" }
     });
     expect(allowed.statusCode).toBe(204);
@@ -503,11 +503,11 @@ describe("catalog service", () => {
 
   it("returns v1 app config payload with staff fulfillment by default", async () => {
     const app = await buildApp();
-    const response = await app.inject({ method: "GET", url: `/v1/app-config?brandId=${testBrandId}&locationId=${DEFAULT_LOCATION_ID}` });
+    const response = await app.inject({ method: "GET", url: `/v1/app-config?brandId=${testBrandId}&locationId=${LOCAL_FIXTURE_LOCATION_ID}` });
 
     expect(response.statusCode).toBe(200);
     const parsed = appConfigSchema.parse(response.json());
-    expect(parsed.brand.brandName).toBe(DEFAULT_BRAND_NAME);
+    expect(parsed.brand.brandName).toBe(LOCAL_FIXTURE_BRAND_NAME);
     expect(parsed.enabledTabs).toEqual(["home", "menu", "orders", "account"]);
     expect(parsed.storeCapabilities.menu.source).toBe("platform_managed");
     expect(parsed.storeCapabilities.operations.dashboardEnabled).toBe(true);
@@ -520,7 +520,7 @@ describe("catalog service", () => {
   it("does not serve a location that becomes unlaunchable under time-based fulfillment", async () => {
     process.env.ORDER_FULFILLMENT_MODE = "time_based";
     const app = await buildApp();
-    const response = await app.inject({ method: "GET", url: `/v1/app-config?brandId=${testBrandId}&locationId=${DEFAULT_LOCATION_ID}` });
+    const response = await app.inject({ method: "GET", url: `/v1/app-config?brandId=${testBrandId}&locationId=${LOCAL_FIXTURE_LOCATION_ID}` });
 
     expect(response.statusCode).toBe(404);
     expect(response.json()).toMatchObject({ code: "PUBLIC_LOCATION_NOT_AVAILABLE", message: "Location not available." });
@@ -532,7 +532,7 @@ describe("catalog service", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-03-10T17:00:00.000Z"));
     const app = await buildApp();
-    const response = await app.inject({ method: "GET", url: `/v1/store/config?brandId=${testBrandId}&locationId=${DEFAULT_LOCATION_ID}` });
+    const response = await app.inject({ method: "GET", url: `/v1/store/config?brandId=${testBrandId}&locationId=${LOCAL_FIXTURE_LOCATION_ID}` });
 
     expect(response.statusCode).toBe(200);
     const parsed = storeConfigResponseSchema.parse(response.json());
@@ -545,11 +545,11 @@ describe("catalog service", () => {
 
   it("returns a default published mobile experience for public clients", async () => {
     const app = await buildApp();
-    const response = await app.inject({ method: "GET", url: `/v1/mobile-experience?brandId=${testBrandId}&locationId=${DEFAULT_LOCATION_ID}` });
+    const response = await app.inject({ method: "GET", url: `/v1/mobile-experience?brandId=${testBrandId}&locationId=${LOCAL_FIXTURE_LOCATION_ID}` });
 
     expect(response.statusCode).toBe(200);
     const parsed = mobileExperienceDocumentSchema.parse(response.json());
-    expect(parsed.locationId).toBe(DEFAULT_LOCATION_ID);
+    expect(parsed.locationId).toBe(LOCAL_FIXTURE_LOCATION_ID);
     expect(parsed.status).toBe("published");
     expect(parsed.protectedNavigation).toEqual(["home", "menu", "orders", "account"]);
     expect(parsed.screens[0]?.sections.some((section) => section.type === "hero")).toBe(true);
@@ -560,7 +560,7 @@ describe("catalog service", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-03-10T02:00:00.000Z"));
     const app = await buildApp();
-    const response = await app.inject({ method: "GET", url: `/v1/store/config?brandId=${testBrandId}&locationId=${DEFAULT_LOCATION_ID}` });
+    const response = await app.inject({ method: "GET", url: `/v1/store/config?brandId=${testBrandId}&locationId=${LOCAL_FIXTURE_LOCATION_ID}` });
 
     expect(response.statusCode).toBe(200);
     const parsed = storeConfigResponseSchema.parse(response.json());
@@ -578,7 +578,7 @@ describe("catalog service", () => {
       url: "/v1/catalog/admin/menu",
       headers: {
         "x-gateway-token": "catalog-gateway-token",
-        "x-operator-location-id": DEFAULT_LOCATION_ID
+        "x-operator-location-id": LOCAL_FIXTURE_LOCATION_ID
       }
     });
     expect(adminMenuResponse.statusCode).toBe(200);
@@ -593,7 +593,7 @@ describe("catalog service", () => {
       url: "/v1/catalog/admin/menu/latte",
       headers: {
         "x-gateway-token": "catalog-gateway-token",
-        "x-operator-location-id": DEFAULT_LOCATION_ID
+        "x-operator-location-id": LOCAL_FIXTURE_LOCATION_ID
       },
       payload: {
         name: "Operator Latte",
@@ -638,13 +638,13 @@ describe("catalog service", () => {
       url: "/v1/catalog/admin/store/config",
       headers: {
         "x-gateway-token": "catalog-gateway-token",
-        "x-operator-location-id": DEFAULT_LOCATION_ID
+        "x-operator-location-id": LOCAL_FIXTURE_LOCATION_ID
       }
     });
     expect(adminStoreConfigResponse.statusCode).toBe(200);
     const adminStoreConfig = adminStoreConfigSchema.parse(adminStoreConfigResponse.json());
-    expect(adminStoreConfig.storeName).toBe(DEFAULT_BRAND_NAME);
-    expect(adminStoreConfig.locationName).toBe(DEFAULT_LOCATION_NAME);
+    expect(adminStoreConfig.storeName).toBe(LOCAL_FIXTURE_BRAND_NAME);
+    expect(adminStoreConfig.locationName).toBe(LOCAL_FIXTURE_LOCATION_NAME);
     expect(adminStoreConfig.taxRateBasisPoints).toBe(600);
     expect(adminStoreConfig.capabilities.menu.source).toBe("platform_managed");
 
@@ -653,7 +653,7 @@ describe("catalog service", () => {
       url: "/v1/catalog/admin/store/config",
       headers: {
         "x-gateway-token": "catalog-gateway-token",
-        "x-operator-location-id": DEFAULT_LOCATION_ID
+        "x-operator-location-id": LOCAL_FIXTURE_LOCATION_ID
       },
       payload: {
         storeName: "Gazelle Coffee Downtown",
@@ -697,13 +697,13 @@ describe("catalog service", () => {
       }
     });
 
-    const storeConfigResponse = await app.inject({ method: "GET", url: `/v1/store/config?brandId=${testBrandId}&locationId=${DEFAULT_LOCATION_ID}` });
+    const storeConfigResponse = await app.inject({ method: "GET", url: `/v1/store/config?brandId=${testBrandId}&locationId=${LOCAL_FIXTURE_LOCATION_ID}` });
     expect(storeConfigResponse.statusCode).toBe(200);
     expect(storeConfigResponseSchema.parse(storeConfigResponse.json())).toMatchObject({
       taxRateBasisPoints: 650
     });
 
-    const appConfigResponse = await app.inject({ method: "GET", url: `/v1/app-config?brandId=${testBrandId}&locationId=${DEFAULT_LOCATION_ID}` });
+    const appConfigResponse = await app.inject({ method: "GET", url: `/v1/app-config?brandId=${testBrandId}&locationId=${LOCAL_FIXTURE_LOCATION_ID}` });
     expect(appConfigResponse.statusCode).toBe(200);
     expect(appConfigSchema.parse(appConfigResponse.json())).toMatchObject({
       brand: {
@@ -743,7 +743,7 @@ describe("catalog service", () => {
     const app = await buildApp();
     const headers = {
       "x-gateway-token": "catalog-gateway-token",
-      "x-operator-location-id": DEFAULT_LOCATION_ID,
+      "x-operator-location-id": LOCAL_FIXTURE_LOCATION_ID,
       "x-user-id": "operator-01"
     };
 
@@ -798,7 +798,7 @@ describe("catalog service", () => {
     expect(published.status).toBe("published");
     expect(published.templateId).toBe("compact_ordering");
 
-    const publicResponse = await app.inject({ method: "GET", url: `/v1/mobile-experience?brandId=${testBrandId}&locationId=${DEFAULT_LOCATION_ID}` });
+    const publicResponse = await app.inject({ method: "GET", url: `/v1/mobile-experience?brandId=${testBrandId}&locationId=${LOCAL_FIXTURE_LOCATION_ID}` });
     expect(mobileExperienceDocumentSchema.parse(publicResponse.json()).templateId).toBe("compact_ordering");
 
     const secondDraftResponse = await app.inject({
@@ -847,7 +847,7 @@ describe("catalog service", () => {
     expect(restored.versionId).not.toBe(published.versionId);
     expect(restored.templateId).toBe("compact_ordering");
 
-    const restoredPublicResponse = await app.inject({ method: "GET", url: `/v1/mobile-experience?brandId=${testBrandId}&locationId=${DEFAULT_LOCATION_ID}` });
+    const restoredPublicResponse = await app.inject({ method: "GET", url: `/v1/mobile-experience?brandId=${testBrandId}&locationId=${LOCAL_FIXTURE_LOCATION_ID}` });
     expect(mobileExperienceDocumentSchema.parse(restoredPublicResponse.json()).templateId).toBe("compact_ordering");
     await app.close();
   });
@@ -864,7 +864,7 @@ describe("catalog service", () => {
       url: "/v1/catalog/admin/menu/latte/image-upload",
       headers: {
         "x-gateway-token": "catalog-gateway-token",
-        "x-operator-location-id": DEFAULT_LOCATION_ID
+        "x-operator-location-id": LOCAL_FIXTURE_LOCATION_ID
       },
       payload: {
         fileName: "latte.jpg",
@@ -898,7 +898,7 @@ describe("catalog service", () => {
       url: "/v1/catalog/admin/menu/latte/image-upload",
       headers: {
         "x-gateway-token": "catalog-gateway-token",
-        "x-operator-location-id": DEFAULT_LOCATION_ID
+        "x-operator-location-id": LOCAL_FIXTURE_LOCATION_ID
       },
       payload: {
         fileName: "latte.svg",
@@ -917,7 +917,7 @@ describe("catalog service", () => {
       url: "/v1/catalog/admin/menu/latte/image-upload",
       headers: {
         "x-gateway-token": "catalog-gateway-token",
-        "x-operator-location-id": DEFAULT_LOCATION_ID
+        "x-operator-location-id": LOCAL_FIXTURE_LOCATION_ID
       },
       payload: {
         fileName: "latte.jpg",
@@ -943,7 +943,7 @@ describe("catalog service", () => {
       url: "/v1/catalog/admin/menu/latte",
       headers: {
         "x-gateway-token": "catalog-gateway-token",
-        "x-operator-location-id": DEFAULT_LOCATION_ID
+        "x-operator-location-id": LOCAL_FIXTURE_LOCATION_ID
       },
       payload: {
         name: "Operator Latte",
@@ -1067,7 +1067,7 @@ describe("catalog service", () => {
         url: "/v1/catalog/admin/menu",
         headers: {
           "x-gateway-token": "catalog-gateway-token",
-          "x-operator-location-id": DEFAULT_LOCATION_ID
+          "x-operator-location-id": LOCAL_FIXTURE_LOCATION_ID
         }
       });
       expect(firstRead.statusCode).toBe(200);
@@ -1077,7 +1077,7 @@ describe("catalog service", () => {
         url: "/v1/catalog/admin/menu",
         headers: {
           "x-gateway-token": "catalog-gateway-token",
-          "x-operator-location-id": DEFAULT_LOCATION_ID
+          "x-operator-location-id": LOCAL_FIXTURE_LOCATION_ID
         }
       });
       expect(secondRead.statusCode).toBe(429);
@@ -1117,7 +1117,7 @@ describe("catalog service", () => {
 
     const menuResponse = await app.inject({
       method: "GET",
-      url: `/v1/menu?brandId=${testBrandId}&locationId=${DEFAULT_LOCATION_ID}`,
+      url: `/v1/menu?brandId=${testBrandId}&locationId=${LOCAL_FIXTURE_LOCATION_ID}`,
       headers: {
         "x-request-id": requestId
       }
@@ -1214,8 +1214,8 @@ describe("catalog service", () => {
     expect(locationList.locations).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          locationId: DEFAULT_LOCATION_ID,
-          brandName: DEFAULT_BRAND_NAME
+          locationId: LOCAL_FIXTURE_LOCATION_ID,
+          brandName: LOCAL_FIXTURE_BRAND_NAME
         }),
         expect.objectContaining({
           locationId: "northside-01",
@@ -1405,12 +1405,12 @@ describe("catalog service", () => {
 
     const appConfigBeforeResponse = await app.inject({
       method: "GET",
-      url: `/v1/app-config?brandId=${testBrandId}&locationId=${DEFAULT_LOCATION_ID}`
+      url: `/v1/app-config?brandId=${testBrandId}&locationId=${LOCAL_FIXTURE_LOCATION_ID}`
     });
     const appConfigBefore = appConfigSchema.parse(appConfigBeforeResponse.json());
     const menuBeforeResponse = await app.inject({
       method: "GET",
-      url: `/v1/menu?brandId=${testBrandId}&locationId=${DEFAULT_LOCATION_ID}`
+      url: `/v1/menu?brandId=${testBrandId}&locationId=${LOCAL_FIXTURE_LOCATION_ID}`
     });
     const menuBefore = menuResponseSchema.parse(menuBeforeResponse.json());
 
@@ -1429,7 +1429,7 @@ describe("catalog service", () => {
     };
     const updateResponse = await app.inject({
       method: "PUT",
-      url: `/v1/catalog/internal/locations/${DEFAULT_LOCATION_ID}/capabilities`,
+      url: `/v1/catalog/internal/locations/${LOCAL_FIXTURE_LOCATION_ID}/capabilities`,
       headers: {
         "x-gateway-token": "catalog-gateway-token",
         "x-user-id": "admin-123"
@@ -1438,16 +1438,16 @@ describe("catalog service", () => {
     });
     expect(updateResponse.statusCode).toBe(200);
     expect(internalLocationSummarySchema.parse(updateResponse.json())).toMatchObject({
-      locationId: DEFAULT_LOCATION_ID,
-      storeName: DEFAULT_BRAND_NAME,
-      locationName: DEFAULT_LOCATION_NAME,
+      locationId: LOCAL_FIXTURE_LOCATION_ID,
+      storeName: LOCAL_FIXTURE_BRAND_NAME,
+      locationName: LOCAL_FIXTURE_LOCATION_NAME,
       capabilities,
       action: "updated"
     });
 
     const appConfigAfterResponse = await app.inject({
       method: "GET",
-      url: `/v1/app-config?brandId=${testBrandId}&locationId=${DEFAULT_LOCATION_ID}`
+      url: `/v1/app-config?brandId=${testBrandId}&locationId=${LOCAL_FIXTURE_LOCATION_ID}`
     });
     const appConfigAfter = appConfigSchema.parse(appConfigAfterResponse.json());
     const {
@@ -1475,7 +1475,7 @@ describe("catalog service", () => {
 
     const menuAfterResponse = await app.inject({
       method: "GET",
-      url: `/v1/menu?brandId=${testBrandId}&locationId=${DEFAULT_LOCATION_ID}`
+      url: `/v1/menu?brandId=${testBrandId}&locationId=${LOCAL_FIXTURE_LOCATION_ID}`
     });
     expect(menuResponseSchema.parse(menuAfterResponse.json())).toEqual(menuBefore);
 
@@ -2178,12 +2178,12 @@ describe("catalog service", () => {
 
     const paymentProfileResponse = await app.inject({
       method: "PUT",
-      url: `/v1/catalog/internal/locations/${DEFAULT_LOCATION_ID}/payment-profile`,
+      url: `/v1/catalog/internal/locations/${LOCAL_FIXTURE_LOCATION_ID}/payment-profile`,
       headers: {
         "x-gateway-token": "catalog-gateway-token"
       },
       payload: {
-        locationId: DEFAULT_LOCATION_ID,
+        locationId: LOCAL_FIXTURE_LOCATION_ID,
         stripeAccountId: "acct_default123",
         stripeAccountType: "express",
         stripeOnboardingStatus: "completed",
@@ -2202,7 +2202,7 @@ describe("catalog service", () => {
 
     expect(paymentProfileResponse.statusCode).toBe(200);
 
-    const appConfigResponse = await app.inject({ method: "GET", url: `/v1/app-config?brandId=${testBrandId}&locationId=${DEFAULT_LOCATION_ID}` });
+    const appConfigResponse = await app.inject({ method: "GET", url: `/v1/app-config?brandId=${testBrandId}&locationId=${LOCAL_FIXTURE_LOCATION_ID}` });
 
     expect(appConfigResponse.statusCode).toBe(200);
     expect(appConfigSchema.parse(appConfigResponse.json())).toMatchObject({
