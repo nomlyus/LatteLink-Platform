@@ -5,7 +5,7 @@ import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
 import { PaymentSheetError, initPaymentSheet, initStripe, presentPaymentSheet } from "@stripe/stripe-react-native";
 import type { Order } from "@lattelink/contracts-orders";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -17,6 +17,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { buildPricingSummary, describeCustomization, type CartItem } from "../src/cart/model";
 import { useCart } from "../src/cart/store";
+import { useLocationContext } from "../src/location/LocationProvider";
 import { apiClient } from "../src/api/client";
 import {
   formatUsd,
@@ -28,7 +29,9 @@ import {
 import { mergeOrderIntoHistory, orderHistoryQueryKey, type OrderHistoryEntry } from "../src/account/data";
 import {
   CheckoutSubmissionError,
-  quoteItemsEqual,
+  checkoutSnapshotMatchesCart,
+  isCheckoutLocationConsistent,
+  isRetryableCheckoutForCart,
   resolveInlineCheckoutErrorMessage,
   shouldShowCheckoutFailureScreen,
   toQuoteItems,
@@ -161,7 +164,8 @@ export default function CheckoutScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { items, subtotalCents, discountCode, setDiscountCode, clear } = useCart();
+  const { items, locationId: cartLocationId, subtotalCents, discountCode, setDiscountCode, clear } = useCart();
+  const location = useLocationContext();
   const { retryOrder, clearRetryOrder, clearFailure, setConfirmation, setFailure, setRetryOrder } = useCheckoutFlow();
   const appConfigQuery = useAppConfigQuery();
   const storeConfigQuery = useStoreConfigQuery();
@@ -169,6 +173,11 @@ export default function CheckoutScreen() {
   const storeConfig = storeConfigQuery.data ? resolveStoreConfigData(storeConfigQuery.data) : null;
   const pricingSummary = buildPricingSummary(subtotalCents, storeConfig?.taxRateBasisPoints ?? 0);
   const checkoutMutation = useStripeCheckoutMutation();
+  const liveCartContextRef = useRef({ items, cartLocationId, selectedLocationId: location.selectedLocationId });
+  liveCartContextRef.current = { items, cartLocationId, selectedLocationId: location.selectedLocationId };
+  useEffect(() => {
+    checkoutMutation.reset();
+  }, [cartLocationId, checkoutMutation.reset, location.selectedLocationId]);
   const storeConfigLoading = !storeConfig && (storeConfigQuery.isLoading || storeConfigQuery.isFetching);
   const appConfigLoading = !appConfig && (appConfigQuery.isLoading || appConfigQuery.isFetching);
   const checkoutContextLoading = storeConfigLoading || appConfigLoading;
@@ -195,7 +204,9 @@ export default function CheckoutScreen() {
   const checkoutUnavailableTone = checkoutContextLoading ? "info" : "warning";
   const showCheckoutRetry = Boolean(checkoutUnavailableMessage) && !checkoutContextLoading;
   const quoteItems = useMemo(() => toQuoteItems(items), [items]);
-  const retryableOrder = retryOrder && quoteItemsEqual(quoteItems, retryOrder.quoteItems) ? retryOrder : undefined;
+  const retryableOrder = isRetryableCheckoutForCart(retryOrder, quoteItems, cartLocationId, location.selectedLocationId)
+    ? retryOrder ?? undefined
+    : undefined;
   const itemCount = useMemo(() => items.reduce((sum, item) => sum + item.quantity, 0), [items]);
   const applePayMerchantIdentifier = resolveConfiguredApplePayMerchantIdentifier();
   const brandName = appConfig?.brand.brandName ?? "Your order";
@@ -211,7 +222,8 @@ export default function CheckoutScreen() {
   const [paymentSheetPending, setPaymentSheetPending] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [statusTone, setStatusTone] = useState<"info" | "warning">("info");
-  const payActionDisabled = !checkoutReady || paymentSheetPending || checkoutMutation.isPending;
+  const locationContextValid = isCheckoutLocationConsistent(cartLocationId, location.selectedLocationId);
+  const payActionDisabled = !checkoutReady || !locationContextValid || items.length === 0 || paymentSheetPending || checkoutMutation.isPending;
   const payActionLabel =
     paymentSheetPending || checkoutMutation.isPending
       ? "Opening secure payment…"
@@ -241,6 +253,17 @@ export default function CheckoutScreen() {
   }
 
   async function handleStripeCheckout() {
+    if (!isCheckoutLocationConsistent(cartLocationId, location.selectedLocationId)) {
+      setStatusMessage("Your bag does not match the selected location. Return to your bag before checkout.");
+      setStatusTone("warning");
+      return;
+    }
+    if (items.length === 0) {
+      setStatusMessage("Add an item to your bag before checkout.");
+      setStatusTone("warning");
+      return;
+    }
+
     if (!storeConfig || !appConfig) {
       setStatusMessage(checkoutUnavailableMessage ?? "Checkout is temporarily unavailable.");
       setStatusTone("warning");
@@ -259,11 +282,26 @@ export default function CheckoutScreen() {
 
     try {
       const preparedCheckout = await checkoutMutation.mutateAsync({
-        locationId: storeConfig.locationId,
+        cartLocationId,
+        selectedLocationId: location.selectedLocationId,
         items,
         discountCode,
         existingCheckout: retryableOrder
       });
+
+      const checkoutStillMatchesCurrentCart = () => {
+        const current = liveCartContextRef.current;
+        return checkoutSnapshotMatchesCart(
+          preparedCheckout.checkout,
+          current.items,
+          current.cartLocationId,
+          current.selectedLocationId
+        );
+      };
+      if (!checkoutStillMatchesCurrentCart()) {
+        clearRetryOrder();
+        throw new Error("Your bag or selected location changed while checkout was preparing. Review your bag and try again.");
+      }
 
       await initStripe({
         publishableKey: preparedCheckout.paymentSession.publishableKey,
@@ -293,6 +331,13 @@ export default function CheckoutScreen() {
       }
 
       setStatusMessage("Waiting for Stripe confirmation…");
+
+      if (!checkoutStillMatchesCurrentCart()) {
+        clearRetryOrder();
+        setStatusMessage("Your bag or selected location changed. No payment was started. Review your bag and try again.");
+        setStatusTone("warning");
+        return;
+      }
 
       const presentResult = await presentPaymentSheet();
       if (presentResult.error?.code === PaymentSheetError.Canceled) {
@@ -336,7 +381,7 @@ export default function CheckoutScreen() {
         status: finalizedOrder.status,
         occurredAt
       });
-      queryClient.setQueryData<OrderHistoryEntry[] | undefined>(orderHistoryQueryKey, (currentOrders) =>
+      queryClient.setQueryData<OrderHistoryEntry[] | undefined>(orderHistoryQueryKey(location.brandId), (currentOrders) =>
         mergeOrderIntoHistory(currentOrders, nextOrder)
       );
       setConfirmation({

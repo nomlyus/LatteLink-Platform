@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import { API_BASE_URL, MOBILE_LOCATION_ID, apiClient } from "../api/client";
+import { loyaltyBalanceSchema, loyaltyLedgerEntrySchema } from "@lattelink/contracts-loyalty";
+import { API_BASE_URL, apiClient } from "../api/client";
+import { useLocationContext } from "../location/LocationProvider";
 import { withCriticalDataLoadSentry } from "../observability/criticalDataLoad";
 
 const orderStatusSchema = z.enum([
@@ -61,22 +63,8 @@ const orderSchema = z.object({
     })
   )
 });
-const loyaltyBalanceSchema = z.object({
-  userId: z.string().uuid(),
-  locationId: z.string().min(1),
-  availablePoints: z.number().int().nonnegative(),
-  pendingPoints: z.number().int().nonnegative(),
-  lifetimeEarned: z.number().int().nonnegative()
-});
-const loyaltyLedgerEntrySchema = z.object({
-  id: z.string().uuid(),
-  type: z.enum(["EARN", "REDEEM", "REFUND", "ADJUSTMENT"]),
-  points: z.number().int(),
-  orderId: z.string().uuid().optional(),
-  locationId: z.string().min(1),
-  createdAt: z.string().datetime()
-});
 const pushTokenUpsertSchema = z.object({
+  brandId: z.string().trim().min(1).max(160),
   deviceId: z.string().min(1),
   platform: z.enum(["ios", "android"]),
   expoPushToken: z.string().startsWith("ExponentPushToken[")
@@ -94,7 +82,7 @@ const activeOrderStatusSchema = orderStatusSchema.exclude([
   "PARTIALLY_REFUNDED",
   "PENDING_PAYMENT"
 ]);
-export const orderHistoryQueryKey = ["account", "orders"] as const;
+export const orderHistoryQueryKey = (brandId: string) => ["account", "orders", brandId] as const;
 
 export type OrderHistoryEntry = z.output<typeof orderSchema>;
 export type LoyaltyBalance = z.output<typeof loyaltyBalanceSchema>;
@@ -150,9 +138,11 @@ export function mergeOrderIntoHistory(
 }
 
 export function useOrderHistoryQuery(enabled = true) {
+  const { brandId, isReady } = useLocationContext();
+  const queryKey = orderHistoryQueryKey(brandId);
   return useQuery({
-    queryKey: orderHistoryQueryKey,
-    enabled,
+    queryKey,
+    enabled: enabled && isReady && Boolean(brandId),
     queryFn: async (): Promise<OrderHistoryEntry[]> =>
       normalizeOrderHistory(orderListSchema.parse(await apiClient.listOrders()))
   });
@@ -160,17 +150,21 @@ export function useOrderHistoryQuery(enabled = true) {
 
 export function useCancelOrderMutation() {
   const queryClient = useQueryClient();
+  const { brandId, isReady } = useLocationContext();
+  const queryKey = orderHistoryQueryKey(brandId);
 
   return useMutation({
-    mutationFn: async (input: CancelOrderInput) =>
-      orderSchema.parse(await apiClient.cancelOrder(input.orderId, { reason: input.reason })),
+    mutationFn: async (input: CancelOrderInput) => {
+      if (!isReady || !brandId) throw new Error("A configured brand is required to update an order.");
+      return orderSchema.parse(await apiClient.cancelOrder(input.orderId, { reason: input.reason }));
+    },
     onSuccess: async (order) => {
-      queryClient.setQueryData<OrderHistoryEntry[] | undefined>(orderHistoryQueryKey, (currentOrders) =>
+      queryClient.setQueryData<OrderHistoryEntry[] | undefined>(queryKey, (currentOrders) =>
         mergeOrderIntoHistory(currentOrders, order)
       );
 
       await Promise.allSettled([
-        queryClient.invalidateQueries({ queryKey: orderHistoryQueryKey }),
+        queryClient.invalidateQueries({ queryKey }),
         queryClient.invalidateQueries({ queryKey: ["account", "loyalty", "balance"] }),
         queryClient.invalidateQueries({ queryKey: ["account", "loyalty", "ledger"] })
       ]);
@@ -179,25 +173,26 @@ export function useCancelOrderMutation() {
 }
 
 export function useLoyaltyBalanceQuery(enabled = true) {
+  const { brandId, selectedLocationId, isReady } = useLocationContext();
   return useQuery({
-    queryKey: ["account", "loyalty", "balance", MOBILE_LOCATION_ID],
-    enabled,
-    queryFn: async (): Promise<LoyaltyBalance> =>
+    queryKey: ["account", "loyalty", "balance", brandId],
+    enabled: enabled && isReady && Boolean(selectedLocationId),
+    queryFn: async ({ signal }): Promise<LoyaltyBalance> =>
       withCriticalDataLoadSentry(
         {
           feature: "account",
           operation: "load_loyalty_balance",
           endpoint: "/loyalty/balance",
           apiBaseUrl: API_BASE_URL,
-          locationId: MOBILE_LOCATION_ID
+          locationId: selectedLocationId ?? ""
         },
         async () => {
-          if (!MOBILE_LOCATION_ID) {
-            throw new Error("EXPO_PUBLIC_LOCATION_ID is required for loyalty balance reads.");
+          if (!selectedLocationId) {
+            throw new Error("A selected location is required for loyalty balance reads.");
           }
 
           return loyaltyBalanceSchema.parse(
-            await apiClient.get(`/loyalty/balance?locationId=${encodeURIComponent(MOBILE_LOCATION_ID)}`)
+            await apiClient.forLocation(selectedLocationId).get(`/loyalty/balance?brandId=${encodeURIComponent(brandId)}&locationId=${encodeURIComponent(selectedLocationId)}`, { signal })
           );
         }
       )
@@ -205,25 +200,26 @@ export function useLoyaltyBalanceQuery(enabled = true) {
 }
 
 export function useLoyaltyLedgerQuery(enabled = true) {
+  const { brandId, selectedLocationId, isReady } = useLocationContext();
   return useQuery({
-    queryKey: ["account", "loyalty", "ledger", MOBILE_LOCATION_ID],
-    enabled,
-    queryFn: async (): Promise<LoyaltyLedgerEntry[]> =>
+    queryKey: ["account", "loyalty", "ledger", brandId],
+    enabled: enabled && isReady && Boolean(selectedLocationId),
+    queryFn: async ({ signal }): Promise<LoyaltyLedgerEntry[]> =>
       withCriticalDataLoadSentry(
         {
           feature: "rewards_activity",
           operation: "load_loyalty_ledger",
           endpoint: "/loyalty/ledger",
           apiBaseUrl: API_BASE_URL,
-          locationId: MOBILE_LOCATION_ID
+          locationId: selectedLocationId ?? ""
         },
         async () => {
-          if (!MOBILE_LOCATION_ID) {
-            throw new Error("EXPO_PUBLIC_LOCATION_ID is required for loyalty ledger reads.");
+          if (!selectedLocationId) {
+            throw new Error("A selected location is required for loyalty ledger reads.");
           }
 
           return loyaltyLedgerSchema.parse(
-            await apiClient.get(`/loyalty/ledger?locationId=${encodeURIComponent(MOBILE_LOCATION_ID)}`)
+            await apiClient.forLocation(selectedLocationId).get(`/loyalty/ledger?brandId=${encodeURIComponent(brandId)}&locationId=${encodeURIComponent(selectedLocationId)}`, { signal })
           );
         }
       )
@@ -231,10 +227,6 @@ export function useLoyaltyLedgerQuery(enabled = true) {
 }
 
 export function getLoyaltyQueryErrorMessage(error: unknown) {
-  if (error instanceof Error && error.message.includes("EXPO_PUBLIC_LOCATION_ID")) {
-    return "This app build is missing its store location. Install the latest beta build or ask support to fix the beta environment.";
-  }
-
   if (error instanceof Error && error.message.startsWith("Request failed (401)")) {
     return "Your session expired. Sign in again to reload rewards.";
   }

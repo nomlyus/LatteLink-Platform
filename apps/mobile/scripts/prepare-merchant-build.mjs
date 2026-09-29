@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { z } from "zod";
@@ -13,9 +13,15 @@ const DEFAULT_OUTPUT_DIR = resolve(REPO_ROOT, ".nomly/mobile-builds");
 
 const profileSchema = z.enum(["beta", "production"]);
 const merchantBuildInputSchema = z.object({
+  brandId: z.string().trim().min(1).max(160),
   locationId: z.string().trim().min(1),
   appName: z.string().trim().min(2).max(30),
-  displayName: z.string().trim().min(2).max(30).optional(),
+  displayName: z.string().trim().min(2).max(30),
+  iconPath: z.string().trim().regex(/^\.\//),
+  splashPath: z.string().trim().regex(/^\.\//),
+  expoSlug: z.string().trim().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/i).max(64),
+  scheme: z.string().trim().regex(/^[a-z][a-z0-9+.-]*$/i),
+  easProjectId: z.string().trim().uuid(),
   bundleIdentifier: z
     .string()
     .trim()
@@ -97,19 +103,17 @@ function normalizeUrl(value) {
   return new URL(value).toString().replace(/\/+$/, "");
 }
 
-function slugify(value) {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 48);
-}
-
 function buildConfigHash(input) {
   const payload = {
+    brandId: input.brandId,
     locationId: input.locationId,
     appName: input.appName,
     displayName: input.displayName,
+    iconPath: input.iconPath,
+    splashPath: input.splashPath,
+    expoSlug: input.expoSlug,
+    scheme: input.scheme,
+    easProjectId: input.easProjectId,
     bundleIdentifier: input.bundleIdentifier,
     sku: input.sku,
     primaryCategory: input.primaryCategory,
@@ -127,11 +131,9 @@ function buildConfigHash(input) {
 }
 
 function buildEnv(input, profile) {
-  const baseName = input.displayName ?? input.appName;
+  const baseName = input.displayName;
   const displayName = profile === "beta" && !baseName.toLowerCase().endsWith(" beta") ? `${baseName} Beta` : baseName;
   const apiBaseUrl = normalizeUrl(input.apiBaseUrl);
-  const slug = slugify(`${input.locationId}-${profile}`);
-  const scheme = slugify(input.bundleIdentifier.replace(/\./g, "-"));
   const runtimeVersion = input.runtimeVersion ?? input.appVersion;
 
   return {
@@ -139,18 +141,22 @@ function buildEnv(input, profile) {
     EXPO_PUBLIC_APP_VARIANT: profile,
     APP_DISPLAY_NAME_BASE: baseName,
     APP_DISPLAY_NAME: displayName,
+    EXPO_PUBLIC_APP_DISPLAY_NAME: displayName,
+    EXPO_PUBLIC_APP_ICON_PATH: input.iconPath,
+    EXPO_PUBLIC_APP_SPLASH_PATH: input.splashPath,
     APP_VERSION: input.appVersion,
     APP_RUNTIME_VERSION: runtimeVersion,
-    EXPO_SLUG: slug,
-    EXPO_SCHEME: scheme,
+    EXPO_SLUG: input.expoSlug,
+    EXPO_SCHEME: input.scheme,
+    EAS_PROJECT_ID: input.easProjectId,
     IOS_BUNDLE_IDENTIFIER: input.bundleIdentifier,
     EXPO_PUBLIC_IOS_BUNDLE_IDENTIFIER: input.bundleIdentifier,
     EXPO_PUBLIC_API_BASE_URL: apiBaseUrl,
     EXPO_PUBLIC_CATALOG_SERVICE_BASE_URL: apiBaseUrl,
     EXPO_PUBLIC_CATALOG_API_BASE_URL: apiBaseUrl,
+    EXPO_PUBLIC_BRAND_ID: input.brandId,
     EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID: input.applePayMerchantId,
     EXPO_PUBLIC_BRAND_NAME: input.appName,
-    EXPO_PUBLIC_LOCATION_ID: input.locationId,
     EXPO_PUBLIC_PRIVACY_POLICY_URL: input.privacyPolicyUrl,
     EXPO_PUBLIC_SENTRY_DSN: input.sentryDsn,
     SENTRY_ORG: input.sentryOrg,
@@ -210,6 +216,20 @@ export async function prepareMerchantBuild(rawArgs) {
   }
 
   const input = merchantBuildInputSchema.parse(JSON.parse(await readFile(resolve(args.input), "utf8")));
+  for (const [key, assetPath] of [["iconPath", input.iconPath], ["splashPath", input.splashPath]]) {
+    const resolvedAssetPath = resolve(MOBILE_DIR, assetPath);
+    const projectRelativePath = relative(MOBILE_DIR, resolvedAssetPath);
+    if (projectRelativePath.startsWith("..") || projectRelativePath === "") {
+      throw new Error(`${key} must resolve to a file within the mobile project.`);
+    }
+    try {
+      if (!(await stat(resolvedAssetPath)).isFile()) {
+        throw new Error(`${key} must point to a file within the mobile project.`);
+      }
+    } catch {
+      throw new Error(`${key} must point to an existing file within the mobile project: ${assetPath}`);
+    }
+  }
   const env = buildEnv(input, profile);
   const configHash = buildConfigHash(input);
   const outputDir = resolve(args.outputDir, input.locationId, profile);
@@ -221,11 +241,17 @@ export async function prepareMerchantBuild(rawArgs) {
   };
   const commands = buildCommands(paths, profile, input);
   const manifest = {
+    brandId: input.brandId,
     locationId: input.locationId,
     profile,
     sourceCommitSha: args.sourceCommit,
     configHash,
     bundleIdentifier: input.bundleIdentifier,
+    iconPath: input.iconPath,
+    splashPath: input.splashPath,
+    expoSlug: input.expoSlug,
+    scheme: input.scheme,
+    easProjectId: input.easProjectId,
     ascAppId: input.ascAppId ?? null,
     appVersion: input.appVersion,
     runtimeVersion: input.runtimeVersion ?? input.appVersion,

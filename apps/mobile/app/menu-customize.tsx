@@ -23,6 +23,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCart } from "../src/cart/store";
+import { useLocationContext } from "../src/location/LocationProvider";
 import {
   buildDefaultCustomization,
   DEFAULT_CUSTOMIZATION,
@@ -302,6 +303,7 @@ export default function MenuCustomizeModalScreen() {
   const itemId = useMemo(() => resolveItemId(params.itemId), [params.itemId]);
 
   const { addItem } = useCart();
+  const location = useLocationContext();
   const menuQuery = useMenuQuery();
   const isInitialLoading = menuQuery.isLoading && !menuQuery.data;
   const menu = isInitialLoading ? null : resolveMenuData(menuQuery.data);
@@ -312,6 +314,7 @@ export default function MenuCustomizeModalScreen() {
   const [customization, setCustomization] = useState<CartCustomization>(DEFAULT_CUSTOMIZATION);
   const [quantity, setQuantity] = useState(1);
   const [showValidationErrors, setShowValidationErrors] = useState(false);
+  const [cartLocationError, setCartLocationError] = useState<string | null>(null);
   const [showLoadingOverlay, setShowLoadingOverlay] = useState(true);
   const [didFinishInitialReveal, setDidFinishInitialReveal] = useState(false);
   const [readyHeroItemId, setReadyHeroItemId] = useState<string | null>(null);
@@ -419,15 +422,23 @@ export default function MenuCustomizeModalScreen() {
       return;
     }
 
-    addItem({
+    const result = addItem({
       menuItemId: item.id,
       itemName: item.name,
       basePriceCents: item.priceCents,
       customizationGroups: item.customizationGroups,
       customization,
       quantity
-    });
+    }, location.selectedLocationId);
 
+    if (!result.ok) {
+      setCartLocationError(result.reason === "location_mismatch"
+        ? "Your bag belongs to a different location. Clear it before adding items here."
+        : "Choose an available location before adding this item.");
+      return;
+    }
+
+    location.dismissCartInvalidatedNotice();
     closeModal();
   }
 
@@ -516,6 +527,7 @@ export default function MenuCustomizeModalScreen() {
                 {showValidationErrors && !resolvedCustomization.valid ? (
                   <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryError}>{resolvedCustomization.issues[0]?.message ?? "Please finish the required selections."}</Text>
                 ) : null}
+                {cartLocationError ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryError}>{cartLocationError}</Text> : null}
                 <View style={styles.summaryRow}>
                   <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryLabel}>Total</Text>
                   <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryValueStrong}>{formatUsd(totalCents)}</Text>
@@ -526,7 +538,7 @@ export default function MenuCustomizeModalScreen() {
 
           <View pointerEvents="box-none" style={[styles.footerRow, { bottom: footerBottom }]}>
             <FooterPill style={styles.footerPrimaryPill}>
-              <Pressable onPress={addSelectedItem} style={[styles.footerButton, styles.footerPrimaryButton]}>
+              <Pressable onPress={addSelectedItem} disabled={!location.isReady || location.isSwitchingLocation} style={[styles.footerButton, styles.footerPrimaryButton]}>
                 <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.footerPrimaryText}>Add to Cart</Text>
               </Pressable>
             </FooterPill>

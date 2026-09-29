@@ -71,10 +71,26 @@ describe("reporting metric semantics", () => {
     expect(value.comparison.paidOrders.percentChange).toBeNull();
   });
 
-  it("aggregates authorized locations on the backend and matches the location breakdown", () => {
-    const value = report([row({ location_id: "loc-a" }), row({ location_id: "loc-b", gross_sales: 2500, collected: 2500, tax: 0 })], { ...query, locationIds: ["loc-a", "loc-b"] });
-    expect(value.summary.grossSales?.amountCents).toBe(3500);
-    expect(value.locations.reduce((sum, location) => sum + (location.grossSales?.amountCents ?? 0), 0)).toBe(3500);
+  it("reconciles additive portfolio metrics to authorized location totals and computes weighted average ticket", () => {
+    const value = report([
+      row({ gross_sales: 1000, discounts: 100, tax: 60, collected: 960, location_id: "loc-a" }),
+      row({ gross_sales: 0, discounts: 0, tax: 0, collected: 0, refunds: 100, merchandise_refunds: 80, paid_orders: 0, location_id: "loc-a" }),
+      row({ gross_sales: 2500, discounts: 200, tax: 150, collected: 2450, refunds: 200, merchandise_refunds: 100, location_id: "loc-b" })
+    ], { ...query, locationIds: ["loc-a", "loc-b"] });
+
+    for (const metric of ["grossSales", "discounts", "netSales", "tax", "collected", "refunds", "netCollected"] as const) {
+      expect(value.locations.reduce((sum, location) => sum + (location[metric]?.amountCents ?? 0), 0))
+        .toBe(value.summary[metric]?.amountCents);
+    }
+    expect(value.locations.reduce((sum, location) => sum + location.paidOrders, 0)).toBe(value.summary.paidOrders);
+    expect(value.summary).toMatchObject({
+      grossSales: { amountCents: 3500 },
+      discounts: { amountCents: 300 },
+      netSales: { amountCents: 3020 },
+      refunds: { amountCents: 300 },
+      paidOrders: 2,
+      averageOrderValue: { amountCents: 1510 }
+    });
   });
 
   it("retains a 23-hour DST day as explicit UTC bucket boundaries", () => {

@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { createEventBusPublisher } from "@lattelink/event-bus";
 import { captureOperationalError } from "@lattelink/observability";
+import { mobileBrandBootstrapRequestSchema } from "@lattelink/contracts-catalog";
 import {
   checkoutDraftSchema,
   checkoutPaymentConfirmationResponseSchema,
@@ -123,6 +124,18 @@ const discountCodeIdParamsSchema = z.object({
 const locationQuerySchema = z.object({
   locationId: z.string().min(1)
 });
+const customerBrandQuerySchema = mobileBrandBootstrapRequestSchema;
+
+function parseCustomerBrandId(request: FastifyRequest, reply: FastifyReply) {
+  const parsed = customerBrandQuerySchema.safeParse(request.query);
+  if (parsed.success) return parsed.data.brandId;
+  reply.status(400).send(serviceErrorSchema.parse({
+    code: "INVALID_PUBLIC_BRAND_REQUEST",
+    message: "A valid brandId query parameter is required.",
+    requestId: request.id
+  }));
+  return undefined;
+}
 
 const discountRedemptionsQuerySchema = z.object({
   locationId: z.string().min(1),
@@ -415,11 +428,11 @@ function authorizeGatewayRequest(
   gatewayToken: string | undefined,
   options: { allowUnauthenticated?: boolean } = {}
 ) {
-  if (!gatewayToken) {
-    if (options.allowUnauthenticated) {
-      return true;
-    }
+  if (options.allowUnauthenticated) {
+    return true;
+  }
 
+  if (!gatewayToken) {
     sendError(reply, {
       statusCode: 503,
       code: "GATEWAY_ACCESS_NOT_CONFIGURED",
@@ -475,11 +488,15 @@ export async function registerRoutes(app: FastifyInstance) {
     process.env.NODE_ENV !== "production" && process.env.ALLOW_UNAUTHENTICATED_ORDERS_GATEWAY === "true";
   const valkeyUrl = trimToUndefined(process.env.VALKEY_URL);
   const eventBusPublisher = valkeyUrl ? createEventBusPublisher(valkeyUrl) : undefined;
-  const fulfillmentConfigCache = createFulfillmentConfigCache({ catalogBaseUrl });
+  const fulfillmentConfigCache = createFulfillmentConfigCache({
+    catalogBaseUrl,
+    catalogInternalToken: gatewayApiToken
+  });
   const repository = await createOrdersRepository(app.log);
   const sharedDeps = {
     repository,
     catalogBaseUrl,
+    catalogInternalToken: gatewayApiToken,
     paymentsBaseUrl,
     paymentsInternalToken: internalApiToken,
     loyaltyBaseUrl,
@@ -489,8 +506,9 @@ export async function registerRoutes(app: FastifyInstance) {
     eventBusPublisher
   };
 
-  const getServiceDeps = (request: FastifyRequest): OrderServiceDeps => ({
+  const getServiceDeps = (request: FastifyRequest, publicBrandId?: string): OrderServiceDeps => ({
     ...sharedDeps,
+    publicBrandId,
     getFulfillmentConfig: fulfillmentConfigCache.get,
     posAdapter: createPosAdapter({
       paymentsBaseUrl,
@@ -499,6 +517,46 @@ export async function registerRoutes(app: FastifyInstance) {
     }),
     logger: request.log
   });
+
+  const validatePublicLocation = async (request: FastifyRequest, reply: FastifyReply, brandId: string, locationId: string) => {
+    const query = new URLSearchParams({ brandId, locationId });
+    let response: Response;
+    try {
+      response = await fetch(`${catalogBaseUrl}/v1/catalog/internal/public-location-access?${query}`, {
+        method: "GET",
+        headers: {
+          "x-gateway-token": gatewayApiToken ?? "",
+          "x-request-id": request.id
+        }
+      });
+    } catch (error) {
+      request.log.warn({ error, requestId: request.id }, "catalog public location validation request failed");
+      reply.status(503).send(serviceErrorSchema.parse({
+        code: "PUBLIC_LOCATION_VALIDATION_UNAVAILABLE",
+        message: "Location is temporarily unavailable.",
+        requestId: request.id
+      }));
+      return false;
+    }
+
+    if (response.status === 204) return true;
+    if (response.status === 404) {
+      reply.status(404).send(serviceErrorSchema.parse({
+        code: "PUBLIC_LOCATION_NOT_AVAILABLE",
+        message: "Location not available.",
+        requestId: request.id
+      }));
+      return false;
+    }
+
+    request.log.warn({ requestId: request.id, catalogStatus: response.status }, "catalog public location validation was unavailable");
+    reply.status(503).send(serviceErrorSchema.parse({
+      code: "PUBLIC_LOCATION_VALIDATION_UNAVAILABLE",
+      message: "Location is temporarily unavailable.",
+      requestId: request.id
+    }));
+    return false;
+  };
 
   app.addHook("onClose", async () => {
     await repository.close();
@@ -680,26 +738,45 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post(
     "/v1/orders/quote",
     {
-      preHandler: app.rateLimit(ordersWriteRateLimit)
+      preHandler: app.rateLimit(ordersWriteRateLimit),
+      attachValidation: true,
+      schema: {
+        querystring: {
+          type: "object",
+          required: ["brandId"],
+          additionalProperties: false,
+          properties: { brandId: { type: "string", minLength: 1, maxLength: 160 } }
+        }
+      }
     },
     async (request, reply) => {
       if (!authorizeGatewayRequest(request, reply, gatewayApiToken, { allowUnauthenticated: allowUnauthenticatedGatewayAccess })) {
         return;
       }
 
+      const parsedBrand = mobileBrandBootstrapRequestSchema.safeParse(request.query);
+      if (!parsedBrand.success) {
+        return reply.status(400).send(serviceErrorSchema.parse({
+          code: "INVALID_PUBLIC_BRAND_REQUEST",
+          message: "A valid brandId query parameter is required.",
+          requestId: request.id
+        }));
+      }
       const input = quoteRequestSchema.parse(request.body);
+      if (!(await validatePublicLocation(request, reply, parsedBrand.data.brandId, input.locationId))) return;
       const requestUserContext = parseRequestUserContext(request);
       const result = await createQuote({
         input,
+        requestId: request.id,
         requestUserContext,
-        deps: getServiceDeps(request)
+        deps: getServiceDeps(request, parsedBrand.data.brandId)
       });
 
       if ("error" in result) {
         return sendServiceError(reply, request, result.error);
       }
 
-      await repository.saveQuote(result.quote);
+      await repository.saveQuote(result.quote, parsedBrand.data.brandId);
       return result.quote;
     }
   );
@@ -825,14 +902,36 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.post(
     "/v1/orders/checkouts",
-    { preHandler: app.rateLimit(ordersWriteRateLimit) },
+    {
+      preHandler: app.rateLimit(ordersWriteRateLimit),
+      attachValidation: true,
+      schema: {
+        querystring: {
+          type: "object",
+          required: ["brandId"],
+          additionalProperties: false,
+          properties: { brandId: { type: "string", minLength: 1, maxLength: 160 } }
+        }
+      }
+    },
     async (request, reply) => {
       if (!authorizeGatewayRequest(request, reply, gatewayApiToken, { allowUnauthenticated: allowUnauthenticatedGatewayAccess })) return;
+      const parsedBrand = mobileBrandBootstrapRequestSchema.safeParse(request.query);
+      if (!parsedBrand.success) {
+        return reply.status(400).send(serviceErrorSchema.parse({
+          code: "INVALID_PUBLIC_BRAND_REQUEST",
+          message: "A valid brandId query parameter is required.",
+          requestId: request.id
+        }));
+      }
+      const input = createCheckoutDraftRequestSchema.parse(request.body);
+      const quote = await repository.getQuote(input.quoteId);
+      if (quote && !(await validatePublicLocation(request, reply, parsedBrand.data.brandId, quote.locationId))) return;
       const result = await createCheckoutDraft({
-        input: createCheckoutDraftRequestSchema.parse(request.body),
+        input,
         requestUserContext: parseRequestUserContext(request),
         requestId: request.id,
-        deps: getServiceDeps(request)
+        deps: getServiceDeps(request, parsedBrand.data.brandId)
       });
       if ("error" in result) return sendServiceError(reply, request, result.error);
       return checkoutDraftSchema.parse(result.checkout);
@@ -943,11 +1042,16 @@ export async function registerRoutes(app: FastifyInstance) {
       if (requestUserContext.error) {
         return sendServiceError(reply, request, requestUserContext.error);
       }
+      const brandId = requestUserContext.userId && !operatorLocationId
+        ? parseCustomerBrandId(request, reply)
+        : undefined;
+      if (requestUserContext.userId && !operatorLocationId && !brandId) return;
 
       const result = await listOrdersForRead({
         requestId: request.id,
         requestUserId: requestUserContext.userId,
         locationId: operatorLocationId,
+        brandId,
         deps: getServiceDeps(request)
       });
 
@@ -975,10 +1079,15 @@ export async function registerRoutes(app: FastifyInstance) {
       if (requestUserContext.error) {
         return sendServiceError(reply, request, requestUserContext.error);
       }
+      const brandId = requestUserContext.userId && !operatorLocationId
+        ? parseCustomerBrandId(request, reply)
+        : undefined;
+      if (requestUserContext.userId && !operatorLocationId && !brandId) return;
       const result = await getOrderForRead({
         orderId,
         locationId: operatorLocationId,
         requestUserId: requestUserContext.userId,
+        brandId,
         requestId: request.id,
         deps: getServiceDeps(request)
       });
@@ -1012,6 +1121,10 @@ export async function registerRoutes(app: FastifyInstance) {
         ? parsedOperatorHeaders.data["x-operator-location-id"]
         : undefined;
       const requestUserContext = parseRequestUserContext(request);
+      const brandId = cancelSource === "customer"
+        ? parseCustomerBrandId(request, reply)
+        : undefined;
+      if (cancelSource === "customer" && !brandId) return;
       const result = await cancelOrder({
         orderId,
         input,
@@ -1019,6 +1132,7 @@ export async function registerRoutes(app: FastifyInstance) {
         locationId: operatorLocationId,
         requestId: request.id,
         requestUserContext,
+        brandId,
         deps: getServiceDeps(request)
       });
 

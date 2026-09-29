@@ -18,6 +18,7 @@ export type OutboxEntry = {
   id: string;
   userId: string;
   deviceId: string;
+  brandId?: string;
   platform: "ios" | "android";
   expoPushToken: string;
   payload: OrderStateNotification;
@@ -42,6 +43,7 @@ type PersistedOutboxRow = {
   id: string;
   user_id: string;
   device_id: string;
+  brand_id: string | null;
   platform: "ios" | "android";
   expo_push_token: string;
   payload_json: unknown;
@@ -65,6 +67,7 @@ type PersistedOutboxRow = {
 type PersistedPushTokenRow = {
   user_id: string;
   device_id: string;
+  brand_id: string;
   platform: "ios" | "android";
   expo_push_token: string;
 };
@@ -105,6 +108,7 @@ function environmentName() {
 function toOutboxEntry(row: PersistedOutboxRow): OutboxEntry {
   return {
     id: row.id, userId: row.user_id, deviceId: row.device_id, platform: row.platform,
+    brandId: row.brand_id ?? undefined,
     expoPushToken: row.expo_push_token, payload: orderStateNotificationSchema.parse(row.payload_json),
     status: row.status, attempts: row.attempts, availableAt: parseIsoDate(row.available_at),
     createdAt: parseIsoDate(row.created_at), receiptId: row.receipt_id ?? undefined,
@@ -129,6 +133,19 @@ function parseIsoDate(value: unknown) {
 
 function createInMemoryRepository(): NotificationsRepository {
   const pushTokensByUserId = new Map<string, Map<string, PushTokenInput>>();
+  // No canonical membership database exists in this adapter. An explicit test
+  // fixture can model it; absent or malformed mappings always fail closed.
+  const testLocationBrands = new Map<string, string>();
+  try {
+    const parsed: unknown = JSON.parse(process.env.NOTIFICATIONS_TEST_LOCATION_BRANDS ?? "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      for (const [locationId, brandId] of Object.entries(parsed)) {
+        if (typeof brandId === "string" && brandId.trim()) testLocationBrands.set(locationId, brandId);
+      }
+    }
+  } catch {
+    // A malformed explicit fixture has no valid membership entries.
+  }
   const dispatchedOrderStates = new Set<string>();
   const outbox = new Map<string, OutboxEntry>();
 
@@ -136,7 +153,7 @@ function createInMemoryRepository(): NotificationsRepository {
     backend: "memory",
     async upsertPushToken(userId, input) {
       const userTokens = pushTokensByUserId.get(userId) ?? new Map<string, PushTokenInput>();
-      userTokens.set(input.deviceId, input);
+      userTokens.set(`${input.brandId}\u0000${input.deviceId}`, input);
       pushTokensByUserId.set(userId, userTokens);
     },
     async markOrderStateDispatchIfNew({ dispatchKey }) {
@@ -148,13 +165,17 @@ function createInMemoryRepository(): NotificationsRepository {
       return true;
     },
     async enqueueOrderStateOutbox(payload) {
-      const recipients = [...(pushTokensByUserId.get(payload.userId)?.entries() ?? [])];
-      for (const [deviceId, token] of recipients) {
+      const brandId = testLocationBrands.get(payload.locationId);
+      if (!brandId) return 0;
+      const recipients = [...(pushTokensByUserId.get(payload.userId)?.values() ?? [])]
+        .filter((token) => token.brandId === brandId);
+      for (const token of recipients) {
         const id = randomUUID();
         outbox.set(id, {
           id,
           userId: payload.userId,
-          deviceId,
+          deviceId: token.deviceId,
+          brandId,
           platform: token.platform,
           expoPushToken: token.expoPushToken,
           payload,
@@ -231,8 +252,9 @@ function createInMemoryRepository(): NotificationsRepository {
         failureCode: input.code, lastError: input.message, receiptClaimToken: undefined, receiptLeaseExpiresAt: undefined });
     },
     async retirePushToken(entry) {
-      const token = pushTokensByUserId.get(entry.userId)?.get(entry.deviceId);
-      if (token?.expoPushToken === entry.expoPushToken) pushTokensByUserId.get(entry.userId)?.delete(entry.deviceId);
+      const key = `${entry.brandId ?? ""}\u0000${entry.deviceId}`;
+      const token = pushTokensByUserId.get(entry.userId)?.get(key);
+      if (token?.expoPushToken === entry.expoPushToken) pushTokensByUserId.get(entry.userId)?.delete(key);
     },
     async getDeliveryHealth(nowIso) {
       const rows = [...outbox.values()];
@@ -309,11 +331,13 @@ async function createPostgresRepository(connectionString: string): Promise<Notif
       const updated = await db
         .updateTable("notifications_push_tokens")
         .set({
+          brand_id: input.brandId,
           platform: input.platform,
           expo_push_token: input.expoPushToken,
           updated_at: new Date().toISOString()
         })
         .where("user_id", "=", userId)
+        .where("brand_id", "=", input.brandId)
         .where("device_id", "=", input.deviceId)
         .executeTakeFirst();
 
@@ -327,6 +351,7 @@ async function createPostgresRepository(connectionString: string): Promise<Notif
           .values({
             user_id: userId,
             device_id: input.deviceId,
+            brand_id: input.brandId,
             platform: input.platform,
             expo_push_token: input.expoPushToken
           })
@@ -335,11 +360,13 @@ async function createPostgresRepository(connectionString: string): Promise<Notif
         await db
           .updateTable("notifications_push_tokens")
           .set({
+            brand_id: input.brandId,
             platform: input.platform,
             expo_push_token: input.expoPushToken,
             updated_at: new Date().toISOString()
           })
           .where("user_id", "=", userId)
+          .where("brand_id", "=", input.brandId)
           .where("device_id", "=", input.deviceId)
           .execute();
       }
@@ -362,11 +389,25 @@ async function createPostgresRepository(connectionString: string): Promise<Notif
       }
     },
     async enqueueOrderStateOutbox(payload) {
-      const recipients = (await db
-        .selectFrom("notifications_push_tokens")
-        .selectAll()
-        .where("user_id", "=", payload.userId)
-        .execute()) as PersistedPushTokenRow[];
+      // Resolve brand from immutable order location + canonical persisted
+      // membership. Dispatch payload fields are never used as the brand source.
+      const recipientResult = await sql<PersistedPushTokenRow>`
+        SELECT token.user_id::text AS user_id, token.device_id, token.brand_id,
+          token.platform, token.expo_push_token
+        FROM orders AS customer_order
+        INNER JOIN catalog_client_locations AS location
+          ON location.location_id = customer_order.location_id
+        INNER JOIN catalog_clients AS client
+          ON client.tenant_id = location.tenant_id
+         AND client.brand_id = location.brand_id
+        INNER JOIN notifications_push_tokens AS token
+          ON token.user_id = customer_order.user_id
+         AND token.brand_id = client.brand_id
+        WHERE customer_order.order_id = ${payload.orderId}::uuid
+          AND customer_order.user_id = ${payload.userId}::uuid
+          AND customer_order.location_id = ${payload.locationId}
+      `.execute(db);
+      const recipients = recipientResult.rows;
 
       if (recipients.length === 0) {
         return 0;
@@ -380,6 +421,7 @@ async function createPostgresRepository(connectionString: string): Promise<Notif
             id: randomUUID(),
             user_id: payload.userId,
             device_id: recipient.device_id,
+            brand_id: recipient.brand_id,
             platform: recipient.platform,
             expo_push_token: recipient.expo_push_token,
             payload_json: payload,
@@ -481,7 +523,9 @@ async function createPostgresRepository(connectionString: string): Promise<Notif
     },
     async retirePushToken(entry) {
       await db.deleteFrom("notifications_push_tokens").where("user_id", "=", entry.userId)
-        .where("device_id", "=", entry.deviceId).where("expo_push_token", "=", entry.expoPushToken).execute();
+        .where("device_id", "=", entry.deviceId)
+        .where("brand_id", "=", entry.brandId ?? null)
+        .where("expo_push_token", "=", entry.expoPushToken).execute();
     },
     async getDeliveryHealth(nowIso) {
       const rows = await sql<{ pending: number; processing: number; oldest_processing_at: Date | null; submitted: number; oldest_submitted_at: Date | null }>`

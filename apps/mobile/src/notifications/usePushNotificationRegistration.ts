@@ -5,6 +5,7 @@ import * as SecureStore from "expo-secure-store";
 import { AppState, Platform } from "react-native";
 import { useEffect, useRef } from "react";
 import { usePushTokenRegistrationMutation } from "../account/data";
+import { useLocationContext } from "../location/LocationProvider";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => {
@@ -47,15 +48,16 @@ async function getOrCreateDeviceId(): Promise<string> {
 
 export function usePushNotificationRegistration(isAuthenticated: boolean) {
   const mutation = usePushTokenRegistrationMutation();
-  const registeredRef = useRef(false);
+  const { brandId, isReady } = useLocationContext();
+  const registeredBrandRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      registeredRef.current = false;
+    if (!isAuthenticated || !isReady || !brandId) {
+      registeredBrandRef.current = null;
       return;
     }
 
-    if (registeredRef.current) {
+    if (registeredBrandRef.current === brandId) {
       return;
     }
 
@@ -86,13 +88,13 @@ export function usePushNotificationRegistration(isAuthenticated: boolean) {
       const deviceId = await getOrCreateDeviceId();
 
       try {
-        await mutation.mutateAsync({ deviceId, platform, expoPushToken: tokenData.data });
-        registeredRef.current = true;
+        await mutation.mutateAsync({ brandId, deviceId, platform, expoPushToken: tokenData.data });
+        registeredBrandRef.current = brandId;
       } catch {
-        registeredRef.current = false;
+        registeredBrandRef.current = null;
       }
     }
 
     void register();
-  }, [isAuthenticated, mutation]);
+  }, [brandId, isAuthenticated, isReady, mutation]);
 }

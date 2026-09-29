@@ -73,6 +73,8 @@ type StoredOrderRecord = {
   order: Order;
   quoteId: string;
   userId: string;
+  /** Test/in-memory mirror of the brand validated when its quote was created. */
+  brandId?: string;
   paymentId?: string;
   successfulCharge?: unknown;
   successfulRefund?: unknown;
@@ -109,6 +111,7 @@ type PersistedOrderRow = {
   order_id: string;
   user_id: string;
   quote_id: string;
+  location_id: string;
   order_json: unknown;
   payment_id: string | null;
   successful_charge_json: unknown;
@@ -307,7 +310,7 @@ export type QuoteCatalogItem = {
 
 export type OrdersRepository = {
   backend: "memory" | "postgres";
-  saveQuote(quote: OrderQuote): Promise<void>;
+  saveQuote(quote: OrderQuote, brandId?: string): Promise<void>;
   getQuote(quoteId: string): Promise<OrderQuote | undefined>;
   createCheckoutDraft(input: CheckoutDraft): Promise<CheckoutDraft>;
   getCheckoutDraft(checkoutId: string): Promise<CheckoutDraft | undefined>;
@@ -319,7 +322,10 @@ export type OrdersRepository = {
   getOrder(orderId: string): Promise<Order | undefined>;
   listOrders(): Promise<Order[]>;
   listOrdersByUser(userId: string): Promise<Order[]>;
+  listOrdersByUserAndBrand(userId: string, brandId: string): Promise<Order[]>;
   listOrdersByLocation(locationId: string): Promise<Order[]>;
+  getOrderBrandId(orderId: string): Promise<string | undefined>;
+  getBrandIdForLocation(locationId: string): Promise<string | undefined>;
   getOrderForCreateIdempotency(quoteId: string, quoteHash: string): Promise<Order | undefined>;
   saveCreateOrderIdempotency(quoteId: string, quoteHash: string, orderId: string): Promise<void>;
   getPaymentOrderByIdempotency(orderId: string, idempotencyKey: string): Promise<Order | undefined>;
@@ -507,6 +513,8 @@ const fallbackCatalogItems = new Map<string, QuoteCatalogItem>([
 
 function createInMemoryRepository(): OrdersRepository {
   const quotesById = new Map<string, OrderQuote>();
+  const quoteBrandIds = new Map<string, string>();
+  const brandByLocation = new Map<string, string>();
   const checkoutDraftsById = new Map<string, CheckoutDraft>();
   const ordersById = new Map<string, StoredOrderRecord>();
   const createOrderIdempotency = new Map<string, string>();
@@ -536,8 +544,12 @@ function createInMemoryRepository(): OrdersRepository {
 
   return {
     backend: "memory",
-    async saveQuote(quote) {
+    async saveQuote(quote, brandId) {
       quotesById.set(quote.quoteId, quote);
+      if (brandId) {
+        quoteBrandIds.set(quote.quoteId, brandId);
+        brandByLocation.set(quote.locationId, brandId);
+      }
     },
     async getQuote(quoteId) {
       return quotesById.get(quoteId);
@@ -578,7 +590,7 @@ function createInMemoryRepository(): OrdersRepository {
       if (existing) {
         return { order: existing, created: false };
       }
-      ordersById.set(checkoutId, { order, quoteId, userId });
+      ordersById.set(checkoutId, { order, quoteId, userId, brandId: quoteBrandIds.get(quoteId) });
       const draft = checkoutDraftsById.get(checkoutId);
       if (draft) {
         checkoutDraftsById.set(checkoutId, { ...draft, status: "CONVERTED", orderId: checkoutId });
@@ -589,11 +601,18 @@ function createInMemoryRepository(): OrdersRepository {
       ordersById.set(order.id, {
         order,
         quoteId,
-        userId
+        userId,
+        brandId: quoteBrandIds.get(quoteId)
       });
     },
     async getOrder(orderId) {
       return ordersById.get(orderId)?.order;
+    },
+    async getOrderBrandId(orderId) {
+      return ordersById.get(orderId)?.brandId;
+    },
+    async getBrandIdForLocation(locationId) {
+      return brandByLocation.get(locationId);
     },
     async listOrders() {
       const orders = [...ordersById.values()].map((entry) => entry.order);
@@ -602,6 +621,12 @@ function createInMemoryRepository(): OrdersRepository {
     async listOrdersByUser(userId) {
       const orders = [...ordersById.values()]
         .filter((entry) => entry.userId === userId)
+        .map((entry) => entry.order);
+      return sortOrdersDescendingByCreatedAt(orders);
+    },
+    async listOrdersByUserAndBrand(userId, brandId) {
+      const orders = [...ordersById.values()]
+        .filter((entry) => entry.userId === userId && entry.brandId === brandId)
         .map((entry) => entry.order);
       return sortOrdersDescendingByCreatedAt(orders);
     },
@@ -709,6 +734,9 @@ function createInMemoryRepository(): OrdersRepository {
       const record = ordersById.get(orderId);
       if (!record) {
         throw new Error("order not found while updating");
+      }
+      if (record.order.locationId !== order.locationId) {
+        throw new Error("Order location is immutable");
       }
       ordersById.set(orderId, {
         ...record,
@@ -1187,7 +1215,13 @@ async function createPostgresRepository(
       await db.transaction().execute(async (trx) => {
         const inserted = await trx
           .insertInto("orders")
-          .values({ order_id: checkoutId, user_id: userId, quote_id: quoteId, order_json: order })
+          .values({
+            order_id: checkoutId,
+            user_id: userId,
+            quote_id: quoteId,
+            location_id: order.locationId,
+            order_json: order
+          })
           .onConflict((conflict) => conflict.column("order_id").doNothing())
           .returning("order_id")
           .executeTakeFirst();
@@ -1209,12 +1243,39 @@ async function createPostgresRepository(
           order_id: order.id,
           user_id: userId,
           quote_id: quoteId,
+          location_id: order.locationId,
           order_json: order
         })
         .execute();
     },
     async getOrder(orderId) {
       return getOrderById(orderId);
+    },
+    async getOrderBrandId(orderId) {
+      const row = await sql<{ brand_id: string }>`
+        SELECT client.brand_id
+        FROM orders
+        INNER JOIN catalog_client_locations AS location
+          ON location.location_id = orders.location_id
+        INNER JOIN catalog_clients AS client
+          ON client.tenant_id = location.tenant_id
+         AND client.brand_id = location.brand_id
+        WHERE orders.order_id = ${orderId}::uuid
+        LIMIT 1
+      `.execute(db);
+      return row.rows[0]?.brand_id;
+    },
+    async getBrandIdForLocation(locationId) {
+      const row = await sql<{ brand_id: string }>`
+        SELECT client.brand_id
+        FROM catalog_client_locations AS location
+        INNER JOIN catalog_clients AS client
+          ON client.tenant_id = location.tenant_id
+         AND client.brand_id = location.brand_id
+        WHERE location.location_id = ${locationId}
+        LIMIT 1
+      `.execute(db);
+      return row.rows[0]?.brand_id;
     },
     async listOrders() {
       const rows = await db.selectFrom("orders").selectAll().orderBy("created_at", "desc").execute();
@@ -1229,11 +1290,26 @@ async function createPostgresRepository(
         .execute();
       return rows.map((row) => parseOrder((row as PersistedOrderRow).order_json));
     },
+    async listOrdersByUserAndBrand(userId, brandId) {
+      const rows = await sql<{ order_json: unknown }>`
+        SELECT orders.order_json
+        FROM orders
+        INNER JOIN catalog_client_locations AS location
+          ON location.location_id = orders.location_id
+        INNER JOIN catalog_clients AS client
+          ON client.tenant_id = location.tenant_id
+         AND client.brand_id = location.brand_id
+        WHERE orders.user_id = ${userId}::uuid
+          AND client.brand_id = ${brandId}
+        ORDER BY orders.created_at DESC
+      `.execute(db);
+      return rows.rows.map((row) => parseOrder(row.order_json));
+    },
     async listOrdersByLocation(locationId) {
       const rows = await db
         .selectFrom("orders")
         .selectAll()
-        .where(sql`order_json->>'locationId'`, "=", locationId)
+        .where("location_id", "=", locationId)
         .orderBy("created_at", "desc")
         .execute();
       return rows.map((row) => parseOrder((row as PersistedOrderRow).order_json));
@@ -1437,6 +1513,18 @@ async function createPostgresRepository(
       return row?.successful_refund_json === null ? undefined : row?.successful_refund_json;
     },
     async updateOrder(orderId, order) {
+      const current = await db
+        .selectFrom("orders")
+        .select("location_id")
+        .where("order_id", "=", orderId)
+        .executeTakeFirst();
+      if (!current) {
+        throw new Error("order not found while updating");
+      }
+      if (current.location_id !== order.locationId) {
+        throw new Error("Order location is immutable");
+      }
+
       const updated = await db
         .updateTable("orders")
         .set({
@@ -1444,6 +1532,7 @@ async function createPostgresRepository(
           updated_at: new Date().toISOString()
         })
         .where("order_id", "=", orderId)
+        .where("location_id", "=", current.location_id)
         .executeTakeFirst();
 
       if (Number(updated.numUpdatedRows ?? 0) === 0) {
@@ -1522,7 +1611,7 @@ async function createPostgresRepository(
         .limit(limit);
 
       if (input.locationId) {
-        rowsQuery = rowsQuery.where(sql`orders.order_json->>'locationId'`, "=", input.locationId);
+        rowsQuery = rowsQuery.where("orders.location_id", "=", input.locationId);
       }
 
       const rows = await rowsQuery.execute();
@@ -1783,7 +1872,7 @@ async function createPostgresRepository(
         .selectFrom("orders")
         .select(sql<number>`count(*)::int`.as("count"))
         .where("user_id", "=", userId)
-        .where(sql`orders.order_json->>'locationId'`, "=", locationId)
+        .where("orders.location_id", "=", locationId)
         .where(sql`orders.order_json->>'status'`, "in", ["PAID", "IN_PREP", "READY", "COMPLETED"])
         .executeTakeFirst();
 

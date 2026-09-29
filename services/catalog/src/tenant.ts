@@ -7,11 +7,12 @@ import {
   type AppConfig
 } from "@lattelink/contracts-catalog";
 
-export const DEFAULT_BRAND_ID = "rawaqcoffee";
-export const DEFAULT_LOCATION_ID = "rawaqcoffee01";
-export const DEFAULT_BRAND_NAME = "Rawaq Coffee";
-export const DEFAULT_LOCATION_NAME = "Rawaq Coffee Flagship";
-export const DEFAULT_MARKET_LABEL = "Ann Arbor, MI";
+// Rawaq values are confined to explicitly enabled local/test catalog fixtures.
+export const LOCAL_FIXTURE_BRAND_ID = "rawaqcoffee";
+export const LOCAL_FIXTURE_LOCATION_ID = "rawaqcoffee01";
+export const LOCAL_FIXTURE_BRAND_NAME = "Rawaq Coffee";
+export const LOCAL_FIXTURE_LOCATION_NAME = "Rawaq Coffee Flagship";
+export const LOCAL_FIXTURE_MARKET_LABEL = "Ann Arbor, MI";
 export const DEFAULT_STORE_HOURS = "Daily · 7:00 AM - 6:00 PM";
 
 function trimToUndefined(value: string | undefined) {
@@ -19,12 +20,8 @@ function trimToUndefined(value: string | undefined) {
   return next && next.length > 0 ? next : undefined;
 }
 
-export function resolveDefaultLocationId(env: Record<string, string | undefined> = process.env): string | undefined {
+export function resolveOperatorFallbackLocationId(env: Record<string, string | undefined> = process.env): string | undefined {
   return trimToUndefined(env.CATALOG_DEFAULT_LOCATION_ID);
-}
-
-function resolveSeedLocationId(env: Record<string, string | undefined>) {
-  return resolveDefaultLocationId(env) ?? DEFAULT_LOCATION_ID;
 }
 
 function resolveConfiguredFulfillmentMode(value: string | undefined) {
@@ -37,16 +34,25 @@ function resolveConfiguredFulfillmentMode(value: string | undefined) {
   return DEFAULT_APP_CONFIG_FULFILLMENT.mode;
 }
 
-export function resolveDefaultAppConfigPayload(
-  env: Record<string, string | undefined> = process.env
+type CatalogBrandLocation = {
+  brandId: string;
+  brandName: string;
+  locationId: string;
+  locationName: string;
+  marketLabel: string;
+};
+
+function buildAppConfigPayload(
+  identity: CatalogBrandLocation,
+  env: Record<string, string | undefined>
 ): AppConfig {
   return appConfigSchema.parse({
     brand: {
-      brandId: trimToUndefined(env.CATALOG_DEFAULT_BRAND_ID) ?? DEFAULT_BRAND_ID,
-      brandName: trimToUndefined(env.CATALOG_DEFAULT_BRAND_NAME) ?? DEFAULT_BRAND_NAME,
-      locationId: resolveSeedLocationId(env),
-      locationName: trimToUndefined(env.CATALOG_DEFAULT_LOCATION_NAME) ?? DEFAULT_LOCATION_NAME,
-      marketLabel: trimToUndefined(env.CATALOG_DEFAULT_MARKET_LABEL) ?? DEFAULT_MARKET_LABEL
+      brandId: identity.brandId,
+      brandName: identity.brandName,
+      locationId: identity.locationId,
+      locationName: identity.locationName,
+      marketLabel: identity.marketLabel
     },
     theme: {
       background: "#F7F4ED",
@@ -101,6 +107,45 @@ export function resolveDefaultAppConfigPayload(
   });
 }
 
+function configuredSeedIdentity(env: Record<string, string | undefined>): CatalogBrandLocation {
+  const identity = {
+    brandId: trimToUndefined(env.CATALOG_DEFAULT_BRAND_ID),
+    brandName: trimToUndefined(env.CATALOG_DEFAULT_BRAND_NAME),
+    locationId: trimToUndefined(env.CATALOG_DEFAULT_LOCATION_ID),
+    locationName: trimToUndefined(env.CATALOG_DEFAULT_LOCATION_NAME),
+    marketLabel: trimToUndefined(env.CATALOG_DEFAULT_MARKET_LABEL)
+  };
+  const missing = Object.entries(identity).filter(([, value]) => !value).map(([key]) => key);
+  if (missing.length > 0) {
+    throw new Error(`Catalog seed identity requires explicit CATALOG_DEFAULT_* values: ${missing.join(", ")}.`);
+  }
+
+  return identity as CatalogBrandLocation;
+}
+
+export function resolveDefaultAppConfigPayload(
+  env: Record<string, string | undefined> = process.env
+): AppConfig {
+  return buildAppConfigPayload(configuredSeedIdentity(env), env);
+}
+
+export function resolveLocalFixtureAppConfigPayload(
+  env: Record<string, string | undefined> = process.env
+): AppConfig {
+  const isVitest = env.NODE_ENV === "test" && env.VITEST === "true";
+  const isExplicitLocalMemoryMode = env.NODE_ENV !== "production" && env.ALLOW_IN_MEMORY_PERSISTENCE === "true";
+  if (!isVitest && !isExplicitLocalMemoryMode) {
+    throw new Error("The Rawaq catalog fixture requires Vitest or explicit local in-memory persistence.");
+  }
+  return buildAppConfigPayload({
+    brandId: LOCAL_FIXTURE_BRAND_ID,
+    brandName: LOCAL_FIXTURE_BRAND_NAME,
+    locationId: LOCAL_FIXTURE_LOCATION_ID,
+    locationName: LOCAL_FIXTURE_LOCATION_NAME,
+    marketLabel: LOCAL_FIXTURE_MARKET_LABEL
+  }, env);
+}
+
 export function resolveProvisionedAppConfigPayload(
   input: {
     brandId: string;
@@ -112,24 +157,17 @@ export function resolveProvisionedAppConfigPayload(
   },
   env: Record<string, string | undefined> = process.env
 ): AppConfig {
-  const base = resolveDefaultAppConfigPayload(env);
-  const capabilities = input.capabilities ?? base.storeCapabilities;
+  const capabilities = input.capabilities ?? DEFAULT_APP_CONFIG_STORE_CAPABILITIES;
+  const base = buildAppConfigPayload({
+    brandId: input.brandId.trim(),
+    brandName: input.brandName.trim(),
+    locationId: input.locationId.trim(),
+    locationName: input.locationName.trim(),
+    marketLabel: input.marketLabel.trim()
+  }, env);
 
   return appConfigSchema.parse({
     ...base,
-    brand: {
-      brandId: input.brandId.trim(),
-      brandName: input.brandName.trim(),
-      locationId: input.locationId.trim(),
-      locationName: input.locationName.trim(),
-      marketLabel: input.marketLabel.trim()
-    },
-    paymentCapabilities: {
-      ...base.paymentCapabilities,
-      stripe: {
-        ...base.paymentCapabilities.stripe
-      }
-    },
     fulfillment: {
       ...base.fulfillment,
       mode: capabilities.operations.fulfillmentMode
@@ -137,5 +175,3 @@ export function resolveProvisionedAppConfigPayload(
     storeCapabilities: capabilities
   });
 }
-
-export const defaultAppConfigPayload: AppConfig = resolveDefaultAppConfigPayload();

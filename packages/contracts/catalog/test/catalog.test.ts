@@ -29,6 +29,8 @@ import {
   isPlatformManagedMenu,
   launchApprovalRequestSchema,
   menuResponseSchema,
+  mobileBrandBootstrapRequestSchema,
+  mobileBrandBootstrapSchema,
   modifierGroupSchema,
   mobileReleaseBuildJobApprovalSchema,
   mobileReleaseBuildJobCreateSchema,
@@ -82,6 +84,73 @@ const espressoGroups = [
 ];
 
 describe("contracts-catalog", () => {
+  it("validates branded mobile bootstrap requests and public ready responses", () => {
+    const request = mobileBrandBootstrapRequestSchema.parse({ brandId: "northside-coffee" });
+    expect(request.brandId).toBe("northside-coffee");
+    expect(() => mobileBrandBootstrapRequestSchema.parse({})).toThrow();
+    expect(() => mobileBrandBootstrapRequestSchema.parse({ brandId: "northside", tenantId: "private" })).toThrow();
+
+    const ready = mobileBrandBootstrapSchema.parse({
+      schemaVersion: 1,
+      status: "ready",
+      brand: { brandId: "northside-coffee", displayName: "Northside Coffee" },
+      locations: [
+        { locationId: "northside-01", displayName: "Flagship", marketLabel: "Detroit, MI", timezone: "America/Detroit" }
+      ],
+      primaryLocationId: "northside-01",
+      orderingEnabled: true,
+      compatibility: {}
+    });
+    expect(ready.locations).toHaveLength(1);
+    expect(() => mobileBrandBootstrapSchema.parse({ ...ready, tenantId: "private-tenant" })).toThrow();
+  });
+
+  it("validates multi-location and unavailable branded bootstrap responses", () => {
+    const brand = { brandId: "northside-coffee", displayName: "Northside Coffee" };
+    const locations = [
+      { locationId: "northside-01", displayName: "Flagship", marketLabel: "Detroit, MI", timezone: "America/Detroit" },
+      { locationId: "northside-02", displayName: "Midtown", marketLabel: "Detroit, MI", timezone: "America/Detroit" }
+    ];
+    expect(mobileBrandBootstrapSchema.parse({
+      schemaVersion: 1,
+      status: "ready",
+      brand,
+      locations,
+      primaryLocationId: "northside-01",
+      orderingEnabled: true,
+      compatibility: { appConfigSchemaVersion: 1 }
+    }).locations).toHaveLength(2);
+
+    const unavailable = mobileBrandBootstrapSchema.parse({
+      schemaVersion: 1,
+      status: "unavailable",
+      brand,
+      locations: [],
+      primaryLocationId: null,
+      orderingEnabled: false,
+      compatibility: {}
+    });
+    expect(unavailable.status).toBe("unavailable");
+    expect(() => mobileBrandBootstrapSchema.parse({
+      schemaVersion: 1,
+      status: "ready",
+      brand,
+      locations: [],
+      primaryLocationId: null,
+      orderingEnabled: true,
+      compatibility: {}
+    })).toThrow();
+    expect(() => mobileBrandBootstrapSchema.parse({
+      schemaVersion: 1,
+      status: "ready",
+      brand,
+      locations: [locations[0], locations[0]],
+      primaryLocationId: "northside-01",
+      orderingEnabled: true,
+      compatibility: {}
+    })).toThrow();
+  });
+
   it("models reusable modifier groups with canonical selection rules", () => {
     const group = modifierGroupSchema.parse({
       id: "milk",
@@ -142,6 +211,13 @@ describe("contracts-catalog", () => {
     expect(config.taxRateBasisPoints).toBe(600);
     expect(config.isOpen).toBe(true);
     expect(config.nextOpenAt).toBeNull();
+
+    const zeroTaxConfig = storeConfigResponseSchema.parse({ ...config, taxRateBasisPoints: 0 });
+    expect(zeroTaxConfig.taxRateBasisPoints).toBe(0);
+    expect(storeConfigResponseSchema.parse({ ...config, taxRateBasisPoints: 825 }).taxRateBasisPoints).toBe(825);
+    for (const taxRateBasisPoints of [-1, 0.5, 10_001]) {
+      expect(() => storeConfigResponseSchema.parse({ ...config, taxRateBasisPoints })).toThrow();
+    }
   });
 
   it("validates app config payload", () => {
