@@ -13,6 +13,7 @@ import { MOBILE_API_ENVIRONMENT, apiClient } from "../api/client";
 import { customerProfileQueryKey } from "../auth/profile";
 import { getAccountRecoveryCopy } from "../auth/recovery";
 import { useAuthSession } from "../auth/session";
+import { useLocationContext } from "../location/LocationProvider";
 import { isMobileLoyaltyVisible, resolveAppConfigData, useAppConfigQuery } from "../menu/catalog";
 import { TAB_BAR_HEIGHT, getTabBarBottomOffset } from "../navigation/tabBarMetrics";
 import { Chip, GlassCard, ScreenScroll, ScreenStatic, SectionLabel, uiPalette, uiTypography } from "../ui/system";
@@ -90,6 +91,7 @@ export function AccountScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { isAuthenticated, authRecoveryState } = useAuthSession();
+  const location = useLocationContext();
   const appConfigQuery = useAppConfigQuery();
   const appConfig = resolveAppConfigData(appConfigQuery.data);
   const loyaltyEnabled = isMobileLoyaltyVisible(appConfigQuery.data);
@@ -151,7 +153,7 @@ export function AccountScreen() {
       scope.setContext("mobile_environment", {
         apiBaseUrl: MOBILE_API_ENVIRONMENT.apiBaseUrl,
         bundleIdentifier: MOBILE_API_ENVIRONMENT.bundleIdentifier,
-        locationId: MOBILE_API_ENVIRONMENT.locationId
+        locationId: location.selectedLocationId
       });
       Sentry.captureException(new Error("LatteLink mobile Sentry diagnostic event"));
     });

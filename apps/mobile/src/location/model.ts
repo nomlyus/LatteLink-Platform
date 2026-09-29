@@ -50,13 +50,15 @@ export async function resolvePersistedLocationSelection(bootstrap: MobileBrandBo
   return selectedLocationId;
 }
 
-export type LocationSelectionResult = { ok: true; selectedLocationId: string } | { ok: false; reason: "not_available" | "switching_gated" };
+export type LocationSelectionResult =
+  | { ok: true; selectedLocationId: string }
+  | { ok: false; reason: "not_available" | "cart_not_empty" | "persistence_failed" | "switch_in_progress" };
 
 export function resolveLocationSelectionAttempt(input: {
   locations: readonly MobileBrandBootstrapLocation[];
   selectedLocationId: string | null;
   requestedLocationId: string;
-  switchingEnabled: boolean;
+  cartIsNonEmpty: boolean;
 }): LocationSelectionResult {
   const isAvailable = input.locations.some((location) => location.locationId === input.requestedLocationId);
   if (!isAvailable) {
@@ -65,26 +67,10 @@ export function resolveLocationSelectionAttempt(input: {
   if (input.requestedLocationId === input.selectedLocationId) {
     return { ok: true, selectedLocationId: input.selectedLocationId };
   }
-  if (!input.switchingEnabled) {
-    return { ok: false, reason: "switching_gated" };
+  if (input.cartIsNonEmpty) {
+    return { ok: false, reason: "cart_not_empty" };
   }
   return { ok: true, selectedLocationId: input.requestedLocationId };
-}
-
-/**
- * Phase 2A compatibility only: existing catalog clients are pinned to the
- * compiled location, so that location may run only when bootstrap confirms it
- * is currently launchable for this brand. The saved selection remains separate.
- */
-export function resolveTransitionalCatalogLocationId(
-  locations: readonly MobileBrandBootstrapLocation[],
-  compiledLocationId: string
-) {
-  if (!compiledLocationId.trim()) {
-    return null;
-  }
-
-  return locations.some((location) => location.locationId === compiledLocationId) ? compiledLocationId : null;
 }
 
 export function hasMultipleBootstrapLocations(bootstrap: MobileBrandBootstrap) {
@@ -94,7 +80,6 @@ export function hasMultipleBootstrapLocations(bootstrap: MobileBrandBootstrap) {
 export function canStartLocationSensitiveQueries(input: {
   bootstrapStatus: "loading" | "ready" | "unavailable" | "brand_not_found" | "error" | "configuration_error";
   isReady: boolean;
-  isCatalogLocationCompatible: boolean;
 }) {
-  return input.bootstrapStatus === "ready" && input.isReady && input.isCatalogLocationCompatible;
+  return input.bootstrapStatus === "ready" && input.isReady;
 }

@@ -17,6 +17,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { buildPricingSummary, describeCustomization, type CartItem } from "../src/cart/model";
 import { useCart } from "../src/cart/store";
+import { useLocationContext } from "../src/location/LocationProvider";
 import { apiClient } from "../src/api/client";
 import {
   formatUsd,
@@ -162,6 +163,7 @@ export default function CheckoutScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { items, subtotalCents, discountCode, setDiscountCode, clear } = useCart();
+  const location = useLocationContext();
   const { retryOrder, clearRetryOrder, clearFailure, setConfirmation, setFailure, setRetryOrder } = useCheckoutFlow();
   const appConfigQuery = useAppConfigQuery();
   const storeConfigQuery = useStoreConfigQuery();
@@ -211,7 +213,7 @@ export default function CheckoutScreen() {
   const [paymentSheetPending, setPaymentSheetPending] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [statusTone, setStatusTone] = useState<"info" | "warning">("info");
-  const payActionDisabled = !checkoutReady || paymentSheetPending || checkoutMutation.isPending;
+  const payActionDisabled = !checkoutReady || !location.selectedLocationId || paymentSheetPending || checkoutMutation.isPending;
   const payActionLabel =
     paymentSheetPending || checkoutMutation.isPending
       ? "Opening secure payment…"
@@ -241,6 +243,12 @@ export default function CheckoutScreen() {
   }
 
   async function handleStripeCheckout() {
+    if (!location.selectedLocationId) {
+      setStatusMessage("Choose an available store location before placing your order.");
+      setStatusTone("warning");
+      return;
+    }
+
     if (!storeConfig || !appConfig) {
       setStatusMessage(checkoutUnavailableMessage ?? "Checkout is temporarily unavailable.");
       setStatusTone("warning");
@@ -259,7 +267,7 @@ export default function CheckoutScreen() {
 
     try {
       const preparedCheckout = await checkoutMutation.mutateAsync({
-        locationId: storeConfig.locationId,
+        locationId: location.selectedLocationId,
         items,
         discountCode,
         existingCheckout: retryableOrder

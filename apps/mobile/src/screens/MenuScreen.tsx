@@ -33,6 +33,8 @@ import {
 } from "../menu/catalog";
 import { isBackendReachabilityError } from "../api/client";
 import { getTabBarBottomOffset, TAB_BAR_HEIGHT } from "../navigation/tabBarMetrics";
+import { LocationPicker } from "../location/LocationPicker";
+import { useLocationContext } from "../location/LocationProvider";
 import { MenuItemRow, SectionHeader } from "../components";
 
 type MenuSection = {
@@ -234,6 +236,7 @@ function CollapsibleSectionHeader({
 export function MenuScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const location = useLocationContext();
   const appConfigQuery = useAppConfigQuery();
   const menuQuery = useMenuQuery();
   const storeConfigQuery = useStoreConfigQuery();
@@ -472,9 +475,11 @@ export function MenuScreen() {
                 {storeConfig ? `Estimated pick-up is ${storeConfig.prepEtaMinutes} min` : "Estimated pick-up unavailable"}
               </Text>
             </Animated.View>
-            <Animated.Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.locationText, locationStyle, { color: headerForegroundColor }]}>
-              {appConfig?.brand.locationName ?? "Store info unavailable"}
-            </Animated.Text>
+            <LocationPicker color={headerForegroundColor}>
+              <Animated.Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.locationText, locationStyle, { color: headerForegroundColor }]}>
+                {location.selectedLocation?.displayName ?? appConfig?.brand.locationName ?? "Store info unavailable"}
+              </Animated.Text>
+            </LocationPicker>
           </View>
         </View>
 

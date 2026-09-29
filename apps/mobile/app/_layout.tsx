@@ -77,8 +77,9 @@ function AppInitializer() {
     if (!canStartLocationSensitiveData) {
       return;
     }
-    prefetchCatalogQueries(queryClient);
-  }, [canStartLocationSensitiveData]);
+    if (!location.selectedLocationId) return;
+    prefetchCatalogQueries(queryClient, { brandId: location.brandId, locationId: location.selectedLocationId });
+  }, [canStartLocationSensitiveData, location.brandId, location.selectedLocationId]);
 
   return null;
 }
@@ -127,10 +128,7 @@ function StartupCatalogGate({
       ? UNABLE_TO_REACH_BACKEND_MESSAGE
       : "Branded app configuration could not be loaded. Retry before continuing.";
   } else if (location.bootstrapStatus === "ready" && !canStartLocationSensitiveData) {
-    errorMessage = !location.isReady
-      ? "Store locations could not be resolved for this app. Retry before continuing."
-      : location.locationCompatibilityError ?? "This app’s store configuration is out of date. Update the app to continue.";
-    retryDisabled = Boolean(location.isReady);
+    errorMessage = "Store locations could not be resolved for this app. Retry before continuing.";
   }
 
   if (errorMessage) {
@@ -279,10 +277,10 @@ function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <BottomSheetModalProvider>
             <AuthSessionProvider>
-              <LocationProvider>
-                <StartupCatalogGate onReadyToDisplay={hideSplash}>
-                  <AppInitializer />
-                  <CartProvider>
+              <CartProvider>
+                <LocationProvider>
+                  <StartupCatalogGate onReadyToDisplay={hideSplash}>
+                    <AppInitializer />
                     <CheckoutFlowProvider>
                       <Stack
                         screenOptions={{
@@ -365,9 +363,9 @@ function RootLayout() {
                         />
                       </Stack>
                     </CheckoutFlowProvider>
-                  </CartProvider>
-                </StartupCatalogGate>
-              </LocationProvider>
+                  </StartupCatalogGate>
+                </LocationProvider>
+              </CartProvider>
             </AuthSessionProvider>
           </BottomSheetModalProvider>
         </QueryClientProvider>

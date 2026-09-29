@@ -16,6 +16,8 @@ import {
 } from "react-native";
 import Animated, { Extrapolation, interpolate, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { LocationPicker } from "../location/LocationPicker";
+import { useLocationContext } from "../location/LocationProvider";
 import {
   resolveMenuData,
   resolveAppConfigData,
@@ -87,6 +89,7 @@ function HomeNewsTag({ label }: { label: NewsLabel }) {
 export function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const location = useLocationContext();
   const appConfigQuery = useAppConfigQuery();
   const mobileExperienceQuery = useMobileExperienceQuery();
   const homeNewsCardsQuery = useHomeNewsCardsQuery();
@@ -111,7 +114,7 @@ export function HomeScreen() {
   const brandName = appConfig?.brand.brandName ?? "Store";
   const locationName = appConfig?.brand.locationName ?? "Location unavailable";
   const displayBrandName = heroSection?.title ?? brandName;
-  const displayLocationName = heroSection?.subtitle ?? locationName;
+  const displayLocationName = location.selectedLocation?.displayName ?? heroSection?.subtitle ?? locationName;
   const scrollViewRef = useRef<ScrollView | null>(null);
   const scrollY = useSharedValue(0);
   const dockBottom = getTabBarBottomOffset(insets.bottom > 0);
@@ -379,7 +382,9 @@ export function HomeScreen() {
 
           <Animated.View style={[styles.storeRail, storeRailStyle]}>
             <View style={styles.storeCopy}>
-              <Animated.Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.storeTitle, storeTitleStyle, { color: headerForegroundColor }]}>{displayLocationName}</Animated.Text>
+              <LocationPicker color={headerForegroundColor}>
+                <Animated.Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.storeTitle, storeTitleStyle, { color: headerForegroundColor }]}>{displayLocationName}</Animated.Text>
+              </LocationPicker>
             </View>
 
             <Animated.View style={menuLinkStyle}>

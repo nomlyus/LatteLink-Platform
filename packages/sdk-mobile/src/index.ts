@@ -44,7 +44,10 @@ export type ApiClientOptions = {
   accessToken?: string;
   /** Public branded-app selector; backend persistence remains the authorization boundary. */
   brandId?: string;
-  locationId?: string;
+};
+
+export type ApiRequestOptions = {
+  signal?: AbortSignal;
 };
 
 export class ApiHttpError extends Error {
@@ -68,6 +71,12 @@ export class MobileBrandBootstrapError extends Error {
 
 type SessionRefreshHandler = () => Promise<z.output<typeof authSessionSchema> | null>;
 
+type SharedAuthState = {
+  accessToken?: string;
+  sessionRefreshHandler?: SessionRefreshHandler;
+  refreshInFlight?: Promise<z.output<typeof authSessionSchema> | null>;
+};
+
 function normalizeBaseUrl(baseUrl: string) {
   return baseUrl.trim().replace(/\/+$/, "");
 }
@@ -82,39 +91,57 @@ function toReachabilityError(error: unknown) {
   });
 }
 
+function isAbortRequestError(error: unknown) {
+  return error instanceof Error && (error.name === "AbortError" || error.message.toLowerCase().includes("aborted"));
+}
+
 export function isBackendReachabilityError(error: unknown) {
   return error instanceof Error && error.message === UNABLE_TO_REACH_BACKEND_MESSAGE;
 }
 
 export class GazelleApiClient {
-  private accessToken?: string;
-  private sessionRefreshHandler?: SessionRefreshHandler;
-  private refreshInFlight?: Promise<z.output<typeof authSessionSchema> | null>;
+  private readonly auth: SharedAuthState;
 
-  constructor(private readonly options: ApiClientOptions) {}
+  constructor(
+    private readonly options: ApiClientOptions,
+    private readonly locationId?: string,
+    auth?: SharedAuthState
+  ) {
+    this.auth = auth ?? {};
+  }
 
   setAccessToken(token?: string) {
-    this.accessToken = token;
+    this.auth.accessToken = token;
   }
 
   setSessionRefreshHandler(handler?: SessionRefreshHandler) {
-    this.sessionRefreshHandler = handler;
+    this.auth.sessionRefreshHandler = handler;
   }
 
-  async get<T>(path: string): Promise<T> {
-    return this.request<T>("GET", path);
+  async get<T>(path: string, options?: ApiRequestOptions): Promise<T> {
+    return this.request<T>("GET", path, undefined, options);
   }
 
-  async post<T>(path: string, body: unknown): Promise<T> {
-    return this.request<T>("POST", path, body);
+  async post<T>(path: string, body: unknown, options?: ApiRequestOptions): Promise<T> {
+    return this.request<T>("POST", path, body, options);
   }
 
-  async put<T>(path: string, body: unknown): Promise<T> {
-    return this.request<T>("PUT", path, body);
+  async put<T>(path: string, body: unknown, options?: ApiRequestOptions): Promise<T> {
+    return this.request<T>("PUT", path, body, options);
   }
 
-  async delete<T>(path: string): Promise<T> {
-    return this.request<T>("DELETE", path);
+  async delete<T>(path: string, options?: ApiRequestOptions): Promise<T> {
+    return this.request<T>("DELETE", path, undefined, options);
+  }
+
+  /** Returns an immutable location-scoped client; the shared client's location is never mutated. */
+  forLocation(locationId: string): GazelleApiClient {
+    const normalizedLocationId = locationId.trim();
+    if (!normalizedLocationId) {
+      throw new Error("A runtime locationId is required for location-scoped requests.");
+    }
+
+    return new GazelleApiClient(this.options, normalizedLocationId, this.auth);
   }
 
   async appleExchange(
@@ -202,7 +229,7 @@ export class GazelleApiClient {
 
   private locationQuery(): string {
     const brandId = this.options.brandId?.trim();
-    const locationId = this.options.locationId?.trim();
+    const locationId = this.locationId?.trim();
     if (!brandId || !locationId) {
       throw new Error("Public brandId and locationId are required for customer catalog requests.");
     }
@@ -210,28 +237,28 @@ export class GazelleApiClient {
     return `?${query.toString()}`;
   }
 
-  async menu(): Promise<z.output<typeof menuResponseSchema>> {
-    const data = await this.get<unknown>(`/menu${this.locationQuery()}`);
+  async menu(options?: ApiRequestOptions): Promise<z.output<typeof menuResponseSchema>> {
+    const data = await this.get<unknown>(`/menu${this.locationQuery()}`, options);
     return menuResponseSchema.parse(data);
   }
 
-  async storeConfig(): Promise<z.output<typeof storeConfigResponseSchema>> {
-    const data = await this.get<unknown>(`/store/config${this.locationQuery()}`);
+  async storeConfig(options?: ApiRequestOptions): Promise<z.output<typeof storeConfigResponseSchema>> {
+    const data = await this.get<unknown>(`/store/config${this.locationQuery()}`, options);
     return storeConfigResponseSchema.parse(data);
   }
 
-  async homeNewsCards(): Promise<z.output<typeof homeNewsCardsResponseSchema>> {
-    const data = await this.get<unknown>(`/store/cards${this.locationQuery()}`);
+  async homeNewsCards(options?: ApiRequestOptions): Promise<z.output<typeof homeNewsCardsResponseSchema>> {
+    const data = await this.get<unknown>(`/store/cards${this.locationQuery()}`, options);
     return homeNewsCardsResponseSchema.parse(data);
   }
 
-  async appConfig(): Promise<z.output<typeof appConfigSchema>> {
-    const data = await this.get<unknown>(`/app-config${this.locationQuery()}`);
+  async appConfig(options?: ApiRequestOptions): Promise<z.output<typeof appConfigSchema>> {
+    const data = await this.get<unknown>(`/app-config${this.locationQuery()}`, options);
     return appConfigSchema.parse(data);
   }
 
-  async mobileExperience(): Promise<z.output<typeof mobileExperienceDocumentSchema>> {
-    const data = await this.get<unknown>(`/mobile-experience${this.locationQuery()}`);
+  async mobileExperience(options?: ApiRequestOptions): Promise<z.output<typeof mobileExperienceDocumentSchema>> {
+    const data = await this.get<unknown>(`/mobile-experience${this.locationQuery()}`, options);
     return mobileExperienceDocumentSchema.parse(data);
   }
 
@@ -308,31 +335,32 @@ export class GazelleApiClient {
   }
 
   private async refreshSessionSafely() {
-    if (!this.sessionRefreshHandler) {
+    if (!this.auth.sessionRefreshHandler) {
       return null;
     }
 
-    if (!this.refreshInFlight) {
-      this.refreshInFlight = (async () => {
+    if (!this.auth.refreshInFlight) {
+      this.auth.refreshInFlight = (async () => {
         try {
-          const nextSession = await this.sessionRefreshHandler?.();
+          const nextSession = await this.auth.sessionRefreshHandler?.();
           if (nextSession?.accessToken) {
             this.setAccessToken(nextSession.accessToken);
           }
           return nextSession ?? null;
         } finally {
-          this.refreshInFlight = undefined;
+          this.auth.refreshInFlight = undefined;
         }
       })();
     }
 
-    return this.refreshInFlight;
+    return this.auth.refreshInFlight;
   }
 
   private async request<T>(
     method: "GET" | "POST" | "PUT" | "DELETE",
     path: string,
     body?: unknown,
+    options?: ApiRequestOptions,
     hasRetriedUnauthorized = false
   ): Promise<T> {
     const baseUrl = normalizeBaseUrl(this.options.baseUrl);
@@ -340,7 +368,7 @@ export class GazelleApiClient {
       throw toReachabilityError(new Error("API base URL is not configured."));
     }
 
-    const effectiveToken = this.accessToken ?? this.options.accessToken;
+    const effectiveToken = this.auth.accessToken ?? this.options.accessToken;
     const headers: Record<string, string> = {};
     if (effectiveToken) {
       headers.Authorization = `Bearer ${effectiveToken}`;
@@ -355,9 +383,13 @@ export class GazelleApiClient {
       response = await fetch(`${baseUrl}${path}`, {
         method,
         headers,
-        body: body === undefined ? undefined : JSON.stringify(body)
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: options?.signal
       });
     } catch (error) {
+      if (isAbortRequestError(error)) {
+        throw error;
+      }
       throw toReachabilityError(error);
     }
 
@@ -371,7 +403,7 @@ export class GazelleApiClient {
     if (canRetryUnauthorized) {
       const nextSession = await this.refreshSessionSafely();
       if (nextSession?.accessToken) {
-        return this.request<T>(method, path, body, true);
+        return this.request<T>(method, path, body, options, true);
       }
     }
 

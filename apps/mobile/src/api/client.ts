@@ -117,8 +117,6 @@ const brandConfigurationError = parsedBrandRequest.success
   : rawBrandId.length === 0
     ? "EXPO_PUBLIC_BRAND_ID is not configured."
     : "EXPO_PUBLIC_BRAND_ID is invalid.";
-const configuredLocationId = process.env.EXPO_PUBLIC_LOCATION_ID?.trim() ?? "";
-const locationCompatibilityError = configuredLocationId.length > 0 ? null : "EXPO_PUBLIC_LOCATION_ID is not configured.";
 
 function toReachabilityError(error: unknown) {
   if (isBackendReachabilityError(error)) {
@@ -153,17 +151,12 @@ export const MOBILE_API_ENVIRONMENT = {
   brandConfigurationError,
   apiBaseUrl: API_BASE_URL,
   catalogApiBaseUrl: CATALOG_API_BASE_URL,
-  locationId: configuredLocationId,
-  locationCompatibilityError,
   apiConfigurationError:
     apiBaseUrlEnvironmentError ??
     catalogServiceBaseUrlEnvironmentError ??
     catalogApiBaseUrlEnvironmentError ??
     brandConfigurationError
 };
-
-/** Transitional build-time catalog binding; remove once the Phase 3 client factory is location-aware. */
-export const MOBILE_LOCATION_ID = MOBILE_API_ENVIRONMENT.locationId;
 
 const ordersStreamSnapshotSchema = z.object({
   type: z.literal("snapshot"),
@@ -325,8 +318,7 @@ function startOrdersPolling(params: {
 
 const baseApiClient = new GazelleApiClient({
   baseUrl: API_BASE_URL,
-  brandId: MOBILE_API_ENVIRONMENT.brandId,
-  locationId: MOBILE_LOCATION_ID
+  brandId: MOBILE_API_ENVIRONMENT.brandId
 });
 let currentAccessToken: string | undefined;
 const originalSetAccessToken = baseApiClient.setAccessToken.bind(baseApiClient);
@@ -413,6 +405,5 @@ export const mobileBootstrapApiClient = new GazelleApiClient({ baseUrl: API_BASE
 
 export const catalogApiClient = new GazelleApiClient({
   baseUrl: CATALOG_API_BASE_URL,
-  brandId: MOBILE_API_ENVIRONMENT.brandId,
-  locationId: MOBILE_LOCATION_ID
+  brandId: MOBILE_API_ENVIRONMENT.brandId
 });

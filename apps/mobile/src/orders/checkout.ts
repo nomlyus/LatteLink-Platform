@@ -142,6 +142,10 @@ export async function prepareStripeCheckout(
   input: CheckoutInput,
   checkoutApi: StripeCheckoutApi = apiClient
 ): Promise<PreparedStripeCheckout> {
+  if (!input.locationId.trim()) {
+    throw new Error("A selected store location is required before checkout.");
+  }
+
   if (input.items.length === 0) {
     throw new Error("Cart is empty.");
   }

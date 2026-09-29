@@ -53,7 +53,7 @@ describe("merchant mobile build preparation", () => {
       expect(env).toContain("APP_DISPLAY_NAME='Rawaq Beta'");
       expect(env).toContain("IOS_BUNDLE_IDENTIFIER='com.lattelink.rawaq.beta'");
       expect(env).toContain("EXPO_PUBLIC_BRAND_ID='rawaqcoffee'");
-      expect(env).toContain("EXPO_PUBLIC_LOCATION_ID='rawaqcoffee01'");
+      expect(env).not.toContain("EXPO_PUBLIC_LOCATION_ID");
       expect(env).toContain("EXPO_SLUG='rawaqcoffee01-beta'");
       expect(manifest).toMatchObject({
         brandId: "rawaqcoffee",

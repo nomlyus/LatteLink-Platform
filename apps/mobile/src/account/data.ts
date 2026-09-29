@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import { API_BASE_URL, MOBILE_API_ENVIRONMENT, MOBILE_LOCATION_ID, apiClient } from "../api/client";
+import { API_BASE_URL, apiClient } from "../api/client";
+import { useLocationContext } from "../location/LocationProvider";
 import { withCriticalDataLoadSentry } from "../observability/criticalDataLoad";
 
 const orderStatusSchema = z.enum([
@@ -179,25 +180,26 @@ export function useCancelOrderMutation() {
 }
 
 export function useLoyaltyBalanceQuery(enabled = true) {
+  const { brandId, selectedLocationId, isReady } = useLocationContext();
   return useQuery({
-    queryKey: ["account", "loyalty", "balance", MOBILE_LOCATION_ID],
-    enabled,
-    queryFn: async (): Promise<LoyaltyBalance> =>
+    queryKey: ["account", "loyalty", "balance", selectedLocationId, brandId],
+    enabled: enabled && isReady && Boolean(selectedLocationId),
+    queryFn: async ({ signal }): Promise<LoyaltyBalance> =>
       withCriticalDataLoadSentry(
         {
           feature: "account",
           operation: "load_loyalty_balance",
           endpoint: "/loyalty/balance",
           apiBaseUrl: API_BASE_URL,
-          locationId: MOBILE_LOCATION_ID
+          locationId: selectedLocationId ?? ""
         },
         async () => {
-          if (!MOBILE_API_ENVIRONMENT.brandId || !MOBILE_LOCATION_ID) {
-            throw new Error("Brand and location configuration are required for loyalty balance reads.");
+          if (!selectedLocationId) {
+            throw new Error("A selected location is required for loyalty balance reads.");
           }
 
           return loyaltyBalanceSchema.parse(
-            await apiClient.get(`/loyalty/balance?brandId=${encodeURIComponent(MOBILE_API_ENVIRONMENT.brandId)}&locationId=${encodeURIComponent(MOBILE_LOCATION_ID)}`)
+            await apiClient.forLocation(selectedLocationId).get(`/loyalty/balance?brandId=${encodeURIComponent(brandId)}&locationId=${encodeURIComponent(selectedLocationId)}`, { signal })
           );
         }
       )
@@ -205,25 +207,26 @@ export function useLoyaltyBalanceQuery(enabled = true) {
 }
 
 export function useLoyaltyLedgerQuery(enabled = true) {
+  const { brandId, selectedLocationId, isReady } = useLocationContext();
   return useQuery({
-    queryKey: ["account", "loyalty", "ledger", MOBILE_LOCATION_ID],
-    enabled,
-    queryFn: async (): Promise<LoyaltyLedgerEntry[]> =>
+    queryKey: ["account", "loyalty", "ledger", selectedLocationId, brandId],
+    enabled: enabled && isReady && Boolean(selectedLocationId),
+    queryFn: async ({ signal }): Promise<LoyaltyLedgerEntry[]> =>
       withCriticalDataLoadSentry(
         {
           feature: "rewards_activity",
           operation: "load_loyalty_ledger",
           endpoint: "/loyalty/ledger",
           apiBaseUrl: API_BASE_URL,
-          locationId: MOBILE_LOCATION_ID
+          locationId: selectedLocationId ?? ""
         },
         async () => {
-          if (!MOBILE_API_ENVIRONMENT.brandId || !MOBILE_LOCATION_ID) {
-            throw new Error("Brand and location configuration are required for loyalty ledger reads.");
+          if (!selectedLocationId) {
+            throw new Error("A selected location is required for loyalty ledger reads.");
           }
 
           return loyaltyLedgerSchema.parse(
-            await apiClient.get(`/loyalty/ledger?brandId=${encodeURIComponent(MOBILE_API_ENVIRONMENT.brandId)}&locationId=${encodeURIComponent(MOBILE_LOCATION_ID)}`)
+            await apiClient.forLocation(selectedLocationId).get(`/loyalty/ledger?brandId=${encodeURIComponent(brandId)}&locationId=${encodeURIComponent(selectedLocationId)}`, { signal })
           );
         }
       )
@@ -231,10 +234,6 @@ export function useLoyaltyLedgerQuery(enabled = true) {
 }
 
 export function getLoyaltyQueryErrorMessage(error: unknown) {
-  if (error instanceof Error && error.message.includes("EXPO_PUBLIC_LOCATION_ID")) {
-    return "This app build is missing its store location. Install the latest beta build or ask support to fix the beta environment.";
-  }
-
   if (error instanceof Error && error.message.startsWith("Request failed (401)")) {
     return "Your session expired. Sign in again to reload rewards.";
   }

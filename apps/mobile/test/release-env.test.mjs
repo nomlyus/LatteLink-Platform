@@ -13,7 +13,6 @@ const releaseEnvironment = {
   IOS_BUNDLE_IDENTIFIER: "com.nomly.test.beta",
   EXPO_PUBLIC_IOS_BUNDLE_IDENTIFIER: "com.nomly.test.beta",
   EXPO_PUBLIC_API_BASE_URL: "https://api-dev.nomly.us/v1",
-  EXPO_PUBLIC_LOCATION_ID: "test-location",
   EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID: "merchant.com.nomly.test.beta",
   EXPO_PUBLIC_BRAND_NAME: "Nomly Test",
   EXPO_PUBLIC_SENTRY_DSN: "https://public@example.ingest.sentry.io/123",

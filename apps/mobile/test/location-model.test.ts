@@ -5,8 +5,7 @@ import {
   hasMultipleBootstrapLocations,
   locationPreferenceStorageKey,
   resolveLocationSelectionAttempt,
-  resolvePersistedLocationSelection,
-  resolveTransitionalCatalogLocationId
+  resolvePersistedLocationSelection
 } from "../src/location/model";
 
 function readyBootstrap(locationIds: string[], primaryLocationId = locationIds[0]): MobileBrandBootstrap {
@@ -99,14 +98,14 @@ describe("mobile location runtime model", () => {
     expect(locationPreferenceStorageKey("brand-a")).not.toBe(locationPreferenceStorageKey("brand-b"));
   });
 
-  it("rejects locations absent from bootstrap and gates switching until the data layer is location-aware", () => {
+  it("rejects locations absent from bootstrap and allows switching to an available location with an empty cart", () => {
     const locations = readyBootstrap(["northside-01", "northside-02"]).locations;
     expect(
       resolveLocationSelectionAttempt({
         locations,
         selectedLocationId: "northside-01",
         requestedLocationId: "other-brand-location",
-        switchingEnabled: false
+        cartIsNonEmpty: false
       })
     ).toEqual({ ok: false, reason: "not_available" });
     expect(
@@ -114,90 +113,35 @@ describe("mobile location runtime model", () => {
         locations,
         selectedLocationId: "northside-01",
         requestedLocationId: "northside-02",
-        switchingEnabled: false
+        cartIsNonEmpty: false
       })
-    ).toEqual({ ok: false, reason: "switching_gated" });
+    ).toEqual({ ok: true, selectedLocationId: "northside-02" });
   });
 
-  it("uses the compiled catalog location when bootstrap confirms it belongs to this brand", () => {
-    const bootstrap = readyBootstrap(["northside-01"]);
-    expect(resolveTransitionalCatalogLocationId(bootstrap.locations, "northside-01")).toBe("northside-01");
-    expect(resolveTransitionalCatalogLocationId(bootstrap.locations, "")).toBeNull();
+  it("blocks location switching while the cart contains items", () => {
+    const locations = readyBootstrap(["northside-01", "northside-02"]).locations;
+    expect(resolveLocationSelectionAttempt({
+      locations,
+      selectedLocationId: "northside-01",
+      requestedLocationId: "northside-02",
+      cartIsNonEmpty: true
+    })).toEqual({ ok: false, reason: "cart_not_empty" });
   });
 
-  it("keeps a valid saved preference while legacy catalog clients use the compiled location", async () => {
-    const bootstrap = readyBootstrap(["northside-01", "northside-02"]);
-    const preferences = preferenceStore("northside-02");
-    const preferredLocationId = await resolvePersistedLocationSelection(bootstrap, "northside-coffee", preferences);
-    const activeLocationId = resolveTransitionalCatalogLocationId(bootstrap.locations, "northside-01");
-
-    expect(preferredLocationId).toBe("northside-02");
-    expect(activeLocationId).toBe("northside-01");
-    expect(preferences.value()).toBe("northside-02");
-    expect(preferences.set).not.toHaveBeenCalled();
-    expect(canStartLocationSensitiveQueries({
-      bootstrapStatus: "ready",
-      isReady: true,
-      isCatalogLocationCompatible: activeLocationId !== null
-    })).toBe(true);
-  });
-
-  it("fails closed when the compiled location is not in the launchable bootstrap list", () => {
-    const bootstrap = readyBootstrap(["northside-01", "northside-02"]);
-    const activeLocationId = resolveTransitionalCatalogLocationId(bootstrap.locations, "northside-03");
-
-    expect(activeLocationId).toBeNull();
-    expect(canStartLocationSensitiveQueries({
-      bootstrapStatus: "ready",
-      isReady: true,
-      isCatalogLocationCompatible: false
-    })).toBe(false);
-  });
-
-  it("fails closed for a single-location brand if the compiled location differs", () => {
-    const bootstrap = readyBootstrap(["northside-02"]);
-    expect(hasMultipleBootstrapLocations(bootstrap)).toBe(false);
-    expect(resolveTransitionalCatalogLocationId(bootstrap.locations, "northside-01")).toBeNull();
-    expect(canStartLocationSensitiveQueries({
-      bootstrapStatus: "ready",
-      isReady: true,
-      isCatalogLocationCompatible: false
-    })).toBe(false);
-  });
-
-  it("does not substitute another location when the compiled location was removed", () => {
-    const bootstrap = readyBootstrap(["northside-02"]);
-    expect(resolveTransitionalCatalogLocationId(bootstrap.locations, "northside-01")).toBeNull();
-    expect(resolveTransitionalCatalogLocationId(bootstrap.locations, "rawaqcoffee01")).toBeNull();
-    expect(canStartLocationSensitiveQueries({
-      bootstrapStatus: "ready",
-      isReady: true,
-      isCatalogLocationCompatible: false
-    })).toBe(false);
-  });
-
-  it("does not start location-sensitive queries before bootstrap and location compatibility are ready", () => {
+  it("does not start location-sensitive queries before bootstrap and selection are ready", () => {
     for (const bootstrapStatus of ["loading", "unavailable", "brand_not_found", "error", "configuration_error"] as const) {
       expect(canStartLocationSensitiveQueries({
         bootstrapStatus,
-        isReady: false,
-        isCatalogLocationCompatible: false
+        isReady: false
       })).toBe(false);
     }
     expect(canStartLocationSensitiveQueries({
       bootstrapStatus: "ready",
-      isReady: false,
-      isCatalogLocationCompatible: false
+      isReady: false
     })).toBe(false);
     expect(canStartLocationSensitiveQueries({
       bootstrapStatus: "ready",
-      isReady: true,
-      isCatalogLocationCompatible: false
-    })).toBe(false);
-    expect(canStartLocationSensitiveQueries({
-      bootstrapStatus: "ready",
-      isReady: true,
-      isCatalogLocationCompatible: true
+      isReady: true
     })).toBe(true);
   });
 });

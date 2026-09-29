@@ -23,9 +23,9 @@ describe("sdk-mobile", () => {
   });
 
   it("throws a stable reachability error when the api base url is missing", async () => {
-    const client = new GazelleApiClient({ baseUrl: "", brandId: "gazelle", locationId: "flagship-01" });
+    const client = new GazelleApiClient({ baseUrl: "", brandId: "gazelle" });
 
-    await expect(client.menu()).rejects.toMatchObject({
+    await expect(client.forLocation("flagship-01").menu()).rejects.toMatchObject({
       message: UNABLE_TO_REACH_BACKEND_MESSAGE
     });
   });
@@ -182,13 +182,13 @@ describe("sdk-mobile", () => {
 
     const client = new GazelleApiClient({
       baseUrl: "https://api.gazellecoffee.com/v1",
-      brandId: "gazelle",
-      locationId: "flagship-01"
+      brandId: "gazelle"
     });
-    const menu = await client.menu();
-    const storeConfig = await client.storeConfig();
-    const appConfig = await client.appConfig();
-    const homeNewsCards = await client.homeNewsCards();
+    const locationClient = client.forLocation("flagship-01");
+    const menu = await locationClient.menu();
+    const storeConfig = await locationClient.storeConfig();
+    const appConfig = await locationClient.appConfig();
+    const homeNewsCards = await locationClient.homeNewsCards();
 
     expect(menu.categories[0]?.items[0]?.name).toBe("Latte");
     expect(storeConfig.taxRateBasisPoints).toBe(600);
@@ -235,7 +235,7 @@ describe("sdk-mobile", () => {
       new Response(JSON.stringify(bootstrap), { status: 200, headers: { "content-type": "application/json" } })
     );
 
-    const client = new GazelleApiClient({ baseUrl: "https://api.nomly.us/v1", locationId: "compiled-location" });
+    const client = new GazelleApiClient({ baseUrl: "https://api.nomly.us/v1" });
     await expect(client.mobileBrandBootstrap("northside coffee")).resolves.toEqual(bootstrap);
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.nomly.us/v1/mobile/bootstrap?brandId=northside%20coffee",
@@ -259,6 +259,45 @@ describe("sdk-mobile", () => {
     const result = await new GazelleApiClient({ baseUrl: "https://api.nomly.us/v1" }).mobileBrandBootstrap("northside");
     expect(result.status).toBe("unavailable");
     expect(result.primaryLocationId).toBeNull();
+  });
+
+  it("routes concurrent location-scoped requests independently with the public brand context", async () => {
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = new URL(String(input));
+      return new Response(JSON.stringify({
+        locationId: url.searchParams.get("locationId"),
+        currency: "USD",
+        categories: []
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    });
+
+    const client = new GazelleApiClient({ baseUrl: "https://api.nomly.us/v1", brandId: "northside" });
+    const signalA = new AbortController().signal;
+    const signalB = new AbortController().signal;
+    const [menuA, menuB] = await Promise.all([
+      client.forLocation("northside-01").menu({ signal: signalA }),
+      client.forLocation("northside-02").menu({ signal: signalB })
+    ]);
+
+    expect(menuA.locationId).toBe("northside-01");
+    expect(menuB.locationId).toBe("northside-02");
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
+      "https://api.nomly.us/v1/menu?brandId=northside&locationId=northside-01",
+      "https://api.nomly.us/v1/menu?brandId=northside&locationId=northside-02"
+    ]);
+    expect(fetchMock.mock.calls.map(([, init]) => init?.signal)).toEqual([signalA, signalB]);
+  });
+
+  it("preserves abort errors so canceled location requests are not reported as backend outages", async () => {
+    const abortError = new Error("The operation was aborted.");
+    abortError.name = "AbortError";
+    fetchMock.mockRejectedValueOnce(abortError);
+    const client = new GazelleApiClient({ baseUrl: "https://api.nomly.us/v1", brandId: "northside" });
+
+    const error = await client.forLocation("northside-01").menu({ signal: new AbortController().signal }).catch((reason) => reason);
+
+    expect(error).toBe(abortError);
+    expect(isBackendReachabilityError(error)).toBe(false);
   });
 
   it("requires a brand selector and fails closed for unknown or malformed bootstrap responses", async () => {
@@ -382,8 +421,8 @@ describe("sdk-mobile", () => {
   it("surfaces a stable reachability error when fetch fails", async () => {
     fetchMock.mockRejectedValueOnce(new TypeError("Network request failed"));
 
-    const client = new GazelleApiClient({ baseUrl: "https://api.gazellecoffee.com/v1", brandId: "gazelle", locationId: "flagship-01" });
-    const error = await client.storeConfig().catch((rejection) => rejection);
+    const client = new GazelleApiClient({ baseUrl: "https://api.gazellecoffee.com/v1", brandId: "gazelle" });
+    const error = await client.forLocation("flagship-01").storeConfig().catch((rejection) => rejection);
 
     expect(error).toMatchObject({
       message: UNABLE_TO_REACH_BACKEND_MESSAGE

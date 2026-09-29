@@ -1,7 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { LoyaltyLedgerEntry } from "../src/account/data";
 import { isAbortedCheckoutOrder } from "../src/account/data";
 import { findLoyaltyReversalEntriesForOrder, hasLoyaltyReversalActivity } from "../src/orders/history";
+
+vi.mock("../src/location/LocationProvider", () => ({
+  useLocationContext: () => ({ brandId: "brand-a", selectedLocationId: null, isReady: false })
+}));
 
 describe("order history visibility", () => {
   it("treats canceled unpaid orders as aborted checkout attempts", () => {

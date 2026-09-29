@@ -146,7 +146,6 @@ const config: ExpoConfig = {
     easBuildProfile: process.env.EAS_BUILD_PROFILE ?? null,
     apiBaseUrl: releaseApiBaseUrl,
     brandId: process.env.EXPO_PUBLIC_BRAND_ID?.trim() ?? null,
-    locationId: process.env.EXPO_PUBLIC_LOCATION_ID?.trim() ?? null,
     applePayMerchantIdentifier,
     privacyPolicyUrl: process.env.EXPO_PUBLIC_PRIVACY_POLICY_URL ?? DEFAULT_PRIVACY_POLICY_URL,
     eas: {

@@ -153,7 +153,6 @@ function buildEnv(input, profile) {
     EXPO_PUBLIC_BRAND_ID: input.brandId,
     EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID: input.applePayMerchantId,
     EXPO_PUBLIC_BRAND_NAME: input.appName,
-    EXPO_PUBLIC_LOCATION_ID: input.locationId,
     EXPO_PUBLIC_PRIVACY_POLICY_URL: input.privacyPolicyUrl,
     EXPO_PUBLIC_SENTRY_DSN: input.sentryDsn,
     SENTRY_ORG: input.sentryOrg,
