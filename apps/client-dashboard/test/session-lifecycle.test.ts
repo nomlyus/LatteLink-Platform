@@ -85,8 +85,7 @@ describe("existing dashboard session expiration behavior", () => {
       appConfig: null,
       menu: { locationId: "location-a", categories: [], modifierGroups: [] },
       storeConfig: null,
-      mobileReleaseBuildJobs: { jobs: [] },
-      team: []
+      mobileReleaseBuildJobs: { jobs: [] }
     });
     fetchOperatorOnboardingSummary.mockResolvedValue({ locationId: "location-a", status: "approved" });
     const { state } = await import("../src/state");

@@ -19,7 +19,6 @@ import {
 } from "./storage";
 import { resetDashboardData, setError, setNotice, state } from "./state";
 import { ensureSectionIsAvailable } from "./sections";
-import { mergePendingTeamUserUpdates } from "./team-state";
 import { render } from "./render";
 import { isSessionAuthFailure } from "./features/auth/session-compat";
 import { shouldAutoOpenOwnerOnboarding } from "./lib/navigation/dashboard-navigation";
@@ -213,7 +212,6 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
         state.menuCategories = [];
         state.storeConfig = null;
         state.mobileReleaseBuildJobs = { jobs: [] };
-        state.teamUsers = [];
       } else {
         const snapshot = await fetchOperatorSnapshot(session, state.selectedLocationId);
         if (loadGeneration !== dashboardLoadGeneration) return;
@@ -221,7 +219,6 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
         state.menuCategories = snapshot.menu.categories;
         state.storeConfig = snapshot.storeConfig;
         state.mobileReleaseBuildJobs = snapshot.mobileReleaseBuildJobs;
-        state.teamUsers = mergePendingTeamUserUpdates(snapshot.team);
       }
     } catch (error) {
       if (isSessionAuthFailure(error)) throw error;

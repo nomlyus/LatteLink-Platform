@@ -8,8 +8,7 @@ import type {
   OperatorAuthProviders,
   OperatorInviteLookup,
   OperatorOnboardingSummary,
-  OperatorSession,
-  OperatorUser
+  OperatorSession
 } from "./api";
 import type {
   DashboardSection,
@@ -53,10 +52,7 @@ export type AppState = {
   menuCategories: OperatorMenuCategory[];
   storeConfig: AdminStoreConfig | null;
   mobileReleaseBuildJobs: MobileReleaseBuildJobListResponse;
-  teamUsers: OperatorUser[];
-  busyTeamUserId: string | null;
   savingStore: boolean;
-  creatingTeamUser: boolean;
   dashboardLoaded: boolean;
   toasts: Array<{
     id: string;
@@ -110,10 +106,7 @@ export const state: AppState = {
   menuCategories: [],
   storeConfig: null,
   mobileReleaseBuildJobs: { jobs: [] },
-  teamUsers: [],
-  busyTeamUserId: null,
   savingStore: false,
-  creatingTeamUser: false,
   dashboardLoaded: false,
   toasts: []
 };
@@ -172,7 +165,6 @@ export function resetDashboardData() {
   state.menuCategories = [];
   state.storeConfig = null;
   state.mobileReleaseBuildJobs = { jobs: [] };
-  state.teamUsers = [];
   state.onboardingSummary = null;
   state.launchEntryIntent = false;
   state.onboardingAutoOpened = false;
@@ -180,7 +172,5 @@ export function resetDashboardData() {
   state.onboardingWizardStep = 1;
   state.updatingOnboarding = false;
   state.dashboardLoaded = false;
-  state.busyTeamUserId = null;
   state.savingStore = false;
-  state.creatingTeamUser = false;
 }

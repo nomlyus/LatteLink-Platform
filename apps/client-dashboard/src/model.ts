@@ -2,9 +2,7 @@ import { z } from "zod";
 import {
   operatorCapabilitySchema,
   operatorRoleSchema,
-  operatorUserCreateSchema,
   operatorUserSchema,
-  operatorUserUpdateSchema
 } from "@lattelink/contracts-auth";
 import {
   adminMenuCategorySchema,
@@ -95,21 +93,6 @@ export type OperatorStoreConfigFormInput = {
   hours?: string;
   pickupInstructions?: string;
   taxRateBasisPoints?: string | number;
-};
-
-export type OperatorUserCreateFormInput = {
-  displayName?: string;
-  email?: string;
-  role?: string;
-  password?: string;
-};
-
-export type OperatorUserUpdateFormInput = {
-  displayName?: string;
-  email?: string;
-  role?: string;
-  active?: boolean | string;
-  password?: string;
 };
 
 export type OperatorMenuItemUpdate = z.output<typeof operatorMenuItemUpdateSchema>;
@@ -618,29 +601,6 @@ export function normalizeStoreConfigForm(
     ...(normalizeOptionalBasisPoints(value.taxRateBasisPoints) === undefined
       ? {}
       : { taxRateBasisPoints: normalizeOptionalBasisPoints(value.taxRateBasisPoints) })
-  });
-}
-
-export function normalizeOperatorUserCreateForm(input: OperatorUserCreateFormInput | unknown) {
-  const value = toRecord(input);
-
-  return operatorUserCreateSchema.parse({
-    displayName: normalizeText(value.displayName),
-    email: normalizeText(value.email),
-    role: normalizeText(value.role),
-    password: normalizeText(value.password)
-  });
-}
-
-export function normalizeOperatorUserUpdateForm(input: OperatorUserUpdateFormInput | unknown) {
-  const value = toRecord(input);
-
-  return operatorUserUpdateSchema.parse({
-    ...(normalizeOptionalText(value.displayName) ? { displayName: normalizeOptionalText(value.displayName) } : {}),
-    ...(normalizeOptionalText(value.email) ? { email: normalizeOptionalText(value.email) } : {}),
-    ...(normalizeOptionalText(value.role) ? { role: normalizeOptionalText(value.role) } : {}),
-    ...(normalizeOptionalText(value.password) ? { password: normalizeOptionalText(value.password) } : {}),
-    ...(value.active !== undefined ? { active: normalizeBoolean(value.active) } : {})
   });
 }
 

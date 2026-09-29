@@ -87,6 +87,22 @@ describe("React Dashboard V3 shell", () => {
     expect(html).toContain('href="/legacy/store"');
   });
 
+  it("marks the React-owned Team destination active within Operations", () => {
+    const html = renderToStaticMarkup(
+      <DashboardShellView
+        session={session("owner", ["team:read"])}
+        activeSection="team"
+        locations={locations}
+        selectedLocationId="loc-a"
+        locationStatus="ready"
+        onSelectLocation={() => undefined}
+        onLogout={() => undefined}
+      ><div>Team content</div></DashboardShellView>
+    );
+    expect(html).toContain('aria-current="page" title="Team" href="/team"');
+    expect(html).not.toContain('href="/legacy/team"');
+  });
+
   it("uses the loading shell until authorized locations have been resolved", () => {
     const html = renderToStaticMarkup(
       <DashboardShellView

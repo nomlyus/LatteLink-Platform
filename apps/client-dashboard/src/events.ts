@@ -19,7 +19,6 @@ import {
   showSignInScreen
 } from "./controllers/auth";
 import { handleStoreSubmit } from "./controllers/store";
-import { handleTeamCreateSubmit, handleTeamUserDelete, handleTeamUserSubmit } from "./controllers/team";
 import {
   handleOnboardingAppIdentitySubmit,
   handleOnboardingBusinessProfileSubmit,
@@ -66,8 +65,6 @@ export function registerEvents(parentSignal?: AbortSignal) {
       case "onboarding-store-operations": void handleOnboardingStoreOperationsSubmit(form); return;
       case "onboarding-store-basics": void handleOnboardingStoreBasicsSubmit(form); return;
       case "onboarding-app-identity": void handleOnboardingAppIdentitySubmit(form); return;
-      case "team-create": void handleTeamCreateSubmit(form); return;
-      case "team-user": void handleTeamUserSubmit(form); return;
     }
   }, { signal });
 
@@ -136,9 +133,6 @@ export function registerEvents(parentSignal?: AbortSignal) {
       case "start-stripe-onboarding": void handleStripeOnboardingStart(); return;
       case "open-stripe-dashboard": void handleStripeDashboardOpen(); return;
       case "refresh-stripe-status": void handleStripeStatusRefresh(); return;
-      case "delete-team-user":
-        if (actionElement.dataset.operatorUserId) void handleTeamUserDelete(actionElement.dataset.operatorUserId);
-        return;
     }
 
     if (action === "set-section") {

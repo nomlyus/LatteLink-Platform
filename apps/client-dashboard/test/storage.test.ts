@@ -102,6 +102,10 @@ describe("client dashboard storage", () => {
     expect(loadStoredSection()).toBe("overview");
     expect(storage.has("lattelink.operator.section.v2")).toBe(false);
 
+    storage.set("lattelink.operator.section.v2", "team");
+    expect(loadStoredSection()).toBe("overview");
+    expect(storage.has("lattelink.operator.section.v2")).toBe(false);
+
     storage.set("lattelink.operator.section.v2", "cards");
     expect(loadStoredSection()).toBe("overview");
   });

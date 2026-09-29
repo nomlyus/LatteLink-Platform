@@ -7,7 +7,6 @@ import {
   createMerchantLaunch,
   createOperatorStripeDashboardLink,
   createOperatorStripeOnboardingLink,
-  deleteOperatorStaffUser,
   extractApiErrorMessage,
   fetchDashboardLocations,
   fetchOperatorOrders,
@@ -26,7 +25,7 @@ import {
 } from "../src/api";
 
 describe("client dashboard api helpers", () => {
-  it("does not load feature-owned Cards, Discounts, or App Builder data in the legacy dashboard snapshot", async () => {
+  it("does not load feature-owned Team, Cards, Discounts, or App Builder data in the legacy dashboard snapshot", async () => {
     const fetchSpy = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ message: "Not used by this characterization" }), { status: 401 })
     );
@@ -57,6 +56,7 @@ describe("client dashboard api helpers", () => {
     expect(requestedUrls).not.toContain("https://api-dev.nomly.us/v1/admin/discount-codes?locationId=loc-a");
     expect(requestedUrls).not.toContain("https://api-dev.nomly.us/v1/admin/mobile-experience?locationId=loc-a");
     expect(requestedUrls).not.toContain("https://api-dev.nomly.us/v1/admin/mobile-experience/versions?locationId=loc-a");
+    expect(requestedUrls).not.toContain("https://api-dev.nomly.us/v1/admin/staff?locationId=loc-a");
     expect(requestedUrls).toContain("https://api-dev.nomly.us/v1/admin/mobile-release/build-jobs?locationId=loc-a");
   });
 
@@ -933,7 +933,6 @@ describe("client dashboard api helpers", () => {
     );
 
     expect(snapshot.storeConfig).toBeNull();
-    expect(snapshot.team).toEqual([]);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(fetchSpy).toHaveBeenNthCalledWith(
       1,
@@ -1004,43 +1003,4 @@ describe("client dashboard api helpers", () => {
     ).toThrow("Choose a specific location before managing store settings.");
   });
 
-  it("deletes operator staff users through the selected location", async () => {
-    const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true }), { status: 200 }));
-    vi.stubGlobal("fetch", fetchSpy);
-
-    await expect(
-      deleteOperatorStaffUser(
-        {
-          accessToken: "access-token",
-          refreshToken: "refresh-token",
-          apiBaseUrl: "https://api.nomly.us/v1",
-          expiresAt: "2026-04-23T23:00:00.000Z",
-          operator: {
-            operatorUserId: "11111111-1111-4111-8111-111111111111",
-            displayName: "Pilot Owner",
-            email: "owner@store.com",
-            role: "owner",
-            locationId: "flagship-01",
-            locationIds: ["flagship-01"],
-            active: true,
-            capabilities: ["team:write"],
-            createdAt: "2026-04-23T20:00:00.000Z",
-            updatedAt: "2026-04-23T20:00:00.000Z"
-          }
-        },
-        "flagship-01",
-        "22222222-2222-4222-8222-222222222222"
-      )
-    ).resolves.toEqual({ success: true });
-
-    expect(fetchSpy).toHaveBeenCalledWith(
-      "https://api.nomly.us/v1/admin/staff/22222222-2222-4222-8222-222222222222?locationId=flagship-01",
-      expect.objectContaining({
-        method: "DELETE",
-        headers: expect.objectContaining({
-          authorization: "Bearer access-token"
-        })
-      })
-    );
-  });
 });

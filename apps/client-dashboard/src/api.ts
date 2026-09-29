@@ -9,7 +9,6 @@ import {
   operatorInviteLookupResponseSchema,
   operatorPasswordSignInSchema,
   operatorSessionSchema,
-  operatorUserListResponseSchema,
   operatorUserSchema
 } from "@lattelink/contracts-auth";
 import {
@@ -54,8 +53,6 @@ import {
   normalizeMenuItemForm,
   operatorMenuItemSchema,
   operatorMenuResponseSchema,
-  normalizeOperatorUserCreateForm,
-  normalizeOperatorUserUpdateForm,
   normalizeStoreConfigForm,
   type OperatorOrder,
   type OperatorMenuResponse
@@ -89,7 +86,6 @@ export type OperatorDashboardSnapshot = {
   menu: OperatorMenuResponse;
   storeConfig: z.output<typeof adminStoreConfigSchema> | null;
   mobileReleaseBuildJobs: z.output<typeof mobileReleaseBuildJobListResponseSchema>;
-  team: OperatorUser[];
 };
 
 type RequestMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -602,8 +598,7 @@ export async function fetchOperatorSnapshot(
     appConfig,
     menu,
     storeConfig,
-    mobileReleaseBuildJobs,
-    teamResponse
+    mobileReleaseBuildJobs
   ] = await Promise.all([
     locationId
       ? requestJson({
@@ -646,25 +641,13 @@ export async function fetchOperatorSnapshot(
           })
         : Promise.resolve(mobileReleaseBuildJobListResponseSchema.parse({ jobs: [] }))
       : Promise.resolve(mobileReleaseBuildJobListResponseSchema.parse({ jobs: [] })),
-    capabilitySet.has("team:read")
-      ? locationId
-        ? requestJson({
-            apiBaseUrl: session.apiBaseUrl,
-            accessToken: session.accessToken,
-            path: "/admin/staff",
-            query,
-            schema: operatorUserListResponseSchema
-          })
-        : Promise.resolve(operatorUserListResponseSchema.parse({ users: [] }))
-      : Promise.resolve(operatorUserListResponseSchema.parse({ users: [] }))
   ]);
 
   return {
     appConfig,
     menu,
     storeConfig,
-    mobileReleaseBuildJobs,
-    team: teamResponse.users
+    mobileReleaseBuildJobs
   };
 }
 
@@ -1034,50 +1017,6 @@ export function updateOperatorStoreConfig(
     method: "PUT",
     body: adminStoreConfigUpdateSchema.parse(normalizeStoreConfigForm(input)),
     schema: adminStoreConfigSchema
-  });
-}
-
-export function createOperatorStaffUser(
-  session: OperatorSession,
-  locationId: string | null,
-  input: Parameters<typeof normalizeOperatorUserCreateForm>[0]
-) {
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: "/admin/staff",
-    query: { locationId: requireSelectedLocationId(locationId) },
-    method: "POST",
-    body: normalizeOperatorUserCreateForm(input),
-    schema: operatorUserSchema
-  });
-}
-
-export function updateOperatorStaffUser(
-  session: OperatorSession,
-  locationId: string | null,
-  operatorUserId: string,
-  input: Parameters<typeof normalizeOperatorUserUpdateForm>[0]
-) {
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: `/admin/staff/${operatorUserId}`,
-    query: { locationId: requireSelectedLocationId(locationId) },
-    method: "PATCH",
-    body: normalizeOperatorUserUpdateForm(input),
-    schema: operatorUserSchema
-  });
-}
-
-export function deleteOperatorStaffUser(session: OperatorSession, locationId: string | null, operatorUserId: string) {
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: `/admin/staff/${operatorUserId}`,
-    query: { locationId: requireSelectedLocationId(locationId) },
-    method: "DELETE",
-    schema: adminMutationSuccessSchema
   });
 }
 

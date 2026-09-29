@@ -27,8 +27,6 @@ import {
   isOwnerOperator,
   normalizeMenuItemCreateForm,
   normalizeMenuItemForm,
-  normalizeOperatorUserCreateForm,
-  normalizeOperatorUserUpdateForm,
   normalizeStoreConfigForm,
   resolveAppConfig,
   resolveOrder,
@@ -390,7 +388,7 @@ describe("client dashboard model", () => {
     ).toBe("Live order tracking is disabled for this store.");
   });
 
-  it("normalizes menu, store, and team form inputs before submission", () => {
+  it("normalizes menu and store form inputs before submission", () => {
     expect(
       normalizeMenuItemForm({
         name: "  Brown Sugar Latte  ",
@@ -493,31 +491,6 @@ describe("client dashboard model", () => {
       taxRateBasisPoints: 625
     });
 
-    expect(
-      normalizeOperatorUserCreateForm({
-        displayName: "  Avery Quinn  ",
-        email: "  avery@store.com  ",
-        role: "manager",
-        password: "  Password123!  "
-      })
-    ).toEqual({
-      displayName: "Avery Quinn",
-      email: "avery@store.com",
-      role: "manager",
-      password: "Password123!"
-    });
-
-    expect(
-      normalizeOperatorUserUpdateForm({
-        displayName: "  Avery Q.  ",
-        password: "  NewPassword123!  ",
-        active: "false"
-      })
-    ).toEqual({
-      displayName: "Avery Q.",
-      password: "NewPassword123!",
-      active: false
-    });
   });
 
   it("counts menu visibility and refresh windows correctly", () => {

@@ -10,7 +10,7 @@ import {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("dashboard route ownership compatibility", () => {
-  it("routes Home, Orders, Menu, Cards, and Discounts to React while keeping remaining sections on the legacy host", () => {
+  it("routes Home, Orders, Menu, Cards, Discounts, and Team to React while keeping remaining sections on the legacy host", () => {
     expect(getDashboardRouteOwner("overview")).toBe("react");
     expect(getDashboardDestination("overview")).toEqual({ ownership: "react", href: "/" });
     expect(isLegacyDashboardSection("overview")).toBe(false);
@@ -26,8 +26,11 @@ describe("dashboard route ownership compatibility", () => {
     expect(getDashboardRouteOwner("discounts")).toBe("react");
     expect(getDashboardDestination("discounts")).toEqual({ ownership: "react", href: "/discounts" });
     expect(isLegacyDashboardSection("discounts")).toBe(false);
+    expect(getDashboardRouteOwner("team")).toBe("react");
+    expect(getDashboardDestination("team")).toEqual({ ownership: "react", href: "/team" });
+    expect(isLegacyDashboardSection("team")).toBe(false);
 
-    for (const section of ["store", "team"] as const) {
+    for (const section of ["store"] as const) {
       expect(getDashboardRouteOwner(section)).toBe("legacy");
       expect(getDashboardDestination(section)).toEqual({ ownership: "legacy", href: `/legacy/${section}` });
       expect(isLegacyDashboardSection(section)).toBe(true);
@@ -44,11 +47,13 @@ describe("dashboard route ownership compatibility", () => {
     expect(getDashboardPathOwner("/menu")).toBe("react");
     expect(getDashboardPathOwner("/cards")).toBe("react");
     expect(getDashboardPathOwner("/discounts")).toBe("react");
+    expect(getDashboardPathOwner("/team")).toBe("react");
     expect(getDashboardPathOwner("/invites")).toBe("legacy");
     expect(getDashboardPathOwner("/legacy/orders")).toBe("unknown");
     expect(getDashboardPathOwner("/legacy/menu")).toBe("unknown");
     expect(getDashboardPathOwner("/legacy/cards")).toBe("unknown");
     expect(getDashboardPathOwner("/legacy/discounts")).toBe("unknown");
+    expect(getDashboardPathOwner("/legacy/team")).toBe("unknown");
     expect(getDashboardPathOwner("/legacy/experience")).toBe("unknown");
     expect(isLegacyDashboardSection("experience")).toBe(false);
     expect(getDashboardPathOwner("/legacy/not-a-section")).toBe("unknown");

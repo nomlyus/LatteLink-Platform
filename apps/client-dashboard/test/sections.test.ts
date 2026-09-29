@@ -4,7 +4,6 @@ import { ensureSectionIsAvailable, getAvailableDashboardSections } from "../src/
 import { state } from "../src/state";
 import { renderOnboardingWizard } from "../src/views/onboarding";
 import { renderStoreSection } from "../src/views/store";
-import { renderTeamSection } from "../src/views/team";
 
 const ownerSession: OperatorSession = {
   accessToken: "access-token",
@@ -72,7 +71,6 @@ describe("dashboard sections", () => {
     state.storeConfig = null;
     state.dashboardLoaded = false;
     state.selectedLocationId = null;
-    state.teamUsers = [];
     state.menuCategories = [];
   });
 
@@ -163,38 +161,6 @@ describe("dashboard sections", () => {
     expect(html).toContain("Open Stripe Express");
     expect(html).toContain("stripeChargesEnabled, stripePayoutsEnabled");
     expect(html).toContain('data-action="refresh-stripe-status"');
-  });
-
-  it("keeps owner assignment out of the team UI and shows delete for non-owner accounts", () => {
-    state.session = {
-      ...ownerSession,
-      operator: {
-        ...ownerSession.operator,
-        capabilities: ["team:read", "team:write"]
-      }
-    };
-    state.selectedLocationId = "northside-01";
-    state.teamUsers = [
-      state.session.operator,
-      {
-        operatorUserId: "22222222-2222-4222-8222-222222222222",
-        displayName: "Store Manager",
-        email: "manager@example.com",
-        role: "manager",
-        locationId: "northside-01",
-        locationIds: ["northside-01"],
-        active: true,
-        capabilities: ["team:read"],
-        createdAt: "2026-05-06T12:00:00.000Z",
-        updatedAt: "2026-05-06T12:00:00.000Z"
-      }
-    ];
-
-    const html = renderTeamSection();
-
-    expect(html).not.toContain('<option value="owner">Owner</option>');
-    expect(html).toContain('data-action="delete-team-user"');
-    expect(html).toContain('data-operator-user-id="22222222-2222-4222-8222-222222222222"');
   });
 
   it("renders approved and live launch states as read-only setup status", () => {

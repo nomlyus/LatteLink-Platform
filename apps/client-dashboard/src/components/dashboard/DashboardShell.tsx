@@ -115,7 +115,7 @@ function DashboardSidebar({ session, sections, loading, storeLabel, activeSectio
         {visibleOperations.length ? (
           <div className="dash-nav-group">
             <div className="dash-nav-group__label">Operations</div>
-            {visibleOperations.map((section) => <DashboardNavItem key={section} section={section} active={false} />)}
+          {visibleOperations.map((section) => <DashboardNavItem key={section} section={section} active={section === activeSection} />)}
           </div>
         ) : null}
       </nav>
