@@ -90,6 +90,17 @@ describe("client dashboard storage", () => {
     expect(loadStoredSection()).toBe("store");
   });
 
+  it("restores App Builder and normalizes the migrated Cards section to Home", async () => {
+    mockLocalStorage();
+    const { loadStoredSection } = await import("../src/storage");
+
+    storage.set("lattelink.operator.section.v2", "experience");
+    expect(loadStoredSection()).toBe("experience");
+
+    storage.set("lattelink.operator.section.v2", "cards");
+    expect(loadStoredSection()).toBe("overview");
+  });
+
   it("restores the persisted browser session with the same bearer and refresh tokens", async () => {
     mockLocalStorage();
     const { loadStoredSession, persistSession } = await import("../src/storage");

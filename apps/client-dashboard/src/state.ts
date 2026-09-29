@@ -62,16 +62,12 @@ export type AppState = {
   mobileExperienceVersions: MobileExperienceVersionsResponse;
   mobileReleaseBuildJobs: MobileReleaseBuildJobListResponse;
   teamUsers: OperatorUser[];
-  busyNewsCardId: string | null;
-  busyNewsCardVisibilityId: string | null;
-  busyDeleteNewsCardId: string | null;
   busyDiscountCodeId: string | null;
   busyTeamUserId: string | null;
   savingStore: boolean;
   savingMobileExperience: boolean;
   publishingMobileExperience: boolean;
   rollingBackMobileExperienceVersionId: string | null;
-  creatingNewsCard: boolean;
   creatingDiscountCode: boolean;
   creatingTeamUser: boolean;
   dashboardLoaded: boolean;
@@ -132,16 +128,12 @@ export const state: AppState = {
   mobileExperienceVersions: { locationId: initialSelectedLocationId === "all" ? "" : initialSelectedLocationId ?? "", versions: [] },
   mobileReleaseBuildJobs: { jobs: [] },
   teamUsers: [],
-  busyNewsCardId: null,
-  busyNewsCardVisibilityId: null,
-  busyDeleteNewsCardId: null,
   busyDiscountCodeId: null,
   busyTeamUserId: null,
   savingStore: false,
   savingMobileExperience: false,
   publishingMobileExperience: false,
   rollingBackMobileExperienceVersionId: null,
-  creatingNewsCard: false,
   creatingDiscountCode: false,
   creatingTeamUser: false,
   dashboardLoaded: false,
@@ -214,13 +206,9 @@ export function resetDashboardData() {
   state.onboardingWizardStep = 1;
   state.updatingOnboarding = false;
   state.dashboardLoaded = false;
-  state.busyNewsCardId = null;
-  state.busyNewsCardVisibilityId = null;
-  state.busyDeleteNewsCardId = null;
   state.busyTeamUserId = null;
   state.savingStore = false;
   state.savingMobileExperience = false;
   state.publishingMobileExperience = false;
-  state.creatingNewsCard = false;
   state.creatingTeamUser = false;
 }

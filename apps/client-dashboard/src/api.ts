@@ -160,24 +160,6 @@ function normalizeOperatorLocationIds(primaryLocationId: string, locationIds?: r
   return Array.from(new Set([primaryLocationId, ...(locationIds ?? [])]));
 }
 
-function normalizeNewsCardsPayload(input: {
-  locationId: string;
-  cards: Array<{
-    cardId: string;
-    label: string;
-    title: string;
-    body: string;
-    note?: string | null;
-    sortOrder: number;
-    visible: boolean;
-  }>;
-}) {
-  return homeNewsCardsResponseSchema.parse({
-    locationId: input.locationId,
-    cards: input.cards
-  });
-}
-
 export function normalizeApiBaseUrl(input: string) {
   const trimmed = input.trim();
   if (!trimmed) {
@@ -245,7 +227,7 @@ function requireApiBaseUrl(apiBaseUrl: string) {
   return normalized;
 }
 
-async function requestJson<TSchema extends z.ZodTypeAny>(params: {
+export async function requestJson<TSchema extends z.ZodTypeAny>(params: {
   apiBaseUrl: string;
   accessToken?: string;
   path: string;
@@ -1106,22 +1088,6 @@ export function deleteOperatorModifierGroup(session: OperatorSession, locationId
     query: { locationId: requireSelectedLocationId(locationId) },
     method: "DELETE",
     schema: adminMutationSuccessSchema
-  });
-}
-
-export function replaceOperatorNewsCards(session: OperatorSession, locationId: string | null, cards: OperatorNewsCard[]) {
-  const selectedLocationId = requireSelectedLocationId(locationId);
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: "/admin/cards",
-    query: { locationId: selectedLocationId },
-    method: "PUT",
-    body: normalizeNewsCardsPayload({
-      locationId: selectedLocationId,
-      cards
-    }),
-    schema: homeNewsCardsResponseSchema
   });
 }
 

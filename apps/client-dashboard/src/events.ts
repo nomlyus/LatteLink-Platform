@@ -18,12 +18,6 @@ import {
   handlePasswordSignIn,
   showSignInScreen
 } from "./controllers/auth";
-import {
-  handleNewsCardCreateSubmit,
-  handleNewsCardDelete,
-  handleNewsCardSubmit,
-  handleNewsCardVisibilityToggle
-} from "./controllers/cards";
 import { handleDiscountCodeCreateSubmit, handleDiscountCodeSubmit } from "./controllers/discounts";
 import { handleStoreSubmit } from "./controllers/store";
 import {
@@ -73,8 +67,6 @@ export function registerEvents(parentSignal?: AbortSignal) {
       case "auth-sign-in": void handlePasswordSignIn(form); return;
       case "merchant-launch": void handleMerchantLaunchSubmit(form); return;
       case "owner-invite-accept": void handleOwnerInviteAccept(form); return;
-      case "news-card-create": void handleNewsCardCreateSubmit(form); return;
-      case "news-card": void handleNewsCardSubmit(form); return;
       case "discount-code-create": void handleDiscountCodeCreateSubmit(form); return;
       case "discount-code": void handleDiscountCodeSubmit(form); return;
       case "store-config": void handleStoreSubmit(form); return;
@@ -158,17 +150,6 @@ export function registerEvents(parentSignal?: AbortSignal) {
       case "delete-team-user":
         if (actionElement.dataset.operatorUserId) void handleTeamUserDelete(actionElement.dataset.operatorUserId);
         return;
-      case "delete-news-card":
-        if (actionElement.dataset.cardId) void handleNewsCardDelete(actionElement.dataset.cardId);
-        return;
-      case "toggle-news-card-visibility": {
-        const visible = actionElement.dataset.visible;
-        const cardId = actionElement.dataset.cardId;
-        if (cardId && (visible === "true" || visible === "false")) {
-          void handleNewsCardVisibilityToggle(cardId, visible === "true");
-        }
-        return;
-      }
       case "move-mobile-experience-section": {
         const sectionType = actionElement.dataset.sectionType;
         if (sectionType) handleMobileExperienceSectionMove(sectionType, actionElement.dataset.direction === "down" ? "down" : "up");

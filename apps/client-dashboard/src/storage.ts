@@ -154,8 +154,8 @@ export function loadStoredSection(): DashboardSection {
 
   return nextSection === "orders" ||
     nextSection === "menu" ||
-    nextSection === "cards" ||
     nextSection === "discounts" ||
+    nextSection === "experience" ||
     nextSection === "store" ||
     nextSection === "team"
     ? nextSection
