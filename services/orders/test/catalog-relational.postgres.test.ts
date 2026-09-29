@@ -226,6 +226,7 @@ describeWithPostgres("Orders against the relational catalog (PostgreSQL)", () =>
     deps = {
       repository,
       catalogBaseUrl: "http://catalog.test",
+      publicBrandId: brandId,
       paymentsBaseUrl: "http://payments.test",
       loyaltyBaseUrl: "http://loyalty.test",
       notificationsBaseUrl: "http://notifications.test",

@@ -97,11 +97,6 @@ export async function up(db: MigrationDb): Promise<void> {
   await sql`ALTER TABLE orders ALTER COLUMN location_id SET NOT NULL`.execute(db);
   await sql`
     ALTER TABLE orders
-    ADD CONSTRAINT orders_location_id_fkey
-    FOREIGN KEY (location_id) REFERENCES catalog_client_locations (location_id)
-  `.execute(db);
-  await sql`
-    ALTER TABLE orders
     ADD CONSTRAINT orders_location_payload_consistency_check
     CHECK (
       jsonb_typeof(order_json) = 'object'
@@ -115,7 +110,7 @@ export async function up(db: MigrationDb): Promise<void> {
     CREATE FUNCTION prevent_order_location_change() RETURNS trigger AS $$
     BEGIN
       IF TG_OP = 'INSERT' THEN
-        -- Keep older application replicas compatible during a rolling deploy;
+        -- This fallback only bridges a rolling deploy with older application replicas;
         -- new writers supply both columns from the same validated order value.
         IF NEW.location_id IS NULL THEN
           NEW.location_id := NEW.order_json->>'locationId';
@@ -150,6 +145,5 @@ export async function down(db: MigrationDb): Promise<void> {
   await sql`DROP TRIGGER IF EXISTS orders_location_immutable_trigger ON orders`.execute(db);
   await sql`DROP FUNCTION IF EXISTS prevent_order_location_change()`.execute(db);
   await sql`ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_location_payload_consistency_check`.execute(db);
-  await sql`ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_location_id_fkey`.execute(db);
   await sql`ALTER TABLE orders DROP COLUMN IF EXISTS location_id`.execute(db);
 }

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Kysely, PostgresDialect } from "kysely";
 import { Pool } from "pg";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import { up } from "../src/migrations/0055_orders_relational_location.js";
+import { down, up } from "../src/migrations/0055_orders_relational_location.js";
 
 const databaseUrl = process.env.PERSISTENCE_TEST_DATABASE_URL;
 const describeWithPostgres = databaseUrl ? describe : describe.skip;
@@ -44,6 +44,7 @@ describeWithPostgres("orders relational location migration (PostgreSQL)", () => 
         order_id UUID,
         location_id TEXT NOT NULL
       );
+      CREATE INDEX orders_reporting_location_idx ON orders ((order_json->>'locationId'));
     `);
   });
 
@@ -129,9 +130,9 @@ describeWithPostgres("orders relational location migration (PostgreSQL)", () => 
       [randomUUID(), orderId]
     )).rejects.toThrow(/orders_location_payload_consistency_check/i);
     await expect(migrationPool.query(
-      `INSERT INTO orders (order_id, quote_id, location_id, order_json) SELECT $1, quote_id, 'location-unknown', jsonb_set(order_json, '{locationId}', '"location-unknown"') FROM orders WHERE order_id = $2`,
+      `INSERT INTO orders (order_id, quote_id, location_id, order_json) SELECT $1, quote_id, 'location-a', jsonb_set(order_json, '{locationId}', '""') FROM orders WHERE order_id = $2`,
       [randomUUID(), orderId]
-    )).rejects.toThrow(/orders_location_id_fkey/i);
+    )).rejects.toThrow(/orders_location_payload_consistency_check/i);
 
     await migrationPool.query(
       `UPDATE orders SET order_json = jsonb_set(order_json, '{status}', '"CANCELED"') WHERE order_id = $1`,
@@ -152,6 +153,73 @@ describeWithPostgres("orders relational location migration (PostgreSQL)", () => 
       [schema]
     );
     expect(indexes.rows).toHaveLength(1);
+
+    const planConnection = await migrationPool.connect();
+    try {
+      await planConnection.query("BEGIN");
+      await planConnection.query("SET LOCAL enable_seqscan = off");
+      const plan = await planConnection.query<{ "QUERY PLAN": string }>(
+        `EXPLAIN SELECT order_id FROM orders WHERE location_id = 'location-a' ORDER BY created_at DESC LIMIT 15`
+      );
+      expect(plan.rows.map((row) => row["QUERY PLAN"]).join("\n")).toContain(
+        "Index Scan using orders_location_created_at_idx"
+      );
+    } finally {
+      await planConnection.query("ROLLBACK");
+      planConnection.release();
+    }
+
+    await down(db);
+    const rolledBack = await migrationPool.query<{ column_name: string }>(
+      `SELECT column_name FROM information_schema.columns WHERE table_schema = $1 AND table_name = 'orders' AND column_name = 'location_id'`,
+      [schema]
+    );
+    expect(rolledBack.rows).toHaveLength(0);
+    const removedObjects = await migrationPool.query<{
+      trigger_count: number;
+      function_count: number;
+      constraint_count: number;
+      index_count: number;
+    }>(`
+      SELECT
+        (SELECT COUNT(*)::int FROM pg_trigger t
+          JOIN pg_class c ON c.oid = t.tgrelid
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname = $1 AND c.relname = 'orders' AND t.tgname = 'orders_location_immutable_trigger') AS trigger_count,
+        (SELECT COUNT(*)::int FROM pg_proc p
+          JOIN pg_namespace n ON n.oid = p.pronamespace
+          WHERE n.nspname = $1 AND p.proname = 'prevent_order_location_change') AS function_count,
+        (SELECT COUNT(*)::int FROM pg_constraint c
+          JOIN pg_class t ON t.oid = c.conrelid
+          JOIN pg_namespace n ON n.oid = t.relnamespace
+          WHERE n.nspname = $1 AND t.relname = 'orders' AND c.conname = 'orders_location_payload_consistency_check') AS constraint_count,
+        (SELECT COUNT(*)::int FROM pg_indexes
+          WHERE schemaname = $1 AND indexname = 'orders_location_created_at_idx') AS index_count
+    `, [schema]);
+    expect(removedObjects.rows).toEqual([{
+      trigger_count: 0,
+      function_count: 0,
+      constraint_count: 0,
+      index_count: 0
+    }]);
+    const reportingIndex = await migrationPool.query<{ indexname: string }>(
+      `SELECT indexname FROM pg_indexes WHERE schemaname = $1 AND indexname = 'orders_reporting_location_idx'`,
+      [schema]
+    );
+    expect(reportingIndex.rows).toHaveLength(1);
+
+    await up(db);
+    const migratedAgain = await migrationPool.query<{ location_id: string }>(
+      `SELECT location_id FROM orders WHERE order_id = $1`,
+      [orderId]
+    );
+    expect(migratedAgain.rows).toEqual([{ location_id: "location-a" }]);
+    await migrationPool.query(`DELETE FROM catalog_client_locations WHERE location_id = 'location-a'`);
+    const retainedOrder = await migrationPool.query<{ location_id: string }>(
+      `SELECT location_id FROM orders WHERE order_id = $1`,
+      [orderId]
+    );
+    expect(retainedOrder.rows).toEqual([{ location_id: "location-a" }]);
   });
 
   it.each([
