@@ -3,10 +3,15 @@ import { normalizeCustomizationGroups } from "@lattelink/contracts-catalog";
 import {
   DEFAULT_CUSTOMIZATION,
   addCartItem,
+  addCartItemAtLocation,
   buildPricingSummary,
+  clearCartSnapshot,
   createCartItem,
   describeCustomization,
-  getUnitPriceCents
+  EMPTY_CART_SNAPSHOT,
+  getUnitPriceCents,
+  reconcileCartLocation,
+  removeCartSnapshotItem
 } from "../src/cart/model";
 
 const espressoGroups = normalizeCustomizationGroups([
@@ -65,6 +70,55 @@ function createLatteInput(selectedOptions: Array<{ groupId: string; optionId: st
 }
 
 describe("cart model", () => {
+  it("binds the first item to its selected location and accepts more items at that location", () => {
+    const first = addCartItemAtLocation(EMPTY_CART_SNAPSHOT, "northside-01", createLatteInput([{ groupId: "size", optionId: "large" }, { groupId: "milk", optionId: "whole" }]));
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    expect(first.cart.locationId).toBe("northside-01");
+
+    const second = addCartItemAtLocation(first.cart, "northside-01", createLatteInput([{ groupId: "size", optionId: "regular" }, { groupId: "milk", optionId: "whole" }]));
+    expect(second.ok).toBe(true);
+    if (second.ok) expect(second.cart.items).toHaveLength(2);
+  });
+
+  it("rejects another location without rebinding or changing cart lines", () => {
+    const added = addCartItemAtLocation(EMPTY_CART_SNAPSHOT, "northside-01", createLatteInput([{ groupId: "size", optionId: "large" }, { groupId: "milk", optionId: "whole" }]));
+    if (!added.ok) throw new Error("Expected the first item to be added");
+    const rejected = addCartItemAtLocation(added.cart, "northside-02", createLatteInput([{ groupId: "size", optionId: "regular" }, { groupId: "milk", optionId: "whole" }]));
+
+    expect(rejected).toEqual({ ok: false, reason: "location_mismatch" });
+    expect(added.cart.locationId).toBe("northside-01");
+    expect(added.cart.items).toHaveLength(1);
+  });
+
+  it("keeps colliding menu item IDs within one location-owned cart", () => {
+    const added = addCartItemAtLocation(EMPTY_CART_SNAPSHOT, "northside-01", createLatteInput([{ groupId: "size", optionId: "regular" }, { groupId: "milk", optionId: "whole" }]));
+    if (!added.ok) throw new Error("Expected the first item to be added");
+    const rejected = addCartItemAtLocation(added.cart, "northside-02", createLatteInput([{ groupId: "size", optionId: "regular" }, { groupId: "milk", optionId: "whole" }]));
+    expect(rejected).toEqual({ ok: false, reason: "location_mismatch" });
+
+    const switched = addCartItemAtLocation(clearCartSnapshot(), "northside-02", createLatteInput([{ groupId: "size", optionId: "regular" }, { groupId: "milk", optionId: "whole" }]));
+    expect(switched.ok && switched.cart.locationId).toBe("northside-02");
+  });
+
+  it("clears location ownership and discount state when the cart empties", () => {
+    const added = addCartItemAtLocation(EMPTY_CART_SNAPSHOT, "northside-01", createLatteInput([{ groupId: "size", optionId: "large" }, { groupId: "milk", optionId: "whole" }]));
+    if (!added.ok) throw new Error("Expected the first item to be added");
+    const cartWithDiscount = { ...added.cart, discountCode: "SAVE10" };
+
+    expect(removeCartSnapshotItem(cartWithDiscount, cartWithDiscount.items[0]!.lineId)).toEqual(EMPTY_CART_SNAPSHOT);
+    expect(clearCartSnapshot()).toEqual({ locationId: null, items: [], discountCode: "" });
+  });
+
+  it("invalidates cart contents when its location is no longer available", () => {
+    const added = addCartItemAtLocation(EMPTY_CART_SNAPSHOT, "northside-01", createLatteInput([{ groupId: "size", optionId: "large" }, { groupId: "milk", optionId: "whole" }]));
+    if (!added.ok) throw new Error("Expected the first item to be added");
+    const cartWithDiscount = { ...added.cart, discountCode: "SAVE10" };
+
+    expect(reconcileCartLocation(cartWithDiscount, ["northside-02"])).toEqual(EMPTY_CART_SNAPSHOT);
+    expect(reconcileCartLocation(cartWithDiscount, ["northside-01"])).toEqual(cartWithDiscount);
+  });
+
   it("merges line items with identical customization", () => {
     let items = addCartItem([], createLatteInput([{ groupId: "size", optionId: "large" }, { groupId: "milk", optionId: "whole" }]));
 

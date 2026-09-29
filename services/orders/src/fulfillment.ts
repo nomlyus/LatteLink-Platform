@@ -48,6 +48,7 @@ export function resolveConfiguredOrderFulfillment(
 
 export function createFulfillmentConfigCache(params: {
   catalogBaseUrl: string;
+  catalogInternalToken?: string;
   ttlMs?: number;
 }): { get: (locationId?: string) => Promise<AppConfigFulfillment> } {
   const ttlMs = params.ttlMs ?? 30_000;
@@ -77,16 +78,19 @@ export function createFulfillmentConfigCache(params: {
   async function refresh(locationId?: string): Promise<void> {
     const { entry } = getCacheEntry(locationId);
     try {
+      const normalizedLocationId = trimToUndefined(locationId);
+      const internalToken = trimToUndefined(params.catalogInternalToken);
+      if (!normalizedLocationId || !internalToken) return;
+
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5_000);
       let response: Response;
       try {
-        const url = new URL("/v1/app-config", params.catalogBaseUrl);
-        const normalizedLocationId = trimToUndefined(locationId);
-        if (normalizedLocationId) {
-          url.searchParams.set("locationId", normalizedLocationId);
-        }
-        response = await fetch(url, { signal: controller.signal });
+        const url = new URL(`/v1/catalog/internal/locations/${encodeURIComponent(normalizedLocationId)}/app-config`, params.catalogBaseUrl);
+        response = await fetch(url, {
+          signal: controller.signal,
+          headers: { "x-gateway-token": internalToken }
+        });
       } finally {
         clearTimeout(timeout);
       }

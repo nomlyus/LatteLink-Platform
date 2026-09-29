@@ -16,6 +16,7 @@ import {
   type OrderServiceDeps
 } from "../src/service.js";
 import { buildApp as buildCatalogApp } from "../../catalog/src/app.js";
+import { LOCAL_FIXTURE_LOCATION_ID } from "../../catalog/src/tenant.js";
 
 const sampleQuotePayload = {
   locationId: "flagship-01",
@@ -80,6 +81,7 @@ async function createTestDeps(
   const deps: OrderServiceDeps = {
     repository,
     catalogBaseUrl: "http://catalog.test",
+    publicBrandId: "test-public-runtime-brand",
     paymentsBaseUrl: "http://payments.test",
     paymentsInternalToken,
     loyaltyBaseUrl: "http://loyalty.test",
@@ -111,13 +113,15 @@ async function createQuotedOrder(
 ) {
   const quoteResult = await createQuote({
     input: sampleQuotePayload,
+    requestId: options.requestId ?? "create-order-test",
+    requestUserContext: { userId: options.userId ?? defaultTestUserId },
     deps
   });
   if ("error" in quoteResult) {
     throw new Error(`Quote creation failed: ${quoteResult.error.code}`);
   }
 
-  await deps.repository.saveQuote(quoteResult.quote);
+  await deps.repository.saveQuote(quoteResult.quote, deps.publicBrandId);
 
   const orderResult = await createOrder({
     input: {
@@ -165,6 +169,7 @@ describe("orders service layer", () => {
         lifetimeEarned: number;
       }
     >();
+    const loyaltyEarnEntries = new Map<string, Record<string, unknown>>();
     const dispatchedOrderStateKeys = new Set<string>();
 
     fetchMock.mockImplementation(async (input, init) => {
@@ -177,9 +182,9 @@ describe("orders service layer", () => {
 
       const parsedUrl = new URL(url);
       if (parsedUrl.pathname === "/v1/store/config" && method === "GET") {
-        expect(parsedUrl.searchParams.get("locationId")).toBe("flagship-01");
+        const locationId = parsedUrl.searchParams.get("locationId") ?? "flagship-01";
         return paymentsResponse({
-          locationId: "flagship-01",
+          locationId,
           hoursText: "Daily · 7:00 AM - 6:00 PM",
           isOpen: storeConfigIsOpen,
           nextOpenAt: storeConfigIsOpen ? null : "2026-03-10T07:00:00.000Z",
@@ -210,15 +215,39 @@ describe("orders service layer", () => {
         });
       }
 
+      if (parsedUrl.pathname === "/v1/loyalty/internal/program-context" && method === "GET") {
+        const brandId = parsedUrl.searchParams.get("brandId") ?? "";
+        const locationId = parsedUrl.searchParams.get("locationId") ?? "";
+        const userId = parsedUrl.searchParams.get("userId") ?? undefined;
+        const balance = userId
+          ? loyaltyBalances.get(`${brandId}:${userId}`) ?? { availablePoints: 2_000, pendingPoints: 0, lifetimeEarned: 2_000 }
+          : undefined;
+        return paymentsResponse({
+          brandId, locationId, enabled: true, participating: true,
+          pointsPerDollar: 1, redemptionCentsPerPoint: 1, minimumRedemptionPoints: 1,
+          maximumRedemptionPercent: 100, excludedItemIds: [],
+          ...(userId && balance ? { balance: { brandId, userId, ...balance } } : {})
+        });
+      }
+
+      if (parsedUrl.pathname === "/v1/loyalty/internal/order-earn" && method === "GET") {
+        const brandId = parsedUrl.searchParams.get("brandId") ?? "";
+        const userId = parsedUrl.searchParams.get("userId") ?? "";
+        const orderId = parsedUrl.searchParams.get("orderId") ?? "";
+        return paymentsResponse({ entry: loyaltyEarnEntries.get(`${brandId}:${userId}:${orderId}`) ?? null });
+      }
+
       if (url.endsWith("/v1/loyalty/internal/ledger/apply") && method === "POST") {
         const headers = new Headers(init?.headers);
         expect(headers.get("x-internal-token")).toBe(loyaltyInternalToken);
+        const brandId = String(body.brandId ?? "test-public-runtime-brand");
         const userId = String(body.userId ?? defaultUserId);
         const locationId = String(body.locationId ?? "flagship-01");
         const idempotencyKey = String(body.idempotencyKey ?? "");
         const mutationType = String(body.type ?? "");
-        const idempotencyScope = `${userId}:${locationId}:${idempotencyKey}`;
+        const idempotencyScope = `${brandId}:${userId}:${idempotencyKey}`;
         const fingerprint = JSON.stringify({
+          brandId,
           type: mutationType,
           locationId,
           orderId: body.orderId ?? null,
@@ -240,7 +269,7 @@ describe("orders service layer", () => {
           return paymentsResponse(existingMutation.response);
         }
 
-        const balanceKey = `${userId}:${locationId}`;
+        const balanceKey = `${brandId}:${userId}`;
         const balance = loyaltyBalances.get(balanceKey) ?? {
           availablePoints: 2_000,
           pendingPoints: 0,
@@ -254,9 +283,9 @@ describe("orders service layer", () => {
           deltaPoints = Math.floor(amountCents / 100);
           lifetimeDelta = deltaPoints;
         } else if (mutationType === "REDEEM") {
-          deltaPoints = -Number(body.amountCents ?? 0);
+          deltaPoints = -Number(body.points ?? 0);
         } else if (mutationType === "REFUND") {
-          deltaPoints = Number(body.amountCents ?? 0);
+          deltaPoints = Number(body.points ?? 0);
         } else if (mutationType === "ADJUSTMENT") {
           deltaPoints = Number(body.points ?? 0);
         } else {
@@ -283,6 +312,8 @@ describe("orders service layer", () => {
         const response = {
           entry: {
             id: "123e4567-e89b-12d3-a456-426614174401",
+            brandId,
+            userId,
             type: mutationType,
             points: deltaPoints,
             orderId: body.orderId,
@@ -290,11 +321,14 @@ describe("orders service layer", () => {
             createdAt: "2026-03-10T00:03:00.000Z"
           },
           balance: {
+            brandId,
             userId,
-            locationId,
             ...nextBalance
           }
         };
+        if (mutationType === "EARN" && body.orderId) {
+          loyaltyEarnEntries.set(`${brandId}:${userId}:${String(body.orderId)}`, response.entry);
+        }
         loyaltyIdempotency.set(idempotencyScope, {
           fingerprint,
           response
@@ -409,31 +443,8 @@ describe("orders service layer", () => {
     const catalogApp = await buildCatalogApp();
     const catalogHeaders = {
       "x-gateway-token": "catalog-gateway-token",
-      "x-operator-location-id": "flagship-01"
+      "x-operator-location-id": LOCAL_FIXTURE_LOCATION_ID
     };
-
-    const bootstrapResponse = await catalogApp.inject({
-      method: "POST",
-      url: "/v1/catalog/internal/locations/bootstrap",
-      headers: { "x-gateway-token": "catalog-gateway-token" },
-      payload: {
-        brandId: "flagship-coffee",
-        brandName: "Flagship Coffee",
-        locationId: "flagship-01",
-        locationName: "Flagship",
-        marketLabel: "Detroit, MI",
-        storeName: "Flagship Coffee",
-        hours: "Daily · 7:00 AM - 6:00 PM",
-        pickupInstructions: "Pickup at the espresso counter.",
-        taxRateBasisPoints: 600,
-        capabilities: {
-          menu: { source: "platform_managed" },
-          operations: { fulfillmentMode: "staff", liveOrderTrackingEnabled: true, dashboardEnabled: true },
-          loyalty: { visible: true }
-        }
-      }
-    });
-    expect(bootstrapResponse.statusCode).toBe(200);
 
     const mutationResponse = await catalogApp.inject({
       method: "PUT",
@@ -455,7 +466,7 @@ describe("orders service layer", () => {
 
     const publicMenuResponse = await catalogApp.inject({
       method: "GET",
-      url: "/v1/menu?locationId=flagship-01"
+      url: `/v1/menu?brandId=test-public-runtime-brand&locationId=${LOCAL_FIXTURE_LOCATION_ID}`
     });
     const publicMenu = menuResponseSchema.parse(publicMenuResponse.json());
     const publicItem = publicMenu.categories.flatMap((category) => category.items).find((item) => item.id === "latte");
@@ -469,6 +480,7 @@ describe("orders service layer", () => {
     }
 
     const { deps } = await createTestDeps(repositories);
+    deps.publicBrandId = "test-public-runtime-brand";
     deps.repository.getCatalogItemsForQuote = vi.fn().mockResolvedValue(
       new Map([
         [
@@ -486,7 +498,7 @@ describe("orders service layer", () => {
 
     const quoteResult = await createQuote({
       input: {
-        locationId: "flagship-01",
+        locationId: LOCAL_FIXTURE_LOCATION_ID,
         items: [{ itemId: publicItem.id, quantity: 1, customization: { selectedOptions: [], notes: "" } }],
         pointsToRedeem: 0
       },
@@ -503,7 +515,7 @@ describe("orders service layer", () => {
       lineTotalCents: 640
     });
 
-    await deps.repository.saveQuote(quoteResult.quote);
+    await deps.repository.saveQuote(quoteResult.quote, deps.publicBrandId);
     const orderResult = await createOrder({
       input: {
         quoteId: quoteResult.quote.quoteId,
@@ -681,7 +693,7 @@ describe("orders service layer", () => {
     expect(quoteResult.quote.tax.amountCents).toBe(88);
     expect(quoteResult.quote.total.amountCents).toBe(1_561);
 
-    await deps.repository.saveQuote(quoteResult.quote);
+    await deps.repository.saveQuote(quoteResult.quote, deps.publicBrandId);
     const orderResult = await createOrder({
       input: {
         quoteId: quoteResult.quote.quoteId,
@@ -787,7 +799,7 @@ describe("orders service layer", () => {
     if ("error" in firstQuoteResult) {
       throw new Error(firstQuoteResult.error.code);
     }
-    await deps.repository.saveQuote(firstQuoteResult.quote);
+    await deps.repository.saveQuote(firstQuoteResult.quote, deps.publicBrandId);
 
     const firstOrderResult = await createOrder({
       input: {
@@ -904,7 +916,7 @@ describe("orders service layer", () => {
     if ("error" in staleQuoteResult) {
       throw new Error(staleQuoteResult.error.code);
     }
-    await deps.repository.saveQuote(staleQuoteResult.quote);
+    await deps.repository.saveQuote(staleQuoteResult.quote, deps.publicBrandId);
 
     const winningQuoteResult = await createQuote({
       input: {
@@ -919,7 +931,7 @@ describe("orders service layer", () => {
     if ("error" in winningQuoteResult) {
       throw new Error(winningQuoteResult.error.code);
     }
-    await deps.repository.saveQuote(winningQuoteResult.quote);
+    await deps.repository.saveQuote(winningQuoteResult.quote, deps.publicBrandId);
 
     const winningOrderResult = await createOrder({
       input: {
@@ -1666,13 +1678,14 @@ describe("orders service layer", () => {
     const { deps } = await createTestDeps(repositories);
     const quoteResult = await createQuote({
       input: sampleQuotePayload,
+      requestUserContext: { userId: defaultTestUserId },
       deps
     });
     if ("error" in quoteResult) {
       throw new Error(`Quote creation failed: ${quoteResult.error.code}`);
     }
 
-    await deps.repository.saveQuote(quoteResult.quote);
+    await deps.repository.saveQuote(quoteResult.quote, deps.publicBrandId);
 
     const result = await createOrder({
       input: {
@@ -1698,13 +1711,14 @@ describe("orders service layer", () => {
     const { deps } = await createTestDeps(repositories);
     const initialQuoteResult = await createQuote({
       input: sampleQuotePayload,
+      requestUserContext: { userId: defaultTestUserId },
       deps
     });
     if ("error" in initialQuoteResult) {
       throw new Error(`Quote creation failed: ${initialQuoteResult.error.code}`);
     }
 
-    await deps.repository.saveQuote(initialQuoteResult.quote);
+    await deps.repository.saveQuote(initialQuoteResult.quote, deps.publicBrandId);
 
     const initialOrderResult = await createOrder({
       input: {
@@ -1730,7 +1744,7 @@ describe("orders service layer", () => {
       throw new Error(`Second quote creation failed: ${secondQuoteResult.error.code}`);
     }
 
-    await deps.repository.saveQuote(secondQuoteResult.quote);
+    await deps.repository.saveQuote(secondQuoteResult.quote, deps.publicBrandId);
 
     const secondOrderResult = await createOrder({
       input: {
@@ -1773,13 +1787,14 @@ describe("orders service layer", () => {
     storeConfigIsOpen = true;
     const openQuoteResult = await createQuote({
       input: sampleQuotePayload,
+      requestUserContext: { userId: defaultTestUserId },
       deps
     });
     if ("error" in openQuoteResult) {
       throw new Error(`Quote creation failed: ${openQuoteResult.error.code}`);
     }
 
-    await deps.repository.saveQuote(openQuoteResult.quote);
+    await deps.repository.saveQuote(openQuoteResult.quote, deps.publicBrandId);
 
     storeConfigIsOpen = false;
     const closedCreateResult = await createOrder({

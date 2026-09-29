@@ -5,6 +5,8 @@ import type { OutboxEntry } from "../src/repository.js";
 
 const notificationsGatewayToken = "notifications-gateway-token";
 const notificationsInternalToken = "notifications-internal-token";
+const notificationsTestBrandId = "notifications-test-brand";
+const notificationsOtherBrandId = "notifications-other-brand";
 
 function gatewayHeaders(extraHeaders?: Record<string, string>) {
   return {
@@ -24,6 +26,11 @@ describe("notifications service", () => {
   beforeEach(() => {
     vi.stubEnv("GATEWAY_INTERNAL_API_TOKEN", notificationsGatewayToken);
     vi.stubEnv("NOTIFICATIONS_INTERNAL_API_TOKEN", notificationsInternalToken);
+    vi.stubEnv("NOTIFICATIONS_TEST_LOCATION_BRANDS", JSON.stringify({
+      "flagship-01": notificationsTestBrandId,
+      "merchant-location": notificationsTestBrandId,
+      "brand-b-location": notificationsOtherBrandId
+    }));
   });
 
   afterEach(() => {
@@ -57,7 +64,7 @@ describe("notifications service", () => {
         "x-user-id": userId
       }),
       payload: {
-        deviceId: "ios-1",
+        brandId: notificationsTestBrandId, deviceId: "ios-1",
         platform: "ios",
         expoPushToken: "ExponentPushToken[dev-token-1]"
       }
@@ -112,11 +119,86 @@ describe("notifications service", () => {
     await app.close();
   });
 
+  it("allows one device to register per brand and dispatches only to the order brand", async () => {
+    vi.stubEnv("NOTIFICATIONS_PROVIDER_MODE", "expo");
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => new Response(
+      JSON.stringify({ data: [{ status: "ok", id: `brand-scoped-ticket-${fetchMock.mock.calls.length}` }] }),
+      { status: 200, headers: { "content-type": "application/json" } }
+    ));
+    vi.stubGlobal("fetch", fetchMock);
+    const app = await buildApp();
+    const userId = "123e4567-e89b-12d3-a456-426614174912";
+
+    for (const [brandId, expoPushToken] of [
+      [notificationsTestBrandId, "ExponentPushToken[brand-a-device]"],
+      [notificationsOtherBrandId, "ExponentPushToken[brand-b-device]"]
+    ] as const) {
+      const registration = await app.inject({
+        method: "PUT",
+        url: "/v1/devices/push-token",
+        headers: gatewayHeaders({ "x-user-id": userId }),
+        payload: { brandId, deviceId: "same-physical-device", platform: "ios", expoPushToken }
+      });
+      expect(registration.statusCode).toBe(200);
+    }
+
+    const dispatch = await app.inject({
+      method: "POST",
+      url: "/v1/notifications/internal/order-state",
+      headers: internalHeaders(),
+      payload: {
+        userId,
+        orderId: "123e4567-e89b-12d3-a456-426614174913",
+        status: "PAID",
+        pickupCode: "BRANDA1",
+        locationId: "flagship-01",
+        occurredAt: "2026-09-28T12:00:00.000Z"
+      }
+    });
+    expect(dispatch.json()).toMatchObject({ accepted: true, enqueued: 1, deduplicated: false });
+
+    const processed = await app.inject({
+      method: "POST",
+      url: "/v1/notifications/internal/outbox/process",
+      headers: internalHeaders(),
+      payload: { batchSize: 10 }
+    });
+    expect(processed.json()).toMatchObject({ processed: 1, dispatched: 1 });
+    const sent = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body ?? "[]")) as Array<{ to: string }>;
+    expect(sent.map((message) => message.to)).toEqual(["ExponentPushToken[brand-a-device]"]);
+
+    const otherBrandDispatch = await app.inject({
+      method: "POST",
+      url: "/v1/notifications/internal/order-state",
+      headers: internalHeaders(),
+      payload: {
+        userId,
+        orderId: "123e4567-e89b-12d3-a456-426614174914",
+        status: "PAID",
+        pickupCode: "BRANDB1",
+        locationId: "brand-b-location",
+        occurredAt: "2026-09-28T12:01:00.000Z"
+      }
+    });
+    expect(otherBrandDispatch.json()).toMatchObject({ accepted: true, enqueued: 1, deduplicated: false });
+    const otherBrandProcessed = await app.inject({
+      method: "POST",
+      url: "/v1/notifications/internal/outbox/process",
+      headers: internalHeaders(),
+      payload: { batchSize: 10 }
+    });
+    expect(otherBrandProcessed.json()).toMatchObject({ processed: 1, dispatched: 1 });
+    const otherBrandSent = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body ?? "[]")) as Array<{ to: string }>;
+    expect(otherBrandSent.map((message) => message.to)).toEqual(["ExponentPushToken[brand-b-device]"]);
+
+    await app.close();
+  });
+
   it("dispatches canceled order notifications once", async () => {
     const app = await buildApp();
     await app.inject({ method: "PUT", url: "/v1/devices/push-token",
       headers: gatewayHeaders({ "x-user-id": "123e4567-e89b-12d3-a456-426614174920" }),
-      payload: { deviceId: "ios-cancel", platform: "ios", expoPushToken: "ExponentPushToken[cancel-token]" } });
+      payload: { brandId: notificationsTestBrandId, deviceId: "ios-cancel", platform: "ios", expoPushToken: "ExponentPushToken[cancel-token]" } });
     const payload = {
       userId: "123e4567-e89b-12d3-a456-426614174920",
       orderId: "123e4567-e89b-12d3-a456-426614174921",
@@ -220,7 +302,7 @@ describe("notifications service", () => {
         "x-user-id": userId
       }),
       payload: {
-        deviceId: "ios-expo",
+        brandId: notificationsTestBrandId, deviceId: "ios-expo",
         platform: "ios",
         expoPushToken: "ExponentPushToken[expo-token]"
       }
@@ -269,7 +351,7 @@ describe("notifications service", () => {
         "x-user-id": userId
       }),
       payload: {
-        deviceId: "ios-failing",
+        brandId: notificationsTestBrandId, deviceId: "ios-failing",
         platform: "ios",
         expoPushToken: "ExponentPushToken[fail-token]"
       }
@@ -353,7 +435,7 @@ describe("notifications service", () => {
         "x-user-id": "not-a-uuid"
       }),
       payload: {
-        deviceId: "ios-2",
+        brandId: notificationsTestBrandId, deviceId: "ios-2",
         platform: "ios",
         expoPushToken: "ExponentPushToken[dev-token-2]"
       }
@@ -390,7 +472,7 @@ describe("notifications service", () => {
       url: "/v1/devices/push-token",
       headers: gatewayHeaders(),
       payload: {
-        deviceId: "ios-missing-user",
+        brandId: notificationsTestBrandId, deviceId: "ios-missing-user",
         platform: "ios",
         expoPushToken: "ExponentPushToken[missing-user]"
       }
@@ -417,7 +499,7 @@ describe("notifications service", () => {
           "x-user-id": "123e4567-e89b-12d3-a456-426614174930"
         }),
         payload: {
-          deviceId: "ios-rate-limit",
+          brandId: notificationsTestBrandId, deviceId: "ios-rate-limit",
           platform: "ios",
           expoPushToken: "ExponentPushToken[rate-limit-1]"
         }
@@ -431,7 +513,7 @@ describe("notifications service", () => {
           "x-user-id": "123e4567-e89b-12d3-a456-426614174930"
         }),
         payload: {
-          deviceId: "ios-rate-limit",
+          brandId: notificationsTestBrandId, deviceId: "ios-rate-limit",
           platform: "ios",
           expoPushToken: "ExponentPushToken[rate-limit-1]"
         }
@@ -454,7 +536,7 @@ describe("notifications service", () => {
         "x-user-id": userId
       },
       payload: {
-        deviceId: "ios-unauthorized",
+        brandId: notificationsTestBrandId, deviceId: "ios-unauthorized",
         platform: "ios",
         expoPushToken: "ExponentPushToken[unauthorized-token]"
       }
@@ -471,7 +553,7 @@ describe("notifications service", () => {
         "x-user-id": userId
       }),
       payload: {
-        deviceId: "ios-authorized",
+        brandId: notificationsTestBrandId, deviceId: "ios-authorized",
         platform: "ios",
         expoPushToken: "ExponentPushToken[authorized-token]"
       }
@@ -548,7 +630,7 @@ describe("notifications service", () => {
         "x-user-id": "123e4567-e89b-12d3-a456-426614174970"
       }),
       payload: {
-        deviceId: "ios-misconfigured",
+        brandId: notificationsTestBrandId, deviceId: "ios-misconfigured",
         platform: "ios",
         expoPushToken: "ExponentPushToken[misconfigured-token]"
       }
@@ -575,7 +657,7 @@ describe("notifications service", () => {
     const app = await buildApp();
     const userId = "123e4567-e89b-12d3-a456-426614174971";
     await app.inject({ method: "PUT", url: "/v1/devices/push-token", headers: gatewayHeaders({ "x-user-id": userId }),
-      payload: { deviceId: "ios-old", platform: "ios", expoPushToken: "ExponentPushToken[old]" } });
+      payload: { brandId: notificationsTestBrandId, deviceId: "ios-old", platform: "ios", expoPushToken: "ExponentPushToken[old]" } });
     const orderId = "123e4567-e89b-12d3-a456-426614174972";
     const enqueue = async (status: "PAID" | "READY") => app.inject({ method: "POST",
       url: "/v1/notifications/internal/order-state", headers: internalHeaders(),
@@ -615,7 +697,7 @@ describe("notifications service", () => {
     const app = await buildApp();
     const userId = "123e4567-e89b-12d3-a456-426614174973";
     await app.inject({ method: "PUT", url: "/v1/devices/push-token", headers: gatewayHeaders({ "x-user-id": userId }),
-      payload: { deviceId: "ios-expire", platform: "ios", expoPushToken: "ExponentPushToken[expire]" } });
+      payload: { brandId: notificationsTestBrandId, deviceId: "ios-expire", platform: "ios", expoPushToken: "ExponentPushToken[expire]" } });
     await app.inject({ method: "POST", url: "/v1/notifications/internal/order-state", headers: internalHeaders(),
       payload: { userId, orderId: "123e4567-e89b-12d3-a456-426614174974", status: "READY",
         pickupCode: "TEST12", locationId: "merchant-location", occurredAt: "2030-01-01T00:00:00.000Z" } });
@@ -647,7 +729,7 @@ describe("notifications service", () => {
     const app = await buildApp();
     const userId = "123e4567-e89b-12d3-a456-426614174977";
     await app.inject({ method: "PUT", url: "/v1/devices/push-token", headers: gatewayHeaders({ "x-user-id": userId }),
-      payload: { deviceId: "ios-timeout", platform: "ios", expoPushToken: "ExponentPushToken[timeout]" } });
+      payload: { brandId: notificationsTestBrandId, deviceId: "ios-timeout", platform: "ios", expoPushToken: "ExponentPushToken[timeout]" } });
     await app.inject({ method: "POST", url: "/v1/notifications/internal/order-state", headers: internalHeaders(),
       payload: { userId, orderId: "123e4567-e89b-12d3-a456-426614174978", status: "READY",
         pickupCode: "TEST12", locationId: "merchant-location", occurredAt: "2030-01-01T00:00:00.000Z" } });
@@ -685,7 +767,7 @@ describe("notifications service", () => {
     const userId = "123e4567-e89b-12d3-a456-426614174975";
     const register = async (token: string) => app.inject({ method: "PUT", url: "/v1/devices/push-token",
       headers: gatewayHeaders({ "x-user-id": userId }),
-      payload: { deviceId: "ios-replaced", platform: "ios", expoPushToken: token } });
+      payload: { brandId: notificationsTestBrandId, deviceId: "ios-replaced", platform: "ios", expoPushToken: token } });
     const notify = async (status: "PAID" | "READY") => app.inject({ method: "POST",
       url: "/v1/notifications/internal/order-state", headers: internalHeaders(), payload: { userId,
         orderId: "123e4567-e89b-12d3-a456-426614174976", status, pickupCode: "TEST12",

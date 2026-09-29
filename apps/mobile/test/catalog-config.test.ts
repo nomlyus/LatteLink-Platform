@@ -1,11 +1,17 @@
 import { appConfigSchema } from "@lattelink/contracts-catalog";
-import { describe, expect, it } from "vitest";
+import { QueryClient } from "@tanstack/react-query";
+import { describe, expect, it, vi } from "vitest";
 import {
+  catalogQueryKeys,
   isMobileLoyaltyVisible,
   isMobileOrderTrackingEnabled,
   resolveAppConfigData,
   resolveMenuImageUrl
 } from "../src/menu/catalog";
+
+vi.mock("../src/location/LocationProvider", () => ({
+  useLocationContext: () => ({ brandId: "brand-a", selectedLocationId: null, isReady: false })
+}));
 
 const baseConfig = appConfigSchema.parse({
   brand: {
@@ -65,6 +71,39 @@ const baseConfig = appConfigSchema.parse({
 });
 
 describe("mobile catalog config", () => {
+  it("uses separate catalog caches for every location and brand", () => {
+    const resources = ["menu", "appConfig", "storeConfig", "homeNewsCards", "mobileExperience"] as const;
+
+    for (const resource of resources) {
+      expect(catalogQueryKeys[resource]("location-a", "brand-a")).not.toEqual(
+        catalogQueryKeys[resource]("location-b", "brand-a")
+      );
+      expect(catalogQueryKeys[resource]("location-a", "brand-a")).not.toEqual(
+        catalogQueryKeys[resource]("location-a", "brand-b")
+      );
+    }
+  });
+
+  it("keeps a late Location A response isolated from the selected Location B cache", async () => {
+    const queryClient = new QueryClient();
+    let resolveLocationA!: (value: string) => void;
+    const locationARequest = queryClient.fetchQuery({
+      queryKey: catalogQueryKeys.menu("location-a", "brand-a"),
+      queryFn: () => new Promise<string>((resolve) => { resolveLocationA = resolve; })
+    });
+    const locationBRequest = queryClient.fetchQuery({
+      queryKey: catalogQueryKeys.menu("location-b", "brand-a"),
+      queryFn: async () => "location-b-menu"
+    });
+
+    await expect(locationBRequest).resolves.toBe("location-b-menu");
+    resolveLocationA("late-location-a-menu");
+    await expect(locationARequest).resolves.toBe("late-location-a-menu");
+
+    expect(queryClient.getQueryData(catalogQueryKeys.menu("location-b", "brand-a"))).toBe("location-b-menu");
+    queryClient.clear();
+  });
+
   it("returns undefined when app-config is unavailable", () => {
     expect(resolveAppConfigData(undefined)).toBeUndefined();
     expect(isMobileLoyaltyVisible(undefined)).toBe(false);

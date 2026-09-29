@@ -43,6 +43,8 @@ import {
   adminStoreConfigSchema,
   adminMutationSuccessSchema,
   appConfigSchema,
+  DEFAULT_APP_CONFIG_STORE_CAPABILITIES,
+  type MobileBrandBootstrap,
   type AdminClientCreateRequest,
   type AdminClientCreateResponse,
   type AdminStoreConfig,
@@ -82,6 +84,12 @@ import {
   storeConfigResponseSchema
 } from "@lattelink/contracts-catalog";
 import {
+  buildMobileBrandBootstrap,
+  isCustomerLocationLaunchable,
+  type MobileBrandLocationMembership,
+  type MobileBrandRecord
+} from "./mobile-brand-bootstrap.js";
+import {
   allowsInMemoryPersistence,
   buildPersistenceStartupError,
   createPostgresDb,
@@ -94,11 +102,10 @@ import {
 } from "@lattelink/persistence";
 import { z } from "zod";
 import {
-  DEFAULT_BRAND_ID,
-  DEFAULT_BRAND_NAME,
-  DEFAULT_LOCATION_ID,
+  LOCAL_FIXTURE_BRAND_NAME,
+  LOCAL_FIXTURE_LOCATION_ID,
   DEFAULT_STORE_HOURS,
-  resolveDefaultLocationId,
+  resolveLocalFixtureAppConfigPayload,
   resolveDefaultAppConfigPayload,
   resolveProvisionedAppConfigPayload
 } from "./tenant.js";
@@ -242,7 +249,7 @@ const matchaCustomizationGroups = [
 ];
 
 const defaultMenuPayload = menuResponseSchema.parse({
-  locationId: DEFAULT_LOCATION_ID,
+  locationId: LOCAL_FIXTURE_LOCATION_ID,
   currency: "USD",
   categories: [
     {
@@ -294,7 +301,7 @@ const defaultMenuPayload = menuResponseSchema.parse({
 });
 
 const defaultStoreConfigRecord: StoreConfigRecord = {
-  locationId: DEFAULT_LOCATION_ID,
+  locationId: LOCAL_FIXTURE_LOCATION_ID,
   hoursText: DEFAULT_STORE_HOURS,
   prepEtaMinutes: 12,
   taxRateBasisPoints: 600,
@@ -430,7 +437,7 @@ function generateInternalId(prefix: "brd" | "loc" | "ten") {
 }
 
 const defaultHomeNewsCardsPayload = homeNewsCardsResponseSchema.parse({
-  locationId: DEFAULT_LOCATION_ID,
+  locationId: LOCAL_FIXTURE_LOCATION_ID,
   cards: [
     {
       cardId: "honey-cardamom-cold-brew",
@@ -484,6 +491,12 @@ type CatalogRepository = {
   createInternalClient(input: AdminClientCreateRequest): Promise<AdminClientCreateResponse>;
   listInternalClients(): Promise<InternalClientListResponse>;
   getInternalClient(tenantId: string): Promise<InternalClientDetail | undefined>;
+  /** Public discovery/configuration only; callers must not treat bootstrap as authorization for later location requests. */
+  getMobileBrandBootstrap(brandId: string): Promise<MobileBrandBootstrap | undefined>;
+  /** Checks canonical persisted membership; location-sensitive handlers must call this before processing. brandId is public, not a credential. */
+  doesLocationBelongToBrand(brandId: string, locationId: string): Promise<boolean>;
+  /** Uses the same persisted onboarding/config readiness rule as the public mobile bootstrap. */
+  isCustomerLocationLaunchableForBrand(brandId: string, locationId: string): Promise<boolean>;
   getAppConfig(locationId: string): Promise<AppConfig | undefined>;
   listInternalLocations(): Promise<InternalLocationSummary[]>;
   getInternalLocationSummary(locationId: string): Promise<InternalLocationSummary | undefined>;
@@ -767,7 +780,10 @@ function buildDefaultMobileExperience(input: {
   published?: boolean;
 }): MobileExperienceDocument {
   const now = new Date().toISOString();
-  const appConfig = input.appConfig ?? resolveDefaultAppConfigPayload();
+  const appConfig = input.appConfig;
+  if (!appConfig) {
+    throw new Error("Mobile experience requires persisted app configuration for this location.");
+  }
   return mobileExperienceDocumentSchema.parse({
     locationId: input.locationId,
     versionId: "default",
@@ -1196,9 +1212,15 @@ function applyPaymentProfileToAppConfig(appConfig: AppConfig, profile?: ClientPa
 }
 
 function createInMemoryRepository(): CatalogRepository {
-  const defaultAppConfig = structuredClone(resolveDefaultAppConfigPayload());
-  const appConfigsByLocation = new Map<string, AppConfig>([[DEFAULT_LOCATION_ID, defaultAppConfig]]);
-  const menusByLocation = new Map<string, MenuResponse>([[DEFAULT_LOCATION_ID, structuredClone(defaultMenuPayload)]]);
+  const defaultAppConfig = structuredClone(resolveLocalFixtureAppConfigPayload());
+  // Vitest's explicit runtime fixture exercises the customer routes without creating a production fallback.
+  const seedCustomerRuntimeFixture = process.env.NODE_ENV === "test" && process.env.VITEST === "true";
+  const testCustomerBrandId = "test-public-runtime-brand";
+  if (seedCustomerRuntimeFixture) {
+    defaultAppConfig.brand.brandId = testCustomerBrandId;
+  }
+  const appConfigsByLocation = new Map<string, AppConfig>([[LOCAL_FIXTURE_LOCATION_ID, defaultAppConfig]]);
+  const menusByLocation = new Map<string, MenuResponse>([[LOCAL_FIXTURE_LOCATION_ID, structuredClone(defaultMenuPayload)]]);
   const modifierGroupsByLocation = new Map<string, z.output<typeof modifierGroupSchema>[]>();
   const itemModifierAssignmentsByLocation = new Map<string, Map<string, z.output<typeof itemModifierGroupAssignmentSchema>[]>>();
   function resolveMemoryItemCustomizationGroups(locationId: string, item: MenuResponse["categories"][number]["items"][number]) {
@@ -1230,17 +1252,17 @@ function createInMemoryRepository(): CatalogRepository {
     }
   }
   const storeConfigsByLocation = new Map<string, StoreConfigRecord>([
-    [DEFAULT_LOCATION_ID, structuredClone(defaultStoreConfigRecord)]
+    [LOCAL_FIXTURE_LOCATION_ID, structuredClone(defaultStoreConfigRecord)]
   ]);
   const homeNewsCardsByLocation = new Map<string, HomeNewsCardsResponse>([
-    [DEFAULT_LOCATION_ID, structuredClone(defaultHomeNewsCardsPayload)]
+    [LOCAL_FIXTURE_LOCATION_ID, structuredClone(defaultHomeNewsCardsPayload)]
   ]);
   const adminStoreConfigsByLocation = new Map<string, AdminStoreConfig>([
     [
-      DEFAULT_LOCATION_ID,
+      LOCAL_FIXTURE_LOCATION_ID,
       buildAdminStoreConfig({
-        locationId: DEFAULT_LOCATION_ID,
-        storeName: DEFAULT_BRAND_NAME,
+        locationId: LOCAL_FIXTURE_LOCATION_ID,
+        storeName: LOCAL_FIXTURE_BRAND_NAME,
         locationName: defaultAppConfig.brand.locationName,
         hours: DEFAULT_STORE_HOURS,
         pickupInstructions: defaultStoreConfigRecord.pickupInstructions,
@@ -1258,6 +1280,88 @@ function createInMemoryRepository(): CatalogRepository {
   const appIdentityProfilesByLocation = new Map<string, AppIdentityProfile>();
   const mobileExperienceDraftsByLocation = new Map<string, MobileExperienceDocument>();
   const mobileExperienceVersionsByLocation = new Map<string, MobileExperienceDocument[]>();
+
+  if (seedCustomerRuntimeFixture) {
+    const now = new Date().toISOString();
+    const tenantId = "tenant-test-public-runtime";
+    clientsByTenant.set(tenantId, {
+      tenantId,
+      brandId: testCustomerBrandId,
+      clientName: "Public Runtime Test Brand",
+      status: "live",
+      createdAt: now,
+      updatedAt: now
+    });
+    clientLocationsByLocation.set(LOCAL_FIXTURE_LOCATION_ID, {
+      tenantId,
+      brandId: testCustomerBrandId,
+      locationId: LOCAL_FIXTURE_LOCATION_ID,
+      locationName: defaultAppConfig.brand.locationName,
+      marketLabel: defaultAppConfig.brand.marketLabel,
+      timezone: "America/Detroit",
+      primaryLocation: true,
+      createdAt: now,
+      updatedAt: now
+    });
+    onboardingProgressByLocation.set(LOCAL_FIXTURE_LOCATION_ID, {
+      tenantId,
+      locationId: LOCAL_FIXTURE_LOCATION_ID,
+      status: "live",
+      ownerInvited: true,
+      ownerActivated: true,
+      businessProfileComplete: true,
+      storeOperationsComplete: true,
+      menuReady: true,
+      teamConfiguredOrSkipped: true,
+      testOrderCompleted: true,
+      adminLaunchApproved: true,
+      approvedAt: now,
+      liveAt: now,
+      updatedAt: now
+    });
+    paymentProfilesByLocation.set(LOCAL_FIXTURE_LOCATION_ID, buildPaymentProfile({
+      locationId: LOCAL_FIXTURE_LOCATION_ID,
+      stripeAccountId: "acct_testruntime",
+      stripeAccountType: "express",
+      stripeOnboardingStatus: "completed",
+      stripeDetailsSubmitted: true,
+      stripeChargesEnabled: true,
+      stripePayoutsEnabled: true,
+      stripeDashboardEnabled: true,
+      country: "US",
+      currency: "USD",
+      cardEnabled: true,
+      applePayEnabled: true,
+      refundsEnabled: true,
+      cloverPosEnabled: false,
+      createdAt: now,
+      updatedAt: now
+    }));
+    mobileReleaseProfilesByLocation.set(LOCAL_FIXTURE_LOCATION_ID, mobileReleaseProfileSchema.parse({
+      locationId: LOCAL_FIXTURE_LOCATION_ID,
+      status: "ready_for_launch",
+      updatedAt: now
+    }));
+    appIdentityProfilesByLocation.set(LOCAL_FIXTURE_LOCATION_ID, buildAppIdentityProfile({
+      locationId: LOCAL_FIXTURE_LOCATION_ID,
+      appName: "Runtime Test Brand",
+      displayName: "Runtime Test Brand",
+      bundleIdentifier: "us.nomly.runtimetest",
+      sku: "runtime-test-brand",
+      primaryCategory: "Food & Drink",
+      subtitle: "Order ahead",
+      description: "Customer runtime test fixture.",
+      keywords: ["coffee"],
+      screenshotAssetUrls: [],
+      supportUrl: "https://example.test/support",
+      privacyPolicyUrl: "https://example.test/privacy",
+      marketingUrl: "https://example.test",
+      targetLocationIds: [LOCAL_FIXTURE_LOCATION_ID],
+      assetMode: "placeholder",
+      adminOverrideReady: true,
+      updatedAt: now
+    }));
+  }
 
   async function buildMemoryOnboarding(locationId: string) {
     const location = clientLocationsByLocation.get(locationId);
@@ -1438,6 +1542,79 @@ function createInMemoryRepository(): CatalogRepository {
         locations,
         onboarding: primaryLocation ? await buildMemoryOnboarding(primaryLocation.locationId) : undefined
       });
+    },
+    async getMobileBrandBootstrap(brandId) {
+      const client = Array.from(clientsByTenant.values()).find((candidate) => candidate.brandId === brandId);
+      if (!client) {
+        return undefined;
+      }
+
+      const brand: MobileBrandRecord = {
+        tenantId: client.tenantId,
+        brandId: client.brandId,
+        displayName: client.clientName
+      };
+      const memberships: MobileBrandLocationMembership[] = Array.from(clientLocationsByLocation.values())
+        .filter((location) => location.tenantId === client.tenantId)
+        .map((location) => ({
+          tenantId: location.tenantId,
+          brandId: location.brandId,
+          locationId: location.locationId,
+          locationName: location.locationName,
+          marketLabel: location.marketLabel,
+          timezone: location.timezone,
+          primaryLocation: location.primaryLocation
+        }));
+      const launchableLocationIds = new Set<string>();
+
+      // Client status is an onboarding rollup that can follow one location; determine availability per location.
+      // The legacy location summary can hydrate default config; bootstrap requires explicit per-location app and store records.
+      for (const membership of memberships) {
+        const [onboarding, locationSummary, appConfig, storeConfig] = await Promise.all([
+          this.getInternalLocationOnboarding(membership.locationId),
+          this.getInternalLocationSummary(membership.locationId),
+          this.getAppConfig(membership.locationId),
+          this.getStoreConfig(membership.locationId)
+        ]);
+        if (isCustomerLocationLaunchable({ brand, membership, onboarding, appConfig, storeConfig, locationSummary })) {
+          launchableLocationIds.add(membership.locationId);
+        }
+      }
+
+      return buildMobileBrandBootstrap({ brand, memberships, launchableLocationIds });
+    },
+    async doesLocationBelongToBrand(brandId, locationId) {
+      const location = clientLocationsByLocation.get(locationId);
+      const client = location ? clientsByTenant.get(location.tenantId) : undefined;
+      return Boolean(location && client && client.brandId === brandId && location.brandId === client.brandId);
+    },
+    async isCustomerLocationLaunchableForBrand(brandId, locationId) {
+      const membershipRecord = clientLocationsByLocation.get(locationId);
+      const client = membershipRecord ? clientsByTenant.get(membershipRecord.tenantId) : undefined;
+      if (!membershipRecord || !client || client.brandId !== brandId || membershipRecord.brandId !== client.brandId) {
+        return false;
+      }
+      const brand: MobileBrandRecord = {
+        tenantId: client.tenantId,
+        brandId: client.brandId,
+        displayName: client.clientName
+      };
+      const membership: MobileBrandLocationMembership = {
+        tenantId: membershipRecord.tenantId,
+        brandId: membershipRecord.brandId,
+        locationId: membershipRecord.locationId,
+        locationName: membershipRecord.locationName,
+        marketLabel: membershipRecord.marketLabel,
+        timezone: membershipRecord.timezone,
+        primaryLocation: membershipRecord.primaryLocation
+      };
+      const [onboarding, locationSummary, appConfig, storeConfig] = await Promise.all([
+        this.getInternalLocationOnboarding(locationId),
+        this.getInternalLocationSummary(locationId),
+        this.getAppConfig(locationId),
+        this.getStoreConfig(locationId)
+      ]);
+      return isCustomerLocationLaunchable({ brand, membership, onboarding, appConfig, storeConfig, locationSummary });
     },
     async getAppConfig(locationId) {
       const appConfig = appConfigsByLocation.get(locationId);
@@ -2367,7 +2544,7 @@ function createInMemoryRepository(): CatalogRepository {
       return { success: true };
     },
     async getAdminStoreConfig(locationId) {
-      return adminStoreConfigsByLocation.get(locationId) ?? adminStoreConfigsByLocation.get(DEFAULT_LOCATION_ID)!;
+      return adminStoreConfigsByLocation.get(locationId) ?? adminStoreConfigsByLocation.get(LOCAL_FIXTURE_LOCATION_ID)!;
     },
     async updateAdminStoreConfig(locationId, input) {
       const currentAppConfig = appConfigsByLocation.get(locationId) ?? defaultAppConfig;
@@ -2543,8 +2720,7 @@ function createInMemoryRepository(): CatalogRepository {
   return memoryRepository;
 }
 
-async function seedCatalogDefaults(db: PersistenceDb) {
-  const defaultAppConfigPayload = resolveDefaultAppConfigPayload();
+async function seedCatalogDefaults(db: PersistenceDb, defaultAppConfigPayload: AppConfig) {
   const seedMenuPayload = buildProvisionedMenuPayload(defaultAppConfigPayload.brand.locationId);
   const seedStoreConfigRecord: StoreConfigRecord = {
     ...defaultStoreConfigRecord,
@@ -2654,7 +2830,7 @@ async function seedCatalogDefaults(db: PersistenceDb) {
   await db
     .insertInto("catalog_app_configs")
     .values({
-      brand_id: DEFAULT_BRAND_ID,
+      brand_id: defaultAppConfigPayload.brand.brandId,
       location_id: defaultAppConfigPayload.brand.locationId,
       app_config_json: defaultAppConfigPayload
     })
@@ -2662,13 +2838,31 @@ async function seedCatalogDefaults(db: PersistenceDb) {
     .execute();
 }
 
-async function getBrandIdForLocation(db: PersistenceDb, locationId: string): Promise<string> {
-  const row = await db
-    .selectFrom("catalog_app_configs")
-    .select("brand_id")
-    .where("location_id", "=", locationId)
+async function getCanonicalClientLocation(db: PersistenceDb, locationId: string) {
+  return db
+    .selectFrom("catalog_client_locations as memberships")
+    .innerJoin("catalog_clients as clients", "clients.tenant_id", "memberships.tenant_id")
+    .select([
+      "clients.brand_id",
+      "clients.client_name as brand_name",
+      "memberships.location_name",
+      "memberships.market_label"
+    ])
+    .where("memberships.location_id", "=", locationId)
+    .whereRef("memberships.brand_id", "=", "clients.brand_id")
     .executeTakeFirst();
-  return row?.brand_id ?? DEFAULT_BRAND_ID;
+}
+
+async function getBrandIdForLocation(db: PersistenceDb, locationId: string): Promise<string> {
+  const row = await getCanonicalClientLocation(db, locationId);
+  if (!row?.brand_id) {
+    throw new CatalogMutationError(
+      "CATALOG_LOCATION_BRAND_NOT_FOUND",
+      "Location configuration is unavailable.",
+      404
+    );
+  }
+  return row.brand_id;
 }
 
 function toClientRecord(row: {
@@ -2885,10 +3079,12 @@ function toAppIdentityProfile(row: {
 
 async function createPostgresRepository(connectionString: string): Promise<CatalogRepository> {
   const db = createPostgresDb(connectionString);
-  const defaultAppConfigPayload = resolveDefaultAppConfigPayload();
   await runMigrations(db);
-  if (resolveDefaultLocationId()) {
-    await seedCatalogDefaults(db);
+  if (process.env.CATALOG_SEED_DEFAULTS === "true") {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("CATALOG_SEED_DEFAULTS is disabled in production.");
+    }
+    await seedCatalogDefaults(db, resolveDefaultAppConfigPayload());
   }
 
   async function buildPostgresOnboarding(locationId: string) {
@@ -3164,6 +3360,125 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         onboarding: primaryLocation ? await buildPostgresOnboarding(primaryLocation.location_id) : undefined
       });
     },
+    async getMobileBrandBootstrap(brandId) {
+      const clientRow = await db
+        .selectFrom("catalog_clients")
+        .selectAll()
+        .where("brand_id", "=", brandId)
+        .executeTakeFirst();
+      if (!clientRow) {
+        return undefined;
+      }
+
+      const client = toClientRecord(clientRow);
+      const brand: MobileBrandRecord = {
+        tenantId: client.tenantId,
+        brandId: client.brandId,
+        displayName: client.clientName
+      };
+      const locationRows = await db
+        .selectFrom("catalog_client_locations")
+        .selectAll()
+        .where("tenant_id", "=", client.tenantId)
+        .execute();
+      const memberships: MobileBrandLocationMembership[] = locationRows.map((row) => {
+        const location = toClientLocationRecord(row);
+        return {
+          tenantId: location.tenantId,
+          brandId: location.brandId,
+          locationId: location.locationId,
+          locationName: location.locationName,
+          marketLabel: location.marketLabel,
+          timezone: location.timezone,
+          primaryLocation: location.primaryLocation
+        };
+      });
+      const launchableLocationIds = new Set<string>();
+
+      // Client status is an onboarding rollup that can follow one location; determine availability per location.
+      // The legacy location summary can hydrate default config; bootstrap requires explicit per-location app and store records.
+      const readinessByLocation = await Promise.all(
+        memberships.map(async (membership) => {
+          const [onboarding, locationSummary, appConfig, storeConfig] = await Promise.all([
+            this.getInternalLocationOnboarding(membership.locationId),
+            this.getInternalLocationSummary(membership.locationId),
+            this.getAppConfig(membership.locationId),
+            this.getStoreConfig(membership.locationId)
+          ]);
+          return isCustomerLocationLaunchable({ brand, membership, onboarding, appConfig, storeConfig, locationSummary })
+            ? membership.locationId
+            : undefined;
+        })
+      );
+      for (const locationId of readinessByLocation) {
+        if (locationId) {
+          launchableLocationIds.add(locationId);
+        }
+      }
+
+      return buildMobileBrandBootstrap({ brand, memberships, launchableLocationIds });
+    },
+    async doesLocationBelongToBrand(brandId, locationId) {
+      const membership = await db
+        .selectFrom("catalog_client_locations as memberships")
+        .innerJoin("catalog_clients as clients", "clients.tenant_id", "memberships.tenant_id")
+        .select("memberships.location_id")
+        .where("clients.brand_id", "=", brandId)
+        .where("memberships.location_id", "=", locationId)
+        .whereRef("memberships.brand_id", "=", "clients.brand_id")
+        .executeTakeFirst();
+      return Boolean(membership);
+    },
+    async isCustomerLocationLaunchableForBrand(brandId, locationId) {
+      const row = await db
+        .selectFrom("catalog_client_locations as memberships")
+        .innerJoin("catalog_clients as clients", "clients.tenant_id", "memberships.tenant_id")
+        .selectAll("memberships")
+        .select([
+          "clients.tenant_id as client_tenant_id",
+          "clients.brand_id as client_brand_id",
+          "clients.client_name as client_name",
+          "clients.status as client_status",
+          "clients.created_at as client_created_at",
+          "clients.updated_at as client_updated_at"
+        ])
+        .where("clients.brand_id", "=", brandId)
+        .where("memberships.location_id", "=", locationId)
+        .whereRef("memberships.brand_id", "=", "clients.brand_id")
+        .executeTakeFirst();
+      if (!row) return false;
+
+      const client = toClientRecord({
+        tenant_id: row.client_tenant_id,
+        brand_id: row.client_brand_id,
+        client_name: row.client_name,
+        status: row.client_status,
+        created_at: row.client_created_at,
+        updated_at: row.client_updated_at
+      });
+      const location = toClientLocationRecord(row);
+      const brand: MobileBrandRecord = {
+        tenantId: client.tenantId,
+        brandId: client.brandId,
+        displayName: client.clientName
+      };
+      const membership: MobileBrandLocationMembership = {
+        tenantId: location.tenantId,
+        brandId: location.brandId,
+        locationId: location.locationId,
+        locationName: location.locationName,
+        marketLabel: location.marketLabel,
+        timezone: location.timezone,
+        primaryLocation: location.primaryLocation
+      };
+      const [onboarding, locationSummary, appConfig, storeConfig] = await Promise.all([
+        this.getInternalLocationOnboarding(locationId),
+        this.getInternalLocationSummary(locationId),
+        this.getAppConfig(locationId),
+        this.getStoreConfig(locationId)
+      ]);
+      return isCustomerLocationLaunchable({ brand, membership, onboarding, appConfig, storeConfig, locationSummary });
+    },
     async getAppConfig(locationId) {
       const row = await db
         .selectFrom("catalog_app_configs")
@@ -3249,13 +3564,16 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         .select("app_config_json")
         .where("location_id", "=", locationId)
         .executeTakeFirst();
+      if (!appConfigRow) {
+        return undefined;
+      }
       const paymentProfileRow = await db
         .selectFrom("catalog_payment_profiles")
         .select("payment_profile_json")
         .where("location_id", "=", locationId)
         .executeTakeFirst();
 
-      const appConfig = appConfigSchema.parse(appConfigRow?.app_config_json ?? defaultAppConfigPayload);
+      const appConfig = appConfigSchema.parse(appConfigRow.app_config_json);
 
       return buildInternalLocationSummary({
         brandId: appConfig.brand.brandId,
@@ -4041,11 +4359,7 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         .select(["brand_id", "payment_profile_json"])
         .where("location_id", "=", locationId)
         .executeTakeFirst();
-      const appConfigRow = await db
-        .selectFrom("catalog_app_configs")
-        .select("brand_id")
-        .where("location_id", "=", locationId)
-        .executeTakeFirst();
+      const brandId = await getBrandIdForLocation(db, locationId);
       const existingProfile = existing ? clientPaymentProfileSchema.parse(existing.payment_profile_json) : undefined;
       const next = buildPaymentProfile({
         ...input,
@@ -4056,13 +4370,13 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
       await db
         .insertInto("catalog_payment_profiles")
         .values({
-          brand_id: existing?.brand_id ?? appConfigRow?.brand_id ?? DEFAULT_BRAND_ID,
+          brand_id: brandId,
           location_id: locationId,
           payment_profile_json: next
         })
         .onConflict((oc) =>
           oc.column("location_id").doUpdateSet({
-            brand_id: existing?.brand_id ?? appConfigRow?.brand_id ?? DEFAULT_BRAND_ID,
+            brand_id: brandId,
             payment_profile_json: next
           })
         )
@@ -4530,14 +4844,15 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         .executeTakeFirst();
 
       if (!row) {
+        const locationIdentity = await getCanonicalClientLocation(db, locationId);
         return buildAdminStoreConfig({
           locationId,
-          storeName: DEFAULT_BRAND_NAME,
-          locationName: defaultAppConfigPayload.brand.locationName,
+          storeName: locationIdentity?.brand_name ?? "Unconfigured store",
+          locationName: locationIdentity?.location_name ?? "Unconfigured location",
           hours: DEFAULT_STORE_HOURS,
           pickupInstructions: defaultStoreConfigRecord.pickupInstructions,
           taxRateBasisPoints: defaultStoreConfigRecord.taxRateBasisPoints,
-          capabilities: defaultAppConfigPayload.storeCapabilities
+          capabilities: DEFAULT_APP_CONFIG_STORE_CAPABILITIES
         });
       }
 
@@ -4551,21 +4866,30 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         .select("timezone")
         .where("location_id", "=", locationId)
         .executeTakeFirst();
-      const appConfig = appConfigSchema.parse(appConfigRow?.app_config_json ?? defaultAppConfigPayload);
+      const locationIdentity = appConfigRow ? undefined : await getCanonicalClientLocation(db, locationId);
+      const appConfig = appConfigRow ? appConfigSchema.parse(appConfigRow.app_config_json) : undefined;
 
       return buildAdminStoreConfig({
         locationId: row.location_id,
         storeName: row.store_name,
-        locationName: appConfig.brand.locationName,
+        locationName: appConfig?.brand.locationName ?? locationIdentity?.location_name ?? row.store_name,
         timezone: locationRow?.timezone,
         hours: row.hours_text,
         pickupInstructions: row.pickup_instructions,
         taxRateBasisPoints: row.tax_rate_basis_points,
-        capabilities: appConfig.storeCapabilities
+        capabilities: appConfig?.storeCapabilities ?? DEFAULT_APP_CONFIG_STORE_CAPABILITIES
       });
     },
     async updateAdminStoreConfig(locationId, input) {
-      const brandId = await getBrandIdForLocation(db, locationId);
+      const locationIdentity = await getCanonicalClientLocation(db, locationId);
+      if (!locationIdentity) {
+        throw new CatalogMutationError(
+          "CATALOG_LOCATION_BRAND_NOT_FOUND",
+          "Location configuration is unavailable.",
+          404
+        );
+      }
+      const brandId = locationIdentity.brand_id;
       const existingAppConfigRow = await db
         .selectFrom("catalog_app_configs")
         .select("app_config_json")
@@ -4577,7 +4901,15 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         .where("location_id", "=", locationId)
         .executeTakeFirst();
 
-      const currentAppConfig = appConfigSchema.parse(existingAppConfigRow?.app_config_json ?? defaultAppConfigPayload);
+      const currentAppConfig = existingAppConfigRow
+        ? appConfigSchema.parse(existingAppConfigRow.app_config_json)
+        : resolveProvisionedAppConfigPayload({
+            brandId,
+            brandName: locationIdentity.brand_name,
+            locationId,
+            locationName: locationIdentity.location_name,
+            marketLabel: locationIdentity.market_label
+          });
       const taxRateBasisPoints = input.taxRateBasisPoints ?? existingStoreConfigRow?.tax_rate_basis_points ?? defaultStoreConfigRecord.taxRateBasisPoints;
       const nextAppConfig = appConfigSchema.parse({
         ...currentAppConfig,

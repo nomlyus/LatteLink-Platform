@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createPostgresDb, sql } from "@lattelink/persistence";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { down as removeBrandScopes, up as addBrandScopes } from "../../../packages/persistence/src/migrations/0057_notifications_brand_scoped_tokens.js";
 import { buildApp } from "../src/app.js";
 
 const databaseUrl = process.env.NOTIFICATIONS_TEST_DATABASE_URL;
@@ -61,21 +62,65 @@ describeWithPostgres("notification receipts and claims (PostgreSQL)", () => {
       expect(columnNames.has(name)).toBe(true);
     }
 
+    await removeBrandScopes(fixtureDb);
+    const rolledBackColumns = await sql<{ column_name: string }>`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_schema = ${schema} AND table_name = 'notifications_push_tokens'
+    `.execute(fixtureDb);
+    expect(rolledBackColumns.rows.some((row) => row.column_name === "brand_id")).toBe(false);
+    await addBrandScopes(fixtureDb);
+
     const userId = "123e4567-e89b-12d3-a456-426614174981";
     const orderId = "123e4567-e89b-12d3-a456-426614174982";
+    const brandId = "notifications-db-brand";
+    const otherBrandId = "notifications-other-db-brand";
+    const tenantId = "notifications-db-tenant";
+    const otherTenantId = "notifications-other-db-tenant";
+    const locationId = "notification-test-location";
+    const otherLocationId = "notification-other-test-location";
+    const quoteId = "123e4567-e89b-12d3-a456-426614174984";
+    await sql`INSERT INTO catalog_clients (tenant_id, brand_id, client_name, status) VALUES
+      (${tenantId}, ${brandId}, 'Notification test brand', 'live'),
+      (${otherTenantId}, ${otherBrandId}, 'Other notification test brand', 'live')`.execute(fixtureDb);
+    await sql`INSERT INTO catalog_client_locations (tenant_id, location_id, brand_id, location_name, market_label) VALUES
+      (${tenantId}, ${locationId}, ${brandId}, 'Notification test location', 'Test market'),
+      (${otherTenantId}, ${otherLocationId}, ${otherBrandId}, 'Other notification test location', 'Other market')`.execute(fixtureDb);
+    await sql`INSERT INTO orders_quotes (quote_id, quote_hash, quote_json)
+      VALUES (${quoteId}::uuid, 'notification-test-quote', ${JSON.stringify({ locationId })}::jsonb)`.execute(fixtureDb);
+    await sql`INSERT INTO orders (order_id, user_id, quote_id, location_id, order_json)
+      VALUES (${orderId}::uuid, ${userId}::uuid, ${quoteId}::uuid, ${locationId},
+        ${JSON.stringify({ id: orderId, locationId, status: 'PAID' })}::jsonb)`.execute(fixtureDb);
+    await sql`INSERT INTO notifications_push_tokens (user_id, brand_id, device_id, platform, expo_push_token) VALUES
+      (${userId}::uuid, ${brandId}, 'ios-db-test', 'ios', 'ExponentPushToken[db-test]'),
+      (${userId}::uuid, ${otherBrandId}, 'ios-db-test', 'ios', 'ExponentPushToken[brand-b]'),
+      (${userId}::uuid, NULL, 'ios-db-test', 'ios', 'ExponentPushToken[legacy-unscoped]')`.execute(fixtureDb);
+    const registrations = await sql<{ brand_id: string | null; expo_push_token: string }>`
+      SELECT brand_id, expo_push_token FROM notifications_push_tokens
+      WHERE user_id = ${userId}::uuid AND device_id = 'ios-db-test' ORDER BY brand_id
+    `.execute(fixtureDb);
+    expect(registrations.rows).toEqual(expect.arrayContaining([
+      { brand_id: brandId, expo_push_token: "ExponentPushToken[db-test]" },
+      { brand_id: otherBrandId, expo_push_token: "ExponentPushToken[brand-b]" },
+      { brand_id: null, expo_push_token: "ExponentPushToken[legacy-unscoped]" }
+    ]));
     await firstApp!.inject({
       method: "PUT",
       url: "/v1/devices/push-token",
       headers: { "x-gateway-token": "test-notifications-gateway-token", "x-user-id": userId },
-      payload: { deviceId: "ios-db-test", platform: "ios", expoPushToken: "ExponentPushToken[db-test]" }
+      payload: { brandId, deviceId: "ios-db-test", platform: "ios", expoPushToken: "ExponentPushToken[db-test]" }
     });
     await firstApp!.inject({
       method: "POST",
       url: "/v1/notifications/internal/order-state",
       headers: { "x-internal-token": "test-notifications-internal-token" },
-      payload: { userId, orderId, status: "PAID", pickupCode: "DBTEST", locationId: "notification-test-location",
+      payload: { userId, orderId, status: "PAID", pickupCode: "DBTEST", locationId,
         occurredAt: new Date().toISOString() }
     });
+    const scopedOutbox = await sql<{ brand_id: string; expo_push_token: string }>`
+      SELECT brand_id, expo_push_token FROM notifications_outbox
+      WHERE payload_json ->> 'orderId' = ${orderId}
+    `.execute(fixtureDb);
+    expect(scopedOutbox.rows).toEqual([{ brand_id: brandId, expo_push_token: "ExponentPushToken[db-test]" }]);
     await sql`UPDATE notifications_outbox
       SET status = 'PROCESSING', dispatch_claim_token = 'abandoned-worker',
           dispatch_lease_expires_at = NOW() - INTERVAL '1 second'

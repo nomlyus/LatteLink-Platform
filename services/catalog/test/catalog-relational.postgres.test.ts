@@ -12,6 +12,7 @@ import { createPostgresDb, runMigrations, sql, type PersistenceDb } from "@latte
 import * as catalogRelationalMigration from "../../../packages/persistence/src/migrations/0053_catalog_relational_model.js";
 import * as catalogModifierMetadataMigration from "../../../packages/persistence/src/migrations/0054_catalog_modifier_metadata.js";
 import {
+  createRelationalCategory,
   deleteRelationalCategory,
   deleteRelationalModifierGroup,
   getRelationalAdminMenu,
@@ -372,6 +373,52 @@ describeWithPostgres("relational catalog migration and integrity (PostgreSQL)", 
     await baseDb.destroy();
   });
 
+  async function seedCanonicalLocation(locationId: string) {
+    const tenantId = `tenant-${locationId}`;
+    const brandId = `brand-${locationId}`;
+    await db!.insertInto("catalog_clients").values({
+      tenant_id: tenantId,
+      brand_id: brandId,
+      client_name: `Brand for ${locationId}`,
+      status: "live"
+    }).execute();
+    await db!.insertInto("catalog_client_locations").values({
+      tenant_id: tenantId,
+      location_id: locationId,
+      brand_id: brandId,
+      location_name: `Location ${locationId}`,
+      market_label: "Detroit, MI"
+    }).execute();
+  }
+
+  it("uses canonical client/location membership for new menu brands and rejects missing membership", async () => {
+    const tenantId = `tenant-${randomUUID()}`;
+    const canonicalBrandId = `brand-${randomUUID()}`;
+    const canonicalLocationId = `location-${randomUUID()}`;
+    await db!.insertInto("catalog_clients").values({
+      tenant_id: tenantId,
+      brand_id: canonicalBrandId,
+      client_name: "Canonical Brand",
+      status: "live"
+    }).execute();
+    await db!.insertInto("catalog_client_locations").values({
+      tenant_id: tenantId,
+      location_id: canonicalLocationId,
+      brand_id: canonicalBrandId,
+      location_name: "Canonical Location",
+      market_label: "Detroit, MI"
+    }).execute();
+
+    await createRelationalCategory(db!, canonicalLocationId, { title: "Drinks" });
+    const category = await db!.selectFrom("catalog_menu_categories")
+      .select("brand_id")
+      .where("location_id", "=", canonicalLocationId)
+      .executeTakeFirst();
+    expect(category?.brand_id).toBe(canonicalBrandId);
+    await expect(createRelationalCategory(db!, `unknown-${randomUUID()}`, { title: "No fallback" }))
+      .rejects.toMatchObject({ code: "CATALOG_LOCATION_BRAND_NOT_FOUND", statusCode: 404 });
+  });
+
   it("migrates legacy rows with semantic customization parity and stable conflict handling", async () => {
     const adminMenu = await getRelationalAdminMenu(db, locationId);
     const adminItems = new Map(adminMenu.categories.flatMap((category) => category.items).map((item) => [item.itemId, item]));
@@ -564,6 +611,7 @@ describeWithPostgres("relational catalog migration and integrity (PostgreSQL)", 
   it("reconciles external menus deterministically without unsafe label merging", async () => {
     const externalDb = db;
     const first = buildExternalMenu();
+    await seedCanonicalLocation("sync-location");
     await replaceRelationalMenuFromExternal(externalDb, "sync-location", first);
     const firstCounts = await externalCounts(externalDb);
     expect(await externalDb.selectFrom("catalog_modifier_groups").select(["source_group_id", "display_style"]).where("location_id", "=", "sync-location").where("modifier_group_id", "=", "milk").executeTakeFirst()).toEqual({ source_group_id: "provider:milk", display_style: "chips" });
@@ -604,6 +652,7 @@ describeWithPostgres("relational catalog migration and integrity (PostgreSQL)", 
   });
 
   it("protects shared modifier groups from accidental deletion", async () => {
+    await seedCanonicalLocation("delete-location");
     await replaceRelationalMenuFromExternal(db, "delete-location", buildExternalMenu());
     await db.deleteFrom("catalog_item_modifier_groups").where("location_id", "=", "delete-location").where("item_id", "=", "sync-item-a").execute();
     await db.deleteFrom("catalog_menu_items").where("location_id", "=", "delete-location").where("item_id", "=", "sync-item-a").execute();
@@ -826,6 +875,7 @@ describeWithPostgres("relational catalog migration and integrity (PostgreSQL)", 
     ]);
     expect(await db.selectFrom("catalog_menu_items").select(["name", "price_cents"]).where("location_id", "=", "concurrency-location").where("item_id", "=", "concurrent-item").executeTakeFirst()).toEqual({ name: "Concurrent Rename", price_cents: 125 });
 
+    await seedCanonicalLocation("concurrency-sync");
     await replaceRelationalMenuFromExternal(db, "concurrency-sync", buildExternalMenu());
     await Promise.allSettled([
       replaceRelationalMenuFromExternal(db, "concurrency-sync", buildExternalMenu({ includeCoconut: true })),

@@ -40,6 +40,22 @@ export type CartPricingSummary = {
   totalCents: number;
 };
 
+export type CartSnapshot = {
+  locationId: string | null;
+  items: CartItem[];
+  discountCode: string;
+};
+
+export type AddCartItemAtLocationResult =
+  | { ok: true; cart: CartSnapshot }
+  | { ok: false; reason: "location_required" | "location_mismatch" };
+
+export const EMPTY_CART_SNAPSHOT: CartSnapshot = {
+  locationId: null,
+  items: [],
+  discountCode: ""
+};
+
 export const DEFAULT_CUSTOMIZATION: CartCustomization = EMPTY_MENU_ITEM_CUSTOMIZATION;
 
 export function normalizeCustomization(input: unknown): CartCustomization {
@@ -191,6 +207,56 @@ export function setCartItemQuantity(items: CartItem[], lineId: string, quantity:
 
 export function removeCartItem(items: CartItem[], lineId: string): CartItem[] {
   return items.filter((entry) => entry.lineId !== lineId);
+}
+
+function withCartItems(cart: CartSnapshot, items: CartItem[]): CartSnapshot {
+  return items.length === 0
+    ? EMPTY_CART_SNAPSHOT
+    : { ...cart, items };
+}
+
+export function addCartItemAtLocation(
+  cart: CartSnapshot,
+  locationId: string | null,
+  input: CartItemInput
+): AddCartItemAtLocationResult {
+  if (!locationId?.trim()) {
+    return { ok: false, reason: "location_required" };
+  }
+  if (cart.items.length > 0 && cart.locationId !== locationId) {
+    return { ok: false, reason: "location_mismatch" };
+  }
+
+  return {
+    ok: true,
+    cart: {
+      ...cart,
+      locationId,
+      items: addCartItem(cart.items, input)
+    }
+  };
+}
+
+export function setCartSnapshotItemQuantity(cart: CartSnapshot, lineId: string, quantity: number): CartSnapshot {
+  return withCartItems(cart, setCartItemQuantity(cart.items, lineId, quantity));
+}
+
+export function removeCartSnapshotItem(cart: CartSnapshot, lineId: string): CartSnapshot {
+  return withCartItems(cart, removeCartItem(cart.items, lineId));
+}
+
+export function clearCartSnapshot(): CartSnapshot {
+  return EMPTY_CART_SNAPSHOT;
+}
+
+export function reconcileCartLocation(cart: CartSnapshot, availableLocationIds: readonly string[]): CartSnapshot {
+  if (cart.items.length === 0) {
+    return EMPTY_CART_SNAPSHOT;
+  }
+  if (!cart.locationId || !availableLocationIds.includes(cart.locationId)) {
+    return EMPTY_CART_SNAPSHOT;
+  }
+  return cart;
 }
 
 export function calculateSubtotalCents(items: CartItem[]): number {

@@ -103,7 +103,7 @@ export function createPostgresReportingRepository(db: PersistenceDb): ReportingR
           FROM orders
           WHERE successful_charge_json ->> 'status' = 'SUCCEEDED'
             AND COALESCE((successful_charge_json ->> 'approved')::boolean, FALSE) = TRUE
-            AND (order_json ->> 'locationId') IN (${sql.join(input.locationIds)})
+            AND location_id IN (${sql.join(input.locationIds)})
             AND (successful_charge_json ->> 'occurredAt')::timestamptz >= ${input.bounds.previousStart}::timestamptz
             AND (successful_charge_json ->> 'occurredAt')::timestamptz < ${input.bounds.currentEnd}::timestamptz
         ), canonical_charges AS (
@@ -112,7 +112,7 @@ export function createPostgresReportingRepository(db: PersistenceDb): ReportingR
           ORDER BY order_id, source_rank ASC, occurred_at ASC, payment_key ASC
         ), events AS (
           SELECT
-            o.order_json ->> 'locationId' AS location_id,
+            o.location_id,
             c.occurred_at,
             CASE WHEN q.quote_id IS NULL THEN NULL ELSE (q.quote_json -> 'subtotal' ->> 'amountCents')::bigint END AS gross_sales,
             CASE WHEN q.quote_id IS NULL THEN NULL ELSE (q.quote_json -> 'discount' ->> 'amountCents')::bigint END AS discounts,
@@ -126,10 +126,10 @@ export function createPostgresReportingRepository(db: PersistenceDb): ReportingR
           FROM canonical_charges c
           JOIN orders o ON o.order_id = c.order_id
           LEFT JOIN orders_quotes q ON q.quote_id = o.quote_id
-          WHERE (o.order_json ->> 'locationId') IN (${sql.join(input.locationIds)})
+          WHERE o.location_id IN (${sql.join(input.locationIds)})
           UNION ALL
           SELECT
-            o.order_json ->> 'locationId' AS location_id,
+            o.location_id,
             r.occurred_at,
             0::bigint, 0::bigint, 0::bigint, 0::bigint,
             r.amount_cents::bigint AS refunds,
@@ -164,13 +164,13 @@ export function createPostgresReportingRepository(db: PersistenceDb): ReportingR
             AND r.source <> 'LEGACY_SIMULATED'
             AND r.occurred_at >= ${input.bounds.previousStart}::timestamptz
             AND r.occurred_at < ${input.bounds.currentEnd}::timestamptz
-            AND (o.order_json ->> 'locationId') IN (${sql.join(input.locationIds)})
+            AND o.location_id IN (${sql.join(input.locationIds)})
           UNION ALL
           -- Webhook reconciliation also stores a successful-refund snapshot on
           -- an order. Use it only when the normalized refund table has no row
           -- for that order, so real multiple/partial refund rows remain intact.
           SELECT
-            o.order_json ->> 'locationId' AS location_id,
+            o.location_id,
             (o.successful_refund_json ->> 'occurredAt')::timestamptz AS occurred_at,
             0::bigint, 0::bigint, 0::bigint, 0::bigint,
             (o.successful_refund_json ->> 'amountCents')::bigint AS refunds,
@@ -195,7 +195,7 @@ export function createPostgresReportingRepository(db: PersistenceDb): ReportingR
           WHERE o.successful_refund_json ->> 'status' = 'REFUNDED'
             AND (o.successful_refund_json ->> 'occurredAt')::timestamptz >= ${input.bounds.previousStart}::timestamptz
             AND (o.successful_refund_json ->> 'occurredAt')::timestamptz < ${input.bounds.currentEnd}::timestamptz
-            AND (o.order_json ->> 'locationId') IN (${sql.join(input.locationIds)})
+            AND o.location_id IN (${sql.join(input.locationIds)})
             AND NOT EXISTS (
               SELECT 1 FROM payments_refunds r
               WHERE r.order_id = o.order_id AND r.status = 'REFUNDED'

@@ -23,6 +23,7 @@ function buildJwtAccessToken(params: { userId: string; secret: string; exp: numb
 describe("gateway JWT customer auth", () => {
   const fetchMock = vi.fn<typeof fetch>();
   let previousIdentityBaseUrl: string | undefined;
+  let previousCatalogBaseUrl: string | undefined;
   let previousLoyaltyBaseUrl: string | undefined;
   let previousGatewayInternalToken: string | undefined;
   let previousJwtSecret: string | undefined;
@@ -30,10 +31,12 @@ describe("gateway JWT customer auth", () => {
   beforeEach(() => {
     fetchMock.mockReset();
     previousIdentityBaseUrl = process.env.IDENTITY_SERVICE_BASE_URL;
+    previousCatalogBaseUrl = process.env.CATALOG_SERVICE_BASE_URL;
     previousLoyaltyBaseUrl = process.env.LOYALTY_SERVICE_BASE_URL;
     previousGatewayInternalToken = process.env.GATEWAY_INTERNAL_API_TOKEN;
     previousJwtSecret = process.env.JWT_SECRET;
     process.env.IDENTITY_SERVICE_BASE_URL = "http://identity.internal";
+    process.env.CATALOG_SERVICE_BASE_URL = "http://catalog.internal";
     process.env.LOYALTY_SERVICE_BASE_URL = "http://loyalty.internal";
     process.env.GATEWAY_INTERNAL_API_TOKEN = "gateway-test-token";
     vi.stubGlobal("fetch", fetchMock);
@@ -46,6 +49,12 @@ describe("gateway JWT customer auth", () => {
       delete process.env.IDENTITY_SERVICE_BASE_URL;
     } else {
       process.env.IDENTITY_SERVICE_BASE_URL = previousIdentityBaseUrl;
+    }
+
+    if (previousCatalogBaseUrl === undefined) {
+      delete process.env.CATALOG_SERVICE_BASE_URL;
+    } else {
+      process.env.CATALOG_SERVICE_BASE_URL = previousCatalogBaseUrl;
     }
 
     if (previousLoyaltyBaseUrl === undefined) {
@@ -71,6 +80,9 @@ describe("gateway JWT customer auth", () => {
     process.env.JWT_SECRET = "12345678901234567890123456789012";
     fetchMock.mockImplementation(async (input, init) => {
       const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/v1/catalog/internal/public-location-access")) {
+        return new Response(null, { status: 204 });
+      }
       if (url.endsWith("/v1/auth/me")) {
         throw new Error("identity roundtrip should not happen in JWT mode");
       }
@@ -82,8 +94,8 @@ describe("gateway JWT customer auth", () => {
 
         return new Response(
           JSON.stringify({
+            brandId: "northside-coffee",
             userId,
-            locationId: "flagship-01",
             availablePoints: 240,
             pendingPoints: 0,
             lifetimeEarned: 600
@@ -103,7 +115,7 @@ describe("gateway JWT customer auth", () => {
     const app = await buildApp();
     const response = await app.inject({
       method: "GET",
-      url: "/v1/loyalty/balance?locationId=flagship-01",
+      url: "/v1/loyalty/balance?brandId=northside-coffee&locationId=flagship-01",
       headers: {
         authorization: `Bearer ${token}`,
         "x-user-id": "client-spoofed-user"
@@ -116,7 +128,10 @@ describe("gateway JWT customer auth", () => {
     });
 
     const requestedUrls = fetchMock.mock.calls.map(([input]) => (typeof input === "string" ? input : input.url));
-    expect(requestedUrls).toEqual(["http://loyalty.internal/v1/loyalty/balance?locationId=flagship-01"]);
+    expect(requestedUrls).toEqual([
+      "http://catalog.internal/v1/catalog/internal/public-location-access?brandId=northside-coffee&locationId=flagship-01",
+      "http://loyalty.internal/v1/loyalty/balance?brandId=northside-coffee&locationId=flagship-01"
+    ]);
 
     await app.close();
   });
@@ -128,6 +143,9 @@ describe("gateway JWT customer auth", () => {
     const secondUserId = "123e4567-e89b-12d3-a456-426614174001";
     fetchMock.mockImplementation(async (input, init) => {
       const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/v1/catalog/internal/public-location-access")) {
+        return new Response(null, { status: 204 });
+      }
       if (!url.includes("/v1/loyalty/balance")) {
         throw new Error(`Unexpected fetch call: ${url}`);
       }
@@ -135,8 +153,8 @@ describe("gateway JWT customer auth", () => {
       const forwardedUserId = new Headers((init?.headers ?? {}) as HeadersInit).get("x-user-id");
       return new Response(
         JSON.stringify({
+          brandId: "northside-coffee",
           userId: forwardedUserId,
-          locationId: "flagship-01",
           availablePoints: 0,
           pendingPoints: 0,
           lifetimeEarned: 0
@@ -153,24 +171,24 @@ describe("gateway JWT customer auth", () => {
     try {
       const first = await app.inject({
         method: "GET",
-        url: "/v1/loyalty/balance?locationId=flagship-01",
+        url: "/v1/loyalty/balance?brandId=northside-coffee&locationId=flagship-01",
         headers: { authorization: `Bearer ${firstToken}`, "x-user-id": "claimed-a" }
       });
       const repeated = await app.inject({
         method: "GET",
-        url: "/v1/loyalty/balance?locationId=flagship-01",
+        url: "/v1/loyalty/balance?brandId=northside-coffee&locationId=flagship-01",
         headers: { authorization: `Bearer ${firstToken}`, "x-user-id": "claimed-b" }
       });
       const second = await app.inject({
         method: "GET",
-        url: "/v1/loyalty/balance?locationId=flagship-01",
+        url: "/v1/loyalty/balance?brandId=northside-coffee&locationId=flagship-01",
         headers: { authorization: `Bearer ${secondToken}`, "x-user-id": "claimed-a" }
       });
 
       expect(first.statusCode).toBe(200);
       expect(repeated.statusCode).toBe(429);
       expect(second.statusCode).toBe(200);
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock).toHaveBeenCalledTimes(4);
     } finally {
       vi.unstubAllEnvs();
       await app.close();
@@ -228,6 +246,9 @@ describe("gateway JWT customer auth", () => {
     delete process.env.JWT_SECRET;
     fetchMock.mockImplementation(async (input, init) => {
       const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/v1/catalog/internal/public-location-access")) {
+        return new Response(null, { status: 204 });
+      }
 
       if (url.endsWith("/v1/auth/me")) {
         return new Response(
@@ -249,8 +270,8 @@ describe("gateway JWT customer auth", () => {
 
         return new Response(
           JSON.stringify({
+            brandId: "northside-coffee",
             userId,
-            locationId: "flagship-01",
             availablePoints: 240,
             pendingPoints: 0,
             lifetimeEarned: 600
@@ -265,7 +286,7 @@ describe("gateway JWT customer auth", () => {
     const app = await buildApp();
     const response = await app.inject({
       method: "GET",
-      url: "/v1/loyalty/balance?locationId=flagship-01",
+      url: "/v1/loyalty/balance?brandId=northside-coffee&locationId=flagship-01",
       headers: {
         authorization: "Bearer access-legacy-token",
         "x-user-id": "client-spoofed-user"
@@ -277,7 +298,8 @@ describe("gateway JWT customer auth", () => {
     const requestedUrls = fetchMock.mock.calls.map(([input]) => (typeof input === "string" ? input : input.url));
     expect(requestedUrls).toEqual([
       "http://identity.internal/v1/auth/me",
-      "http://loyalty.internal/v1/loyalty/balance?locationId=flagship-01"
+      "http://catalog.internal/v1/catalog/internal/public-location-access?brandId=northside-coffee&locationId=flagship-01",
+      "http://loyalty.internal/v1/loyalty/balance?brandId=northside-coffee&locationId=flagship-01"
     ]);
 
     await app.close();

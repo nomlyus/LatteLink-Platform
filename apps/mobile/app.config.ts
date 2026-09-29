@@ -1,32 +1,9 @@
 import type { ExpoConfig } from "expo/config";
+import { statSync } from "node:fs";
+import { relative, resolve } from "node:path";
+import nativeIdentityResolver from "./src/config/nativeIdentity.cjs";
 
-type AppVariant = "beta" | "production";
-const DEFAULT_APP_VARIANT: AppVariant = "beta";
-const DEFAULT_BETA_BUNDLE_IDENTIFIER = "com.lattelink.rawaq.beta";
-const DEFAULT_BETA_APPLE_PAY_MERCHANT_IDENTIFIER = "merchant.com.lattelink.rawaq.beta";
-const DEFAULT_PRODUCTION_BUNDLE_IDENTIFIER = "com.lattelink.rawaq";
 const DEFAULT_PRIVACY_POLICY_URL = "https://nomly.us/privacy-policy";
-
-function resolveAppVariant(): AppVariant {
-  const rawVariant = process.env.APP_VARIANT;
-  if (rawVariant === "beta" || rawVariant === "production") {
-    return rawVariant;
-  }
-  return DEFAULT_APP_VARIANT;
-}
-
-function resolveAppDisplayName(variant: AppVariant) {
-  // Expo evaluates this config outside the app's TypeScript module loader.
-  const baseName = process.env.APP_DISPLAY_NAME_BASE?.trim() || "Nomly";
-  const configuredDisplayName = process.env.APP_DISPLAY_NAME?.trim();
-  switch (variant) {
-    case "production":
-      return configuredDisplayName || baseName;
-    case "beta":
-    default:
-      return configuredDisplayName || `${baseName} Beta`;
-  }
-}
 
 function resolveReleaseApiBaseUrl() {
   const value = process.env.EXPO_PUBLIC_API_BASE_URL?.trim() ?? "";
@@ -44,19 +21,6 @@ function resolveReleaseApiBaseUrl() {
   return parsed.toString().replace(/\/+$/, "");
 }
 
-function resolveBundleIdentifier(variant: AppVariant) {
-  if (process.env.IOS_BUNDLE_IDENTIFIER) {
-    return process.env.IOS_BUNDLE_IDENTIFIER;
-  }
-  switch (variant) {
-    case "production":
-      return DEFAULT_PRODUCTION_BUNDLE_IDENTIFIER;
-    case "beta":
-    default:
-      return DEFAULT_BETA_BUNDLE_IDENTIFIER;
-  }
-}
-
 function resolveAssociatedDomains() {
   return (process.env.IOS_ASSOCIATED_DOMAINS ?? "")
     .split(",")
@@ -64,22 +28,21 @@ function resolveAssociatedDomains() {
     .filter(Boolean);
 }
 
-function resolveApplePayMerchantIdentifier(variant: AppVariant, bundleIdentifier: string) {
-  const merchantIdentifier = process.env.EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID?.trim();
-  if (merchantIdentifier) {
-    return merchantIdentifier;
+const nativeIdentity = nativeIdentityResolver.resolveMobileNativeIdentity();
+if (nativeIdentity.isRelease) {
+  const mobileRoot = resolve(process.cwd());
+  for (const [key, assetPath] of [
+    ["EXPO_PUBLIC_APP_ICON_PATH", nativeIdentity.iconPath],
+    ["EXPO_PUBLIC_APP_SPLASH_PATH", nativeIdentity.splashPath]
+  ]) {
+    const absolutePath = resolve(mobileRoot, assetPath);
+    const relativePath = relative(mobileRoot, absolutePath);
+    if (relativePath.startsWith("..") || relativePath === "" || !statSync(absolutePath, { throwIfNoEntry: false })?.isFile()) {
+      throw new Error(`${key} must point to an existing file within the mobile project.`);
+    }
   }
-
-  if (variant === "beta" && bundleIdentifier === DEFAULT_BETA_BUNDLE_IDENTIFIER) {
-    return DEFAULT_BETA_APPLE_PAY_MERCHANT_IDENTIFIER;
-  }
-
-  return undefined;
 }
-
-const variant = resolveAppVariant();
-const bundleIdentifier = resolveBundleIdentifier(variant);
-const applePayMerchantIdentifier = resolveApplePayMerchantIdentifier(variant, bundleIdentifier);
+const applePayMerchantIdentifier = nativeIdentity.applePayMerchantIdentifier;
 const applePayMerchantIdentifiers = applePayMerchantIdentifier ? [applePayMerchantIdentifier] : [];
 const releaseApiBaseUrl = resolveReleaseApiBaseUrl();
 const stripePlugin = [
@@ -99,24 +62,24 @@ const sentryPlugin =
     : null;
 
 const config: ExpoConfig = {
-  name: resolveAppDisplayName(variant),
-  slug: process.env.EXPO_SLUG ?? "lattelink-mobile",
-  scheme: process.env.EXPO_SCHEME ?? "lattelink",
+  name: nativeIdentity.displayName,
+  slug: nativeIdentity.slug,
+  scheme: nativeIdentity.scheme,
   version: process.env.APP_VERSION ?? "1.2.0",
   orientation: "portrait",
-  icon: "./assets/icon.png",
+  icon: nativeIdentity.iconPath,
   splash: {
-    image: "./assets/splash.png",
+    image: nativeIdentity.splashPath,
     resizeMode: "contain",
     backgroundColor: "#F7F4ED"
   },
   userInterfaceStyle: "light",
   updates: {
-    url: "https://u.expo.dev/18320a67-0f15-4860-9f84-845eb0f4c31c"
+    ...(nativeIdentity.easProjectId ? { url: `https://u.expo.dev/${nativeIdentity.easProjectId}` } : {})
   },
   ios: {
     supportsTablet: false,
-    bundleIdentifier,
+    bundleIdentifier: nativeIdentity.bundleIdentifier,
     usesAppleSignIn: true,
     infoPlist: {
       NSCameraUsageDescription: "Allow $(PRODUCT_NAME) to access the camera to scan QR codes and capture profile images when those features are used.",
@@ -142,15 +105,13 @@ const config: ExpoConfig = {
     typedRoutes: true
   },
   extra: {
-    appVariant: variant,
+    appVariant: nativeIdentity.variant,
     easBuildProfile: process.env.EAS_BUILD_PROFILE ?? null,
     apiBaseUrl: releaseApiBaseUrl,
-    locationId: process.env.EXPO_PUBLIC_LOCATION_ID?.trim() ?? null,
+    brandId: nativeIdentity.brandId,
     applePayMerchantIdentifier,
     privacyPolicyUrl: process.env.EXPO_PUBLIC_PRIVACY_POLICY_URL ?? DEFAULT_PRIVACY_POLICY_URL,
-    eas: {
-      projectId: "18320a67-0f15-4860-9f84-845eb0f4c31c"
-    }
+    ...(nativeIdentity.easProjectId ? { eas: { projectId: nativeIdentity.easProjectId } } : {})
   },
   plugins: [
     "expo-router",

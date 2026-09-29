@@ -1,3 +1,4 @@
+import { mobileBrandBootstrapRequestSchema } from "@lattelink/contracts-catalog";
 import { orderSchema } from "@lattelink/contracts-orders";
 import {
   GazelleApiClient,
@@ -108,9 +109,14 @@ const catalogApiBaseUrlEnvironmentError = resolveApiEnvironmentError(
   normalizeApiBaseUrl(process.env.EXPO_PUBLIC_CATALOG_API_BASE_URL),
   "EXPO_PUBLIC_CATALOG_API_BASE_URL"
 );
-const configuredLocationId = process.env.EXPO_PUBLIC_LOCATION_ID?.trim() ?? "";
-const locationConfigurationError =
-  configuredLocationId.length > 0 ? null : "EXPO_PUBLIC_LOCATION_ID is not configured.";
+const rawBrandId = process.env.EXPO_PUBLIC_BRAND_ID?.trim() ?? "";
+const parsedBrandRequest = mobileBrandBootstrapRequestSchema.safeParse({ brandId: rawBrandId });
+const configuredBrandId = parsedBrandRequest.success ? parsedBrandRequest.data.brandId : "";
+const brandConfigurationError = parsedBrandRequest.success
+  ? null
+  : rawBrandId.length === 0
+    ? "EXPO_PUBLIC_BRAND_ID is not configured."
+    : "EXPO_PUBLIC_BRAND_ID is invalid.";
 
 function toReachabilityError(error: unknown) {
   if (isBackendReachabilityError(error)) {
@@ -141,17 +147,16 @@ export const CATALOG_API_BASE_URL =
 export const MOBILE_API_ENVIRONMENT = {
   variant: resolveRuntimeVariant(),
   bundleIdentifier: readBundleIdentifier(),
+  brandId: configuredBrandId,
+  brandConfigurationError,
   apiBaseUrl: API_BASE_URL,
   catalogApiBaseUrl: CATALOG_API_BASE_URL,
-  locationId: configuredLocationId,
   apiConfigurationError:
     apiBaseUrlEnvironmentError ??
     catalogServiceBaseUrlEnvironmentError ??
     catalogApiBaseUrlEnvironmentError ??
-    locationConfigurationError
+    brandConfigurationError
 };
-
-export const MOBILE_LOCATION_ID = MOBILE_API_ENVIRONMENT.locationId;
 
 const ordersStreamSnapshotSchema = z.object({
   type: z.literal("snapshot"),
@@ -214,8 +219,13 @@ async function streamOrders(params: {
 }) {
   let response: Response;
 
+  const brandId = MOBILE_API_ENVIRONMENT.brandId;
+  if (!brandId) {
+    throw new Error("A configured public brand is required for customer order updates.");
+  }
+
   try {
-    response = await fetch(resolveConfiguredApiUrl(API_BASE_URL, "/orders/stream"), {
+    response = await fetch(resolveConfiguredApiUrl(API_BASE_URL, `/orders/stream?brandId=${encodeURIComponent(brandId)}`), {
       method: "GET",
       headers: {
         Accept: "text/event-stream",
@@ -313,7 +323,7 @@ function startOrdersPolling(params: {
 
 const baseApiClient = new GazelleApiClient({
   baseUrl: API_BASE_URL,
-  locationId: MOBILE_LOCATION_ID
+  brandId: MOBILE_API_ENVIRONMENT.brandId
 });
 let currentAccessToken: string | undefined;
 const originalSetAccessToken = baseApiClient.setAccessToken.bind(baseApiClient);
@@ -395,7 +405,10 @@ export const apiClient = Object.assign(baseApiClient, {
   }
 }) as MobileApiClient;
 
+// Bootstrap is brand-scoped discovery and deliberately has no compiled location bound to its client.
+export const mobileBootstrapApiClient = new GazelleApiClient({ baseUrl: API_BASE_URL });
+
 export const catalogApiClient = new GazelleApiClient({
   baseUrl: CATALOG_API_BASE_URL,
-  locationId: MOBILE_LOCATION_ID
+  brandId: MOBILE_API_ENVIRONMENT.brandId
 });

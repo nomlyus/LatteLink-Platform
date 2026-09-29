@@ -4,12 +4,21 @@ import { orderStateNotificationSchema, pushTokenUpsertSchema } from "../src";
 describe("contracts-notifications", () => {
   it("validates expo token envelope", () => {
     const parsed = pushTokenUpsertSchema.parse({
+      brandId: "brand-1",
       deviceId: "device-1",
       platform: "ios",
       expoPushToken: "ExponentPushToken[abc]"
     });
 
     expect(parsed.platform).toBe("ios");
+  });
+
+  it("requires a public brand selector for push-token registration", () => {
+    expect(pushTokenUpsertSchema.safeParse({
+      deviceId: "device-1",
+      platform: "ios",
+      expoPushToken: "ExponentPushToken[abc]"
+    }).success).toBe(false);
   });
 
   it("validates internal order-state notification payload", () => {

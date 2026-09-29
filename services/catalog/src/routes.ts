@@ -15,6 +15,7 @@ import {
   adminModifierGroupCreateSchema,
   adminMutationSuccessSchema,
   adminStoreConfigUpdateSchema,
+  appConfigSchema,
   clientPaymentProfileSchema,
   internalClientDetailSchema,
   internalClientListResponseSchema,
@@ -29,6 +30,8 @@ import {
   internalAppIdentityProfileUpdateSchema,
   internalOwnerOnboardingUpdateSchema,
   launchApprovalRequestSchema,
+  mobileBrandBootstrapRequestSchema,
+  mobileBrandBootstrapSchema,
   mobileExperienceDocumentSchema,
   mobileExperienceDraftResponseSchema,
   mobileExperiencePublishRequestSchema,
@@ -45,6 +48,8 @@ import {
   onboardingSummarySchema,
   operatorAppIdentityProfileUpdateSchema,
   operatorOnboardingUpdateSchema,
+  publicCustomerLocationRequestSchema,
+  storeConfigResponseSchema,
   homeNewsCardCreateSchema,
   homeNewsCardUpdateSchema,
   homeNewsCardVisibilityUpdateSchema,
@@ -55,7 +60,9 @@ import {
 import { getPersistenceReadinessMetadata } from "@lattelink/persistence";
 import { z } from "zod";
 import { CatalogMutationError, createCatalogRepository, MobileReleaseBuildJobError } from "./repository.js";
-import { resolveDefaultLocationId } from "./tenant.js";
+import { MobileBrandBootstrapConfigurationError } from "./mobile-brand-bootstrap.js";
+import { isPublicCustomerLocationAccessible } from "./public-location-access.js";
+import { resolveOperatorFallbackLocationId } from "./tenant.js";
 import {
   createMenuImageUploadService,
   MenuImageUploadUnavailableError,
@@ -66,10 +73,16 @@ const payloadSchema = z.object({
   id: z.string().uuid().optional()
 });
 
-const locationIdQuerySchema = z.object({
-  locationId: z.string().min(1).optional()
-});
 const publicCatalogCacheControl = "public, max-age=60, stale-while-revalidate=300";
+const publicCustomerLocationQueryJsonSchema = {
+  type: "object",
+  required: ["brandId", "locationId"],
+  additionalProperties: false,
+  properties: {
+    brandId: { type: "string", minLength: 1, maxLength: 160 },
+    locationId: { type: "string", minLength: 1, maxLength: 160 }
+  }
+} as const;
 
 const menuItemParamsSchema = z.object({
   itemId: z.string().min(1)
@@ -218,14 +231,6 @@ function getActorId(request: FastifyRequest) {
   return parsed.success ? (parsed.data["x-user-id"] ?? "system") : "system";
 }
 
-function missingLocationIdError(requestId: string) {
-  return serviceErrorSchema.parse({
-    code: "MISSING_LOCATION_ID",
-    message: "locationId query parameter is required",
-    requestId
-  });
-}
-
 function locationNotFoundError(requestId: string, locationId: string) {
   return serviceErrorSchema.parse({
     code: "LOCATION_NOT_FOUND",
@@ -239,7 +244,8 @@ export async function registerRoutes(app: FastifyInstance) {
   const repository = await createCatalogRepository(app.log);
   const menuImageUploads = createMenuImageUploadService();
   const gatewayApiToken = trimToUndefined(process.env.GATEWAY_INTERNAL_API_TOKEN);
-  const defaultLocationId = resolveDefaultLocationId();
+  // Operator-only compatibility fallback. Public customer routes require explicit brandId/locationId.
+  const operatorFallbackLocationId = resolveOperatorFallbackLocationId();
   const rateLimitWindowMs = toPositiveInteger(process.env.CATALOG_RATE_LIMIT_WINDOW_MS, defaultRateLimitWindowMs);
   const gatewayReadRateLimit = {
     max: toPositiveInteger(process.env.CATALOG_RATE_LIMIT_GATEWAY_READ_MAX, 120),
@@ -264,6 +270,33 @@ export async function registerRoutes(app: FastifyInstance) {
 
     return appConfig && storeConfig ? { appConfig, storeConfig } : undefined;
   };
+  const resolvePublicCustomerLocation = async (request: FastifyRequest, reply: FastifyReply) => {
+    const parsed = publicCustomerLocationRequestSchema.safeParse(request.query);
+    if (!parsed.success) {
+      reply.status(400).send(serviceErrorSchema.parse({
+        code: "INVALID_PUBLIC_LOCATION_REQUEST",
+        message: "Valid brandId and locationId query parameters are required.",
+        requestId: request.id
+      }));
+      return undefined;
+    }
+
+    const accessible = await isPublicCustomerLocationAccessible({
+      ...parsed.data,
+      doesLocationBelongToBrand: repository.doesLocationBelongToBrand.bind(repository),
+      isCustomerLocationLaunchableForBrand: repository.isCustomerLocationLaunchableForBrand.bind(repository)
+    });
+    if (!accessible) {
+      reply.status(404).send(serviceErrorSchema.parse({
+        code: "PUBLIC_LOCATION_NOT_AVAILABLE",
+        message: "Location not available.",
+        requestId: request.id
+      }));
+      return undefined;
+    }
+
+    return parsed.data;
+  };
 
   app.addHook("onClose", async () => {
     await repository.close();
@@ -285,90 +318,187 @@ export async function registerRoutes(app: FastifyInstance) {
     }
   });
 
-  app.get("/v1/app-config", async (request, reply) => {
-    reply.header("cache-control", publicCatalogCacheControl);
-    const { locationId } = locationIdQuerySchema.parse(request.query);
-    const resolvedLocationId = locationId ?? defaultLocationId;
-    if (!resolvedLocationId) {
-      return reply.status(400).send(missingLocationIdError(request.id));
+  app.get(
+    "/v1/mobile/bootstrap",
+    { preHandler: app.rateLimit(gatewayReadRateLimit) },
+    async (request, reply) => {
+      reply.header("cache-control", "no-store");
+      const parsedRequest = mobileBrandBootstrapRequestSchema.safeParse(request.query);
+      if (!parsedRequest.success) {
+        return reply.status(400).send(
+          serviceErrorSchema.parse({
+            code: "INVALID_MOBILE_BRAND_BOOTSTRAP_REQUEST",
+            message: "A valid brandId query parameter is required.",
+            requestId: request.id
+          })
+        );
+      }
+
+      try {
+        const bootstrap = await repository.getMobileBrandBootstrap(parsedRequest.data.brandId);
+        if (!bootstrap) {
+          return reply.status(404).send(
+            serviceErrorSchema.parse({
+              code: "MOBILE_BRAND_NOT_FOUND",
+              message: "Branded app configuration was not found.",
+              requestId: request.id
+            })
+          );
+        }
+
+        return mobileBrandBootstrapSchema.parse(bootstrap);
+      } catch (error) {
+        if (error instanceof MobileBrandBootstrapConfigurationError) {
+          return reply.status(503).send(
+            serviceErrorSchema.parse({
+              code: "MOBILE_BRAND_CONFIGURATION_UNAVAILABLE",
+              message: "Branded app configuration is temporarily unavailable.",
+              requestId: request.id
+            })
+          );
+        }
+        throw error;
+      }
     }
-    const locationContext = await getPublicLocationContext(resolvedLocationId);
+  );
+
+  // Internal preflight for order/payment services. It deliberately returns no tenant or readiness metadata.
+  app.get(
+    "/v1/catalog/internal/public-location-access",
+    {
+      preHandler: [app.rateLimit(gatewayReadRateLimit), requireGatewayAccess],
+      schema: { querystring: publicCustomerLocationQueryJsonSchema },
+      attachValidation: true
+    },
+    async (request, reply) => {
+      const access = await resolvePublicCustomerLocation(request, reply);
+      if (!access) return reply;
+      return reply.status(204).send();
+    }
+  );
+
+  // Internal services that already established the customer request context (for example, a
+  // payment confirmation) need store configuration without using a public customer read route.
+  app.get(
+    "/v1/catalog/internal/locations/:locationId/store-config",
+    {
+      preHandler: [app.rateLimit(gatewayReadRateLimit), requireGatewayAccess],
+      schema: {
+        params: {
+          type: "object",
+          required: ["locationId"],
+          additionalProperties: false,
+          properties: { locationId: { type: "string", minLength: 1 } }
+        }
+      }
+    },
+    async (request, reply) => {
+      const { locationId } = internalLocationParamsSchema.parse(request.params);
+      const storeConfig = await repository.getStoreConfig(locationId);
+      if (!storeConfig) {
+        return reply.status(404).send(serviceErrorSchema.parse({
+          code: "STORE_CONFIG_NOT_FOUND",
+          message: "Store configuration was not found.",
+          requestId: request.id
+        }));
+      }
+      return storeConfigResponseSchema.parse(storeConfig);
+    }
+  );
+
+  app.get(
+    "/v1/catalog/internal/locations/:locationId/app-config",
+    {
+      preHandler: [app.rateLimit(gatewayReadRateLimit), requireGatewayAccess],
+      schema: {
+        params: {
+          type: "object",
+          required: ["locationId"],
+          additionalProperties: false,
+          properties: { locationId: { type: "string", minLength: 1 } }
+        }
+      }
+    },
+    async (request, reply) => {
+      const { locationId } = internalLocationParamsSchema.parse(request.params);
+      const appConfig = await repository.getAppConfig(locationId);
+      if (!appConfig) {
+        return reply.status(404).send(serviceErrorSchema.parse({
+          code: "APP_CONFIG_NOT_FOUND",
+          message: "App configuration was not found.",
+          requestId: request.id
+        }));
+      }
+      return appConfigSchema.parse(appConfig);
+    }
+  );
+
+  app.get("/v1/app-config", { schema: { querystring: publicCustomerLocationQueryJsonSchema }, attachValidation: true }, async (request, reply) => {
+    reply.header("cache-control", publicCatalogCacheControl);
+    const access = await resolvePublicCustomerLocation(request, reply);
+    if (!access) return reply;
+    const locationContext = await getPublicLocationContext(access.locationId);
     if (!locationContext) {
-      return reply.status(404).send(locationNotFoundError(request.id, resolvedLocationId));
+      return reply.status(404).send(locationNotFoundError(request.id, access.locationId));
     }
     return locationContext.appConfig;
   });
-  app.get("/v1/menu", async (request, reply) => {
+  app.get("/v1/menu", { schema: { querystring: publicCustomerLocationQueryJsonSchema }, attachValidation: true }, async (request, reply) => {
     reply.header("cache-control", publicCatalogCacheControl);
-    const { locationId } = locationIdQuerySchema.parse(request.query);
-    const resolvedLocationId = locationId ?? defaultLocationId;
-    if (!resolvedLocationId) {
-      return reply.status(400).send(missingLocationIdError(request.id));
-    }
-    const locationContext = await getPublicLocationContext(resolvedLocationId);
+    const access = await resolvePublicCustomerLocation(request, reply);
+    if (!access) return reply;
+    const locationContext = await getPublicLocationContext(access.locationId);
     if (!locationContext) {
-      return reply.status(404).send(locationNotFoundError(request.id, resolvedLocationId));
+      return reply.status(404).send(locationNotFoundError(request.id, access.locationId));
     }
-    return repository.getMenu(resolvedLocationId);
+    return repository.getMenu(access.locationId);
   });
-  app.get("/v1/cards", async (request, reply) => {
+  app.get("/v1/cards", { schema: { querystring: publicCustomerLocationQueryJsonSchema }, attachValidation: true }, async (request, reply) => {
     reply.header("cache-control", publicCatalogCacheControl);
-    const { locationId } = locationIdQuerySchema.parse(request.query);
-    const resolvedLocationId = locationId ?? defaultLocationId;
-    if (!resolvedLocationId) {
-      return reply.status(400).send(missingLocationIdError(request.id));
-    }
-    const locationContext = await getPublicLocationContext(resolvedLocationId);
+    const access = await resolvePublicCustomerLocation(request, reply);
+    if (!access) return reply;
+    const locationContext = await getPublicLocationContext(access.locationId);
     if (!locationContext) {
-      return reply.status(404).send(locationNotFoundError(request.id, resolvedLocationId));
+      return reply.status(404).send(locationNotFoundError(request.id, access.locationId));
     }
-    return homeNewsCardsResponseSchema.parse(await repository.getHomeNewsCards(resolvedLocationId));
+    return homeNewsCardsResponseSchema.parse(await repository.getHomeNewsCards(access.locationId));
   });
-  app.get("/v1/store/cards", async (request, reply) => {
+  app.get("/v1/store/cards", { schema: { querystring: publicCustomerLocationQueryJsonSchema }, attachValidation: true }, async (request, reply) => {
     reply.header("cache-control", publicCatalogCacheControl);
-    const { locationId } = locationIdQuerySchema.parse(request.query);
-    const resolvedLocationId = locationId ?? defaultLocationId;
-    if (!resolvedLocationId) {
-      return reply.status(400).send(missingLocationIdError(request.id));
-    }
-    const locationContext = await getPublicLocationContext(resolvedLocationId);
+    const access = await resolvePublicCustomerLocation(request, reply);
+    if (!access) return reply;
+    const locationContext = await getPublicLocationContext(access.locationId);
     if (!locationContext) {
-      return reply.status(404).send(locationNotFoundError(request.id, resolvedLocationId));
+      return reply.status(404).send(locationNotFoundError(request.id, access.locationId));
     }
-    return homeNewsCardsResponseSchema.parse(await repository.getHomeNewsCards(resolvedLocationId));
+    return homeNewsCardsResponseSchema.parse(await repository.getHomeNewsCards(access.locationId));
   });
 
-  app.get("/v1/store/config", async (request, reply) => {
+  app.get("/v1/store/config", { schema: { querystring: publicCustomerLocationQueryJsonSchema }, attachValidation: true }, async (request, reply) => {
     reply.header("cache-control", publicCatalogCacheControl);
-    const { locationId } = locationIdQuerySchema.parse(request.query);
-    const resolvedLocationId = locationId ?? defaultLocationId;
-    if (!resolvedLocationId) {
-      return reply.status(400).send(missingLocationIdError(request.id));
-    }
-    const locationContext = await getPublicLocationContext(resolvedLocationId);
+    const access = await resolvePublicCustomerLocation(request, reply);
+    if (!access) return reply;
+    const locationContext = await getPublicLocationContext(access.locationId);
     if (!locationContext) {
-      return reply.status(404).send(locationNotFoundError(request.id, resolvedLocationId));
+      return reply.status(404).send(locationNotFoundError(request.id, access.locationId));
     }
     return locationContext.storeConfig;
   });
 
-  app.get("/v1/mobile-experience", async (request, reply) => {
+  app.get("/v1/mobile-experience", { schema: { querystring: publicCustomerLocationQueryJsonSchema }, attachValidation: true }, async (request, reply) => {
     reply.header("cache-control", publicCatalogCacheControl);
-    const { locationId } = locationIdQuerySchema.parse(request.query);
-    const resolvedLocationId = locationId ?? defaultLocationId;
-    if (!resolvedLocationId) {
-      return reply.status(400).send(missingLocationIdError(request.id));
-    }
-    const locationContext = await getPublicLocationContext(resolvedLocationId);
+    const access = await resolvePublicCustomerLocation(request, reply);
+    if (!access) return reply;
+    const locationContext = await getPublicLocationContext(access.locationId);
     if (!locationContext) {
-      return reply.status(404).send(locationNotFoundError(request.id, resolvedLocationId));
+      return reply.status(404).send(locationNotFoundError(request.id, access.locationId));
     }
-    return mobileExperienceDocumentSchema.parse(await repository.getPublishedMobileExperience(resolvedLocationId));
+    return mobileExperienceDocumentSchema.parse(await repository.getPublishedMobileExperience(access.locationId));
   });
 
   function getOperatorLocationId(request: FastifyRequest, reply: FastifyReply): string | undefined {
     const parsed = operatorLocationHeadersSchema.safeParse(request.headers);
-    const locationId = (parsed.success ? parsed.data["x-operator-location-id"] : undefined) ?? defaultLocationId;
+    const locationId = (parsed.success ? parsed.data["x-operator-location-id"] : undefined) ?? operatorFallbackLocationId;
     if (!locationId) {
       sendError(reply, {
         statusCode: 400,
