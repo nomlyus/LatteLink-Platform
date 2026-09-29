@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { writeFile } from "node:fs/promises";
+import { failureResult, resolveTargetTimeout, safeRequestId } from "./uptime-monitor-utils.mjs";
 
 const defaultTargets = [
   { key: "prod-api-health", name: "Production API /health", url: "https://api.nomly.us/health", critical: true },
@@ -29,7 +30,8 @@ function parseTargets() {
     key: String(target.key),
     name: String(target.name),
     url: String(target.url),
-    critical: Boolean(target.critical)
+    critical: Boolean(target.critical),
+    ...(target.timeoutMs === undefined ? {} : { timeoutMs: Number(target.timeoutMs) })
   }));
 }
 
@@ -62,18 +64,20 @@ async function checkTarget(target, timeoutMs) {
       ...target,
       ok,
       status: response.status,
+      requestId: safeRequestId(response.headers.get("x-request-id")),
       responseTimeMs,
       checkedAt: new Date().toISOString(),
       error: ok ? undefined : `HTTP ${response.status}`
     };
   } catch (error) {
+    const timedOut = error instanceof Error && error.name === "AbortError";
     return {
       ...target,
       ok: false,
       status: null,
       responseTimeMs: Date.now() - startedAt,
       checkedAt: new Date().toISOString(),
-      error: error instanceof Error ? error.message : String(error)
+      error: timedOut ? `Request timed out after ${timeoutMs}ms` : "Network request failed"
     };
   } finally {
     clearTimeout(timeout);
@@ -104,8 +108,15 @@ async function appendSummary(results) {
 }
 
 const timeoutMs = Number.parseInt(process.env.UPTIME_TIMEOUT_MS ?? "10000", 10);
+const devApiTimeoutMs = Number.parseInt(process.env.UPTIME_DEV_API_TIMEOUT_MS ?? "45000", 10);
+if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || !Number.isInteger(devApiTimeoutMs) || devApiTimeoutMs < 1000) {
+  throw new Error("Uptime timeouts must be integer milliseconds >= 1000");
+}
 const targets = parseTargets();
-const results = await Promise.all(targets.map((target) => checkTarget(target, timeoutMs)));
+const results = await Promise.all(targets.map((target) => {
+  const resolved = resolveTargetTimeout(target, { timeoutMs, devApiTimeoutMs });
+  return resolved.error ? failureResult(target, resolved.error) : checkTarget(target, resolved.timeoutMs);
+}));
 const failed = results.filter((result) => !result.ok);
 
 await writeFile("uptime-results.json", JSON.stringify({ checkedAt: new Date().toISOString(), results }, null, 2));
