@@ -157,6 +157,10 @@ describeWithPostgres("orders relational location migration (PostgreSQL)", () => 
     const planConnection = await migrationPool.connect();
     try {
       await planConnection.query("BEGIN");
+      // A pooled connection can be reused while other PostgreSQL suites run
+      // concurrently. Bind EXPLAIN to this test's schema on this transaction
+      // so the plan assertion cannot inspect a same-named table elsewhere.
+      await planConnection.query(`SET LOCAL search_path TO "${schema}", public`);
       await planConnection.query("SET LOCAL enable_seqscan = off");
       const plan = await planConnection.query<{ "QUERY PLAN": string }>(
         `EXPLAIN SELECT order_id FROM orders WHERE location_id = 'location-a' ORDER BY created_at DESC LIMIT 15`

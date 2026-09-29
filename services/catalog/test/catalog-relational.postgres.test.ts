@@ -324,9 +324,7 @@ describeWithPostgres("relational catalog migration and integrity (PostgreSQL)", 
     } as never);
     await runMigrations(db!);
     await catalogModifierMetadataMigration.down(db as never);
-    await db!.deleteFrom("kysely_migration").where("name", "=", "0054_catalog_modifier_metadata").execute();
     await catalogRelationalMigration.down(db as never);
-    await db!.deleteFrom("kysely_migration").where("name", "=", "0053_catalog_relational_model").execute();
 
     await db!.executeQuery({
       sql: `
@@ -365,6 +363,9 @@ describeWithPostgres("relational catalog migration and integrity (PostgreSQL)", 
 
     await catalogRelationalMigration.up(db as never);
     await catalogModifierMetadataMigration.up(db as never);
+    // Keep migration history aligned with the schema we just restored. Later
+    // repository startup migrates to latest, and removing these older records
+    // would look like migration history corruption after migrations 0055+.
   });
 
   afterAll(async () => {
@@ -772,6 +773,21 @@ describeWithPostgres("relational catalog migration and integrity (PostgreSQL)", 
     const location = "atomic-item-location";
     try {
       await repository.bootstrapInternalLocation({ brandId: "atomic-brand", brandName: "Atomic Brand", locationId: location, locationName: "Atomic Location", marketLabel: "Test Market" });
+      await db.insertInto("catalog_clients").values({
+        tenant_id: "atomic-tenant",
+        brand_id: "atomic-brand",
+        client_name: "Atomic Brand",
+        status: "draft"
+      }).execute();
+      await db.insertInto("catalog_client_locations").values({
+        tenant_id: "atomic-tenant",
+        brand_id: "atomic-brand",
+        location_id: location,
+        location_name: "Atomic Location",
+        market_label: "Test Market",
+        timezone: "America/Detroit",
+        primary_location: true
+      }).execute();
       const before = await db.selectFrom("catalog_menu_items").selectAll().where("location_id", "=", location).where("item_id", "=", "latte").executeTakeFirstOrThrow();
       const beforeAssignments = await db.selectFrom("catalog_item_modifier_groups").selectAll().where("location_id", "=", location).where("item_id", "=", "latte").execute();
       const customizationGroups = buildExternalMenu().categories[0]!.items[0]!.customizationGroups;
