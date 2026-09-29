@@ -124,12 +124,13 @@ function DashboardSidebar({ session, sections, loading, storeLabel, activeSectio
   );
 }
 
-function DashboardTopbar({ session, title, locations, selectedLocationId, locationStatus, onLocationChange }: {
+function DashboardTopbar({ session, title, locations, selectedLocationId, locationStatus, locationSelectionDisabled, onLocationChange }: {
   session: OperatorSession;
   title: string;
   locations: readonly DashboardLocation[];
   selectedLocationId: string | "all" | null;
   locationStatus: "idle" | "loading" | "ready" | "error";
+  locationSelectionDisabled: boolean;
   onLocationChange: (locationId: string | "all") => void;
 }) {
   const showLocationSelector = hasMultipleLocations(session);
@@ -147,7 +148,7 @@ function DashboardTopbar({ session, title, locations, selectedLocationId, locati
       {showLocationSelector ? (
         <label className="field dash-field-inline dash-location-picker">
           <span>Workspace</span>
-          <select value={selectedLocationId ?? ""} disabled={locationLoading} onChange={(event) => onLocationChange(event.target.value)}>
+          <select value={selectedLocationId ?? ""} disabled={locationLoading || locationSelectionDisabled} onChange={(event) => onLocationChange(event.target.value)}>
             <option value="all">All locations</option>
             {locations.map((location) => <option key={location.locationId} value={location.locationId}>{location.locationName} · {location.marketLabel}</option>)}
           </select>
@@ -174,6 +175,7 @@ export function DashboardShellView({
   locationStatus,
   children,
   notice,
+  locationSelectionDisabled = false,
   onSelectLocation,
   onLogout
 }: {
@@ -184,6 +186,7 @@ export function DashboardShellView({
   locationStatus: "idle" | "loading" | "ready" | "error";
   children: ReactNode;
   notice?: string | null;
+  locationSelectionDisabled?: boolean;
   onSelectLocation: (locationId: string | "all") => void;
   onLogout: () => void;
 }) {
@@ -195,7 +198,7 @@ export function DashboardShellView({
     <div className="dash-shell">
       <DashboardSidebar session={session} sections={sections} loading={loading} storeLabel={storeLabel} activeSection={activeSection} onLogout={onLogout} />
       <div className="dash-main">
-        <DashboardTopbar session={session} title={getDashboardSectionLabel(activeSection)} locations={locations} selectedLocationId={selectedLocationId} locationStatus={locationStatus} onLocationChange={onSelectLocation} />
+        <DashboardTopbar session={session} title={getDashboardSectionLabel(activeSection)} locations={locations} selectedLocationId={selectedLocationId} locationStatus={locationStatus} locationSelectionDisabled={locationSelectionDisabled} onLocationChange={onSelectLocation} />
         <div className={`dash-content dash-content--${activeSection === "overview" ? "home" : activeSection}`}>
           {notice ? <div className="banner banner--notice" role="status">{notice}</div> : null}
           {children}
@@ -205,7 +208,7 @@ export function DashboardShellView({
   );
 }
 
-export function DashboardShell({ children, notice, activeSection = "overview" }: { children: ReactNode; notice?: string | null; activeSection?: DashboardSection }) {
+export function DashboardShell({ children, notice, activeSection = "overview", locationSelectionDisabled = false }: { children: ReactNode; notice?: string | null; activeSection?: DashboardSection; locationSelectionDisabled?: boolean }) {
   const { session, logout } = useDashboardSession();
   const location = useDashboardLocation();
   useEffect(() => {
@@ -220,6 +223,7 @@ export function DashboardShell({ children, notice, activeSection = "overview" }:
       locations={location.availableLocations}
       selectedLocationId={location.selectedLocationId}
       locationStatus={location.status}
+      locationSelectionDisabled={locationSelectionDisabled}
       notice={notice}
       onSelectLocation={(locationId) => { location.selectLocation(locationId); }}
       onLogout={() => { void logout(); }}

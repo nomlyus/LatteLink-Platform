@@ -5739,7 +5739,9 @@ label.field > span {
   .dash-menu-toolbar__add { margin-left: 0; }
   .dash-menu-list-toolbar { align-items: flex-start; flex-direction: column; }
   .dash-menu-list-toolbar__actions { width: 100%; justify-content: space-between; }
-  .dash-menu-list-toolbar__actions .dash-menu-search { flex: 1; }
+  .dash-menu-list-toolbar__actions { flex-wrap: wrap; justify-content: flex-start; }
+  .dash-menu-list-toolbar__actions .dash-menu-search { flex: 1 1 100%; }
+  .dash-menu-list-toolbar__actions > .button { margin-left: auto; }
   .dash-menu-management-row { padding: 0 8px; }
   .dash-menu-management-row__main { align-items: flex-start; flex-direction: column; gap: 2px; }
   .dash-menu-order-controls { gap: 0; }

@@ -28,7 +28,7 @@ const locations = [
 ] as unknown as DashboardLocation[];
 
 describe("React Dashboard V3 shell", () => {
-  it("renders React-owned Home and Orders alongside unmigrated legacy Menu", () => {
+  it("renders React-owned Home, Orders, and Menu alongside unmigrated legacy sections", () => {
     const html = renderToStaticMarkup(
       <DashboardShellView
         session={session("owner", ["orders:read", "menu:read", "store:read", "team:read"])}
@@ -41,7 +41,7 @@ describe("React Dashboard V3 shell", () => {
     );
     expect(html).toContain('aria-current="page" title="Home" href="/"');
     expect(html).toContain('href="/orders"');
-    expect(html).toContain('href="/legacy/menu"');
+    expect(html).toContain('href="/menu"');
     expect(html).toContain('aria-label="Dashboard sections"');
     expect(html).toContain("Home content");
   });
@@ -82,7 +82,7 @@ describe("React Dashboard V3 shell", () => {
       ><div /></DashboardShellView>
     );
     expect(html).not.toContain('href="/orders"');
-    expect(html).not.toContain('href="/legacy/menu"');
+    expect(html).not.toContain('href="/menu"');
     expect(html).toContain('href="/legacy/store"');
   });
 

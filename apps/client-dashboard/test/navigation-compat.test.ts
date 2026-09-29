@@ -10,15 +10,18 @@ import {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("dashboard route ownership compatibility", () => {
-  it("routes Home and Orders to React while keeping the other product sections on the legacy host", () => {
+  it("routes Home, Orders, and Menu to React while keeping other product sections on the legacy host", () => {
     expect(getDashboardRouteOwner("overview")).toBe("react");
     expect(getDashboardDestination("overview")).toEqual({ ownership: "react", href: "/" });
     expect(isLegacyDashboardSection("overview")).toBe(false);
     expect(getDashboardRouteOwner("orders")).toBe("react");
     expect(getDashboardDestination("orders")).toEqual({ ownership: "react", href: "/orders" });
     expect(isLegacyDashboardSection("orders")).toBe(false);
+    expect(getDashboardRouteOwner("menu")).toBe("react");
+    expect(getDashboardDestination("menu")).toEqual({ ownership: "react", href: "/menu" });
+    expect(isLegacyDashboardSection("menu")).toBe(false);
 
-    for (const section of ["menu", "cards", "discounts", "experience", "store", "team"] as const) {
+    for (const section of ["cards", "discounts", "experience", "store", "team"] as const) {
       expect(getDashboardRouteOwner(section)).toBe("legacy");
       expect(getDashboardDestination(section)).toEqual({ ownership: "legacy", href: `/legacy/${section}` });
       expect(isLegacyDashboardSection(section)).toBe(true);
@@ -32,8 +35,10 @@ describe("dashboard route ownership compatibility", () => {
   it("marks the root as the React-owned entry while invite and legacy hosts retain compatibility ownership", () => {
     expect(getDashboardPathOwner("/")).toBe("react");
     expect(getDashboardPathOwner("/orders")).toBe("react");
+    expect(getDashboardPathOwner("/menu")).toBe("react");
     expect(getDashboardPathOwner("/invites")).toBe("legacy");
     expect(getDashboardPathOwner("/legacy/orders")).toBe("unknown");
+    expect(getDashboardPathOwner("/legacy/menu")).toBe("unknown");
     expect(getDashboardPathOwner("/legacy/not-a-section")).toBe("unknown");
   });
 

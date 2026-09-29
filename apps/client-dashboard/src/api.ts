@@ -615,6 +615,17 @@ export async function fetchOperatorOrders(session: OperatorSession, locationId: 
   return filterVisibleOrders(orders as OperatorOrder[]);
 }
 
+export function fetchOperatorMenu(session: OperatorSession, locationId: string, signal?: AbortSignal) {
+  return requestJson({
+    apiBaseUrl: session.apiBaseUrl,
+    accessToken: session.accessToken,
+    path: "/admin/menu",
+    query: { locationId: requireSelectedLocationId(locationId) },
+    signal,
+    schema: operatorMenuResponseSchema
+  });
+}
+
 export async function fetchOperatorSnapshot(
   session: OperatorSession,
   locationId: string | null

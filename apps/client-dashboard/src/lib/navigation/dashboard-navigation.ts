@@ -6,7 +6,7 @@ export type DashboardPathOwner = DashboardRouteOwner | "unknown";
 const sectionOwners: Record<DashboardSection, DashboardRouteOwner> = {
   overview: "react",
   orders: "react",
-  menu: "legacy",
+  menu: "react",
   cards: "legacy",
   discounts: "legacy",
   experience: "legacy",
@@ -34,7 +34,7 @@ export function isLegacyDashboardSection(value: string): value is DashboardSecti
 export function getDashboardPathOwner(pathname: string): DashboardPathOwner {
   if (pathname === "/") return "react";
   if (pathname === "/invites") return "legacy";
-  if (pathname === "/orders" || pathname === "/orders/") return "react";
+  if (["/orders", "/orders/", "/menu", "/menu/"].includes(pathname)) return "react";
   const legacySection = pathname.match(/^\/legacy\/([^/]+)\/?$/)?.[1];
   if (legacySection && isLegacyDashboardSection(legacySection)) return "legacy";
   return "unknown";
