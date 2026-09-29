@@ -9,7 +9,6 @@ const sectionOwners: Record<DashboardSection, DashboardRouteOwner> = {
   menu: "react",
   cards: "react",
   discounts: "legacy",
-  experience: "legacy",
   store: "legacy",
   team: "legacy"
 };

@@ -41,7 +41,8 @@ describe("operator auth view", () => {
 
     expect(html).toContain("App launch");
     expect(html).toContain("Start your branded app setup.");
-    expect(html).toContain("configure store details, payments, menu, and the app builder");
+    expect(html).toContain("configure store details, payments, and menu");
+    expect(html).not.toContain("app builder");
     expect(html).toContain('data-form="merchant-launch"');
     expect(html).toContain("Create your app workspace");
     expect(html).toContain("Business name");

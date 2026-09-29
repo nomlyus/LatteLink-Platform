@@ -14,7 +14,7 @@ import { getOperatorRoleLabel } from "../../model";
 import { useDashboardSession } from "../../features/auth/session-provider";
 import { useDashboardLocation } from "../../features/location/location-provider";
 
-const primarySections: DashboardSection[] = ["overview", "orders", "menu", "cards", "discounts", "experience"];
+const primarySections: DashboardSection[] = ["overview", "orders", "menu", "cards", "discounts"];
 const operationsSections: DashboardSection[] = ["store", "team"];
 
 function hasMultipleLocations(session: OperatorSession) {

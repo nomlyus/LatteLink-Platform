@@ -20,12 +20,6 @@ import {
 } from "./controllers/auth";
 import { handleDiscountCodeCreateSubmit, handleDiscountCodeSubmit } from "./controllers/discounts";
 import { handleStoreSubmit } from "./controllers/store";
-import {
-  handleMobileExperiencePublish,
-  handleMobileExperienceRollback,
-  handleMobileExperienceSectionMove,
-  handleMobileExperienceSubmit
-} from "./controllers/experience";
 import { handleTeamCreateSubmit, handleTeamUserDelete, handleTeamUserSubmit } from "./controllers/team";
 import {
   handleOnboardingAppIdentitySubmit,
@@ -70,7 +64,6 @@ export function registerEvents(parentSignal?: AbortSignal) {
       case "discount-code-create": void handleDiscountCodeCreateSubmit(form); return;
       case "discount-code": void handleDiscountCodeSubmit(form); return;
       case "store-config": void handleStoreSubmit(form); return;
-      case "mobile-experience": void handleMobileExperienceSubmit(form); return;
       case "onboarding-step": void handleOnboardingStepSubmit(form); return;
       case "onboarding-business-profile": void handleOnboardingBusinessProfileSubmit(form); return;
       case "onboarding-store-operations": void handleOnboardingStoreOperationsSubmit(form); return;
@@ -146,17 +139,8 @@ export function registerEvents(parentSignal?: AbortSignal) {
       case "start-stripe-onboarding": void handleStripeOnboardingStart(); return;
       case "open-stripe-dashboard": void handleStripeDashboardOpen(); return;
       case "refresh-stripe-status": void handleStripeStatusRefresh(); return;
-      case "publish-mobile-experience": void handleMobileExperiencePublish(); return;
       case "delete-team-user":
         if (actionElement.dataset.operatorUserId) void handleTeamUserDelete(actionElement.dataset.operatorUserId);
-        return;
-      case "move-mobile-experience-section": {
-        const sectionType = actionElement.dataset.sectionType;
-        if (sectionType) handleMobileExperienceSectionMove(sectionType, actionElement.dataset.direction === "down" ? "down" : "up");
-        return;
-      }
-      case "rollback-mobile-experience":
-        if (actionElement.dataset.versionId) void handleMobileExperienceRollback(actionElement.dataset.versionId);
         return;
     }
 

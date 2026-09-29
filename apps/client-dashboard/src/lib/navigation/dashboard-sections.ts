@@ -7,7 +7,6 @@ export const dashboardSectionLabels: Record<DashboardSection, string> = {
   menu: "Menu",
   cards: "News cards",
   discounts: "Discounts",
-  experience: "App builder",
   team: "Team",
   store: "Settings"
 };
@@ -18,7 +17,6 @@ export const dashboardSectionIcons: Record<DashboardSection, string> = {
   menu: "/icons/operator-v3/menu.svg",
   cards: "/icons/operator-v3/marketing.svg",
   discounts: "/icons/operator-v3/analytics.svg",
-  experience: "/icons/operator-v3/home.svg",
   store: "/icons/operator-v3/stores.svg",
   team: "/icons/operator-v3/customers.svg"
 };
@@ -51,7 +49,7 @@ export function getAvailableDashboardSectionsFor(
     sections.push("menu");
   }
   if (canAccessCapability(operator, "menu:read")) sections.push("cards", "discounts");
-  if (canAccessCapability(operator, "store:read")) sections.push("experience", "store");
+  if (canAccessCapability(operator, "store:read")) sections.push("store");
   if (canAccessCapability(operator, "team:read")) sections.push("team");
   return sections;
 }

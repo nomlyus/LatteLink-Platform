@@ -12,7 +12,6 @@ import { renderBanner } from "./common";
 import { renderHomeState, renderOverviewSection, type HomeState } from "./overview";
 import { renderOnboardingWizard } from "./onboarding";
 import { renderDiscountsSection } from "./discounts";
-import { renderExperienceSection } from "./experience";
 import { renderStoreSection } from "./store";
 import { renderTeamSection } from "./team";
 
@@ -49,7 +48,6 @@ function isHomeLoading() {
 function renderNavItems(sections: DashboardSection[]) {
   return sections
     .map((section) => {
-      const statusPill = section === "experience" ? `<span class="dash-nav-status">Planned</span>` : "";
       const active = state.section === section;
       const destination = getDashboardDestination(section);
       const content = `
@@ -57,7 +55,6 @@ function renderNavItems(sections: DashboardSection[]) {
               ${renderNavIcon(section)}
               <span class="dash-nav-label">${escapeHtml(getDashboardSectionLabel(section))}</span>
             </span>
-            ${statusPill}
             `;
       if (getDashboardRouteOwner(section) === "react") {
         return `<a class="dash-nav-item ${active ? "dash-nav-item--active" : ""}" href="${destination.href}"${active ? ' aria-current="page"' : ""} title="${escapeHtml(getDashboardSectionLabel(section))}">${content}</a>`;
@@ -79,7 +76,7 @@ function renderNavItems(sections: DashboardSection[]) {
 
 function renderDashboardNav() {
   const availableSections = getAvailableDashboardSections();
-  const primarySections: DashboardSection[] = ["overview", "orders", "menu", "cards", "discounts", "experience"];
+  const primarySections: DashboardSection[] = ["overview", "orders", "menu", "cards", "discounts"];
   const operationsSections: DashboardSection[] = ["store", "team"];
   const visiblePrimary = primarySections.filter((section) => availableSections.includes(section));
   const visibleOperations = operationsSections.filter((section) => availableSections.includes(section));
@@ -172,8 +169,6 @@ function renderDashboardContent() {
   switch (state.section) {
     case "discounts":
       return renderDiscountsSection();
-    case "experience":
-      return renderExperienceSection();
     case "store":
       return renderStoreSection();
     case "team":

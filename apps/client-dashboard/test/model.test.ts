@@ -298,7 +298,6 @@ describe("client dashboard model", () => {
       "menu",
       "cards",
       "discounts",
-      "experience",
       "store",
       "team"
     ]);

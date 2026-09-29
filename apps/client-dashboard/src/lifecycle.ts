@@ -162,10 +162,10 @@ function applyLaunchEntryIntent() {
     return true;
   }
 
-  state.section = "experience";
+  state.section = "overview";
   persistSection(state.section);
   state.launchEntryIntent = false;
-  setNotice("Your app builder is ready.");
+  setNotice("Your workspace is ready.");
   return true;
 }
 
@@ -211,11 +211,8 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
       if (state.selectedLocationId === "all") {
         state.appConfig = null;
         state.menuCategories = [];
-        state.newsCards = [];
         state.discountCodes = [];
         state.storeConfig = null;
-        state.mobileExperience = null;
-        state.mobileExperienceVersions = { locationId: "", versions: [] };
         state.mobileReleaseBuildJobs = { jobs: [] };
         state.teamUsers = [];
       } else {
@@ -223,11 +220,8 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
         if (loadGeneration !== dashboardLoadGeneration) return;
         state.appConfig = snapshot.appConfig;
         state.menuCategories = snapshot.menu.categories;
-        state.newsCards = snapshot.cards;
         state.discountCodes = snapshot.discountCodes;
         state.storeConfig = snapshot.storeConfig;
-        state.mobileExperience = snapshot.mobileExperience;
-        state.mobileExperienceVersions = snapshot.mobileExperienceVersions;
         state.mobileReleaseBuildJobs = snapshot.mobileReleaseBuildJobs;
         state.teamUsers = mergePendingTeamUserUpdates(snapshot.team);
       }

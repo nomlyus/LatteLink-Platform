@@ -1,5 +1,11 @@
 # Operator Dashboard React / Next.js migration — Phase 0
 
+> Historical Phase 0 inventory. Its App Builder/`experience` descriptions record
+> the implementation that existed during the initial audit. The experimental
+> dashboard editor has since been removed from V2; do not treat those references
+> as current route ownership or active dashboard functionality. Published mobile
+> experience and release infrastructure remains in the Catalog/mobile runtime.
+
 - **Issue:** [#535 — G2-13: Complete Operator Dashboard V3 React/Next.js architecture migration](https://github.com/nomlyus/LatteLink-Platform/issues/535)
 - **Audit baseline:** `develop` at `574ac41d7819f0f2aa80596f5a5e73128abddf8d`
 - **Audit date:** 2026-09-28

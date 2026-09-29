@@ -26,6 +26,39 @@ import {
 } from "../src/api";
 
 describe("client dashboard api helpers", () => {
+  it("does not load App Builder or duplicate Cards data in the legacy dashboard snapshot", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ message: "Not used by this characterization" }), { status: 401 })
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    const session = {
+      apiBaseUrl: "https://api-dev.nomly.us/v1",
+      accessToken: "access-token",
+      refreshToken: "refresh-token",
+      expiresAt: "2026-04-23T23:00:00.000Z",
+      operator: {
+        operatorUserId: "11111111-1111-4111-8111-111111111111",
+        displayName: "Owner",
+        email: "owner@example.com",
+        role: "owner",
+        locationId: "loc-a",
+        locationIds: ["loc-a"],
+        active: true,
+        capabilities: ["menu:read", "store:read", "team:read"],
+        createdAt: "2026-04-23T20:00:00.000Z",
+        updatedAt: "2026-04-23T20:00:00.000Z"
+      }
+    } as OperatorSession;
+
+    await expect(fetchOperatorSnapshot(session, "loc-a")).rejects.toThrow();
+
+    const requestedUrls = fetchSpy.mock.calls.map(([url]) => String(url));
+    expect(requestedUrls).not.toContain("https://api-dev.nomly.us/v1/admin/cards?locationId=loc-a");
+    expect(requestedUrls).not.toContain("https://api-dev.nomly.us/v1/admin/mobile-experience?locationId=loc-a");
+    expect(requestedUrls).not.toContain("https://api-dev.nomly.us/v1/admin/mobile-experience/versions?locationId=loc-a");
+    expect(requestedUrls).toContain("https://api-dev.nomly.us/v1/admin/mobile-release/build-jobs?locationId=loc-a");
+  });
+
   it("normalizes operator api base URLs onto /v1", () => {
     expect(normalizeApiBaseUrl("")).toBe("");
     expect(normalizeApiBaseUrl("http://127.0.0.1:8080")).toBe("http://127.0.0.1:8080/v1");

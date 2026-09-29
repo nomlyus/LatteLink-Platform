@@ -3,10 +3,16 @@ import type { OperatorSession } from "../src/api";
 
 const refreshOperatorSession = vi.hoisted(() => vi.fn());
 const logoutOperatorSession = vi.hoisted(() => vi.fn());
+const fetchDashboardLocations = vi.hoisted(() => vi.fn());
+const fetchOperatorSnapshot = vi.hoisted(() => vi.fn());
+const fetchOperatorOnboardingSummary = vi.hoisted(() => vi.fn());
 vi.mock("../src/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../src/api")>()),
   refreshOperatorSession,
-  logoutOperatorSession
+  logoutOperatorSession,
+  fetchDashboardLocations,
+  fetchOperatorSnapshot,
+  fetchOperatorOnboardingSummary
 }));
 vi.mock("../src/render", () => ({ render: vi.fn() }));
 
@@ -65,5 +71,39 @@ describe("existing dashboard session expiration behavior", () => {
     expect(logoutOperatorSession).toHaveBeenCalledWith(session);
     expect(state.session).toBeNull();
     expect(values.has("lattelink.operator.session.v2")).toBe(false);
+  });
+
+  it("lands completed owner launch intents on Home instead of the removed editor", async () => {
+    mockBrowserStorage();
+    const ownerSession: OperatorSession = {
+      ...session,
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      operator: { ...session.operator, role: "owner", capabilities: ["store:read", "menu:read"] }
+    };
+    fetchDashboardLocations.mockResolvedValue([]);
+    fetchOperatorSnapshot.mockResolvedValue({
+      appConfig: null,
+      menu: { locationId: "location-a", categories: [], modifierGroups: [] },
+      discountCodes: [],
+      storeConfig: null,
+      mobileReleaseBuildJobs: { jobs: [] },
+      team: []
+    });
+    fetchOperatorOnboardingSummary.mockResolvedValue({ locationId: "location-a", status: "approved" });
+    const { state } = await import("../src/state");
+    const { persistSession } = await import("../src/storage");
+    const { loadDashboard } = await import("../src/lifecycle");
+    persistSession(ownerSession);
+    state.session = ownerSession;
+    state.selectedLocationId = "location-a";
+    state.section = "store";
+    state.launchEntryIntent = true;
+
+    await loadDashboard();
+
+    expect(state.section).toBe("overview");
+    expect(state.launchEntryIntent).toBe(false);
+    expect(state.notice).toBe("Your workspace is ready.");
+    expect(values.get("lattelink.operator.section.v2")).toBe("overview");
   });
 });

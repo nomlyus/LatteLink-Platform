@@ -1,8 +1,6 @@
 import type {
   AdminStoreConfig,
   AppConfig,
-  MobileExperienceDraftResponse,
-  MobileExperienceVersionsResponse,
   MobileReleaseBuildJobListResponse
 } from "@lattelink/contracts-catalog";
 import type {
@@ -16,8 +14,7 @@ import type {
 import type {
   DashboardSection,
   OperatorMenuCategory,
-  OperatorDiscountCode,
-  OperatorNewsCard
+  OperatorDiscountCode
 } from "./model";
 import { isStoreOperator } from "./model";
 import { loadStoredApiBaseUrl, loadStoredLocationSelection, loadStoredSection, loadStoredSession } from "./storage";
@@ -55,19 +52,13 @@ export type AppState = {
   notice: string | null;
   appConfig: AppConfig | null;
   menuCategories: OperatorMenuCategory[];
-  newsCards: OperatorNewsCard[];
   discountCodes: OperatorDiscountCode[];
   storeConfig: AdminStoreConfig | null;
-  mobileExperience: MobileExperienceDraftResponse | null;
-  mobileExperienceVersions: MobileExperienceVersionsResponse;
   mobileReleaseBuildJobs: MobileReleaseBuildJobListResponse;
   teamUsers: OperatorUser[];
   busyDiscountCodeId: string | null;
   busyTeamUserId: string | null;
   savingStore: boolean;
-  savingMobileExperience: boolean;
-  publishingMobileExperience: boolean;
-  rollingBackMobileExperienceVersionId: string | null;
   creatingDiscountCode: boolean;
   creatingTeamUser: boolean;
   dashboardLoaded: boolean;
@@ -121,19 +112,13 @@ export const state: AppState = {
   notice: null,
   appConfig: null,
   menuCategories: [],
-  newsCards: [],
   discountCodes: [],
   storeConfig: null,
-  mobileExperience: null,
-  mobileExperienceVersions: { locationId: initialSelectedLocationId === "all" ? "" : initialSelectedLocationId ?? "", versions: [] },
   mobileReleaseBuildJobs: { jobs: [] },
   teamUsers: [],
   busyDiscountCodeId: null,
   busyTeamUserId: null,
   savingStore: false,
-  savingMobileExperience: false,
-  publishingMobileExperience: false,
-  rollingBackMobileExperienceVersionId: null,
   creatingDiscountCode: false,
   creatingTeamUser: false,
   dashboardLoaded: false,
@@ -192,11 +177,8 @@ export function resetDashboardData() {
     : null;
   state.appConfig = null;
   state.menuCategories = [];
-  state.newsCards = [];
   state.discountCodes = [];
   state.storeConfig = null;
-  state.mobileExperience = null;
-  state.mobileExperienceVersions = { locationId: "", versions: [] };
   state.mobileReleaseBuildJobs = { jobs: [] };
   state.teamUsers = [];
   state.onboardingSummary = null;
@@ -208,7 +190,5 @@ export function resetDashboardData() {
   state.dashboardLoaded = false;
   state.busyTeamUserId = null;
   state.savingStore = false;
-  state.savingMobileExperience = false;
-  state.publishingMobileExperience = false;
   state.creatingTeamUser = false;
 }
