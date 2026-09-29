@@ -2521,8 +2521,8 @@ let previousFreeClientDashboardDomain: string | undefined;
       if (url.includes("/v1/loyalty/balance") && method === "GET") {
         return new Response(
           JSON.stringify({
+            brandId: "northside-coffee",
             userId: "123e4567-e89b-12d3-a456-426614174000",
-            locationId: "flagship-01",
             availablePoints: 240,
             pendingPoints: 0,
             lifetimeEarned: 600
@@ -2536,6 +2536,8 @@ let previousFreeClientDashboardDomain: string | undefined;
           JSON.stringify([
             {
               id: "123e4567-e89b-12d3-a456-426614174210",
+              brandId: "northside-coffee",
+              userId: "123e4567-e89b-12d3-a456-426614174000",
               type: "EARN",
               points: 240,
               orderId: "123e4567-e89b-12d3-a456-426614174211",
@@ -2544,6 +2546,8 @@ let previousFreeClientDashboardDomain: string | undefined;
             },
             {
               id: "123e4567-e89b-12d3-a456-426614174212",
+              brandId: "northside-coffee",
+              userId: "123e4567-e89b-12d3-a456-426614174000",
               type: "REDEEM",
               points: -120,
               orderId: "123e4567-e89b-12d3-a456-426614174213",
@@ -5503,8 +5507,8 @@ let previousFreeClientDashboardDomain: string | undefined;
     );
 
     const requestedUrls = fetchMock.mock.calls.map(([input]) => (typeof input === "string" ? input : input.url));
-    expect(requestedUrls).toContain("http://loyalty.internal/v1/loyalty/balance?locationId=flagship-01");
-    expect(requestedUrls).toContain("http://loyalty.internal/v1/loyalty/ledger?locationId=flagship-01");
+    expect(requestedUrls).toContain("http://loyalty.internal/v1/loyalty/balance?brandId=northside-coffee&locationId=flagship-01");
+    expect(requestedUrls).toContain("http://loyalty.internal/v1/loyalty/ledger?brandId=northside-coffee&locationId=flagship-01");
     expect(requestedUrls).toContain("http://catalog.internal/v1/catalog/internal/public-location-access?brandId=northside-coffee&locationId=flagship-01");
 
     const missingBrandResponse = await app.inject({

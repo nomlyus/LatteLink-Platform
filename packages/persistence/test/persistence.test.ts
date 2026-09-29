@@ -42,6 +42,7 @@ import * as migration0055 from "../src/migrations/0055_orders_relational_locatio
 import * as migration0056 from "../src/migrations/0056_drop_orders_json_location_index.js";
 import * as migration0057 from "../src/migrations/0057_notifications_brand_scoped_tokens.js";
 import * as migration0058 from "../src/migrations/0058_drop_catalog_store_name_default.js";
+import * as migration0059 from "../src/migrations/0059_brand_wide_loyalty.js";
 import { resolveMigrationFolderPath } from "../src/migrate.js";
 
 describe("persistence", () => {
@@ -176,7 +177,8 @@ describe("persistence", () => {
       "0055_orders_relational_location": migration0055,
       "0056_drop_orders_json_location_index": migration0056,
       "0057_notifications_brand_scoped_tokens": migration0057,
-      "0058_drop_catalog_store_name_default": migration0058
+      "0058_drop_catalog_store_name_default": migration0058,
+      "0059_brand_wide_loyalty": migration0059
     };
 
     expect(basename(resolveMigrationFolderPath())).toBe("migrations");
@@ -213,7 +215,8 @@ describe("persistence", () => {
       "0055_orders_relational_location",
       "0056_drop_orders_json_location_index",
       "0057_notifications_brand_scoped_tokens",
-      "0058_drop_catalog_store_name_default"
+      "0058_drop_catalog_store_name_default",
+      "0059_brand_wide_loyalty"
     ]);
 
     for (const migration of Object.values(migrations)) {

@@ -127,8 +127,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     if (!previousLocationId || !selectedLocationId || previousLocationId === selectedLocationId) return;
 
     const belongsToPreviousLocation = (queryKey: readonly unknown[]) =>
-      (queryKey[0] === "catalog" && queryKey[2] === previousLocationId && queryKey[3] === brandId) ||
-      (queryKey[0] === "account" && queryKey[1] === "loyalty" && queryKey[3] === previousLocationId && queryKey[4] === brandId);
+      queryKey[0] === "catalog" && queryKey[2] === previousLocationId && queryKey[3] === brandId;
     const queryFilter = { predicate: (query: { queryKey: readonly unknown[] }) => belongsToPreviousLocation(query.queryKey) };
     void queryClient.cancelQueries(queryFilter).then(() => queryClient.removeQueries(queryFilter));
   }, [brandId, queryClient, selectedLocationId]);

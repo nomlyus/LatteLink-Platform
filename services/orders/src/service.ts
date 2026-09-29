@@ -27,6 +27,11 @@ import {
   quoteRequestSchema,
   updateDiscountCodeRequestSchema
 } from "@lattelink/contracts-orders";
+import {
+  loyaltyBalanceSchema,
+  loyaltyLedgerEntrySchema,
+  loyaltyProgramContextSchema
+} from "@lattelink/contracts-loyalty";
 import { z } from "zod";
 import { reconcileOrderFulfillmentState } from "./fulfillment.js";
 import {
@@ -107,24 +112,8 @@ const paymentsRefundResponseSchema = paymentsRefundSnapshotBaseSchema.extend({
   refundId: z.string().min(1)
 });
 
-const loyaltyBalanceSchema = z.object({
-  userId: z.string().uuid(),
-  locationId: z.string().min(1),
-  availablePoints: z.number().int().nonnegative(),
-  pendingPoints: z.number().int().nonnegative(),
-  lifetimeEarned: z.number().int().nonnegative()
-});
-
-const loyaltyLedgerEntrySchema = z.object({
-  id: z.string().uuid(),
-  type: z.enum(["EARN", "REDEEM", "REFUND", "ADJUSTMENT"]),
-  points: z.number().int(),
-  orderId: z.string().uuid().optional(),
-  locationId: z.string().min(1),
-  createdAt: z.string().datetime()
-});
-
 const loyaltyMutationBaseSchema = z.object({
+  brandId: z.string().trim().min(1),
   userId: z.string().uuid(),
   locationId: z.string().min(1),
   orderId: z.string().uuid(),
@@ -138,11 +127,13 @@ const loyaltyMutationRequestSchema = z.union([
   }),
   loyaltyMutationBaseSchema.extend({
     type: z.literal("REDEEM"),
-    amountCents: z.number().int().positive()
+    amountCents: z.number().int().positive(),
+    points: z.number().int().positive()
   }),
   loyaltyMutationBaseSchema.extend({
     type: z.literal("REFUND"),
-    amountCents: z.number().int().positive()
+    amountCents: z.number().int().positive(),
+    points: z.number().int().positive()
   }),
   loyaltyMutationBaseSchema.extend({
     type: z.literal("ADJUSTMENT"),
@@ -156,9 +147,43 @@ const loyaltyMutationResponseSchema = z.object({
   entry: loyaltyLedgerEntrySchema,
   balance: loyaltyBalanceSchema
 });
+const loyaltyEarnLookupSchema = z.object({ entry: loyaltyLedgerEntrySchema.nullable() });
 
 function calculateEarnedLoyaltyPoints(amountCents: number) {
   return Math.floor(amountCents / 100);
+}
+
+async function getLoyaltyProgramContext(params: {
+  requestId: string;
+  deps: OrderServiceDeps;
+  brandId: string;
+  locationId: string;
+  userId?: string;
+}): Promise<z.output<typeof loyaltyProgramContextSchema> | ServiceError> {
+  const headers: Record<string, string> = { "x-request-id": params.requestId };
+  if (params.deps.loyaltyInternalToken) headers["x-internal-token"] = params.deps.loyaltyInternalToken;
+  const url = new URL(`${params.deps.loyaltyBaseUrl}/v1/loyalty/internal/program-context`);
+  url.searchParams.set("brandId", params.brandId);
+  url.searchParams.set("locationId", params.locationId);
+  if (params.userId) url.searchParams.set("userId", params.userId);
+
+  let response: Response;
+  try {
+    response = await fetch(url, { method: "GET", headers });
+  } catch (error) {
+    params.deps.logger.warn({ error, requestId: params.requestId, brandId: params.brandId, locationId: params.locationId }, "loyalty program lookup failed before response");
+    return buildServiceError({ statusCode: 502, code: "LOYALTY_PROGRAM_UNAVAILABLE", message: "Loyalty program availability could not be verified" });
+  }
+  const body = parseJsonSafely(await response.text());
+  if (!response.ok) {
+    params.deps.logger.warn({ statusCode: response.status, brandId: params.brandId, locationId: params.locationId }, "loyalty program lookup was rejected");
+    return buildServiceError({ statusCode: 502, code: "LOYALTY_PROGRAM_UNAVAILABLE", message: "Loyalty program availability could not be verified" });
+  }
+  const parsed = loyaltyProgramContextSchema.safeParse(body);
+  if (!parsed.success || parsed.data.brandId !== params.brandId || parsed.data.locationId !== params.locationId) {
+    return buildServiceError({ statusCode: 502, code: "LOYALTY_INVALID_RESPONSE", message: "Loyalty service returned an invalid program context" });
+  }
+  return parsed.data;
 }
 
 export type OrderQuote = z.output<typeof orderQuoteSchema>;
@@ -565,6 +590,119 @@ async function applyLoyaltyMutation(params: {
   return parsedLoyaltyMutation.data;
 }
 
+async function getEarnedLoyaltyEntry(params: {
+  requestId: string;
+  deps: OrderServiceDeps;
+  brandId: string;
+  userId: string;
+  locationId: string;
+  orderId: string;
+}): Promise<z.output<typeof loyaltyLedgerEntrySchema> | undefined | ServiceError> {
+  const headers: Record<string, string> = { "x-request-id": params.requestId };
+  if (params.deps.loyaltyInternalToken) headers["x-internal-token"] = params.deps.loyaltyInternalToken;
+  const url = new URL(`${params.deps.loyaltyBaseUrl}/v1/loyalty/internal/order-earn`);
+  url.searchParams.set("brandId", params.brandId);
+  url.searchParams.set("locationId", params.locationId);
+  url.searchParams.set("userId", params.userId);
+  url.searchParams.set("orderId", params.orderId);
+  let response: Response;
+  try {
+    response = await fetch(url, { method: "GET", headers });
+  } catch (error) {
+    params.deps.logger.warn({ error, requestId: params.requestId, orderId: params.orderId }, "loyalty earn lookup failed before response");
+    return buildServiceError({ statusCode: 502, code: "LOYALTY_REVERSAL_FAILED", message: "Loyalty earn reversal could not be verified" });
+  }
+  const body = parseJsonSafely(await response.text());
+  if (!response.ok) {
+    return buildServiceError({ statusCode: 502, code: "LOYALTY_REVERSAL_FAILED", message: "Loyalty earn reversal could not be verified" });
+  }
+  const parsed = loyaltyEarnLookupSchema.safeParse(body);
+  if (!parsed.success) {
+    return buildServiceError({ statusCode: 502, code: "LOYALTY_INVALID_RESPONSE", message: "Loyalty service returned an invalid earn record" });
+  }
+  if (parsed.data.entry && parsed.data.entry.locationId !== params.locationId) {
+    return buildServiceError({ statusCode: 409, code: "LOYALTY_ORDER_LOCATION_MISMATCH", message: "Loyalty earn location does not match the order" });
+  }
+  return parsed.data.entry ?? undefined;
+}
+
+async function reverseOrderEarn(params: {
+  requestId: string;
+  deps: OrderServiceDeps;
+  brandId: string;
+  userId: string;
+  locationId: string;
+  orderId: string;
+}) {
+  const earnedEntry = await getEarnedLoyaltyEntry(params);
+  if (isServiceError(earnedEntry) || !earnedEntry || earnedEntry.points <= 0) return earnedEntry;
+  return applyLoyaltyMutation({
+    requestId: params.requestId,
+    deps: params.deps,
+    mutation: loyaltyMutationRequestSchema.parse({
+      type: "ADJUSTMENT",
+      brandId: params.brandId,
+      userId: params.userId,
+      locationId: earnedEntry.locationId,
+      orderId: params.orderId,
+      points: -earnedEntry.points,
+      idempotencyKey: toLoyaltyIdempotencyKey(params.orderId, "reverse-earn")
+    }),
+    failureCode: "LOYALTY_REVERSAL_FAILED",
+    failureMessage: "Loyalty earn reversal failed"
+  });
+}
+
+async function awardOrderEarn(params: {
+  requestId: string;
+  deps: OrderServiceDeps;
+  orderId: string;
+  userId: string;
+  locationId: string;
+  orderTotalCents: number;
+  quote: OrderQuote;
+}): Promise<{ brandId: string; points: number } | ServiceError> {
+  const brandId = await params.deps.repository.getBrandIdForLocation(params.locationId);
+  if (!brandId) {
+    return buildServiceError({ statusCode: 409, code: "LOYALTY_BRAND_CONTEXT_MISSING", message: "The order location has no canonical brand" });
+  }
+  const program = await getLoyaltyProgramContext({
+    requestId: params.requestId,
+    deps: params.deps,
+    brandId,
+    locationId: params.locationId
+  });
+  if (isServiceError(program)) return program;
+  if (!program.enabled || !program.participating || program.pointsPerDollar === 0) return { brandId, points: 0 };
+  const eligibleAmountCents = program.excludedItemIds.length === 0
+    ? params.orderTotalCents
+    : params.quote.items
+        .filter((item) => !program.excludedItemIds.includes(item.itemId))
+        .reduce((sum, item) => sum + item.unitPriceCents * item.quantity, 0);
+  const points = calculateEarnedLoyaltyPoints(eligibleAmountCents) * program.pointsPerDollar;
+  if (points <= 0) return { brandId, points: 0 };
+  const result = await applyLoyaltyMutation({
+    requestId: params.requestId,
+    deps: params.deps,
+    mutation: loyaltyMutationRequestSchema.parse({
+      type: "EARN",
+      brandId,
+      userId: params.userId,
+      locationId: params.locationId,
+      orderId: params.orderId,
+      amountCents: eligibleAmountCents,
+      idempotencyKey: toLoyaltyIdempotencyKey(params.orderId, "earn")
+    }),
+    failureCode: "LOYALTY_EARN_FAILED",
+    failureMessage: "Loyalty earn mutation failed"
+  });
+  return isServiceError(result) ? result : { brandId, points };
+}
+
+function loyaltyDiscountCents(quote: OrderQuote) {
+  return quote.discounts.find((discount) => discount.type === "loyalty")?.amount.amountCents ?? 0;
+}
+
 async function sendOrderStateNotification(params: {
   requestId: string;
   deps: OrderServiceDeps;
@@ -969,7 +1107,8 @@ async function resolveAppliedDiscount(params: {
   };
 }
 
-async function buildQuote(input: QuoteRequest, repository: OrdersRepository, userId?: string): Promise<OrderQuote> {
+async function buildQuote(input: QuoteRequest, deps: OrderServiceDeps, userId?: string, requestId = "orders_quote"): Promise<OrderQuote> {
+  const repository = deps.repository;
   const uniqueItemIds = [...new Set(input.items.map((item) => item.itemId))];
   const catalogItems = await repository.getCatalogItemsForQuote(input.locationId, uniqueItemIds);
   const quotedItems = input.items.map((item) => {
@@ -1010,8 +1149,41 @@ async function buildQuote(input: QuoteRequest, repository: OrdersRepository, use
   });
   const discountCodeDiscountCents = appliedDiscount?.discountCents ?? 0;
   const remainingSubtotalCents = Math.max(subtotalCents - discountCodeDiscountCents, 0);
-  const appliedPoints = Math.min(input.pointsToRedeem, remainingSubtotalCents);
-  const totalDiscountCents = discountCodeDiscountCents + appliedPoints;
+  let appliedPoints = 0;
+  let loyaltyDiscountCents = 0;
+  if (input.pointsToRedeem > 0) {
+    if (!userId) {
+      throw new QuotePreparationError({ statusCode: 401, code: "INVALID_USER_CONTEXT", message: "Sign in before redeeming loyalty points." });
+    }
+    const brandId = deps.publicBrandId?.trim();
+    if (!brandId) {
+      throw new QuotePreparationError({ statusCode: 400, code: "INVALID_BRAND_CONTEXT", message: "A brand context is required to redeem loyalty points." });
+    }
+    const program = await getLoyaltyProgramContext({
+      requestId,
+      deps,
+      brandId,
+      locationId: input.locationId,
+      userId
+    });
+    if (isServiceError(program)) {
+      throw new QuotePreparationError({ statusCode: program.statusCode, code: program.code, message: program.message });
+    }
+    const balance = program.balance;
+    if (!program.enabled || !program.participating || !balance) {
+      throw new QuotePreparationError({ statusCode: 409, code: "LOYALTY_PROGRAM_UNAVAILABLE", message: "The loyalty program is not available at this store." });
+    }
+    if (input.pointsToRedeem < program.minimumRedemptionPoints || input.pointsToRedeem > balance.availablePoints) {
+      throw new QuotePreparationError({ statusCode: 409, code: "LOYALTY_REDEMPTION_UNAVAILABLE", message: "The requested loyalty points are not available." });
+    }
+    loyaltyDiscountCents = input.pointsToRedeem * program.redemptionCentsPerPoint;
+    const maximumDiscountCents = Math.floor((remainingSubtotalCents * program.maximumRedemptionPercent) / 100);
+    if (loyaltyDiscountCents > maximumDiscountCents) {
+      throw new QuotePreparationError({ statusCode: 409, code: "LOYALTY_REDEMPTION_LIMIT", message: "The requested loyalty points exceed this order's redemption limit." });
+    }
+    appliedPoints = input.pointsToRedeem;
+  }
+  const totalDiscountCents = discountCodeDiscountCents + loyaltyDiscountCents;
   const taxBaseCents = subtotalCents - totalDiscountCents;
   const taxRateBasisPoints = await repository.getTaxRateBasisPoints(input.locationId);
   const taxCents = Math.round((taxBaseCents * taxRateBasisPoints) / 10_000);
@@ -1029,7 +1201,7 @@ async function buildQuote(input: QuoteRequest, repository: OrdersRepository, use
       ? {
           type: "loyalty" as const,
           label: "Loyalty points",
-          amount: { currency: "USD" as const, amountCents: appliedPoints }
+          amount: { currency: "USD" as const, amountCents: loyaltyDiscountCents }
         }
       : undefined
   ].filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
@@ -1225,6 +1397,10 @@ export async function confirmCheckoutPayment(params: {
   if (!quote) {
     return { error: buildServiceError({ statusCode: 409, code: "CHECKOUT_CONTEXT_MISSING", message: "Checkout quote context is missing" }) };
   }
+  const brandId = await deps.repository.getBrandIdForLocation(draft.locationId);
+  if (!brandId) {
+    return { error: buildServiceError({ statusCode: 409, code: "LOYALTY_BRAND_CONTEXT_MISSING", message: "The checkout location has no canonical brand" }) };
+  }
 
   if (quote.pointsToRedeem > 0) {
     const redeemResult = await applyLoyaltyMutation({
@@ -1232,10 +1408,12 @@ export async function confirmCheckoutPayment(params: {
       deps,
       mutation: loyaltyMutationRequestSchema.parse({
         type: "REDEEM",
+        brandId,
         userId: draft.userId,
         locationId: draft.locationId,
         orderId: draft.checkoutId,
-        amountCents: quote.pointsToRedeem,
+        amountCents: loyaltyDiscountCents(quote),
+        points: quote.pointsToRedeem,
         idempotencyKey: toLoyaltyIdempotencyKey(draft.checkoutId, "redeem")
       }),
       failureCode: "LOYALTY_REDEEM_FAILED",
@@ -1244,19 +1422,14 @@ export async function confirmCheckoutPayment(params: {
     if (isServiceError(redeemResult)) return { error: redeemResult };
   }
 
-  const earnResult = await applyLoyaltyMutation({
+  const earnResult = await awardOrderEarn({
     requestId,
     deps,
-    mutation: loyaltyMutationRequestSchema.parse({
-      type: "EARN",
-      userId: draft.userId,
-      locationId: draft.locationId,
-      orderId: draft.checkoutId,
-      amountCents: draft.total.amountCents,
-      idempotencyKey: toLoyaltyIdempotencyKey(draft.checkoutId, "earn")
-    }),
-    failureCode: "LOYALTY_EARN_FAILED",
-    failureMessage: "Loyalty earn mutation failed"
+    orderId: draft.checkoutId,
+    userId: draft.userId,
+    locationId: draft.locationId,
+    orderTotalCents: draft.total.amountCents,
+    quote
   });
   if (isServiceError(earnResult)) return { error: earnResult };
 
@@ -1545,6 +1718,7 @@ async function requestSuccessfulRefund(params: {
 
 export async function createQuote(params: {
   input: QuoteRequest;
+  requestId?: string;
   requestUserContext?: RequestUserContext;
   deps: OrderServiceDeps;
 }): Promise<{ quote: OrderQuote } | { error: ServiceError }> {
@@ -1558,7 +1732,7 @@ export async function createQuote(params: {
       return storeAvailability;
     }
 
-    const quote = await buildQuote(params.input, params.deps.repository, params.requestUserContext?.userId);
+    const quote = await buildQuote(params.input, params.deps, params.requestUserContext?.userId, params.requestId);
     return { quote };
   } catch (error) {
     if (error instanceof QuotePreparationError) {
@@ -2034,35 +2208,29 @@ export async function cancelOrder(params: {
       await deps.repository.setSuccessfulRefund(orderId, successfulRefund);
     }
 
-    const earnedPointsToReverse = calculateEarnedLoyaltyPoints(existingOrder.total.amountCents);
-    if (earnedPointsToReverse > 0) {
-      const reverseEarnMutation = loyaltyMutationRequestSchema.parse({
-        type: "ADJUSTMENT",
-        userId: orderUserId,
-        locationId: existingOrder.locationId,
-        orderId,
-        points: -earnedPointsToReverse,
-        idempotencyKey: toLoyaltyIdempotencyKey(orderId, "reverse-earn")
-      });
-      const reverseEarnResult = await applyLoyaltyMutation({
-        requestId,
-        deps,
-        mutation: reverseEarnMutation,
-        failureCode: "LOYALTY_REVERSAL_FAILED",
-        failureMessage: "Loyalty earn reversal failed"
-      });
-      if (isServiceError(reverseEarnResult)) {
-        return { error: reverseEarnResult };
-      }
+    const orderBrandId = await deps.repository.getOrderBrandId(orderId);
+    if (!orderBrandId) {
+      return { error: buildServiceError({ statusCode: 409, code: "LOYALTY_BRAND_CONTEXT_MISSING", message: "The order has no canonical brand" }) };
     }
+    const reverseEarnResult = await reverseOrderEarn({
+      requestId, deps, brandId: orderBrandId, userId: orderUserId,
+      locationId: existingOrder.locationId, orderId
+    });
+    if (isServiceError(reverseEarnResult)) {
+      return { error: reverseEarnResult };
+    }
+    const reversedEntry = reverseEarnResult && "entry" in reverseEarnResult ? reverseEarnResult.entry : undefined;
+    const earnedPointsToReverse = reversedEntry ? Math.abs(reversedEntry.points) : 0;
 
     if (orderQuote.pointsToRedeem > 0) {
       const refundRedeemMutation = loyaltyMutationRequestSchema.parse({
         type: "REFUND",
+        brandId: orderBrandId,
         userId: orderUserId,
         locationId: existingOrder.locationId,
         orderId,
-        amountCents: orderQuote.pointsToRedeem,
+        amountCents: loyaltyDiscountCents(orderQuote),
+        points: orderQuote.pointsToRedeem,
         idempotencyKey: toLoyaltyIdempotencyKey(orderId, "refund-redeem")
       });
       const refundRedeemResult = await applyLoyaltyMutation({
@@ -2208,13 +2376,19 @@ export async function reconcilePaymentWebhook(params: {
     if (isServiceError(orderUserId)) {
       return { error: orderUserId };
     }
+    const brandId = await deps.repository.getOrderBrandId(input.orderId);
+    if (!brandId) {
+      return { error: buildServiceError({ statusCode: 409, code: "LOYALTY_BRAND_CONTEXT_MISSING", message: "The order has no canonical brand" }) };
+    }
     if (orderQuote.pointsToRedeem > 0) {
       const redeemMutation = loyaltyMutationRequestSchema.parse({
         type: "REDEEM",
+        brandId,
         userId: orderUserId,
         locationId: existingOrder.locationId,
         orderId: input.orderId,
-        amountCents: orderQuote.pointsToRedeem,
+        amountCents: loyaltyDiscountCents(orderQuote),
+        points: orderQuote.pointsToRedeem,
         idempotencyKey: toLoyaltyIdempotencyKey(input.orderId, "redeem")
       });
       const redeemResult = await applyLoyaltyMutation({
@@ -2229,25 +2403,19 @@ export async function reconcilePaymentWebhook(params: {
       }
     }
 
-    const earnedPoints = calculateEarnedLoyaltyPoints(existingOrder.total.amountCents);
-    const earnMutation = loyaltyMutationRequestSchema.parse({
-      type: "EARN",
-      userId: orderUserId,
-      locationId: existingOrder.locationId,
-      orderId: input.orderId,
-      amountCents: existingOrder.total.amountCents,
-      idempotencyKey: toLoyaltyIdempotencyKey(input.orderId, "earn")
-    });
-    const earnResult = await applyLoyaltyMutation({
+    const earnResult = await awardOrderEarn({
       requestId,
       deps,
-      mutation: earnMutation,
-      failureCode: "LOYALTY_EARN_FAILED",
-      failureMessage: "Loyalty earn mutation failed"
+      orderId: input.orderId,
+      userId: orderUserId,
+      locationId: existingOrder.locationId,
+      orderTotalCents: existingOrder.total.amountCents,
+      quote: orderQuote
     });
     if (isServiceError(earnResult)) {
       return { error: earnResult };
     }
+    const earnedPoints = earnResult.points;
 
     await deps.repository.redeemDiscountForOrder(input.orderId);
     const discountRedemption = await deps.repository.getOrderDiscountRedemption(input.orderId);
@@ -2389,35 +2557,29 @@ export async function reconcilePaymentWebhook(params: {
   if (isServiceError(orderUserId)) {
     return { error: orderUserId };
   }
-  const earnedPointsToReverse = calculateEarnedLoyaltyPoints(existingOrder.total.amountCents);
-  if (earnedPointsToReverse > 0) {
-    const reverseEarnMutation = loyaltyMutationRequestSchema.parse({
-      type: "ADJUSTMENT",
-      userId: orderUserId,
-      locationId: existingOrder.locationId,
-      orderId: input.orderId,
-      points: -earnedPointsToReverse,
-      idempotencyKey: toLoyaltyIdempotencyKey(input.orderId, "reverse-earn")
-    });
-    const reverseEarnResult = await applyLoyaltyMutation({
-      requestId,
-      deps,
-      mutation: reverseEarnMutation,
-      failureCode: "LOYALTY_REVERSAL_FAILED",
-      failureMessage: "Loyalty earn reversal failed"
-    });
-    if (isServiceError(reverseEarnResult)) {
-      return { error: reverseEarnResult };
-    }
+  const orderBrandId = await deps.repository.getOrderBrandId(input.orderId);
+  if (!orderBrandId) {
+    return { error: buildServiceError({ statusCode: 409, code: "LOYALTY_BRAND_CONTEXT_MISSING", message: "The order has no canonical brand" }) };
   }
+  const reverseEarnResult = await reverseOrderEarn({
+    requestId, deps, brandId: orderBrandId, userId: orderUserId,
+    locationId: existingOrder.locationId, orderId: input.orderId
+  });
+  if (isServiceError(reverseEarnResult)) {
+    return { error: reverseEarnResult };
+  }
+  const reversedEntry = reverseEarnResult && "entry" in reverseEarnResult ? reverseEarnResult.entry : undefined;
+  const earnedPointsToReverse = reversedEntry ? Math.abs(reversedEntry.points) : 0;
 
   if (orderQuote.pointsToRedeem > 0) {
     const refundRedeemMutation = loyaltyMutationRequestSchema.parse({
       type: "REFUND",
+      brandId: orderBrandId,
       userId: orderUserId,
       locationId: existingOrder.locationId,
       orderId: input.orderId,
-      amountCents: orderQuote.pointsToRedeem,
+      amountCents: loyaltyDiscountCents(orderQuote),
+      points: orderQuote.pointsToRedeem,
       idempotencyKey: toLoyaltyIdempotencyKey(input.orderId, "refund-redeem")
     });
     const refundRedeemResult = await applyLoyaltyMutation({

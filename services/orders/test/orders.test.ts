@@ -26,7 +26,7 @@ const sampleQuotePayload = {
     },
     { itemId: "croissant", quantity: 1 }
   ],
-  pointsToRedeem: 125
+  pointsToRedeem: 0
 };
 const publicTestBrandId = "test-public-runtime-brand";
 const secondTestBrandId = "test-second-public-runtime-brand";
@@ -58,6 +58,7 @@ async function createQuotedOrder(
   const quoteResponse = await app.inject({
     method: "POST",
     url: `/v1/orders/quote?brandId=${brandId}`,
+    headers: customerHeaders(options.userId ?? defaultTestUserId),
     payload
   });
   expect(quoteResponse.statusCode).toBe(200);
@@ -138,6 +139,7 @@ describe("orders service", () => {
         lifetimeEarned: number;
       }
     >();
+    const loyaltyEarnEntries = new Map<string, Record<string, unknown>>();
     const dispatchedOrderStateKeys = new Set<string>();
     fetchMock.mockImplementation(async (input, init) => {
       const url = typeof input === "string" ? input : input.toString();
@@ -217,16 +219,40 @@ describe("orders service", () => {
         });
       }
 
+      if (parsedUrl.pathname === "/v1/loyalty/internal/program-context" && method === "GET") {
+        const brandId = parsedUrl.searchParams.get("brandId") ?? "";
+        const locationId = parsedUrl.searchParams.get("locationId") ?? "";
+        const userId = parsedUrl.searchParams.get("userId") ?? undefined;
+        const balance = userId
+          ? loyaltyBalances.get(`${brandId}:${userId}`) ?? { availablePoints: 2_000, pendingPoints: 0, lifetimeEarned: 2_000 }
+          : undefined;
+        return paymentsResponse({
+          brandId, locationId, enabled: true, participating: true,
+          pointsPerDollar: 1, redemptionCentsPerPoint: 1, minimumRedemptionPoints: 1,
+          maximumRedemptionPercent: 100, excludedItemIds: [],
+          ...(userId && balance ? { balance: { brandId, userId, ...balance } } : {})
+        });
+      }
+
+      if (parsedUrl.pathname === "/v1/loyalty/internal/order-earn" && method === "GET") {
+        const brandId = parsedUrl.searchParams.get("brandId") ?? "";
+        const userId = parsedUrl.searchParams.get("userId") ?? "";
+        const orderId = parsedUrl.searchParams.get("orderId") ?? "";
+        return paymentsResponse({ entry: loyaltyEarnEntries.get(`${brandId}:${userId}:${orderId}`) ?? null });
+      }
+
       if (url.endsWith("/v1/loyalty/internal/ledger/apply") && method === "POST") {
         const expectedInternalToken = process.env.LOYALTY_INTERNAL_API_TOKEN;
         const headers = new Headers(init?.headers);
         expect(headers.get("x-internal-token")).toBe(expectedInternalToken);
+        const brandId = String(body.brandId ?? publicTestBrandId);
         const userId = String(body.userId ?? defaultUserId);
         const locationId = String(body.locationId ?? "flagship-01");
         const idempotencyKey = String(body.idempotencyKey ?? "");
         const mutationType = String(body.type ?? "");
-        const idempotencyScope = `${userId}:${locationId}:${idempotencyKey}`;
+        const idempotencyScope = `${brandId}:${userId}:${idempotencyKey}`;
         const fingerprint = JSON.stringify({
+          brandId,
           type: mutationType,
           locationId,
           orderId: body.orderId ?? null,
@@ -248,7 +274,7 @@ describe("orders service", () => {
           return paymentsResponse(existingMutation.response);
         }
 
-        const balanceKey = `${userId}:${locationId}`;
+        const balanceKey = `${brandId}:${userId}`;
         const balance = loyaltyBalances.get(balanceKey) ?? {
           availablePoints: 2_000,
           pendingPoints: 0,
@@ -261,9 +287,9 @@ describe("orders service", () => {
           deltaPoints = Math.floor(amountCents / 100);
           lifetimeDelta = deltaPoints;
         } else if (mutationType === "REDEEM") {
-          deltaPoints = -Number(body.amountCents ?? 0);
+          deltaPoints = -Number(body.points ?? 0);
         } else if (mutationType === "REFUND") {
-          deltaPoints = Number(body.amountCents ?? 0);
+          deltaPoints = Number(body.points ?? 0);
         } else if (mutationType === "ADJUSTMENT") {
           deltaPoints = Number(body.points ?? 0);
         } else {
@@ -290,6 +316,8 @@ describe("orders service", () => {
         const response = {
           entry: {
             id: randomUUID(),
+            brandId,
+            userId,
             type: mutationType,
             points: deltaPoints,
             orderId: body.orderId,
@@ -297,11 +325,14 @@ describe("orders service", () => {
             createdAt: "2026-03-10T00:03:00.000Z"
           },
           balance: {
+            brandId,
             userId,
-            locationId,
             ...nextBalance
           }
         };
+        if (mutationType === "EARN" && body.orderId) {
+          loyaltyEarnEntries.set(`${brandId}:${userId}:${String(body.orderId)}`, response.entry);
+        }
         loyaltyIdempotency.set(idempotencyScope, {
           fingerprint,
           response
@@ -453,7 +484,8 @@ describe("orders service", () => {
     const quoteResponse = await app.inject({
       method: "POST",
       url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
-      payload: sampleQuotePayload
+      headers: customerHeaders(),
+      payload: { ...sampleQuotePayload, pointsToRedeem: 125 }
     });
     expect(quoteResponse.statusCode).toBe(200);
     const quote = orderQuoteSchema.parse(quoteResponse.json());
@@ -1123,7 +1155,8 @@ describe("orders service", () => {
     const quoteResponse = await app.inject({
       method: "POST",
       url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
-      payload: sampleQuotePayload
+      headers: customerHeaders(),
+      payload: { ...sampleQuotePayload, pointsToRedeem: 125 }
     });
     const quote = orderQuoteSchema.parse(quoteResponse.json());
 
@@ -1468,7 +1501,8 @@ describe("orders service", () => {
     const quoteResponse = await app.inject({
       method: "POST",
       url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
-      payload: sampleQuotePayload
+      headers: customerHeaders(),
+      payload: { ...sampleQuotePayload, pointsToRedeem: 125 }
     });
     const quote = orderQuoteSchema.parse(quoteResponse.json());
 
@@ -1645,7 +1679,8 @@ describe("orders service", () => {
     const quoteResponse = await app.inject({
       method: "POST",
       url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
-      payload: sampleQuotePayload
+      headers: customerHeaders(),
+      payload: { ...sampleQuotePayload, pointsToRedeem: 125 }
     });
     const quote = orderQuoteSchema.parse(quoteResponse.json());
 

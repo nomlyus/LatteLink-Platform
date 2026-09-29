@@ -101,7 +101,6 @@ export interface PaymentsCloverConnectionTable {
 
 export interface LoyaltyBalanceTable {
   brand_id: string;
-  location_id: string;
   user_id: string;
   available_points: number;
   pending_points: number;
@@ -127,6 +126,25 @@ export interface LoyaltyIdempotencyKeyTable {
   idempotency_key: string;
   request_fingerprint: string;
   response_json: unknown;
+  created_at: Generated<string>;
+}
+
+export interface LoyaltyProgramTable {
+  brand_id: string;
+  enabled: boolean;
+  points_per_dollar: number;
+  redemption_cents_per_point: number;
+  minimum_redemption_points: number;
+  maximum_redemption_percent: number;
+  excluded_item_ids: string[];
+  version: number;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
+export interface LoyaltyProgramLocationTable {
+  brand_id: string;
+  location_id: string;
   created_at: Generated<string>;
 }
 
@@ -671,6 +689,8 @@ export interface PersistenceDatabase {
   loyalty_balances: LoyaltyBalanceTable;
   loyalty_ledger_entries: LoyaltyLedgerEntryTable;
   loyalty_idempotency_keys: LoyaltyIdempotencyKeyTable;
+  loyalty_programs: LoyaltyProgramTable;
+  loyalty_program_locations: LoyaltyProgramLocationTable;
   orders_quotes: OrdersQuoteTable;
   order_checkout_drafts: OrderCheckoutDraftTable;
   orders: OrdersTable;

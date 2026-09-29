@@ -22,6 +22,7 @@
     "@fastify/swagger": "^9.8.1",
     "@fastify/swagger-ui": "^5.2.6",
     "@lattelink/contracts-catalog": "workspace:*",
+    "@lattelink/contracts-loyalty": "workspace:*",
     "@lattelink/contracts-orders": "workspace:*",
     "@lattelink/event-bus": "workspace:*",
     "@lattelink/observability": "workspace:*",

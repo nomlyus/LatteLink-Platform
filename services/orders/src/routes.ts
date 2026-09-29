@@ -767,6 +767,7 @@ export async function registerRoutes(app: FastifyInstance) {
       const requestUserContext = parseRequestUserContext(request);
       const result = await createQuote({
         input,
+        requestId: request.id,
         requestUserContext,
         deps: getServiceDeps(request, parsedBrand.data.brandId)
       });

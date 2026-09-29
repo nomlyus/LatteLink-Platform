@@ -94,8 +94,8 @@ describe("gateway JWT customer auth", () => {
 
         return new Response(
           JSON.stringify({
+            brandId: "northside-coffee",
             userId,
-            locationId: "flagship-01",
             availablePoints: 240,
             pendingPoints: 0,
             lifetimeEarned: 600
@@ -130,7 +130,7 @@ describe("gateway JWT customer auth", () => {
     const requestedUrls = fetchMock.mock.calls.map(([input]) => (typeof input === "string" ? input : input.url));
     expect(requestedUrls).toEqual([
       "http://catalog.internal/v1/catalog/internal/public-location-access?brandId=northside-coffee&locationId=flagship-01",
-      "http://loyalty.internal/v1/loyalty/balance?locationId=flagship-01"
+      "http://loyalty.internal/v1/loyalty/balance?brandId=northside-coffee&locationId=flagship-01"
     ]);
 
     await app.close();
@@ -153,8 +153,8 @@ describe("gateway JWT customer auth", () => {
       const forwardedUserId = new Headers((init?.headers ?? {}) as HeadersInit).get("x-user-id");
       return new Response(
         JSON.stringify({
+          brandId: "northside-coffee",
           userId: forwardedUserId,
-          locationId: "flagship-01",
           availablePoints: 0,
           pendingPoints: 0,
           lifetimeEarned: 0
@@ -270,8 +270,8 @@ describe("gateway JWT customer auth", () => {
 
         return new Response(
           JSON.stringify({
+            brandId: "northside-coffee",
             userId,
-            locationId: "flagship-01",
             availablePoints: 240,
             pendingPoints: 0,
             lifetimeEarned: 600
@@ -299,7 +299,7 @@ describe("gateway JWT customer auth", () => {
     expect(requestedUrls).toEqual([
       "http://identity.internal/v1/auth/me",
       "http://catalog.internal/v1/catalog/internal/public-location-access?brandId=northside-coffee&locationId=flagship-01",
-      "http://loyalty.internal/v1/loyalty/balance?locationId=flagship-01"
+      "http://loyalty.internal/v1/loyalty/balance?brandId=northside-coffee&locationId=flagship-01"
     ]);
 
     await app.close();

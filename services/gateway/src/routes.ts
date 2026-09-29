@@ -6404,7 +6404,7 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
       baseUrl: loyaltyBaseUrl,
       serviceLabel: "Loyalty",
       method: "GET",
-      path: `/v1/loyalty/balance?locationId=${encodeURIComponent(location.locationId)}`,
+      path: `/v1/loyalty/balance?brandId=${encodeURIComponent(location.brandId)}&locationId=${encodeURIComponent(location.locationId)}`,
       additionalHeaders: {
         "x-gateway-token": gatewayInternalApiToken
       },
@@ -6425,7 +6425,7 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
       baseUrl: loyaltyBaseUrl,
       serviceLabel: "Loyalty",
       method: "GET",
-      path: `/v1/loyalty/ledger?locationId=${encodeURIComponent(location.locationId)}`,
+      path: `/v1/loyalty/ledger?brandId=${encodeURIComponent(location.brandId)}&locationId=${encodeURIComponent(location.locationId)}`,
       additionalHeaders: {
         "x-gateway-token": gatewayInternalApiToken
       },

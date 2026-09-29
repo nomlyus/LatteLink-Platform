@@ -325,6 +325,7 @@ export type OrdersRepository = {
   listOrdersByUserAndBrand(userId: string, brandId: string): Promise<Order[]>;
   listOrdersByLocation(locationId: string): Promise<Order[]>;
   getOrderBrandId(orderId: string): Promise<string | undefined>;
+  getBrandIdForLocation(locationId: string): Promise<string | undefined>;
   getOrderForCreateIdempotency(quoteId: string, quoteHash: string): Promise<Order | undefined>;
   saveCreateOrderIdempotency(quoteId: string, quoteHash: string, orderId: string): Promise<void>;
   getPaymentOrderByIdempotency(orderId: string, idempotencyKey: string): Promise<Order | undefined>;
@@ -513,6 +514,7 @@ const fallbackCatalogItems = new Map<string, QuoteCatalogItem>([
 function createInMemoryRepository(): OrdersRepository {
   const quotesById = new Map<string, OrderQuote>();
   const quoteBrandIds = new Map<string, string>();
+  const brandByLocation = new Map<string, string>();
   const checkoutDraftsById = new Map<string, CheckoutDraft>();
   const ordersById = new Map<string, StoredOrderRecord>();
   const createOrderIdempotency = new Map<string, string>();
@@ -544,7 +546,10 @@ function createInMemoryRepository(): OrdersRepository {
     backend: "memory",
     async saveQuote(quote, brandId) {
       quotesById.set(quote.quoteId, quote);
-      if (brandId) quoteBrandIds.set(quote.quoteId, brandId);
+      if (brandId) {
+        quoteBrandIds.set(quote.quoteId, brandId);
+        brandByLocation.set(quote.locationId, brandId);
+      }
     },
     async getQuote(quoteId) {
       return quotesById.get(quoteId);
@@ -605,6 +610,9 @@ function createInMemoryRepository(): OrdersRepository {
     },
     async getOrderBrandId(orderId) {
       return ordersById.get(orderId)?.brandId;
+    },
+    async getBrandIdForLocation(locationId) {
+      return brandByLocation.get(locationId);
     },
     async listOrders() {
       const orders = [...ordersById.values()].map((entry) => entry.order);
@@ -1253,6 +1261,18 @@ async function createPostgresRepository(
           ON client.tenant_id = location.tenant_id
          AND client.brand_id = location.brand_id
         WHERE orders.order_id = ${orderId}::uuid
+        LIMIT 1
+      `.execute(db);
+      return row.rows[0]?.brand_id;
+    },
+    async getBrandIdForLocation(locationId) {
+      const row = await sql<{ brand_id: string }>`
+        SELECT client.brand_id
+        FROM catalog_client_locations AS location
+        INNER JOIN catalog_clients AS client
+          ON client.tenant_id = location.tenant_id
+         AND client.brand_id = location.brand_id
+        WHERE location.location_id = ${locationId}
         LIMIT 1
       `.execute(db);
       return row.rows[0]?.brand_id;

@@ -80,6 +80,8 @@ describe("order history visibility", () => {
     const loyaltyLedger: LoyaltyLedgerEntry[] = [
       {
         id: "123e4567-e89b-12d3-a456-426614174003",
+        brandId: "test-brand",
+        userId: "123e4567-e89b-12d3-a456-426614174001",
         type: "REFUND",
         points: 25,
         orderId,
@@ -88,6 +90,8 @@ describe("order history visibility", () => {
       },
       {
         id: "123e4567-e89b-12d3-a456-426614174004",
+        brandId: "test-brand",
+        userId: "123e4567-e89b-12d3-a456-426614174001",
         type: "EARN",
         points: 5,
         orderId,
