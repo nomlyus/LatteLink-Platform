@@ -24,14 +24,15 @@ const refundOrderId = "20000000-0000-4000-8000-000000000002";
 
 describeWithPostgres("brand-wide loyalty persistence (PostgreSQL)", () => {
   const databaseName = `test_loyalty_${randomUUID().replaceAll("-", "")}`;
-  const testDatabaseUrl = new URL(adminDatabaseUrl!);
-  testDatabaseUrl.pathname = `/${databaseName}`;
+  const testDatabaseUrl = adminDatabaseUrl ? new URL(adminDatabaseUrl) : undefined;
+  if (testDatabaseUrl) testDatabaseUrl.pathname = `/${databaseName}`;
   let adminDb: PersistenceDb;
   let testDb: PersistenceDb;
   let app: Awaited<ReturnType<typeof buildApp>>;
   let originalDatabaseUrl: string | undefined;
 
   beforeAll(async () => {
+    if (!adminDatabaseUrl || !testDatabaseUrl) return;
     adminDb = createPostgresDb(adminDatabaseUrl!);
     testDb = createPostgresDb(testDatabaseUrl.toString());
     await sql.raw(`CREATE DATABASE "${databaseName}"`).execute(adminDb);
@@ -60,6 +61,7 @@ describeWithPostgres("brand-wide loyalty persistence (PostgreSQL)", () => {
   }, 120_000);
 
   afterAll(async () => {
+    if (!adminDb || !testDb) return;
     if (app) await app.close();
     await testDb.destroy();
     await sql.raw(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`).execute(adminDb);
