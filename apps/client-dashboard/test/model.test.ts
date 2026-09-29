@@ -15,7 +15,6 @@ import {
   filterVisibleOrders,
   formatOrderStatus,
   getAppConfigCapabilityLabels,
-  getAvailableSections,
   getOrderCancelUnavailableMessage,
   getOrderControlUnavailableMessage,
   getOperatorRoleLabel,
@@ -273,7 +272,7 @@ describe("client dashboard model", () => {
     expect(getOrderCustomerLabel({ ...sampleOrder, customer: undefined })).toBe("Customer details unavailable");
   });
 
-  it("derives capability labels and available sections from runtime config", () => {
+  it("derives capability labels from runtime config", () => {
     expect(getAppConfigCapabilityLabels(sampleAppConfig)).toEqual([
       "Apple Pay",
       "Card",
@@ -289,44 +288,6 @@ describe("client dashboard model", () => {
       "orders tab"
     ]);
 
-    expect(getAvailableSections(sampleOperator, sampleAppConfig)).toEqual([
-      "overview",
-      "orders",
-      "menu",
-      "cards",
-      "discounts",
-      "store",
-      "team"
-    ]);
-    expect(
-      getAvailableSections(
-        { ...sampleOperator, capabilities: ["menu:read"] },
-        {
-          ...sampleAppConfig,
-          storeCapabilities: {
-            ...sampleAppConfig.storeCapabilities,
-            operations: {
-              ...sampleAppConfig.storeCapabilities.operations,
-              liveOrderTrackingEnabled: false
-            }
-          }
-        }
-      )
-    ).toEqual(["overview", "menu", "cards", "discounts"]);
-    expect(
-      getAvailableSections(
-        { ...sampleOperator, capabilities: ["menu:read"] },
-        {
-          ...sampleAppConfig,
-          storeCapabilities: {
-            ...sampleAppConfig.storeCapabilities,
-            menu: {
-              source: "external_sync"
-            }
-          }
-        }
-      )
-    ).toEqual(["overview", "cards", "discounts"]);
   });
 
   it("resolves role labels and capability access", () => {

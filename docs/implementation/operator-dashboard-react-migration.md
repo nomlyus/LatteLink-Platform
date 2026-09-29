@@ -6,6 +6,20 @@
 > as current route ownership or active dashboard functionality. Published mobile
 > experience and release infrastructure remains in the Catalog/mobile runtime.
 
+## Current implementation checkpoint — final auth/runtime slice
+
+This checkpoint describes the React migration state after the auth, session, Google callback, and invite work. The audit and plan below are a historical Phase 0 snapshot and must not be read as describing current route ownership.
+
+**Verified current route ownership:** `/` is the React auth/Home entry; `/orders`, `/menu`, `/cards`, `/discounts`, `/team`, `/settings`, and `/onboarding` are explicit Next App Router pages; `/invites` is a React invite-acceptance page. There is no optional catch-all or `/legacy/[section]` route. Unknown paths such as `/legacy/orders` are handled by Next's ordinary not-found behavior.
+
+**Verified current runtime:** the old SPA bootstrap and renderer have been removed (`main.ts`, `render.ts`, `events.ts`, `lifecycle.ts`, `state.ts`, legacy views/controllers, and the legacy host). No current React feature imports that runtime. React owns sign-in, session restoration/refresh/logout, Google callback exchange, and invite lookup/acceptance. Feature state and the shared React session/location providers remain client-owned because the existing token is browser-local and the APIs use bearer authorization.
+
+**Verified compatibility behavior:** persisted operator sessions keep the existing `lattelink.operator.session.v2` serialization and API-base validation; logout clears the session record but retains API-base and per-operator location preferences as before. A root Google return still uses `/?google_auth_callback=1`, exchanges the callback with the backend, and removes only callback parameters while retaining unrelated query/hash values. `/invites/#<opaque-token>` reads the fragment, removes it from the address bar before lookup, locally clears any current session without attempting a remote logout, then preserves invite lookup/accept and post-accept password sign-in. Owner launch intent, Stripe return routing, and store-role Orders landing remain in the React root entry logic.
+
+**Inferred:** this completes the route/runtime cutover described by #535 because the last active consumers of the legacy runtime were the signed-out fallback, invite page, and callback/bootstrap path. This claim is guarded by source import searches and dashboard tests; it is not evidence of a successful third-party Google OAuth round trip.
+
+**Unknown:** production or development deploy behavior is not assessed by this code checkpoint. This slice does not change APIs, OAuth provider configuration, token storage format, backend authorization, or deployments.
+
 - **Issue:** [#535 — G2-13: Complete Operator Dashboard V3 React/Next.js architecture migration](https://github.com/nomlyus/LatteLink-Platform/issues/535)
 - **Audit baseline:** `develop` at `574ac41d7819f0f2aa80596f5a5e73128abddf8d`
 - **Audit date:** 2026-09-28
@@ -420,3 +434,16 @@ Principal references in this audit:
 * Rules/API: `src/model.ts`, `src/api.ts`, `src/orders-runtime.ts`, `src/order-alert.ts`, `src/toast-runtime.ts`, `packages/contracts-auth/src/index.ts`.
 * Surface rendering and actions: `src/views/*.ts`, `src/controllers/*.ts`, `src/google-callback.ts`, `src/controllers/invite-url.ts`.
 * Tests: `apps/client-dashboard/test/*.test.ts` (inventory and gaps in §7).
+
+### Current auth/runtime files
+
+The active final-slice implementation is now in:
+
+* Routes: `apps/client-dashboard/src/app/page.tsx`, `app/invites/page.tsx`, and the explicit pages under `app/{orders,menu,cards,discounts,team,settings,onboarding}/page.tsx`.
+* Authentication and session: `features/auth/auth-api.ts`, `auth-types.ts`, `auth-domain.ts`, `session-domain.ts`, `session-provider.tsx`, `features/auth/google-callback.ts`, and `features/auth/components/`.
+* Invitation flow: `features/invites/invite-api.ts`, `invite-domain.ts`, and `features/invites/components/`.
+* Route and capability navigation: `lib/navigation/dashboard-entry.ts`, `dashboard-navigation.ts`, and `dashboard-sections.ts`.
+* Compatible persistence: `storage.ts` (session/API base/location/wizard preferences; retired SPA section preference is removed).
+* Tests: `test/auth-domain.test.ts`, `auth-react.test.tsx`, `session-domain.test.ts`, `invite-domain.test.ts`, `callback-compat.test.ts`, `dashboard-entry.test.ts`, and `storage.test.ts`.
+
+The historical SPA files listed above under the Phase 0 source map have been deleted and are not current implementation references.

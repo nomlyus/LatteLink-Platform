@@ -1,5 +1,8 @@
 import { isOrderTrackingEnabled, isPlatformManagedMenu, isStaffDashboardEnabled } from "@lattelink/contracts-catalog";
-import { canAccessCapability, isStoreOperator, type DashboardSection, type OperatorUser } from "../../model";
+import { canAccessCapability, isStoreOperator } from "../../model";
+import type { OperatorUser } from "../../features/auth/auth-types";
+
+export type DashboardSection = "overview" | "orders" | "menu" | "cards" | "discounts" | "store" | "team";
 
 export const dashboardSectionLabels: Record<DashboardSection, string> = {
   overview: "Home",

@@ -2,7 +2,7 @@
 
 import React, { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ClientDashboardRoot } from "../../../app/ClientDashboardRoot";
+import { SignInRoute } from "../../auth/components/SignInRoute";
 import { DashboardShell, DashboardShellLoading } from "../../../components/dashboard/DashboardShell";
 import { canAccessCapability, canUpdateStoreSettings } from "../../../model";
 import { useDashboardSession } from "../../auth/session-provider";
@@ -14,7 +14,7 @@ export function SettingsRoute() {
   const { status: sessionStatus, session } = useDashboardSession();
 
   if (sessionStatus === "loading") return <DashboardShellLoading />;
-  if (sessionStatus === "signed-out") return <ClientDashboardRoot initialSection="store" />;
+  if (sessionStatus === "signed-out") return <SignInRoute />;
   if (!session) return <DashboardShellLoading />;
   if (session.operator.role === "store") return <StoreOperatorRedirect />;
 

@@ -3,7 +3,7 @@
 import React from "react";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ClientDashboardRoot } from "../../../app/ClientDashboardRoot";
+import { SignInRoute } from "../../auth/components/SignInRoute";
 import { DashboardShell, DashboardShellLoading } from "../../../components/dashboard/DashboardShell";
 import { useDashboardSession } from "../../auth/session-provider";
 import { useDashboardLocation } from "../../location/location-provider";
@@ -19,7 +19,7 @@ export function TeamRoute() {
   const mutations = useTeamMutations(team);
 
   if (sessionStatus === "loading") return <DashboardShellLoading />;
-  if (sessionStatus === "signed-out") return <ClientDashboardRoot initialSection="team" />;
+  if (sessionStatus === "signed-out") return <SignInRoute />;
   if (!session) return <DashboardShellLoading />;
   if (session.operator.role === "store") return <StoreOperatorRedirect />;
 

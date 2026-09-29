@@ -40,7 +40,7 @@ vi.mock("../src/components/dashboard/DashboardShell", () => ({
   DashboardShell: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
   DashboardShellLoading: () => <div>Dashboard loading</div>
 }));
-vi.mock("../src/app/ClientDashboardRoot", () => ({ ClientDashboardRoot: () => <div>Existing sign-in and invite compatibility</div> }));
+vi.mock("../src/features/auth/components/SignInRoute", () => ({ SignInRoute: () => <div>React sign-in</div> }));
 
 import { OnboardingRoute } from "../src/features/onboarding/components/OnboardingRoute";
 
@@ -56,9 +56,9 @@ beforeEach(() => {
 
 describe("React Onboarding route ownership", () => {
   it("preserves the existing signed-out authentication and callback host", () => {
-    expect(renderToStaticMarkup(<OnboardingRoute />)).toContain("Existing sign-in and invite compatibility");
+    expect(renderToStaticMarkup(<OnboardingRoute />)).toContain("React sign-in");
     harness.search = "google_auth_callback=1&code=callback-code";
-    expect(renderToStaticMarkup(<OnboardingRoute />)).toContain("Existing sign-in and invite compatibility");
+    expect(renderToStaticMarkup(<OnboardingRoute />)).toContain("React sign-in");
   });
 
   it("keeps launch readiness owner-only", () => {

@@ -3,12 +3,13 @@
 import React from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import type { DashboardLocation, OperatorSession } from "../../api";
 import { getAvailableDashboardSectionsFor } from "../../lib/navigation/dashboard-sections";
 import { getDashboardDestination } from "../../lib/navigation/dashboard-navigation";
 import { getDashboardSectionIcon, getDashboardSectionLabel } from "../../lib/navigation/dashboard-sections";
-import type { DashboardSection } from "../../model";
+import type { DashboardSection } from "../../lib/navigation/dashboard-sections";
 import { formatDashboardHeadingDate, getOperatorInitials } from "../../ui/format";
 import { getOperatorRoleLabel } from "../../model";
 import { useDashboardSession } from "../../features/auth/session-provider";
@@ -209,6 +210,7 @@ export function DashboardShellView({
 }
 
 export function DashboardShell({ children, notice, activeSection = "overview", locationSelectionDisabled = false }: { children: ReactNode; notice?: string | null; activeSection?: DashboardSection; locationSelectionDisabled?: boolean }) {
+  const router = useRouter();
   const { session, logout } = useDashboardSession();
   const location = useDashboardLocation();
   useEffect(() => {
@@ -226,7 +228,7 @@ export function DashboardShell({ children, notice, activeSection = "overview", l
       locationSelectionDisabled={locationSelectionDisabled}
       notice={notice}
       onSelectLocation={(locationId) => { location.selectLocation(locationId); }}
-      onLogout={() => { void logout(); }}
+      onLogout={() => { void logout(); router.replace("/", { scroll: false }); }}
     >
       {children}
     </DashboardShellView>

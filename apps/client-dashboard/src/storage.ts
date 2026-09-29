@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { operatorSessionSchema } from "@lattelink/contracts-auth";
-import { normalizeApiBaseUrl, resolveDefaultApiBaseUrl, type OperatorSession } from "./api";
-import type { DashboardSection } from "./model";
+import { normalizeApiBaseUrl, resolveDefaultApiBaseUrl } from "./api";
+import type { OperatorSession } from "./features/auth/auth-types";
 
 const API_BASE_URL_STORAGE_KEY = "lattelink.operator.api-base-url.v2";
 const OPERATOR_SESSION_STORAGE_KEY = "lattelink.operator.session.v2";
@@ -48,6 +48,7 @@ function storageApiBaseUrlMatchesBuild(apiBaseUrl: string) {
 }
 
 export function loadStoredSession(): OperatorSession | null {
+  clearLegacyDashboardSectionPreference();
   const storage = getStorage();
   if (!storage) {
     return null;
@@ -145,27 +146,8 @@ export function persistApiBaseUrl(apiBaseUrl: string) {
   storage.setItem(API_BASE_URL_STORAGE_KEY, normalizeApiBaseUrl(apiBaseUrl));
 }
 
-export function loadStoredSection(): DashboardSection {
-  const storage = getStorage();
-  const nextSection = storage?.getItem(DASHBOARD_SECTION_STORAGE_KEY);
-  if (nextSection === "onboarding") {
-    return "store";
-  }
-  if (nextSection === "experience" || nextSection === "discounts" || nextSection === "team") {
-    storage?.removeItem(DASHBOARD_SECTION_STORAGE_KEY);
-    return "overview";
-  }
-
-  return nextSection === "orders" ||
-    nextSection === "menu" ||
-    nextSection === "store"
-    ? nextSection
-    : "overview";
-}
-
-export function persistSection(section: DashboardSection) {
-  const storage = getStorage();
-  storage?.setItem(DASHBOARD_SECTION_STORAGE_KEY, section);
+export function clearLegacyDashboardSectionPreference() {
+  getStorage()?.removeItem(DASHBOARD_SECTION_STORAGE_KEY);
 }
 
 function dashboardLocationStorageKey(operatorUserId: string) {

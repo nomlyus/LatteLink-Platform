@@ -3,7 +3,7 @@
 import React from "react";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ClientDashboardRoot } from "../../../app/ClientDashboardRoot";
+import { SignInRoute } from "../../auth/components/SignInRoute";
 import { DashboardShell, DashboardShellLoading } from "../../../components/dashboard/DashboardShell";
 import { canAccessCapability, isStoreOperator } from "../../../model";
 import { useDashboardSession } from "../../auth/session-provider";
@@ -19,7 +19,7 @@ export function CardsRoute() {
   const mutations = useCardMutations(cards, cards.scopeKey);
 
   if (sessionStatus === "loading") return <DashboardShellLoading />;
-  if (sessionStatus === "signed-out") return <ClientDashboardRoot initialSection="cards" />;
+  if (sessionStatus === "signed-out") return <SignInRoute />;
   if (!session) return <DashboardShellLoading />;
   if (isStoreOperator(session.operator)) return <StoreOperatorRedirect />;
 

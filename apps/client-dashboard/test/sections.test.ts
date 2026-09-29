@@ -15,7 +15,7 @@ const owner: OperatorSession["operator"] = {
   updatedAt: "2026-05-06T12:00:00.000Z"
 };
 
-describe("legacy dashboard section boundary", () => {
+describe("React dashboard navigation permissions", () => {
   it("keeps launch readiness out of legacy section navigation", () => {
     const sections = getAvailableDashboardSectionsFor(owner, []);
     expect(sections).toContain("store");

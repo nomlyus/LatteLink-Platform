@@ -1,17 +1,5 @@
 import { z } from "zod";
 import {
-  googleOAuthStartResponseSchema,
-  operatorAuthProvidersSchema,
-  operatorDevAccessRequestSchema,
-  operatorGoogleExchangeRequestSchema,
-  operatorInviteAcceptRequestSchema,
-  operatorInviteAcceptResponseSchema,
-  operatorInviteLookupResponseSchema,
-  operatorPasswordSignInSchema,
-  operatorSessionSchema,
-  operatorUserSchema
-} from "@lattelink/contracts-auth";
-import {
   adminMenuItemCreateSchema,
   adminMenuCategoryCreateSchema,
   adminMenuCategoryReorderSchema,
@@ -25,9 +13,7 @@ import {
   adminModifierGroupUpdateSchema,
   modifierGroupSchema,
   adminStoreConfigSchema,
-  appConfigSchema,
-  merchantLaunchRequestSchema,
-  merchantLaunchResponseSchema
+  appConfigSchema
 } from "@lattelink/contracts-catalog";
 import {
   reportingQueryRequestSchema,
@@ -45,20 +31,13 @@ import {
   operatorMenuResponseSchema,
   type OperatorOrder
 } from "./model";
+import type { OperatorSession } from "./features/auth/auth-types";
+
+export type { OperatorSession } from "./features/auth/auth-types";
 
 const ordersSchema = z.array(orderSchema);
 const unreachableBackendMessage = "Unable to reach backend.";
 
-const storedOperatorSessionSchema = operatorSessionSchema.extend({
-  apiBaseUrl: z.string().min(1)
-});
-
-export type OperatorUser = z.output<typeof operatorUserSchema>;
-export type OperatorSession = z.output<typeof storedOperatorSessionSchema>;
-export type OperatorAuthProviders = z.output<typeof operatorAuthProvidersSchema>;
-export type OperatorInviteLookup = z.output<typeof operatorInviteLookupResponseSchema>;
-export type OperatorInviteAcceptResponse = z.output<typeof operatorInviteAcceptResponseSchema>;
-export type MerchantLaunchResponse = z.output<typeof merchantLaunchResponseSchema>;
 export type DashboardLocation = {
   locationId: string;
   locationName: string;
@@ -174,13 +153,6 @@ export function extractApiErrorMessage(payload: unknown, statusCode: number) {
 
 export function isApiRequestError(error: unknown): error is ApiRequestError {
   return error instanceof ApiRequestError;
-}
-
-function toStoredSession(apiBaseUrl: string, payload: z.output<typeof operatorSessionSchema>): OperatorSession {
-  return storedOperatorSessionSchema.parse({
-    apiBaseUrl: normalizeApiBaseUrl(apiBaseUrl),
-    ...payload
-  });
 }
 
 function requireApiBaseUrl(apiBaseUrl: string) {
@@ -335,162 +307,6 @@ async function uploadMenuItemImageVariants(file: File, variantUploads: MenuImage
       });
     })
   );
-}
-
-export async function signInOperatorWithPassword(params: {
-  apiBaseUrl: string;
-  email: string;
-  password: string;
-  locationId?: string;
-}) {
-  const session = await requestJson({
-    apiBaseUrl: params.apiBaseUrl,
-    path: "/operator/auth/sign-in",
-    method: "POST",
-    body: operatorPasswordSignInSchema.parse({
-      email: params.email.trim(),
-      password: params.password,
-      locationId: params.locationId
-    }),
-    schema: operatorSessionSchema
-  });
-
-  return toStoredSession(params.apiBaseUrl, session);
-}
-
-export async function requestOperatorDevAccess(params: { apiBaseUrl: string; email: string }) {
-  const session = await requestJson({
-    apiBaseUrl: params.apiBaseUrl,
-    path: "/operator/auth/dev-access",
-    method: "POST",
-    body: operatorDevAccessRequestSchema.parse({
-      email: params.email.trim()
-    }),
-    schema: operatorSessionSchema
-  });
-
-  return toStoredSession(params.apiBaseUrl, session);
-}
-
-export function lookupOperatorInvite(params: { apiBaseUrl: string; token: string }) {
-  return requestJson({
-    apiBaseUrl: params.apiBaseUrl,
-    path: "/operator/invites/lookup",
-    method: "POST",
-    body: { token: params.token },
-    schema: operatorInviteLookupResponseSchema
-  });
-}
-
-export function acceptOperatorInvite(params: { apiBaseUrl: string; token: string; password: string }) {
-  return requestJson({
-    apiBaseUrl: params.apiBaseUrl,
-    path: "/operator/invites/accept",
-    method: "POST",
-    body: operatorInviteAcceptRequestSchema.parse({
-      token: params.token,
-      password: params.password
-    }),
-    schema: operatorInviteAcceptResponseSchema
-  });
-}
-
-export function createMerchantLaunch(params: {
-  apiBaseUrl: string;
-  businessName: string;
-  locationName: string;
-  marketLabel: string;
-  ownerName: string;
-  ownerEmail: string;
-  storeName?: string;
-}) {
-  return requestJson({
-    apiBaseUrl: params.apiBaseUrl,
-    path: "/merchant/launch",
-    method: "POST",
-    body: merchantLaunchRequestSchema.parse({
-      businessName: params.businessName,
-      locationName: params.locationName,
-      marketLabel: params.marketLabel,
-      ownerName: params.ownerName,
-      ownerEmail: params.ownerEmail,
-      storeName: params.storeName
-    }),
-    schema: merchantLaunchResponseSchema
-  });
-}
-
-export function startOperatorGoogleSignIn(params: { apiBaseUrl: string; redirectUri: string; locationId?: string }) {
-  const search = new URLSearchParams({
-    redirectUri: params.redirectUri
-  });
-  if (params.locationId) {
-    search.set("locationId", params.locationId);
-  }
-
-  return requestJson({
-    apiBaseUrl: params.apiBaseUrl,
-    path: `/operator/auth/google/start?${search.toString()}`,
-    schema: googleOAuthStartResponseSchema
-  });
-}
-
-export function fetchOperatorAuthProviders(params: { apiBaseUrl: string }) {
-  return requestJson({
-    apiBaseUrl: params.apiBaseUrl,
-    path: "/operator/auth/providers",
-    schema: operatorAuthProvidersSchema
-  });
-}
-
-export async function exchangeOperatorGoogleCode(params: {
-  apiBaseUrl: string;
-  code: string;
-  state: string;
-  redirectUri: string;
-  locationId?: string;
-}) {
-  const session = await requestJson({
-    apiBaseUrl: params.apiBaseUrl,
-    path: "/operator/auth/google/exchange",
-    method: "POST",
-    body: operatorGoogleExchangeRequestSchema.parse({
-      code: params.code,
-      state: params.state,
-      redirectUri: params.redirectUri,
-      locationId: params.locationId
-    }),
-    schema: operatorSessionSchema
-  });
-
-  return toStoredSession(params.apiBaseUrl, session);
-}
-
-export async function refreshOperatorSession(session: OperatorSession) {
-  const nextSession = await requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    path: "/operator/auth/refresh",
-    method: "POST",
-    body: {
-      refreshToken: session.refreshToken
-    },
-    schema: operatorSessionSchema
-  });
-
-  return toStoredSession(session.apiBaseUrl, nextSession);
-}
-
-export async function logoutOperatorSession(session: OperatorSession) {
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: "/operator/auth/logout",
-    method: "POST",
-    body: {
-      refreshToken: session.refreshToken
-    },
-    schema: z.object({ success: z.literal(true) })
-  });
 }
 
 export async function fetchDashboardLocations(session: OperatorSession): Promise<DashboardLocation[]> {

@@ -6,17 +6,17 @@ const manager = { role: "manager" } as const;
 const store = { role: "store" } as const;
 
 describe("React dashboard root ownership", () => {
-  it("keeps signed-out users on the existing legacy sign-in flow", () => {
-    expect(resolveDashboardEntryPlan("signed-out", null, "?campaign=spring")).toEqual({ kind: "legacy-auth" });
+  it("assigns signed-out users to the React-owned sign-in experience", () => {
+    expect(resolveDashboardEntryPlan("signed-out", null, "?campaign=spring")).toEqual({ kind: "auth" });
   });
 
-  it("preserves the Google callback for the existing callback handler", () => {
-    expect(resolveDashboardEntryPlan("signed-out", null, "?google_auth_callback=1&state=abc")).toEqual({ kind: "legacy-google-callback" });
+  it("preserves the Google callback for the React auth handler", () => {
+    expect(resolveDashboardEntryPlan("signed-out", null, "?google_auth_callback=1&state=abc")).toEqual({ kind: "google-callback" });
   });
 
   it("holds the React-owned root while the existing session is being restored", () => {
     expect(resolveDashboardEntryPlan("loading", null, "")).toEqual({ kind: "loading" });
-    expect(resolveDashboardEntryPlan("signed-out", null, "")).toEqual({ kind: "legacy-auth" });
+    expect(resolveDashboardEntryPlan("signed-out", null, "")).toEqual({ kind: "auth" });
   });
 
   it("routes Stripe return query parameters to React Onboarding", () => {

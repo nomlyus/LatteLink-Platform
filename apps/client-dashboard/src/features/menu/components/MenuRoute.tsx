@@ -2,7 +2,7 @@
 
 import { isPlatformManagedMenu } from "@lattelink/contracts-catalog";
 import React, { type ReactNode } from "react";
-import { ClientDashboardRoot } from "../../../app/ClientDashboardRoot";
+import { SignInRoute } from "../../auth/components/SignInRoute";
 import { DashboardShell, DashboardShellLoading } from "../../../components/dashboard/DashboardShell";
 import { canAccessCapability } from "../../../model";
 import { useDashboardSession } from "../../auth/session-provider";
@@ -18,7 +18,7 @@ export function MenuRoute() {
   const mutations = useMenuMutations(catalog.menu, catalog.reload);
 
   if (sessionStatus === "loading") return <DashboardShellLoading />;
-  if (sessionStatus === "signed-out") return <ClientDashboardRoot initialSection="menu" />;
+  if (sessionStatus === "signed-out") return <SignInRoute />;
   if (!session) return <DashboardShellLoading />;
 
   if (!canAccessCapability(session.operator, "menu:read")) {

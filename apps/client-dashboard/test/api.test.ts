@@ -2,22 +2,20 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiRequestError,
   buildOperatorHeaders,
-  acceptOperatorInvite,
   cancelAndRefundOperatorOrder,
-  createMerchantLaunch,
   extractApiErrorMessage,
   fetchDashboardLocations,
   fetchOperatorLocationStoreConfig,
   fetchOperatorOrders,
   fetchOperatorSnapshot,
   isApiRequestError,
-  lookupOperatorInvite,
   normalizeApiBaseUrl,
-  signInOperatorWithPassword,
   updateOperatorOrderStatus,
   uploadOperatorMenuItemImage,
   type OperatorSession
 } from "../src/api";
+import { createMerchantLaunch, logoutOperatorSession, refreshOperatorSession, signInOperatorWithPassword } from "../src/features/auth/auth-api";
+import { acceptOperatorInvite, lookupOperatorInvite } from "../src/features/invites/invite-api";
 import {
   createOperatorStripeDashboardLink,
   createOperatorStripeOnboardingLink,
@@ -28,7 +26,25 @@ import {
 } from "../src/features/onboarding/onboarding-api";
 
 describe("client dashboard api helpers", () => {
-  it("does not load feature-owned Team, Cards, Discounts, or App Builder data in the legacy dashboard snapshot", async () => {
+  const authSessionPayload = {
+    accessToken: "access-token-placeholder",
+    refreshToken: "refresh-token-placeholder",
+    expiresAt: "2027-01-01T00:00:00.000Z",
+    operator: {
+      operatorUserId: "11111111-1111-4111-8111-111111111111",
+      displayName: "Owner",
+      email: "owner@example.test",
+      role: "owner",
+      locationId: "loc-a",
+      locationIds: ["loc-a"],
+      active: true,
+      capabilities: ["orders:read"],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    }
+  };
+
+  it("keeps feature-owned data out of the shared dashboard snapshot", async () => {
     const fetchSpy = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ message: "Not used by this characterization" }), { status: 401 })
     );
@@ -166,6 +182,57 @@ describe("client dashboard api helpers", () => {
       "https://api.nomly.us/v1/operator/auth/sign-in",
       expect.objectContaining({
         method: "POST"
+      })
+    );
+  });
+
+  it("preserves password sign-in request fields and the configured API base URL", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify(authSessionPayload), { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const session = await signInOperatorWithPassword({
+      apiBaseUrl: "https://api-dev.nomly.us",
+      email: " owner@example.test ",
+      password: "placeholder-password",
+      locationId: "loc-a"
+    });
+
+    expect(session.apiBaseUrl).toBe("https://api-dev.nomly.us/v1");
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://api-dev.nomly.us/v1/operator/auth/sign-in",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ email: "owner@example.test", password: "placeholder-password", locationId: "loc-a" })
+      })
+    );
+  });
+
+  it("keeps refresh-token and bearer-auth logout semantics", async () => {
+    const fetchSpy = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(authSessionPayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const session = {
+      ...authSessionPayload,
+      apiBaseUrl: "https://api-dev.nomly.us/v1"
+    } as unknown as OperatorSession;
+
+    await refreshOperatorSession(session);
+    await logoutOperatorSession(session);
+
+    expect(fetchSpy).toHaveBeenNthCalledWith(
+      1,
+      "https://api-dev.nomly.us/v1/operator/auth/refresh",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ refreshToken: "refresh-token-placeholder" }) })
+    );
+    expect(fetchSpy.mock.calls[0]?.[1]).not.toHaveProperty("headers.authorization");
+    expect(fetchSpy).toHaveBeenNthCalledWith(
+      2,
+      "https://api-dev.nomly.us/v1/operator/auth/logout",
+      expect.objectContaining({
+        method: "POST",
+        headers: { authorization: "Bearer access-token-placeholder", "content-type": "application/json" },
+        body: JSON.stringify({ refreshToken: "refresh-token-placeholder" })
       })
     );
   });

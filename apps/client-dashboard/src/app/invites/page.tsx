@@ -1,5 +1,5 @@
-import { ClientDashboardRoot } from "../ClientDashboardRoot";
+import { InviteRoute } from "../../features/invites/components/InviteRoute";
 
 export default function OperatorInviteCompatibilityPage() {
-  return <ClientDashboardRoot />;
+  return <InviteRoute />;
 }

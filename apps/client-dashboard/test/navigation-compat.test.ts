@@ -2,10 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getDashboardDestination,
   getDashboardPathOwner,
-  getDashboardRouteOwner,
-  isLegacyDashboardSection,
-  onboardingPath,
-  syncLegacySectionPath
+  onboardingPath
 } from "../src/lib/navigation/dashboard-navigation";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -21,9 +18,7 @@ describe("dashboard route ownership compatibility", () => {
       ["team", "/team"],
       ["store", "/settings"]
     ] as const) {
-      expect(getDashboardRouteOwner(section)).toBe("react");
       expect(getDashboardDestination(section)).toEqual({ ownership: "react", href: path });
-      expect(isLegacyDashboardSection(section)).toBe(false);
     }
     expect(onboardingPath).toBe("/onboarding");
   });
@@ -34,18 +29,7 @@ describe("dashboard route ownership compatibility", () => {
     }
     expect(getDashboardPathOwner("/legacy/onboarding")).toBe("unknown");
     expect(getDashboardPathOwner("/legacy/not-a-section")).toBe("unknown");
-    expect(getDashboardPathOwner("/invites")).toBe("legacy");
-  });
-
-  it("keeps the temporary legacy URL aligned with SPA section navigation without adding history entries", () => {
-    const replaceState = vi.fn();
-    vi.stubGlobal("window", {
-      location: { pathname: "/legacy/orders", search: "?keep=1", hash: "#details" },
-      history: { state: { next: true }, replaceState }
-    });
-
-    syncLegacySectionPath("menu");
-
-    expect(replaceState).toHaveBeenCalledWith({ next: true }, "", "/legacy/menu?keep=1#details");
+    expect(getDashboardPathOwner("/invites")).toBe("react");
+    expect(getDashboardPathOwner("/legacy/orders")).toBe("unknown");
   });
 });

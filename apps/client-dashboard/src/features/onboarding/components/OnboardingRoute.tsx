@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ClientDashboardRoot } from "../../../app/ClientDashboardRoot";
+import { SignInRoute } from "../../auth/components/SignInRoute";
 import { DashboardShell, DashboardShellLoading } from "../../../components/dashboard/DashboardShell";
 import { hasSeenOnboardingWizard, markOnboardingWizardSeen } from "../../../storage";
 import { readStripeReturnParams, stripStripeReturnParams } from "../../../lib/navigation/route-callbacks";
@@ -108,7 +108,7 @@ export function OnboardingRoute() {
   }, [isOwner, location.status, locationId, onboardingStatus, onboardingSummary, openWizard, search, session, sessionStatus, stripeCallback.refreshRequested, stripeCallback.returned]);
 
   if (sessionStatus === "loading") return <DashboardShellLoading />;
-  if (sessionStatus === "signed-out" || hasGoogleCallback) return <ClientDashboardRoot />;
+  if (sessionStatus === "signed-out" || hasGoogleCallback) return <SignInRoute />;
   if (!session) return <DashboardShellLoading />;
   if (isStoreOperator(session.operator)) return <StoreOperatorRedirect />;
   if (!isOwner) {

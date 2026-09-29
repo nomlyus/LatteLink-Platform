@@ -81,33 +81,13 @@ describe("client dashboard storage", () => {
     expect(loadStoredApiBaseUrl()).toBe("");
   });
 
-  it("migrates the legacy setup section to settings", async () => {
+  it("clears obsolete SPA section state during React session restoration", async () => {
     mockLocalStorage();
-    storage.set("lattelink.operator.section.v2", "onboarding");
+    storage.set("lattelink.operator.section.v2", "menu");
+    const { loadStoredSession } = await import("../src/storage");
 
-    const { loadStoredSection } = await import("../src/storage");
-
-    expect(loadStoredSection()).toBe("store");
-  });
-
-  it("clears removed legacy sections and normalizes migrated Cards to Home", async () => {
-    mockLocalStorage();
-    const { loadStoredSection } = await import("../src/storage");
-
-    storage.set("lattelink.operator.section.v2", "experience");
-    expect(loadStoredSection()).toBe("overview");
+    expect(loadStoredSession()).toBeNull();
     expect(storage.has("lattelink.operator.section.v2")).toBe(false);
-
-    storage.set("lattelink.operator.section.v2", "discounts");
-    expect(loadStoredSection()).toBe("overview");
-    expect(storage.has("lattelink.operator.section.v2")).toBe(false);
-
-    storage.set("lattelink.operator.section.v2", "team");
-    expect(loadStoredSection()).toBe("overview");
-    expect(storage.has("lattelink.operator.section.v2")).toBe(false);
-
-    storage.set("lattelink.operator.section.v2", "cards");
-    expect(loadStoredSection()).toBe("overview");
   });
 
   it("restores the persisted browser session with the same bearer and refresh tokens", async () => {
@@ -188,37 +168,6 @@ describe("client dashboard storage", () => {
     persistLocationSelection(operatorId, "all");
     expect(loadStoredLocationSelection(operatorId)).toBe("all");
     expect(loadStoredLocationSelection("22222222-2222-4222-8222-222222222222")).toBeNull();
-  });
-
-  it("restores owner section and selected location through the legacy state bootstrap", async () => {
-    mockLocalStorage();
-    const { persistLocationSelection, persistSection, persistSession } = await import("../src/storage");
-    persistSession(persistedSession);
-    persistSection("menu");
-    persistLocationSelection(persistedSession.operator.operatorUserId, "location-b");
-
-    const { state } = await import("../src/state");
-
-    expect(state.session).toEqual(persistedSession);
-    expect(state.section).toBe("menu");
-    expect(state.selectedLocationId).toBe("location-b");
-  });
-
-  it("keeps the store-operator Orders landing and assigned location regardless of saved dashboard scope", async () => {
-    mockLocalStorage();
-    const storeSession: OperatorSession = {
-      ...persistedSession,
-      operator: { ...persistedSession.operator, role: "store", locationIds: ["location-a"] }
-    };
-    const { persistLocationSelection, persistSection, persistSession } = await import("../src/storage");
-    persistSession(storeSession);
-    persistSection("menu");
-    persistLocationSelection(storeSession.operator.operatorUserId, "all");
-
-    const { state } = await import("../src/state");
-
-    expect(state.section).toBe("orders");
-    expect(state.selectedLocationId).toBe("location-a");
   });
 
   it("tracks whether the first onboarding wizard has already been shown for an operator location", async () => {

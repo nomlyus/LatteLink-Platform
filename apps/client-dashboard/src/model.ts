@@ -35,7 +35,6 @@ const operatorOrderSchema = orderSchema.extend({
 export type OperatorOrder = z.output<typeof operatorOrderSchema>;
 export type OperatorOrderStatus = z.output<typeof orderStatusSchema>;
 export type OperatorOrderFilter = "all" | "active" | "completed";
-export type DashboardSection = "overview" | "orders" | "menu" | "cards" | "discounts" | "store" | "team";
 export type OperatorCapability = z.output<typeof operatorCapabilitySchema>;
 export type OperatorUser = z.output<typeof operatorUserSchema>;
 export const operatorMenuItemSchema = adminMenuItemSchema;
@@ -198,46 +197,6 @@ export function canAccessCapability(
   capability: OperatorCapability
 ) {
   return operator?.capabilities.includes(capability) ?? false;
-}
-
-export function getAvailableSections(
-  operator: Pick<OperatorUser, "capabilities" | "role"> | null | undefined,
-  appConfig: Pick<AppConfig, "featureFlags" | "storeCapabilities" | "loyaltyEnabled" | "fulfillment"> | null | undefined
-) {
-  if (isStoreOperator(operator)) {
-    return canAccessCapability(operator, "orders:read") &&
-      isStaffDashboardEnabled(appConfig) &&
-      isOrderTrackingEnabled(appConfig)
-      ? (["orders"] as DashboardSection[])
-      : ([] as DashboardSection[]);
-  }
-
-  const sections: DashboardSection[] = ["overview"];
-
-  if (
-    canAccessCapability(operator, "orders:read") &&
-    isStaffDashboardEnabled(appConfig) &&
-    isOrderTrackingEnabled(appConfig)
-  ) {
-    sections.push("orders");
-  }
-  if (canAccessCapability(operator, "menu:read") && isPlatformManagedMenu(appConfig)) {
-    sections.push("menu");
-  }
-  if (canAccessCapability(operator, "menu:read")) {
-    sections.push("cards");
-  }
-  if (canAccessCapability(operator, "menu:read")) {
-    sections.push("discounts");
-  }
-  if (canAccessCapability(operator, "store:read")) {
-    sections.push("store");
-  }
-  if (canAccessCapability(operator, "team:read")) {
-    sections.push("team");
-  }
-
-  return sections;
 }
 
 export function canManageOrderStatus(

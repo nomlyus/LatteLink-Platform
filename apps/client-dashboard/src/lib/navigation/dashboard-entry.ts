@@ -5,8 +5,8 @@ import { readStripeReturnParams } from "./route-callbacks";
 
 export type DashboardEntryPlan =
   | { kind: "loading" }
-  | { kind: "legacy-auth" }
-  | { kind: "legacy-google-callback" }
+  | { kind: "auth" }
+  | { kind: "google-callback" }
   | { kind: "redirect"; href: string }
   | { kind: "dashboard"; launchNotice: string | null; stripLaunchParams: boolean };
 
@@ -20,9 +20,9 @@ export function resolveDashboardEntryPlan(
   search: string
 ): DashboardEntryPlan {
   const params = new URLSearchParams(search);
-  if (params.get("google_auth_callback") === "1") return { kind: "legacy-google-callback" };
+  if (params.get("google_auth_callback") === "1") return { kind: "google-callback" };
   if (sessionStatus === "loading") return { kind: "loading" };
-  if (sessionStatus === "signed-out") return { kind: "legacy-auth" };
+  if (sessionStatus === "signed-out") return { kind: "auth" };
 
   const stripe = readStripeReturnParams(search);
   const launchIntent = params.get("intent")?.trim().toLowerCase() === "launch" || params.get("start")?.trim().toLowerCase() === "app";
