@@ -10,7 +10,7 @@ import {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("dashboard route ownership compatibility", () => {
-  it("routes Home, Orders, Menu, and Cards to React while keeping other product sections on the legacy host", () => {
+  it("routes Home, Orders, Menu, Cards, and Discounts to React while keeping remaining sections on the legacy host", () => {
     expect(getDashboardRouteOwner("overview")).toBe("react");
     expect(getDashboardDestination("overview")).toEqual({ ownership: "react", href: "/" });
     expect(isLegacyDashboardSection("overview")).toBe(false);
@@ -23,8 +23,11 @@ describe("dashboard route ownership compatibility", () => {
     expect(getDashboardRouteOwner("cards")).toBe("react");
     expect(getDashboardDestination("cards")).toEqual({ ownership: "react", href: "/cards" });
     expect(isLegacyDashboardSection("cards")).toBe(false);
+    expect(getDashboardRouteOwner("discounts")).toBe("react");
+    expect(getDashboardDestination("discounts")).toEqual({ ownership: "react", href: "/discounts" });
+    expect(isLegacyDashboardSection("discounts")).toBe(false);
 
-    for (const section of ["discounts", "store", "team"] as const) {
+    for (const section of ["store", "team"] as const) {
       expect(getDashboardRouteOwner(section)).toBe("legacy");
       expect(getDashboardDestination(section)).toEqual({ ownership: "legacy", href: `/legacy/${section}` });
       expect(isLegacyDashboardSection(section)).toBe(true);
@@ -40,10 +43,12 @@ describe("dashboard route ownership compatibility", () => {
     expect(getDashboardPathOwner("/orders")).toBe("react");
     expect(getDashboardPathOwner("/menu")).toBe("react");
     expect(getDashboardPathOwner("/cards")).toBe("react");
+    expect(getDashboardPathOwner("/discounts")).toBe("react");
     expect(getDashboardPathOwner("/invites")).toBe("legacy");
     expect(getDashboardPathOwner("/legacy/orders")).toBe("unknown");
     expect(getDashboardPathOwner("/legacy/menu")).toBe("unknown");
     expect(getDashboardPathOwner("/legacy/cards")).toBe("unknown");
+    expect(getDashboardPathOwner("/legacy/discounts")).toBe("unknown");
     expect(getDashboardPathOwner("/legacy/experience")).toBe("unknown");
     expect(isLegacyDashboardSection("experience")).toBe(false);
     expect(getDashboardPathOwner("/legacy/not-a-section")).toBe("unknown");
@@ -54,6 +59,7 @@ describe("dashboard route ownership compatibility", () => {
     expect(shouldAutoOpenOwnerOnboarding("/orders")).toBe(false);
     expect(shouldAutoOpenOwnerOnboarding("/legacy/orders")).toBe(false);
     expect(shouldAutoOpenOwnerOnboarding("/cards")).toBe(false);
+    expect(shouldAutoOpenOwnerOnboarding("/discounts")).toBe(false);
     expect(shouldAutoOpenOwnerOnboarding("/legacy/store")).toBe(false);
     expect(shouldAutoOpenOwnerOnboarding("/invites")).toBe(false);
   });

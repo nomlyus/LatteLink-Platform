@@ -151,14 +151,13 @@ export function loadStoredSection(): DashboardSection {
   if (nextSection === "onboarding") {
     return "store";
   }
-  if (nextSection === "experience") {
+  if (nextSection === "experience" || nextSection === "discounts") {
     storage?.removeItem(DASHBOARD_SECTION_STORAGE_KEY);
     return "overview";
   }
 
   return nextSection === "orders" ||
     nextSection === "menu" ||
-    nextSection === "discounts" ||
     nextSection === "store" ||
     nextSection === "team"
     ? nextSection

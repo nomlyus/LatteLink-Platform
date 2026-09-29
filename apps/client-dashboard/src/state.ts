@@ -13,8 +13,7 @@ import type {
 } from "./api";
 import type {
   DashboardSection,
-  OperatorMenuCategory,
-  OperatorDiscountCode
+  OperatorMenuCategory
 } from "./model";
 import { isStoreOperator } from "./model";
 import { loadStoredApiBaseUrl, loadStoredLocationSelection, loadStoredSection, loadStoredSession } from "./storage";
@@ -52,14 +51,11 @@ export type AppState = {
   notice: string | null;
   appConfig: AppConfig | null;
   menuCategories: OperatorMenuCategory[];
-  discountCodes: OperatorDiscountCode[];
   storeConfig: AdminStoreConfig | null;
   mobileReleaseBuildJobs: MobileReleaseBuildJobListResponse;
   teamUsers: OperatorUser[];
-  busyDiscountCodeId: string | null;
   busyTeamUserId: string | null;
   savingStore: boolean;
-  creatingDiscountCode: boolean;
   creatingTeamUser: boolean;
   dashboardLoaded: boolean;
   toasts: Array<{
@@ -112,14 +108,11 @@ export const state: AppState = {
   notice: null,
   appConfig: null,
   menuCategories: [],
-  discountCodes: [],
   storeConfig: null,
   mobileReleaseBuildJobs: { jobs: [] },
   teamUsers: [],
-  busyDiscountCodeId: null,
   busyTeamUserId: null,
   savingStore: false,
-  creatingDiscountCode: false,
   creatingTeamUser: false,
   dashboardLoaded: false,
   toasts: []
@@ -177,7 +170,6 @@ export function resetDashboardData() {
     : null;
   state.appConfig = null;
   state.menuCategories = [];
-  state.discountCodes = [];
   state.storeConfig = null;
   state.mobileReleaseBuildJobs = { jobs: [] };
   state.teamUsers = [];

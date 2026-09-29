@@ -211,7 +211,6 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
       if (state.selectedLocationId === "all") {
         state.appConfig = null;
         state.menuCategories = [];
-        state.discountCodes = [];
         state.storeConfig = null;
         state.mobileReleaseBuildJobs = { jobs: [] };
         state.teamUsers = [];
@@ -220,7 +219,6 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
         if (loadGeneration !== dashboardLoadGeneration) return;
         state.appConfig = snapshot.appConfig;
         state.menuCategories = snapshot.menu.categories;
-        state.discountCodes = snapshot.discountCodes;
         state.storeConfig = snapshot.storeConfig;
         state.mobileReleaseBuildJobs = snapshot.mobileReleaseBuildJobs;
         state.teamUsers = mergePendingTeamUserUpdates(snapshot.team);

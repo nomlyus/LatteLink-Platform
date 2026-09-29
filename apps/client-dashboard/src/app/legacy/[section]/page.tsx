@@ -8,7 +8,7 @@ export default async function LegacyDashboardSectionPage({
   params: Promise<{ section: string }>;
 }) {
   const { section } = await params;
-  // Removed sections, including the former App Builder, are not valid legacy destinations.
+  // Migrated sections are no longer hosted by the legacy dashboard runtime.
   if (!isLegacyDashboardSection(section)) notFound();
   return <ClientDashboardRoot initialSection={section} />;
 }

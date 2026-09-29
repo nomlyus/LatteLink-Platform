@@ -84,7 +84,6 @@ describe("existing dashboard session expiration behavior", () => {
     fetchOperatorSnapshot.mockResolvedValue({
       appConfig: null,
       menu: { locationId: "location-a", categories: [], modifierGroups: [] },
-      discountCodes: [],
       storeConfig: null,
       mobileReleaseBuildJobs: { jobs: [] },
       team: []

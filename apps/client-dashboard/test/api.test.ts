@@ -26,7 +26,7 @@ import {
 } from "../src/api";
 
 describe("client dashboard api helpers", () => {
-  it("does not load App Builder or duplicate Cards data in the legacy dashboard snapshot", async () => {
+  it("does not load feature-owned Cards, Discounts, or App Builder data in the legacy dashboard snapshot", async () => {
     const fetchSpy = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ message: "Not used by this characterization" }), { status: 401 })
     );
@@ -54,6 +54,7 @@ describe("client dashboard api helpers", () => {
 
     const requestedUrls = fetchSpy.mock.calls.map(([url]) => String(url));
     expect(requestedUrls).not.toContain("https://api-dev.nomly.us/v1/admin/cards?locationId=loc-a");
+    expect(requestedUrls).not.toContain("https://api-dev.nomly.us/v1/admin/discount-codes?locationId=loc-a");
     expect(requestedUrls).not.toContain("https://api-dev.nomly.us/v1/admin/mobile-experience?locationId=loc-a");
     expect(requestedUrls).not.toContain("https://api-dev.nomly.us/v1/admin/mobile-experience/versions?locationId=loc-a");
     expect(requestedUrls).toContain("https://api-dev.nomly.us/v1/admin/mobile-release/build-jobs?locationId=loc-a");

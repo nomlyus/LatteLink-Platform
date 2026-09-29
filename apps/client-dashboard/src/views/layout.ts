@@ -11,7 +11,6 @@ import { getDashboardDestination, getDashboardRouteOwner } from "../lib/navigati
 import { renderBanner } from "./common";
 import { renderHomeState, renderOverviewSection, type HomeState } from "./overview";
 import { renderOnboardingWizard } from "./onboarding";
-import { renderDiscountsSection } from "./discounts";
 import { renderStoreSection } from "./store";
 import { renderTeamSection } from "./team";
 
@@ -167,8 +166,6 @@ function renderDashboardContent() {
   }
 
   switch (state.section) {
-    case "discounts":
-      return renderDiscountsSection();
     case "store":
       return renderStoreSection();
     case "team":

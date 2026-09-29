@@ -46,11 +46,7 @@ import {
   type ReportingResponse
 } from "@lattelink/contracts-reporting";
 import {
-  createDiscountCodeRequestSchema,
-  discountCodeListResponseSchema,
-  discountCodeSchema,
-  orderSchema,
-  updateDiscountCodeRequestSchema
+  orderSchema
 } from "@lattelink/contracts-orders";
 import {
   filterVisibleOrders,
@@ -62,8 +58,7 @@ import {
   normalizeOperatorUserUpdateForm,
   normalizeStoreConfigForm,
   type OperatorOrder,
-  type OperatorMenuResponse,
-  type OperatorDiscountCode
+  type OperatorMenuResponse
 } from "./model";
 
 const ordersSchema = z.array(orderSchema);
@@ -92,7 +87,6 @@ export type OperatorReportingResponse = ReportingResponse;
 export type OperatorDashboardSnapshot = {
   appConfig: z.output<typeof appConfigSchema> | null;
   menu: OperatorMenuResponse;
-  discountCodes: OperatorDiscountCode[];
   storeConfig: z.output<typeof adminStoreConfigSchema> | null;
   mobileReleaseBuildJobs: z.output<typeof mobileReleaseBuildJobListResponseSchema>;
   team: OperatorUser[];
@@ -607,7 +601,6 @@ export async function fetchOperatorSnapshot(
   const [
     appConfig,
     menu,
-    discountCodeResponse,
     storeConfig,
     mobileReleaseBuildJobs,
     teamResponse
@@ -631,17 +624,6 @@ export async function fetchOperatorSnapshot(
           })
         : Promise.resolve(operatorMenuResponseSchema.parse({ locationId: fallbackLocationId, categories: [] }))
       : Promise.resolve(operatorMenuResponseSchema.parse({ locationId: fallbackLocationId, categories: [] })),
-    capabilitySet.has("menu:read")
-      ? locationId
-        ? requestJson({
-            apiBaseUrl: session.apiBaseUrl,
-            accessToken: session.accessToken,
-            path: "/admin/discount-codes",
-            query,
-            schema: discountCodeListResponseSchema
-          })
-        : Promise.resolve(discountCodeListResponseSchema.parse({ discountCodes: [] }))
-      : Promise.resolve(discountCodeListResponseSchema.parse({ discountCodes: [] })),
     capabilitySet.has("store:read")
       ? locationId
         ? requestJson({
@@ -680,7 +662,6 @@ export async function fetchOperatorSnapshot(
   return {
     appConfig,
     menu,
-    discountCodes: discountCodeResponse.discountCodes,
     storeConfig,
     mobileReleaseBuildJobs,
     team: teamResponse.users
@@ -1037,47 +1018,6 @@ export function deleteOperatorModifierGroup(session: OperatorSession, locationId
     query: { locationId: requireSelectedLocationId(locationId) },
     method: "DELETE",
     schema: adminMutationSuccessSchema
-  });
-}
-
-export function createOperatorDiscountCode(
-  session: OperatorSession,
-  locationId: string | null,
-  input: Omit<z.input<typeof createDiscountCodeRequestSchema>, "locationId">
-) {
-  const selectedLocationId = requireSelectedLocationId(locationId);
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: "/admin/discount-codes",
-    query: { locationId: selectedLocationId },
-    method: "POST",
-    body: createDiscountCodeRequestSchema.parse({
-      locationId: selectedLocationId,
-      ...input
-    }),
-    schema: discountCodeSchema
-  });
-}
-
-export function updateOperatorDiscountCode(
-  session: OperatorSession,
-  locationId: string | null,
-  discountCodeId: string,
-  input: Omit<z.input<typeof updateDiscountCodeRequestSchema>, "locationId">
-) {
-  const selectedLocationId = requireSelectedLocationId(locationId);
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: `/admin/discount-codes/${discountCodeId}`,
-    query: { locationId: selectedLocationId },
-    method: "PATCH",
-    body: updateDiscountCodeRequestSchema.parse({
-      locationId: selectedLocationId,
-      ...input
-    }),
-    schema: discountCodeSchema
   });
 }
 

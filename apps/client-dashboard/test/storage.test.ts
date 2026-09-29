@@ -90,11 +90,15 @@ describe("client dashboard storage", () => {
     expect(loadStoredSection()).toBe("store");
   });
 
-  it("clears the removed App Builder section and normalizes migrated Cards to Home", async () => {
+  it("clears removed legacy sections and normalizes migrated Cards to Home", async () => {
     mockLocalStorage();
     const { loadStoredSection } = await import("../src/storage");
 
     storage.set("lattelink.operator.section.v2", "experience");
+    expect(loadStoredSection()).toBe("overview");
+    expect(storage.has("lattelink.operator.section.v2")).toBe(false);
+
+    storage.set("lattelink.operator.section.v2", "discounts");
     expect(loadStoredSection()).toBe("overview");
     expect(storage.has("lattelink.operator.section.v2")).toBe(false);
 
