@@ -2009,6 +2009,28 @@ describe("orders service", () => {
     await app.close();
   });
 
+  it("hides order mutations when the operator-scoped location does not own the order", async () => {
+    vi.stubEnv("ORDER_FULFILLMENT_MODE", "staff");
+    const app = await buildApp();
+    const { order } = await createQuotedOrder(app);
+
+    const statusResponse = await app.inject({
+      method: "POST",
+      url: `/v1/orders/${order.id}/status`,
+      headers: {
+        "x-internal-token": "orders-internal-token",
+        "x-operator-location-id": "northside-01"
+      },
+      payload: { status: "IN_PREP" }
+    });
+    expect(statusResponse.statusCode).toBe(404);
+    expect(statusResponse.json()).toMatchObject({ code: "ORDER_NOT_FOUND" });
+
+    const readResponse = await app.inject({ method: "GET", url: `/v1/orders/${order.id}` });
+    expect(orderSchema.parse(readResponse.json())).toMatchObject({ id: order.id, locationId: "flagship-01", status: "PENDING_PAYMENT" });
+    await app.close();
+  });
+
   it("lets internal support retry order cancellation through the safe refund flow", async () => {
     const app = await buildApp();
     const { order } = await createQuotedOrder(app);

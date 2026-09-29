@@ -4391,6 +4391,40 @@ let previousFreeClientDashboardDomain: string | undefined;
     await app.close();
   });
 
+  it("scopes the operator order stream snapshot and event subscription to one authorized location", async () => {
+    process.env.GATEWAY_ORDER_STREAM_POLL_MS = "60000";
+    process.env.VALKEY_URL = "redis://valkey.test:6379";
+    const app = await buildApp();
+    const locationOrder = {
+      ...buildOrderPayload("123e4567-e89b-12d3-a456-426614174231", "PAID"),
+      locationId: "northside-01"
+    };
+    queuedOrderListPayloads = [[locationOrder]];
+
+    const streamRequest = app.inject({
+      method: "GET",
+      url: "/v1/admin/orders/stream?locationId=northside-01",
+      headers: multiLocationOperatorHeaders
+    });
+    streamRequest.catch(() => undefined);
+
+    await vi.waitFor(() => {
+      expect(eventBusMocks.subscribeToOrderEvents).toHaveBeenCalledWith("northside-01", expect.any(Function));
+    });
+    expect(eventBusMocks.subscribeToAllOrderEvents).not.toHaveBeenCalled();
+    const snapshotCall = fetchMock.mock.calls.find(([input]) => {
+      const url = typeof input === "string" ? input : input.url;
+      return url === "http://orders.internal/v1/orders";
+    });
+    expect(snapshotCall).toBeDefined();
+    if (snapshotCall) {
+      const upstreamHeaders = new Headers((snapshotCall[1]?.headers ?? {}) as HeadersInit);
+      expect(upstreamHeaders.get("x-operator-location-id")).toBe("northside-01");
+    }
+
+    await app.close();
+  });
+
   it("rejects operator requests for locations outside their access set", async () => {
     const app = await buildApp();
     const response = await app.inject({
