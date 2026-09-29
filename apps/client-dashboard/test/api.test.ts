@@ -9,6 +9,7 @@ import {
   createOperatorStripeOnboardingLink,
   extractApiErrorMessage,
   fetchDashboardLocations,
+  fetchOperatorLocationStoreConfig,
   fetchOperatorOrders,
   fetchOperatorOnboardingSummary,
   fetchOperatorSnapshot,
@@ -88,6 +89,29 @@ describe("client dashboard api helpers", () => {
 
     expect(fetchSpy).toHaveBeenCalledWith(
       "https://api.nomly.us/v1/admin/orders?locationId=loc-a",
+      expect.objectContaining({ signal: controller.signal })
+    );
+  });
+
+  it("forwards route-lifecycle cancellation to the location-scoped store settings request", async () => {
+    const response = {
+      locationId: "loc-a",
+      storeName: "Northside Coffee",
+      locationName: "Downtown",
+      timezone: "America/Detroit",
+      hours: "Daily 8 AM - 4 PM",
+      pickupInstructions: "Front counter",
+      taxRateBasisPoints: 625
+    };
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify(response), { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const controller = new AbortController();
+    const session = { apiBaseUrl: "https://api.nomly.us/v1", accessToken: "access-token" } as OperatorSession;
+
+    await fetchOperatorLocationStoreConfig(session, "loc-a", controller.signal);
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://api.nomly.us/v1/admin/store/config?locationId=loc-a",
       expect.objectContaining({ signal: controller.signal })
     );
   });

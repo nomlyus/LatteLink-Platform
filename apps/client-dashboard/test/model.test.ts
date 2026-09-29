@@ -23,17 +23,16 @@ import {
   getOrderCustomerLabel,
   isAbortedCheckoutOrder,
   isActiveOrder,
-  isOnboardingIncomplete,
   isOwnerOperator,
   normalizeMenuItemCreateForm,
   normalizeMenuItemForm,
-  normalizeStoreConfigForm,
   resolveAppConfig,
   resolveOrder,
   sessionNeedsRefresh,
   type OperatorMenuCategory,
   type OperatorUser
 } from "../src/model";
+import { normalizeStoreSettingsForm } from "../src/features/settings/store-settings-domain";
 
 const sampleOrder = resolveOrder({
   id: "123e4567-e89b-12d3-a456-426614174000",
@@ -337,10 +336,6 @@ describe("client dashboard model", () => {
 
     expect(isOwnerOperator({ role: "owner" })).toBe(true);
     expect(isOwnerOperator({ role: "manager" })).toBe(false);
-    expect(isOnboardingIncomplete("in_progress")).toBe(true);
-    expect(isOnboardingIncomplete("ready_for_review")).toBe(true);
-    expect(isOnboardingIncomplete("approved")).toBe(false);
-    expect(isOnboardingIncomplete("live")).toBe(false);
 
     expect(canAccessCapability(sampleOperator, "orders:write")).toBe(true);
     expect(canAccessCapability(sampleOperator, "team:write")).toBe(false);
@@ -476,7 +471,7 @@ describe("client dashboard model", () => {
     });
 
     expect(
-      normalizeStoreConfigForm({
+      normalizeStoreSettingsForm({
         storeName: "  LatteLink Flagship  ",
         locationName: "  Ann Arbor, MI  ",
         hours: "  Daily · 7:00 AM - 6:00 PM  ",

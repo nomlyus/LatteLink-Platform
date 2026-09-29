@@ -10,8 +10,10 @@ const sectionOwners: Record<DashboardSection, DashboardRouteOwner> = {
   cards: "react",
   discounts: "react",
   team: "react",
-  store: "legacy"
+  store: "react"
 };
+
+export const legacyOnboardingPath = "/legacy/onboarding";
 
 export function isDashboardSection(value: string): value is DashboardSection {
   return Object.hasOwn(sectionOwners, value);
@@ -23,7 +25,14 @@ export function getDashboardRouteOwner(section: DashboardSection): DashboardRout
 
 export function getDashboardDestination(section: DashboardSection) {
   const ownership = getDashboardRouteOwner(section);
-  return { ownership, href: section === "overview" ? "/" : ownership === "react" ? `/${section}` : `/legacy/${section}` } as const;
+  const href = section === "overview"
+    ? "/"
+    : section === "store"
+      ? "/settings"
+      : ownership === "react"
+        ? `/${section}`
+        : `/legacy/${section}`;
+  return { ownership, href } as const;
 }
 
 export function isLegacyDashboardSection(value: string): value is DashboardSection {
@@ -33,7 +42,8 @@ export function isLegacyDashboardSection(value: string): value is DashboardSecti
 export function getDashboardPathOwner(pathname: string): DashboardPathOwner {
   if (pathname === "/") return "react";
   if (pathname === "/invites") return "legacy";
-  if (["/orders", "/orders/", "/menu", "/menu/", "/cards", "/cards/", "/discounts", "/discounts/", "/team", "/team/"].includes(pathname)) return "react";
+  if (["/orders", "/orders/", "/menu", "/menu/", "/cards", "/cards/", "/discounts", "/discounts/", "/team", "/team/", "/settings", "/settings/"].includes(pathname)) return "react";
+  if (pathname === legacyOnboardingPath || pathname === `${legacyOnboardingPath}/`) return "legacy";
   const legacySection = pathname.match(/^\/legacy\/([^/]+)\/?$/)?.[1];
   if (legacySection && isLegacyDashboardSection(legacySection)) return "legacy";
   return "unknown";
@@ -41,6 +51,10 @@ export function getDashboardPathOwner(pathname: string): DashboardPathOwner {
 
 export function shouldAutoOpenOwnerOnboarding(pathname: string) {
   return pathname === "/";
+}
+
+export function isLegacyOnboardingPath(pathname: string) {
+  return pathname === legacyOnboardingPath || pathname === `${legacyOnboardingPath}/`;
 }
 
 export function navigateToDashboardSection(section: DashboardSection) {

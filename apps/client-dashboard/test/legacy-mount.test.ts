@@ -71,7 +71,7 @@ describe("legacy React host mount lifecycle", () => {
 
   it("deduplicates an active mount and disposes resources before a later remount", async () => {
     vi.stubGlobal("window", {
-      location: { pathname: "/legacy/store", search: "" },
+      location: { pathname: "/legacy/onboarding", search: "" },
       history: { replaceState: vi.fn() }
     });
     const doc = { title: "Operator Dashboard", visibilityState: "hidden" };
@@ -107,7 +107,7 @@ describe("legacy React host mount lifecycle", () => {
 
   it("rehydrates the current session and authorized location preference when entering a legacy route", async () => {
     vi.stubGlobal("window", {
-      location: { pathname: "/legacy/store", search: "" },
+      location: { pathname: "/legacy/onboarding", search: "" },
       history: { replaceState: vi.fn() }
     });
     vi.stubGlobal("document", { title: "Operator Dashboard", visibilityState: "visible" });
@@ -130,7 +130,7 @@ describe("legacy React host mount lifecycle", () => {
   it("sends store operators from the legacy host to React Orders and preserves the URL context", async () => {
     const replace = vi.fn();
     vi.stubGlobal("window", {
-      location: { pathname: "/legacy/store", search: "?source=shortcut", hash: "#section", replace },
+      location: { pathname: "/legacy/onboarding", search: "?source=shortcut", hash: "#section", replace },
       history: { replaceState: vi.fn() }
     });
     vi.stubGlobal("document", { title: "Operator Dashboard", visibilityState: "visible" });

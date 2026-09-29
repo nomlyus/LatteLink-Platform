@@ -36,9 +36,9 @@ const session = {
   }
 } as OperatorSession;
 
-function mockBrowserStorage() {
+function mockBrowserStorage(pathname = "/") {
   vi.stubGlobal("window", {
-    location: { hostname: "localhost" },
+    location: { hostname: "localhost", pathname, search: "" },
     localStorage: {
       getItem: (key: string) => values.get(key) ?? null,
       setItem: (key: string, value: string) => values.set(key, value),
@@ -103,5 +103,29 @@ describe("existing dashboard session expiration behavior", () => {
     expect(state.launchEntryIntent).toBe(false);
     expect(state.notice).toBe("Your workspace is ready.");
     expect(values.get("lattelink.operator.section.v2")).toBe("overview");
+  });
+
+  it("keeps an owner on the onboarding compatibility route after a fresh sign-in", async () => {
+    mockBrowserStorage("/legacy/onboarding");
+    const ownerSession: OperatorSession = {
+      ...session,
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      operator: { ...session.operator, role: "owner", capabilities: ["store:read", "store:write"] }
+    };
+    fetchDashboardLocations.mockResolvedValue([]);
+    fetchOperatorSnapshot.mockResolvedValue({
+      appConfig: null,
+      menu: { locationId: "location-a", categories: [], modifierGroups: [] },
+      storeConfig: null,
+      mobileReleaseBuildJobs: { jobs: [] }
+    });
+    fetchOperatorOnboardingSummary.mockResolvedValue({ locationId: "location-a", status: "in_progress" });
+    const { state } = await import("../src/state");
+    const { applyVerifiedSession } = await import("../src/lifecycle");
+
+    await applyVerifiedSession(ownerSession, "");
+
+    expect(state.section).toBe("store");
+    expect(values.get("lattelink.operator.section.v2")).toBe("store");
   });
 });

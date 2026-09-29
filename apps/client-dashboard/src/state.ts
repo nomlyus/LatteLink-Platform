@@ -52,7 +52,6 @@ export type AppState = {
   menuCategories: OperatorMenuCategory[];
   storeConfig: AdminStoreConfig | null;
   mobileReleaseBuildJobs: MobileReleaseBuildJobListResponse;
-  savingStore: boolean;
   dashboardLoaded: boolean;
   toasts: Array<{
     id: string;
@@ -106,7 +105,6 @@ export const state: AppState = {
   menuCategories: [],
   storeConfig: null,
   mobileReleaseBuildJobs: { jobs: [] },
-  savingStore: false,
   dashboardLoaded: false,
   toasts: []
 };
@@ -172,5 +170,4 @@ export function resetDashboardData() {
   state.onboardingWizardStep = 1;
   state.updatingOnboarding = false;
   state.dashboardLoaded = false;
-  state.savingStore = false;
 }

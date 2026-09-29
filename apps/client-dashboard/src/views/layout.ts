@@ -8,10 +8,9 @@ import {
 } from "../sections";
 import { getDashboardSectionIcon } from "../lib/navigation/dashboard-sections";
 import { getDashboardDestination, getDashboardRouteOwner } from "../lib/navigation/dashboard-navigation";
-import { renderBanner } from "./common";
+import { renderBanner, renderSectionHeading } from "./common";
 import { renderHomeState, renderOverviewSection, type HomeState } from "./overview";
-import { renderOnboardingWizard } from "./onboarding";
-import { renderStoreSection } from "./store";
+import { renderOnboardingSection, renderOnboardingWizard } from "./onboarding";
 
 function renderNavIcon(section: DashboardSection) {
   return `<img class="dash-nav-icon" src="${getDashboardSectionIcon(section)}" alt="" aria-hidden="true" />`;
@@ -166,7 +165,13 @@ function renderDashboardContent() {
 
   switch (state.section) {
     case "store":
-      return renderStoreSection();
+      return isOwnerOperator(state.session?.operator ?? null)
+        ? renderOnboardingSection()
+        : renderSectionHeading({
+            eyebrow: "Launch setup",
+            title: "Owner access required",
+            description: "Only an owner can review branded-app launch readiness."
+          });
     case "overview":
       // Owner Home is React-owned; the legacy invite/section host only keeps a generic fallback here.
       return isOwnerOperator(state.session?.operator ?? null) ? "" : renderOverviewSection();

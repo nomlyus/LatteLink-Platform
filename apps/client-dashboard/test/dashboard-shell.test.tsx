@@ -84,7 +84,7 @@ describe("React Dashboard V3 shell", () => {
     expect(html).not.toContain('href="/orders"');
     expect(html).not.toContain('href="/menu"');
     expect(html).not.toContain("App builder");
-    expect(html).toContain('href="/legacy/store"');
+    expect(html).toContain('href="/settings"');
   });
 
   it("marks the React-owned Team destination active within Operations", () => {

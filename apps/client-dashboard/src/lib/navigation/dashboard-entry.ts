@@ -1,6 +1,6 @@
 import { isOwnerOperator, isStoreOperator } from "../../model";
 import type { OperatorUser } from "../../model";
-import { getDashboardDestination } from "./dashboard-navigation";
+import { getDashboardDestination, legacyOnboardingPath } from "./dashboard-navigation";
 import { readStripeReturnParams } from "./route-callbacks";
 
 export type DashboardEntryPlan =
@@ -27,13 +27,13 @@ export function resolveDashboardEntryPlan(
   const stripe = readStripeReturnParams(search);
   const launchIntent = params.get("intent")?.trim().toLowerCase() === "launch" || params.get("start")?.trim().toLowerCase() === "app";
   if (stripe.returned || stripe.refreshRequested) {
-    return { kind: "redirect", href: preserveSearch(getDashboardDestination("store").href, search) };
+    return { kind: "redirect", href: preserveSearch(legacyOnboardingPath, search) };
   }
   if (isStoreOperator(operator)) {
     return { kind: "redirect", href: preserveSearch(getDashboardDestination("orders").href, search) };
   }
   if (launchIntent && isOwnerOperator(operator)) {
-    return { kind: "redirect", href: preserveSearch(getDashboardDestination("store").href, search) };
+    return { kind: "redirect", href: preserveSearch(legacyOnboardingPath, search) };
   }
   return {
     kind: "dashboard",

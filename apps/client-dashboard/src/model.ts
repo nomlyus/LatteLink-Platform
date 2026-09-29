@@ -10,7 +10,6 @@ import {
   adminMenuItemCreateSchema,
   adminMenuItemUpdateSchema,
   adminMenuResponseSchema,
-  adminStoreConfigUpdateSchema,
   appConfigSchema,
   homeNewsCardSchema,
   isLoyaltyVisible,
@@ -87,17 +86,8 @@ export type OperatorMenuItemCreateFormInput = {
   badgeCodes?: string | string[];
 };
 
-export type OperatorStoreConfigFormInput = {
-  storeName?: string;
-  locationName?: string;
-  hours?: string;
-  pickupInstructions?: string;
-  taxRateBasisPoints?: string | number;
-};
-
 export type OperatorMenuItemUpdate = z.output<typeof operatorMenuItemUpdateSchema>;
 export type OperatorMenuItemCreate = z.output<typeof adminMenuItemCreateSchema>;
-export type OperatorStoreConfigUpdate = z.output<typeof adminStoreConfigUpdateSchema>;
 export type OperatorAppConfig = AppConfig;
 
 function normalizeText(value: unknown) {
@@ -139,29 +129,6 @@ function normalizeCents(value: unknown) {
   }
 
   return 0;
-}
-
-function normalizeOptionalBasisPoints(value: unknown) {
-  if (value === undefined || value === null) {
-    return undefined;
-  }
-
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return Math.max(0, Math.min(10000, Math.trunc(value)));
-  }
-
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return undefined;
-    }
-    const parsed = Number(trimmed);
-    if (Number.isFinite(parsed)) {
-      return Math.max(0, Math.min(10000, Math.trunc(parsed)));
-    }
-  }
-
-  return undefined;
 }
 
 function normalizeBoolean(value: unknown) {
@@ -207,10 +174,6 @@ export function isOwnerOperator(
   operator: Pick<OperatorUser, "role"> | null | undefined
 ) {
   return operator?.role === "owner";
-}
-
-export function isOnboardingIncomplete(status: string | null | undefined) {
-  return Boolean(status && status !== "approved" && status !== "live");
 }
 
 export function formatOrderStatus(status: OperatorOrderStatus) {
@@ -585,22 +548,6 @@ export function normalizeMenuItemCreateForm(input: OperatorMenuItemCreateFormInp
           .split(",")
           .map((badge) => badge.trim())
           .filter(Boolean)
-  });
-}
-
-export function normalizeStoreConfigForm(
-  input: OperatorStoreConfigFormInput | unknown
-): OperatorStoreConfigUpdate {
-  const value = toRecord(input);
-
-  return adminStoreConfigUpdateSchema.parse({
-    storeName: normalizeText(value.storeName),
-    locationName: normalizeText(value.locationName),
-    hours: normalizeText(value.hours),
-    pickupInstructions: normalizeText(value.pickupInstructions),
-    ...(normalizeOptionalBasisPoints(value.taxRateBasisPoints) === undefined
-      ? {}
-      : { taxRateBasisPoints: normalizeOptionalBasisPoints(value.taxRateBasisPoints) })
   });
 }
 

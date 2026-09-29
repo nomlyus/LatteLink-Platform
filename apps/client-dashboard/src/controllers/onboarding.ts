@@ -4,9 +4,9 @@ import {
   refreshOperatorStripeStatus,
   submitOperatorOnboardingReview,
   updateOperatorAppIdentity,
-  updateOperatorOnboarding,
-  updateOperatorStoreConfig
+  updateOperatorOnboarding
 } from "../api";
+import { updateOperatorStoreConfig } from "../features/settings/store-settings-api";
 import { loadDashboard, handleOperatorActionError } from "../lifecycle";
 import { countVisibleMenuItems, isOwnerOperator } from "../model";
 import { render } from "../render";

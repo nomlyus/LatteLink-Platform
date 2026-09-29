@@ -19,10 +19,10 @@ describe("React dashboard root ownership", () => {
     expect(resolveDashboardEntryPlan("signed-out", null, "")).toEqual({ kind: "legacy-auth" });
   });
 
-  it("routes Stripe return query parameters to the unchanged legacy settings flow", () => {
+  it("routes Stripe return query parameters to the onboarding compatibility flow", () => {
     expect(resolveDashboardEntryPlan("authenticated", owner, "?stripeReturn=1&session_id=cs_test&keep=1")).toEqual({
       kind: "redirect",
-      href: "/legacy/store?stripeReturn=1&session_id=cs_test&keep=1"
+      href: "/legacy/onboarding?stripeReturn=1&session_id=cs_test&keep=1"
     });
   });
 
@@ -33,10 +33,10 @@ describe("React dashboard root ownership", () => {
     });
   });
 
-  it("keeps owner app-launch behavior on the existing legacy settings flow", () => {
+  it("keeps owner app-launch behavior on the onboarding compatibility flow", () => {
     expect(resolveDashboardEntryPlan("authenticated", owner, "?intent=launch&keep=1")).toEqual({
       kind: "redirect",
-      href: "/legacy/store?intent=launch&keep=1"
+      href: "/legacy/onboarding?intent=launch&keep=1"
     });
   });
 

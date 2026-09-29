@@ -25,7 +25,6 @@ import {
   adminModifierGroupUpdateSchema,
   modifierGroupSchema,
   adminStoreConfigSchema,
-  adminStoreConfigUpdateSchema,
   appConfigSchema,
   mobileReleaseBuildJobListResponseSchema,
   merchantLaunchRequestSchema,
@@ -53,7 +52,6 @@ import {
   normalizeMenuItemForm,
   operatorMenuItemSchema,
   operatorMenuResponseSchema,
-  normalizeStoreConfigForm,
   type OperatorOrder,
   type OperatorMenuResponse
 } from "./model";
@@ -553,12 +551,13 @@ export function fetchOperatorReporting(
   });
 }
 
-export function fetchOperatorLocationStoreConfig(session: OperatorSession, locationId: string) {
+export function fetchOperatorLocationStoreConfig(session: OperatorSession, locationId: string, signal?: AbortSignal) {
   return requestJson({
     apiBaseUrl: session.apiBaseUrl,
     accessToken: session.accessToken,
     path: "/admin/store/config",
     query: { locationId },
+    signal,
     schema: adminStoreConfigSchema
   });
 }
@@ -1001,22 +1000,6 @@ export function deleteOperatorModifierGroup(session: OperatorSession, locationId
     query: { locationId: requireSelectedLocationId(locationId) },
     method: "DELETE",
     schema: adminMutationSuccessSchema
-  });
-}
-
-export function updateOperatorStoreConfig(
-  session: OperatorSession,
-  locationId: string | null,
-  input: Parameters<typeof normalizeStoreConfigForm>[0]
-) {
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: "/admin/store/config",
-    query: { locationId: requireSelectedLocationId(locationId) },
-    method: "PUT",
-    body: adminStoreConfigUpdateSchema.parse(normalizeStoreConfigForm(input)),
-    schema: adminStoreConfigSchema
   });
 }
 

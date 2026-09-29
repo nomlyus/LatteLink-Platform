@@ -18,7 +18,6 @@ import {
   handlePasswordSignIn,
   showSignInScreen
 } from "./controllers/auth";
-import { handleStoreSubmit } from "./controllers/store";
 import {
   handleOnboardingAppIdentitySubmit,
   handleOnboardingBusinessProfileSubmit,
@@ -59,7 +58,6 @@ export function registerEvents(parentSignal?: AbortSignal) {
       case "auth-sign-in": void handlePasswordSignIn(form); return;
       case "merchant-launch": void handleMerchantLaunchSubmit(form); return;
       case "owner-invite-accept": void handleOwnerInviteAccept(form); return;
-      case "store-config": void handleStoreSubmit(form); return;
       case "onboarding-step": void handleOnboardingStepSubmit(form); return;
       case "onboarding-business-profile": void handleOnboardingBusinessProfileSubmit(form); return;
       case "onboarding-store-operations": void handleOnboardingStoreOperationsSubmit(form); return;

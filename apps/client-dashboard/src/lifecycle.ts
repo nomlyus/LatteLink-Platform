@@ -7,7 +7,7 @@ import {
   refreshOperatorSession,
   type OperatorSession
 } from "./api";
-import { isOnboardingIncomplete, isOwnerOperator, isStoreOperator, sessionNeedsRefresh } from "./model";
+import { isOwnerOperator, isStoreOperator, sessionNeedsRefresh } from "./model";
 import {
   clearStoredSession,
   hasSeenOnboardingWizard,
@@ -21,7 +21,8 @@ import { resetDashboardData, setError, setNotice, state } from "./state";
 import { ensureSectionIsAvailable } from "./sections";
 import { render } from "./render";
 import { isSessionAuthFailure } from "./features/auth/session-compat";
-import { shouldAutoOpenOwnerOnboarding } from "./lib/navigation/dashboard-navigation";
+import { isOnboardingIncomplete } from "./features/onboarding/onboarding-domain";
+import { isLegacyOnboardingPath, shouldAutoOpenOwnerOnboarding } from "./lib/navigation/dashboard-navigation";
 import {
   clearLocationContext,
   initializeLocationContext,
@@ -257,12 +258,15 @@ export async function applyVerifiedSession(nextSession: OperatorSession, notice:
   const currentSession = state.session;
   const shouldPreserveSection =
     currentSession?.operator.operatorUserId === nextSession.operator.operatorUserId;
+  const requestedOnboardingRoute = typeof window !== "undefined" && isLegacyOnboardingPath(window.location.pathname);
   state.session = nextSession;
   const locationContext = initializeLocationContext(nextSession);
   state.section = isStoreOperator(nextSession.operator)
     ? "orders"
     : shouldPreserveSection
       ? state.section
+      : requestedOnboardingRoute
+        ? "store"
       : "overview";
   state.selectedLocationId = isStoreOperator(nextSession.operator)
     ? nextSession.operator.locationId

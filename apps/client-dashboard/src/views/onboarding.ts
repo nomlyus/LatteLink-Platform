@@ -1,4 +1,5 @@
-import { isOnboardingIncomplete } from "../model";
+import { isOwnerOperator } from "../model";
+import { isOnboardingIncomplete } from "../features/onboarding/onboarding-domain";
 import { state } from "../state";
 import { escapeHtml } from "../ui/format";
 import { renderSectionHeading } from "./common";
@@ -566,6 +567,9 @@ function renderWizardBody() {
 }
 
 export function renderOnboardingSection() {
+  if (!isOwnerOperator(state.session?.operator ?? null)) {
+    return "";
+  }
   const summary = state.onboardingSummary;
   if (!summary) {
     return "";

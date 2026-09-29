@@ -2,8 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { OperatorSession } from "../src/api";
 import { ensureSectionIsAvailable, getAvailableDashboardSections } from "../src/sections";
 import { state } from "../src/state";
-import { renderOnboardingWizard } from "../src/views/onboarding";
-import { renderStoreSection } from "../src/views/store";
+import { renderOnboardingSection, renderOnboardingWizard } from "../src/views/onboarding";
 
 const ownerSession: OperatorSession = {
   accessToken: "access-token",
@@ -74,16 +73,16 @@ describe("dashboard sections", () => {
     state.menuCategories = [];
   });
 
-  it("keeps setup out of dashboard navigation and embeds it in owner settings", () => {
+  it("keeps launch setup out of navigation and exposes it only to owners on the compatibility route", () => {
     state.session = ownerSession;
     state.onboardingSummary = onboardingSummary;
     state.storeConfig = storeConfig;
 
     expect(getAvailableDashboardSections()).not.toContain("onboarding");
     expect(getAvailableDashboardSections()).toContain("store");
-    expect(renderStoreSection()).toContain("Launch setup");
-    expect(renderStoreSection()).toContain("7 setup items left");
-    expect(renderStoreSection()).toContain("Optional connectors");
+    expect(renderOnboardingSection()).toContain("Launch setup");
+    expect(renderOnboardingSection()).toContain("7 setup items left");
+    expect(renderOnboardingSection()).toContain("Optional connectors");
 
     state.session = {
       ...ownerSession,
@@ -93,7 +92,7 @@ describe("dashboard sections", () => {
       }
     };
     expect(getAvailableDashboardSections()).not.toContain("onboarding");
-    expect(renderStoreSection()).not.toContain("Launch setup");
+    expect(renderOnboardingSection()).toBe("");
 
     state.session = ownerSession;
     state.onboardingSummary = {
@@ -101,7 +100,7 @@ describe("dashboard sections", () => {
       status: "approved"
     };
     expect(getAvailableDashboardSections()).not.toContain("onboarding");
-    expect(renderStoreSection()).toContain("Launch approved");
+    expect(renderOnboardingSection()).toContain("Launch approved");
   });
 
   it("preserves the saved section until location capabilities have loaded", () => {
@@ -177,7 +176,7 @@ describe("dashboard sections", () => {
       }
     };
 
-    const approvedHtml = renderStoreSection();
+    const approvedHtml = renderOnboardingSection();
     expect(approvedHtml).toContain("Launch approved");
     expect(approvedHtml).toContain("Ready for launch");
 
@@ -193,7 +192,7 @@ describe("dashboard sections", () => {
       }
     };
 
-    const liveHtml = renderStoreSection();
+    const liveHtml = renderOnboardingSection();
     expect(liveHtml).toContain("App is live");
     expect(liveHtml).toContain("Live");
   });
@@ -222,7 +221,7 @@ describe("dashboard sections", () => {
       }
     };
 
-    const html = renderStoreSection();
+    const html = renderOnboardingSection();
 
     expect(html).toContain("Submitted to App Store");
     expect(html).toContain("TestFlight");
