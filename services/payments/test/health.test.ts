@@ -206,6 +206,13 @@ describe("payments service", () => {
       const url = typeof input === "string" ? input : input.toString();
       const headers = new Headers(init?.headers);
 
+      if (url.startsWith("http://127.0.0.1:3002/v1/catalog/internal/public-location-access?")) {
+        expect(new URL(url).searchParams.get("brandId")).toBe("gazelle");
+        expect(new URL(url).searchParams.get("locationId")).toBe("flagship-01");
+        expect(headers.get("x-gateway-token")).toBe("gateway-payments-token");
+        return new Response(null, { status: 204 });
+      }
+
       if (url === `http://127.0.0.1:3001/v1/orders/internal/checkouts/${checkoutId}/payment-context`) {
         expect(headers.get("x-internal-token")).toBe(internalPaymentsToken);
         expect(headers.get("x-user-id")).toBe("123e4567-e89b-12d3-a456-426614174000");
@@ -282,7 +289,7 @@ describe("payments service", () => {
     const app = await buildApp();
     const response = await app.inject({
       method: "POST",
-      url: "/v1/payments/stripe/mobile-session",
+      url: "/v1/payments/stripe/mobile-session?brandId=gazelle",
       headers: {
         "x-gateway-token": "gateway-payments-token",
         "x-user-id": "123e4567-e89b-12d3-a456-426614174000"
@@ -327,11 +334,62 @@ describe("payments service", () => {
     await app.close();
   });
 
+  it("rejects checkout payment when the selected brand does not own the checkout location", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetchMock);
+    const checkoutId = "123e4567-e89b-12d3-a456-426614174780";
+    const stripeCreateSpy = vi.spyOn(Object.getPrototypeOf(stripe.paymentIntents), "create");
+
+    fetchMock.mockImplementation(async (input) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url === `http://127.0.0.1:3001/v1/orders/internal/checkouts/${checkoutId}/payment-context`) {
+        return new Response(JSON.stringify({
+          checkoutId,
+          locationId: "flagship-01",
+          status: "OPEN",
+          expiresAt: "2030-03-10T00:30:00.000Z",
+          total: { currency: "USD", amountCents: 1295 }
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (url.startsWith("http://127.0.0.1:3002/v1/catalog/internal/public-location-access?")) {
+        expect(new URL(url).searchParams.get("brandId")).toBe("other-brand");
+        expect(new URL(url).searchParams.get("locationId")).toBe("flagship-01");
+        return new Response(JSON.stringify({ code: "PUBLIC_LOCATION_NOT_AVAILABLE", message: "Location not available." }), {
+          status: 404,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      throw new Error(`unexpected Stripe mobile session URL: ${url}`);
+    });
+
+    const app = await buildApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/payments/stripe/mobile-session?brandId=other-brand",
+      headers: {
+        "x-gateway-token": "gateway-payments-token",
+        "x-user-id": "123e4567-e89b-12d3-a456-426614174000"
+      },
+      payload: { checkoutId }
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ code: "PUBLIC_LOCATION_NOT_AVAILABLE", message: "Location not available." });
+    expect(stripeCreateSpy).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    stripeCreateSpy.mockRestore();
+    await app.close();
+  });
+
   it("blocks customer checkout when the selected location is not Stripe-ready", async () => {
     const checkoutId = "123e4567-e89b-12d3-a456-426614174778";
     const stripeCreateSpy = vi.spyOn(Object.getPrototypeOf(stripe.paymentIntents), "create");
     vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockImplementation(async (input) => {
       const url = typeof input === "string" ? input : input.toString();
+      if (url.startsWith("http://127.0.0.1:3002/v1/catalog/internal/public-location-access?")) {
+        expect(new URL(url).searchParams.get("brandId")).toBe("gazelle");
+        return new Response(null, { status: 204 });
+      }
       if (url === `http://127.0.0.1:3001/v1/orders/internal/checkouts/${checkoutId}/payment-context`) {
         return new Response(JSON.stringify({
           checkoutId,
@@ -386,7 +444,7 @@ describe("payments service", () => {
     const app = await buildApp();
     const response = await app.inject({
       method: "POST",
-      url: "/v1/payments/stripe/mobile-session",
+      url: "/v1/payments/stripe/mobile-session?brandId=gazelle",
       headers: {
         "x-gateway-token": "gateway-payments-token",
         "x-user-id": "123e4567-e89b-12d3-a456-426614174000"
@@ -406,6 +464,10 @@ describe("payments service", () => {
     const stripeCreateSpy = vi.spyOn(Object.getPrototypeOf(stripe.paymentIntents), "create");
     vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockImplementation(async (input) => {
       const url = typeof input === "string" ? input : input.toString();
+      if (url.startsWith("http://127.0.0.1:3002/v1/catalog/internal/public-location-access?")) {
+        expect(new URL(url).searchParams.get("brandId")).toBe("gazelle");
+        return new Response(null, { status: 204 });
+      }
       if (url === `http://127.0.0.1:3001/v1/orders/internal/checkouts/${checkoutId}/payment-context`) {
         return new Response(JSON.stringify({
           checkoutId,
@@ -427,7 +489,7 @@ describe("payments service", () => {
     const app = await buildApp();
     const response = await app.inject({
       method: "POST",
-      url: "/v1/payments/stripe/mobile-session",
+      url: "/v1/payments/stripe/mobile-session?brandId=gazelle",
       headers: {
         "x-gateway-token": "gateway-payments-token",
         "x-user-id": "123e4567-e89b-12d3-a456-426614174000"
@@ -463,6 +525,13 @@ describe("payments service", () => {
     fetchMock.mockImplementation(async (input, init) => {
       const url = typeof input === "string" ? input : input.toString();
       const headers = new Headers(init?.headers);
+
+      if (url.startsWith("http://127.0.0.1:3002/v1/catalog/internal/public-location-access?")) {
+        expect(new URL(url).searchParams.get("brandId")).toBe("gazelle");
+        expect(new URL(url).searchParams.get("locationId")).toBe("flagship-01");
+        expect(headers.get("x-gateway-token")).toBe("gateway-payments-token");
+        return new Response(null, { status: 204 });
+      }
 
       if (url === `http://127.0.0.1:3001/v1/orders/internal/checkouts/${checkoutId}/payment-context`) {
         expect(headers.get("x-internal-token")).toBe(internalPaymentsToken);
@@ -566,7 +635,7 @@ describe("payments service", () => {
     const app = await buildApp({ repository: await recordedStripePayment("pi_finalize_123", checkoutId, 1295) });
     const response = await app.inject({
       method: "POST",
-      url: "/v1/payments/stripe/mobile-session/finalize",
+      url: "/v1/payments/stripe/mobile-session/finalize?brandId=gazelle",
       headers: {
         "x-gateway-token": "gateway-payments-token",
         "x-user-id": "123e4567-e89b-12d3-a456-426614174000"
@@ -618,6 +687,12 @@ describe("payments service", () => {
     fetchMock.mockImplementation(async (input, init) => {
       const url = typeof input === "string" ? input : input.toString();
       const headers = new Headers(init?.headers);
+
+      if (url.startsWith("http://127.0.0.1:3002/v1/catalog/internal/public-location-access?")) {
+        expect(new URL(url).searchParams.get("brandId")).toBe("gazelle");
+        expect(new URL(url).searchParams.get("locationId")).toBe("flagship-01");
+        return new Response(null, { status: 204 });
+      }
 
       if (url === `http://127.0.0.1:3001/v1/orders/internal/checkouts/${checkoutId}/payment-context`) {
         expect(headers.get("x-internal-token")).toBe(internalPaymentsToken);
@@ -690,7 +765,7 @@ describe("payments service", () => {
     const app = await buildApp({ repository: await recordedStripePayment("pi_canceled_123", checkoutId, 1295) });
     const response = await app.inject({
       method: "POST",
-      url: "/v1/payments/stripe/mobile-session/finalize",
+      url: "/v1/payments/stripe/mobile-session/finalize?brandId=gazelle",
       headers: {
         "x-gateway-token": "gateway-payments-token",
         "x-user-id": "123e4567-e89b-12d3-a456-426614174000"

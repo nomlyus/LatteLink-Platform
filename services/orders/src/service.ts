@@ -182,6 +182,10 @@ export type PosAdapter = {
 export type OrderServiceDeps = {
   repository: OrdersRepository;
   catalogBaseUrl: string;
+  /** Public brand selector for customer runtime catalog reads; never a credential. */
+  publicBrandId?: string;
+  /** Gateway-to-catalog credential used only for trusted internal store-config reads. */
+  catalogInternalToken?: string;
   paymentsBaseUrl: string;
   paymentsInternalToken?: string;
   loyaltyBaseUrl: string;
@@ -432,14 +436,27 @@ function resolveRequestUserId(context: RequestUserContext | undefined) {
 }
 
 async function fetchStoreConfig(deps: OrderServiceDeps, locationId: string): Promise<StoreConfigLookupResult> {
+  const publicBrandId = deps.publicBrandId?.trim();
+  const internalToken = deps.catalogInternalToken?.trim();
+  if (!publicBrandId && !internalToken) {
+    deps.logger.warn({ locationId }, "catalog store config request refused without public brand context or internal credential");
+    return buildStoreConfigUnavailableError();
+  }
+
   let storeConfigResponse: Response;
   try {
-    const storeConfigUrl = new URL("/v1/store/config", deps.catalogBaseUrl);
-    storeConfigUrl.searchParams.set("locationId", locationId);
+    const storeConfigUrl = publicBrandId
+      ? new URL("/v1/store/config", deps.catalogBaseUrl)
+      : new URL(`/v1/catalog/internal/locations/${encodeURIComponent(locationId)}/store-config`, deps.catalogBaseUrl);
+    const requestHeaders: Record<string, string> = { "content-type": "application/json" };
+    if (publicBrandId) {
+      storeConfigUrl.searchParams.set("brandId", publicBrandId);
+      storeConfigUrl.searchParams.set("locationId", locationId);
+    } else if (internalToken) {
+      requestHeaders["x-gateway-token"] = internalToken;
+    }
     storeConfigResponse = await fetch(storeConfigUrl.toString(), {
-      headers: {
-        "content-type": "application/json"
-      }
+      headers: requestHeaders
     });
   } catch (error) {
     deps.logger.warn({ error }, "catalog store config request failed before response");

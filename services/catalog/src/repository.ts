@@ -495,6 +495,8 @@ type CatalogRepository = {
   getMobileBrandBootstrap(brandId: string): Promise<MobileBrandBootstrap | undefined>;
   /** Checks canonical persisted membership; location-sensitive handlers must call this before processing. brandId is public, not a credential. */
   doesLocationBelongToBrand(brandId: string, locationId: string): Promise<boolean>;
+  /** Uses the same persisted onboarding/config readiness rule as the public mobile bootstrap. */
+  isCustomerLocationLaunchableForBrand(brandId: string, locationId: string): Promise<boolean>;
   getAppConfig(locationId: string): Promise<AppConfig | undefined>;
   listInternalLocations(): Promise<InternalLocationSummary[]>;
   getInternalLocationSummary(locationId: string): Promise<InternalLocationSummary | undefined>;
@@ -1208,6 +1210,12 @@ function applyPaymentProfileToAppConfig(appConfig: AppConfig, profile?: ClientPa
 
 function createInMemoryRepository(): CatalogRepository {
   const defaultAppConfig = structuredClone(resolveDefaultAppConfigPayload());
+  // Vitest's explicit runtime fixture exercises the customer routes without creating a production fallback.
+  const seedCustomerRuntimeFixture = process.env.NODE_ENV === "test" && process.env.VITEST === "true";
+  const testCustomerBrandId = "test-public-runtime-brand";
+  if (seedCustomerRuntimeFixture) {
+    defaultAppConfig.brand.brandId = testCustomerBrandId;
+  }
   const appConfigsByLocation = new Map<string, AppConfig>([[DEFAULT_LOCATION_ID, defaultAppConfig]]);
   const menusByLocation = new Map<string, MenuResponse>([[DEFAULT_LOCATION_ID, structuredClone(defaultMenuPayload)]]);
   const modifierGroupsByLocation = new Map<string, z.output<typeof modifierGroupSchema>[]>();
@@ -1269,6 +1277,88 @@ function createInMemoryRepository(): CatalogRepository {
   const appIdentityProfilesByLocation = new Map<string, AppIdentityProfile>();
   const mobileExperienceDraftsByLocation = new Map<string, MobileExperienceDocument>();
   const mobileExperienceVersionsByLocation = new Map<string, MobileExperienceDocument[]>();
+
+  if (seedCustomerRuntimeFixture) {
+    const now = new Date().toISOString();
+    const tenantId = "tenant-test-public-runtime";
+    clientsByTenant.set(tenantId, {
+      tenantId,
+      brandId: testCustomerBrandId,
+      clientName: "Public Runtime Test Brand",
+      status: "live",
+      createdAt: now,
+      updatedAt: now
+    });
+    clientLocationsByLocation.set(DEFAULT_LOCATION_ID, {
+      tenantId,
+      brandId: testCustomerBrandId,
+      locationId: DEFAULT_LOCATION_ID,
+      locationName: defaultAppConfig.brand.locationName,
+      marketLabel: defaultAppConfig.brand.marketLabel,
+      timezone: "America/Detroit",
+      primaryLocation: true,
+      createdAt: now,
+      updatedAt: now
+    });
+    onboardingProgressByLocation.set(DEFAULT_LOCATION_ID, {
+      tenantId,
+      locationId: DEFAULT_LOCATION_ID,
+      status: "live",
+      ownerInvited: true,
+      ownerActivated: true,
+      businessProfileComplete: true,
+      storeOperationsComplete: true,
+      menuReady: true,
+      teamConfiguredOrSkipped: true,
+      testOrderCompleted: true,
+      adminLaunchApproved: true,
+      approvedAt: now,
+      liveAt: now,
+      updatedAt: now
+    });
+    paymentProfilesByLocation.set(DEFAULT_LOCATION_ID, buildPaymentProfile({
+      locationId: DEFAULT_LOCATION_ID,
+      stripeAccountId: "acct_testruntime",
+      stripeAccountType: "express",
+      stripeOnboardingStatus: "completed",
+      stripeDetailsSubmitted: true,
+      stripeChargesEnabled: true,
+      stripePayoutsEnabled: true,
+      stripeDashboardEnabled: true,
+      country: "US",
+      currency: "USD",
+      cardEnabled: true,
+      applePayEnabled: true,
+      refundsEnabled: true,
+      cloverPosEnabled: false,
+      createdAt: now,
+      updatedAt: now
+    }));
+    mobileReleaseProfilesByLocation.set(DEFAULT_LOCATION_ID, mobileReleaseProfileSchema.parse({
+      locationId: DEFAULT_LOCATION_ID,
+      status: "ready_for_launch",
+      updatedAt: now
+    }));
+    appIdentityProfilesByLocation.set(DEFAULT_LOCATION_ID, buildAppIdentityProfile({
+      locationId: DEFAULT_LOCATION_ID,
+      appName: "Runtime Test Brand",
+      displayName: "Runtime Test Brand",
+      bundleIdentifier: "us.nomly.runtimetest",
+      sku: "runtime-test-brand",
+      primaryCategory: "Food & Drink",
+      subtitle: "Order ahead",
+      description: "Customer runtime test fixture.",
+      keywords: ["coffee"],
+      screenshotAssetUrls: [],
+      supportUrl: "https://example.test/support",
+      privacyPolicyUrl: "https://example.test/privacy",
+      marketingUrl: "https://example.test",
+      targetLocationIds: [DEFAULT_LOCATION_ID],
+      assetMode: "placeholder",
+      adminOverrideReady: true,
+      updatedAt: now
+    }));
+  }
 
   async function buildMemoryOnboarding(locationId: string) {
     const location = clientLocationsByLocation.get(locationId);
@@ -1494,6 +1584,34 @@ function createInMemoryRepository(): CatalogRepository {
       const location = clientLocationsByLocation.get(locationId);
       const client = location ? clientsByTenant.get(location.tenantId) : undefined;
       return Boolean(location && client && client.brandId === brandId && location.brandId === client.brandId);
+    },
+    async isCustomerLocationLaunchableForBrand(brandId, locationId) {
+      const membershipRecord = clientLocationsByLocation.get(locationId);
+      const client = membershipRecord ? clientsByTenant.get(membershipRecord.tenantId) : undefined;
+      if (!membershipRecord || !client || client.brandId !== brandId || membershipRecord.brandId !== client.brandId) {
+        return false;
+      }
+      const brand: MobileBrandRecord = {
+        tenantId: client.tenantId,
+        brandId: client.brandId,
+        displayName: client.clientName
+      };
+      const membership: MobileBrandLocationMembership = {
+        tenantId: membershipRecord.tenantId,
+        brandId: membershipRecord.brandId,
+        locationId: membershipRecord.locationId,
+        locationName: membershipRecord.locationName,
+        marketLabel: membershipRecord.marketLabel,
+        timezone: membershipRecord.timezone,
+        primaryLocation: membershipRecord.primaryLocation
+      };
+      const [onboarding, locationSummary, appConfig, storeConfig] = await Promise.all([
+        this.getInternalLocationOnboarding(locationId),
+        this.getInternalLocationSummary(locationId),
+        this.getAppConfig(locationId),
+        this.getStoreConfig(locationId)
+      ]);
+      return isCustomerLocationLaunchable({ brand, membership, onboarding, appConfig, storeConfig, locationSummary });
     },
     async getAppConfig(locationId) {
       const appConfig = appConfigsByLocation.get(locationId);
@@ -3288,6 +3406,56 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         .whereRef("memberships.brand_id", "=", "clients.brand_id")
         .executeTakeFirst();
       return Boolean(membership);
+    },
+    async isCustomerLocationLaunchableForBrand(brandId, locationId) {
+      const row = await db
+        .selectFrom("catalog_client_locations as memberships")
+        .innerJoin("catalog_clients as clients", "clients.tenant_id", "memberships.tenant_id")
+        .selectAll("memberships")
+        .select([
+          "clients.tenant_id as client_tenant_id",
+          "clients.brand_id as client_brand_id",
+          "clients.client_name as client_name",
+          "clients.status as client_status",
+          "clients.created_at as client_created_at",
+          "clients.updated_at as client_updated_at"
+        ])
+        .where("clients.brand_id", "=", brandId)
+        .where("memberships.location_id", "=", locationId)
+        .whereRef("memberships.brand_id", "=", "clients.brand_id")
+        .executeTakeFirst();
+      if (!row) return false;
+
+      const client = toClientRecord({
+        tenant_id: row.client_tenant_id,
+        brand_id: row.client_brand_id,
+        client_name: row.client_name,
+        status: row.client_status,
+        created_at: row.client_created_at,
+        updated_at: row.client_updated_at
+      });
+      const location = toClientLocationRecord(row);
+      const brand: MobileBrandRecord = {
+        tenantId: client.tenantId,
+        brandId: client.brandId,
+        displayName: client.clientName
+      };
+      const membership: MobileBrandLocationMembership = {
+        tenantId: location.tenantId,
+        brandId: location.brandId,
+        locationId: location.locationId,
+        locationName: location.locationName,
+        marketLabel: location.marketLabel,
+        timezone: location.timezone,
+        primaryLocation: location.primaryLocation
+      };
+      const [onboarding, locationSummary, appConfig, storeConfig] = await Promise.all([
+        this.getInternalLocationOnboarding(locationId),
+        this.getInternalLocationSummary(locationId),
+        this.getAppConfig(locationId),
+        this.getStoreConfig(locationId)
+      ]);
+      return isCustomerLocationLaunchable({ brand, membership, onboarding, appConfig, storeConfig, locationSummary });
     },
     async getAppConfig(locationId) {
       const row = await db

@@ -42,6 +42,8 @@ export const UNABLE_TO_REACH_BACKEND_MESSAGE = "Unable to reach backend.";
 export type ApiClientOptions = {
   baseUrl: string;
   accessToken?: string;
+  /** Public branded-app selector; backend persistence remains the authorization boundary. */
+  brandId?: string;
   locationId?: string;
 };
 
@@ -192,9 +194,20 @@ export class GazelleApiClient {
     return meResponseSchema.parse(data);
   }
 
+  private brandQuery(): string {
+    const brandId = this.options.brandId?.trim();
+    if (!brandId) throw new Error("A public brandId is required for customer runtime requests.");
+    return `?brandId=${encodeURIComponent(brandId)}`;
+  }
+
   private locationQuery(): string {
-    const id = this.options.locationId?.trim();
-    return id ? `?locationId=${encodeURIComponent(id)}` : "";
+    const brandId = this.options.brandId?.trim();
+    const locationId = this.options.locationId?.trim();
+    if (!brandId || !locationId) {
+      throw new Error("Public brandId and locationId are required for customer catalog requests.");
+    }
+    const query = new URLSearchParams({ brandId, locationId });
+    return `?${query.toString()}`;
   }
 
   async menu(): Promise<z.output<typeof menuResponseSchema>> {
@@ -249,7 +262,7 @@ export class GazelleApiClient {
 
   async quoteOrder(input: z.input<typeof quoteRequestSchema>): Promise<z.output<typeof orderQuoteSchema>> {
     quoteRequestSchema.parse(input);
-    const data = await this.post<unknown>("/orders/quote", input);
+    const data = await this.post<unknown>(`/orders/quote${this.brandQuery()}`, input);
     return orderQuoteSchema.parse(data);
   }
 
@@ -257,7 +270,7 @@ export class GazelleApiClient {
     input: z.input<typeof createCheckoutDraftRequestSchema>
   ): Promise<z.output<typeof checkoutDraftSchema>> {
     createCheckoutDraftRequestSchema.parse(input);
-    const data = await this.post<unknown>("/orders/checkouts", input);
+    const data = await this.post<unknown>(`/orders/checkouts${this.brandQuery()}`, input);
     return checkoutDraftSchema.parse(data);
   }
 
@@ -265,7 +278,7 @@ export class GazelleApiClient {
     input: z.input<typeof stripeMobilePaymentSessionRequestSchema>
   ): Promise<z.output<typeof stripeMobilePaymentSessionResponseSchema>> {
     stripeMobilePaymentSessionRequestSchema.parse(input);
-    const data = await this.post<unknown>("/payments/stripe/mobile-session", input);
+    const data = await this.post<unknown>(`/payments/stripe/mobile-session${this.brandQuery()}`, input);
     return stripeMobilePaymentSessionResponseSchema.parse(data);
   }
 
@@ -273,7 +286,7 @@ export class GazelleApiClient {
     input: z.input<typeof stripeMobilePaymentFinalizeRequestSchema>
   ): Promise<z.output<typeof stripeMobilePaymentFinalizeResponseSchema>> {
     stripeMobilePaymentFinalizeRequestSchema.parse(input);
-    const data = await this.post<unknown>("/payments/stripe/mobile-session/finalize", input);
+    const data = await this.post<unknown>(`/payments/stripe/mobile-session/finalize${this.brandQuery()}`, input);
     return stripeMobilePaymentFinalizeResponseSchema.parse(data);
   }
 

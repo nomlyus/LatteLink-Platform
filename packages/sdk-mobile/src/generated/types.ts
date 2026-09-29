@@ -147,7 +147,9 @@ export interface paths {
         put?: never;
         post: {
             parameters: {
-                query?: never;
+                query: {
+                    brandId: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -180,7 +182,9 @@ export interface paths {
         put?: never;
         post: {
             parameters: {
-                query?: never;
+                query: {
+                    brandId: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -1519,7 +1523,10 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query: {
+                    brandId: string;
+                    locationId: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -1585,7 +1592,10 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query: {
+                    brandId: string;
+                    locationId: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -1618,7 +1628,10 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query: {
+                    brandId: string;
+                    locationId: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -1651,7 +1664,10 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query: {
+                    brandId: string;
+                    locationId: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -1684,7 +1700,10 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query: {
+                    brandId: string;
+                    locationId: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -1752,7 +1771,9 @@ export interface paths {
         put?: never;
         post: {
             parameters: {
-                query?: never;
+                query: {
+                    brandId: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -1785,7 +1806,9 @@ export interface paths {
         put?: never;
         post: {
             parameters: {
-                query?: never;
+                query: {
+                    brandId: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -2712,7 +2735,10 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query: {
+                    brandId: string;
+                    locationId: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -4311,7 +4337,10 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query: {
+                    brandId: string;
+                    locationId: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -4344,7 +4373,10 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query: {
+                    brandId: string;
+                    locationId: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;

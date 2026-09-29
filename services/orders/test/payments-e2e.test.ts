@@ -28,6 +28,7 @@ const sampleQuotePayload = {
 };
 
 const defaultOrderUserId = "123e4567-e89b-12d3-a456-426614174000";
+const publicTestBrandId = "test-public-runtime-brand";
 const internalPaymentsToken = "orders-internal-token";
 const stripeWebhookSecret = "whsec_orders_payments_e2e";
 // Reuse the Stripe SDK dependency owned by payments without adding it to orders.
@@ -254,7 +255,33 @@ function buildNotificationsHarnessApp() {
 function buildCatalogHarnessApp() {
   const app = Fastify();
 
-  app.get("/v1/store/config", async () => ({
+  app.get("/v1/catalog/internal/public-location-access", async (request, reply) => {
+    const query = request.query as Record<string, unknown>;
+    if (query.brandId !== publicTestBrandId || query.locationId !== sampleQuotePayload.locationId) {
+      return reply.status(404).send({ code: "PUBLIC_LOCATION_NOT_AVAILABLE", message: "Location not available." });
+    }
+    return reply.status(204).send();
+  });
+
+  app.get("/v1/store/config", async (request, reply) => {
+    const query = request.query as Record<string, unknown>;
+    // The retired test-only POST /v1/orders fixture loads store config after a
+    // branded quote but predates brand context; public quote reads still require it.
+    if ((query.brandId !== undefined && query.brandId !== publicTestBrandId) || query.locationId !== sampleQuotePayload.locationId) {
+      return reply.status(404).send({ code: "PUBLIC_LOCATION_NOT_AVAILABLE", message: "Location not available." });
+    }
+    return {
+      locationId: "flagship-01",
+      hoursText: "Daily · 7:00 AM - 6:00 PM",
+      isOpen: true,
+      nextOpenAt: null,
+      prepEtaMinutes: 12,
+      taxRateBasisPoints: 600,
+      pickupInstructions: "Pickup at the flagship order counter."
+    };
+  });
+
+  app.get("/v1/catalog/internal/locations/flagship-01/store-config", async () => ({
     locationId: "flagship-01",
     hoursText: "Daily · 7:00 AM - 6:00 PM",
     isOpen: true,
@@ -277,6 +304,7 @@ describe.sequential("orders + payments e2e", () => {
   let previousLoyaltyBaseUrl: string | undefined;
   let previousNotificationsBaseUrl: string | undefined;
   let previousCatalogBaseUrl: string | undefined;
+  let previousGatewayInternalToken: string | undefined;
   let previousOrdersInternalToken: string | undefined;
   let previousAllowUnauthenticatedGateway: string | undefined;
   let previousAllowUnauthenticatedInternal: string | undefined;
@@ -297,7 +325,7 @@ describe.sequential("orders + payments e2e", () => {
     const headers = { "x-user-id": userId };
     const quoteResponse = await ordersApp.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       headers,
       payload: {
         ...sampleQuotePayload,
@@ -354,6 +382,7 @@ describe.sequential("orders + payments e2e", () => {
     previousLoyaltyBaseUrl = process.env.LOYALTY_SERVICE_BASE_URL;
     previousNotificationsBaseUrl = process.env.NOTIFICATIONS_SERVICE_BASE_URL;
     previousCatalogBaseUrl = process.env.CATALOG_SERVICE_BASE_URL;
+    previousGatewayInternalToken = process.env.GATEWAY_INTERNAL_API_TOKEN;
     previousOrdersInternalToken = process.env.ORDERS_INTERNAL_API_TOKEN;
     previousAllowUnauthenticatedGateway = process.env.ALLOW_UNAUTHENTICATED_ORDERS_GATEWAY;
     previousAllowUnauthenticatedInternal = process.env.ALLOW_UNAUTHENTICATED_ORDERS_INTERNAL;
@@ -365,6 +394,7 @@ describe.sequential("orders + payments e2e", () => {
     previousPaymentsProviderMode = process.env.PAYMENTS_PROVIDER_MODE;
 
     process.env.ORDERS_INTERNAL_API_TOKEN = internalPaymentsToken;
+    process.env.GATEWAY_INTERNAL_API_TOKEN = "orders-gateway-token";
     process.env.ALLOW_UNAUTHENTICATED_ORDERS_GATEWAY = "true";
     process.env.ALLOW_UNAUTHENTICATED_ORDERS_INTERNAL = "true";
     process.env.PAYMENTS_TEST_SIMULATE_STRIPE_REFUNDS = "true";
@@ -456,6 +486,12 @@ describe.sequential("orders + payments e2e", () => {
       delete process.env.CATALOG_SERVICE_BASE_URL;
     } else {
       process.env.CATALOG_SERVICE_BASE_URL = previousCatalogBaseUrl;
+    }
+
+    if (previousGatewayInternalToken === undefined) {
+      delete process.env.GATEWAY_INTERNAL_API_TOKEN;
+    } else {
+      process.env.GATEWAY_INTERNAL_API_TOKEN = previousGatewayInternalToken;
     }
 
     if (previousOrdersInternalToken === undefined) {

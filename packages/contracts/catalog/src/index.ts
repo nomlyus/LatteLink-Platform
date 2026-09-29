@@ -838,6 +838,11 @@ export const mobileBrandBootstrapRequestSchema = z
   })
   .strict();
 
+/** Public selector + location pair; brandId is not a credential and must be checked against persisted membership. */
+export const publicCustomerLocationRequestSchema = mobileBrandBootstrapRequestSchema.extend({
+  locationId: z.string().trim().min(1).max(160)
+}).strict();
+
 export const mobileBrandBootstrapLocationSchema = z
   .object({
     locationId: z.string().trim().min(1),
@@ -1903,37 +1908,37 @@ export const catalogContract = {
     appConfig: {
       method: "GET",
       path: "/app-config",
-      request: z.undefined(),
+      request: publicCustomerLocationRequestSchema,
       response: appConfigSchema
     },
     menu: {
       method: "GET",
       path: "/menu",
-      request: z.undefined(),
+      request: publicCustomerLocationRequestSchema,
       response: menuResponseSchema
     },
     cards: {
       method: "GET",
       path: "/cards",
-      request: z.undefined(),
+      request: publicCustomerLocationRequestSchema,
       response: homeNewsCardsResponseSchema
     },
     storeCards: {
       method: "GET",
       path: "/store/cards",
-      request: z.undefined(),
+      request: publicCustomerLocationRequestSchema,
       response: homeNewsCardsResponseSchema
     },
     storeConfig: {
       method: "GET",
       path: "/store/config",
-      request: z.undefined(),
+      request: publicCustomerLocationRequestSchema,
       response: storeConfigResponseSchema
     },
     mobileExperience: {
       method: "GET",
       path: "/mobile-experience",
-      request: z.undefined(),
+      request: publicCustomerLocationRequestSchema,
       response: mobileExperienceDocumentSchema
     },
     adminMenu: {

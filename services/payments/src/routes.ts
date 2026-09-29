@@ -16,6 +16,7 @@ import {
   clientPaymentProfileSchema,
   internalLocationPaymentProfileUpdateSchema,
   internalLocationSummarySchema,
+  mobileBrandBootstrapRequestSchema,
   paymentReadinessSchema,
   stripeConnectDashboardLinkRequestSchema,
   stripeConnectLinkResponseSchema,
@@ -1940,6 +1941,29 @@ async function fetchInternalLocationSummary(params: {
   };
 }
 
+async function validatePublicCustomerLocation(params: {
+  catalogBaseUrl: string;
+  gatewayToken?: string;
+  requestId: string;
+  brandId: string;
+  locationId: string;
+}): Promise<"available" | "unavailable" | "error"> {
+  const query = new URLSearchParams({ brandId: params.brandId, locationId: params.locationId });
+  const headers: Record<string, string> = { "x-request-id": params.requestId };
+  if (params.gatewayToken) headers["x-gateway-token"] = params.gatewayToken;
+  try {
+    const response = await fetch(`${params.catalogBaseUrl}/v1/catalog/internal/public-location-access?${query}`, {
+      method: "GET",
+      headers
+    });
+    if (response.status === 204) return "available";
+    if (response.status === 404) return "unavailable";
+    return "error";
+  } catch {
+    return "error";
+  }
+}
+
 async function updateInternalLocationPaymentProfile(params: {
   catalogBaseUrl: string;
   gatewayToken?: string;
@@ -2412,17 +2436,29 @@ export async function registerRoutes(app: FastifyInstance, options: {
   }));
 
   // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
-  app.post("/v1/payments/stripe/mobile-session", { preHandler: app.rateLimit(paymentsWriteRateLimit) }, async (request, reply) => {
+  app.post("/v1/payments/stripe/mobile-session", {
+    preHandler: app.rateLimit(paymentsWriteRateLimit),
+    attachValidation: true,
+    schema: {
+      querystring: {
+        type: "object",
+        required: ["brandId"],
+        additionalProperties: false,
+        properties: { brandId: { type: "string", minLength: 1, maxLength: 160 } }
+      }
+    }
+  }, async (request, reply) => {
     if (!authorizeGatewayRequest(request, reply, gatewayInternalToken)) {
       return;
     }
-    if (!requireStripeSecretKey(request, reply, stripeSecretKey)) {
-      return;
+    const parsedBrand = mobileBrandBootstrapRequestSchema.safeParse(request.query);
+    if (!parsedBrand.success) {
+      return reply.status(400).send(serviceErrorSchema.parse({
+        code: "INVALID_PUBLIC_BRAND_REQUEST",
+        message: "A valid brandId query parameter is required.",
+        requestId: request.id
+      }));
     }
-    if (!requireStripePublishableKey(request, reply, stripePublishableKey)) {
-      return;
-    }
-
     const input = stripeMobilePaymentSessionRequestSchema.parse(request.body);
     const parsedUserHeaders = userHeadersSchema.safeParse(request.headers);
     const userId = parsedUserHeaders.success ? parsedUserHeaders.data["x-user-id"] : undefined;
@@ -2443,6 +2479,28 @@ export async function registerRoutes(app: FastifyInstance, options: {
               requestId: request.id
             })
       );
+    }
+
+    const access = await validatePublicCustomerLocation({
+      catalogBaseUrl,
+      gatewayToken: gatewayInternalToken,
+      requestId: request.id,
+      brandId: parsedBrand.data.brandId,
+      locationId: paymentContextResult.response.locationId
+    });
+    if (access !== "available") {
+      return reply.status(access === "unavailable" ? 404 : 503).send(serviceErrorSchema.parse({
+        code: access === "unavailable" ? "PUBLIC_LOCATION_NOT_AVAILABLE" : "PUBLIC_LOCATION_VALIDATION_UNAVAILABLE",
+        message: access === "unavailable" ? "Location not available." : "Location is temporarily unavailable.",
+        requestId: request.id
+      }));
+    }
+
+    if (!requireStripeSecretKey(request, reply, stripeSecretKey)) {
+      return;
+    }
+    if (!requireStripePublishableKey(request, reply, stripePublishableKey)) {
+      return;
     }
 
     const checkoutContext = "checkoutId" in paymentContextResult.response
@@ -2629,14 +2687,29 @@ export async function registerRoutes(app: FastifyInstance, options: {
   });
 
   // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
-  app.post("/v1/payments/stripe/mobile-session/finalize", { preHandler: app.rateLimit(paymentsWriteRateLimit) }, async (request, reply) => {
+  app.post("/v1/payments/stripe/mobile-session/finalize", {
+    preHandler: app.rateLimit(paymentsWriteRateLimit),
+    attachValidation: true,
+    schema: {
+      querystring: {
+        type: "object",
+        required: ["brandId"],
+        additionalProperties: false,
+        properties: { brandId: { type: "string", minLength: 1, maxLength: 160 } }
+      }
+    }
+  }, async (request, reply) => {
     if (!authorizeGatewayRequest(request, reply, gatewayInternalToken)) {
       return;
     }
-    if (!requireStripeSecretKey(request, reply, stripeSecretKey)) {
-      return;
+    const parsedBrand = mobileBrandBootstrapRequestSchema.safeParse(request.query);
+    if (!parsedBrand.success) {
+      return reply.status(400).send(serviceErrorSchema.parse({
+        code: "INVALID_PUBLIC_BRAND_REQUEST",
+        message: "A valid brandId query parameter is required.",
+        requestId: request.id
+      }));
     }
-
     const input = stripeMobilePaymentFinalizeRequestSchema.parse(request.body);
     const paymentIntentId = input.paymentIntentId;
     const parsedUserHeaders = userHeadersSchema.safeParse(request.headers);
@@ -2658,6 +2731,25 @@ export async function registerRoutes(app: FastifyInstance, options: {
               requestId: request.id
             })
       );
+    }
+
+    const access = await validatePublicCustomerLocation({
+      catalogBaseUrl,
+      gatewayToken: gatewayInternalToken,
+      requestId: request.id,
+      brandId: parsedBrand.data.brandId,
+      locationId: paymentContextResult.response.locationId
+    });
+    if (access !== "available") {
+      return reply.status(access === "unavailable" ? 404 : 503).send(serviceErrorSchema.parse({
+        code: access === "unavailable" ? "PUBLIC_LOCATION_NOT_AVAILABLE" : "PUBLIC_LOCATION_VALIDATION_UNAVAILABLE",
+        message: access === "unavailable" ? "Location not available." : "Location is temporarily unavailable.",
+        requestId: request.id
+      }));
+    }
+
+    if (!requireStripeSecretKey(request, reply, stripeSecretKey)) {
+      return;
     }
 
     const checkoutContext = "checkoutId" in paymentContextResult.response

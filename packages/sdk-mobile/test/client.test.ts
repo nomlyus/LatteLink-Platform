@@ -23,7 +23,7 @@ describe("sdk-mobile", () => {
   });
 
   it("throws a stable reachability error when the api base url is missing", async () => {
-    const client = new GazelleApiClient({ baseUrl: "" });
+    const client = new GazelleApiClient({ baseUrl: "", brandId: "gazelle", locationId: "flagship-01" });
 
     await expect(client.menu()).rejects.toMatchObject({
       message: UNABLE_TO_REACH_BACKEND_MESSAGE
@@ -182,6 +182,7 @@ describe("sdk-mobile", () => {
 
     const client = new GazelleApiClient({
       baseUrl: "https://api.gazellecoffee.com/v1",
+      brandId: "gazelle",
       locationId: "flagship-01"
     });
     const menu = await client.menu();
@@ -198,22 +199,22 @@ describe("sdk-mobile", () => {
     expect(homeNewsCards.cards[0]?.title).toBe("Morning Special");
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
-      "https://api.gazellecoffee.com/v1/menu?locationId=flagship-01",
+      "https://api.gazellecoffee.com/v1/menu?brandId=gazelle&locationId=flagship-01",
       expect.objectContaining({ method: "GET" })
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      "https://api.gazellecoffee.com/v1/store/config?locationId=flagship-01",
+      "https://api.gazellecoffee.com/v1/store/config?brandId=gazelle&locationId=flagship-01",
       expect.objectContaining({ method: "GET" })
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
-      "https://api.gazellecoffee.com/v1/app-config?locationId=flagship-01",
+      "https://api.gazellecoffee.com/v1/app-config?brandId=gazelle&locationId=flagship-01",
       expect.objectContaining({ method: "GET" })
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       4,
-      "https://api.gazellecoffee.com/v1/store/cards?locationId=flagship-01",
+      "https://api.gazellecoffee.com/v1/store/cards?brandId=gazelle&locationId=flagship-01",
       expect.objectContaining({ method: "GET" })
     );
   });
@@ -357,7 +358,7 @@ describe("sdk-mobile", () => {
         )
       );
 
-    const client = new GazelleApiClient({ baseUrl: "https://api.gazellecoffee.com/v1" });
+    const client = new GazelleApiClient({ baseUrl: "https://api.gazellecoffee.com/v1", brandId: "gazelle" });
 
     const quote = await client.quoteOrder({
       locationId: "flagship-01",
@@ -371,12 +372,17 @@ describe("sdk-mobile", () => {
     expect(checkout.status).toBe("OPEN");
     expect(paymentSession.paymentIntentId).toBe("pi_3QxExample123");
     expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
+      "https://api.gazellecoffee.com/v1/orders/quote?brandId=gazelle",
+      "https://api.gazellecoffee.com/v1/orders/checkouts?brandId=gazelle",
+      "https://api.gazellecoffee.com/v1/payments/stripe/mobile-session?brandId=gazelle"
+    ]);
   });
 
   it("surfaces a stable reachability error when fetch fails", async () => {
     fetchMock.mockRejectedValueOnce(new TypeError("Network request failed"));
 
-    const client = new GazelleApiClient({ baseUrl: "https://api.gazellecoffee.com/v1" });
+    const client = new GazelleApiClient({ baseUrl: "https://api.gazellecoffee.com/v1", brandId: "gazelle", locationId: "flagship-01" });
     const error = await client.storeConfig().catch((rejection) => rejection);
 
     expect(error).toMatchObject({

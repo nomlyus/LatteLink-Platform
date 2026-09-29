@@ -325,6 +325,7 @@ function startOrdersPolling(params: {
 
 const baseApiClient = new GazelleApiClient({
   baseUrl: API_BASE_URL,
+  brandId: MOBILE_API_ENVIRONMENT.brandId,
   locationId: MOBILE_LOCATION_ID
 });
 let currentAccessToken: string | undefined;
@@ -412,5 +413,6 @@ export const mobileBootstrapApiClient = new GazelleApiClient({ baseUrl: API_BASE
 
 export const catalogApiClient = new GazelleApiClient({
   baseUrl: CATALOG_API_BASE_URL,
+  brandId: MOBILE_API_ENVIRONMENT.brandId,
   locationId: MOBILE_LOCATION_ID
 });

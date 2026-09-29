@@ -105,6 +105,7 @@ import {
   menuResponseSchema,
   mobileBrandBootstrapRequestSchema,
   mobileBrandBootstrapSchema,
+  publicCustomerLocationRequestSchema,
   modifierGroupSchema,
   storeConfigResponseSchema
 } from "@lattelink/contracts-catalog";
@@ -146,6 +147,21 @@ declare module "fastify" {
 const authHeaderSchema = z.object({
   authorization: z.string().startsWith("Bearer ").optional()
 });
+const publicBrandQueryJsonSchema = {
+  type: "object",
+  required: ["brandId"],
+  additionalProperties: false,
+  properties: { brandId: { type: "string", minLength: 1, maxLength: 160 } }
+} as const;
+const publicCustomerLocationQueryJsonSchema = {
+  type: "object",
+  required: ["brandId", "locationId"],
+  additionalProperties: false,
+  properties: {
+    brandId: { type: "string", minLength: 1, maxLength: 160 },
+    locationId: { type: "string", minLength: 1, maxLength: 160 }
+  }
+} as const;
 const jwtHeaderSchema = z.object({
   alg: z.literal("HS256"),
   typ: z.literal("JWT")
@@ -1849,6 +1865,73 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
       identityBaseUrl,
       jwtSecret
     });
+  const parsePublicBrandId = (request: FastifyRequest, reply: FastifyReply) => {
+    const parsed = mobileBrandBootstrapRequestSchema.safeParse(request.query);
+    if (!parsed.success) {
+      reply.status(400).send(apiErrorSchema.parse({
+        code: "INVALID_PUBLIC_BRAND_REQUEST",
+        message: "A valid brandId query parameter is required.",
+        requestId: request.id
+      }));
+      return undefined;
+    }
+    return parsed.data.brandId;
+  };
+  const parsePublicCustomerLocation = (request: FastifyRequest, reply: FastifyReply) => {
+    const parsed = publicCustomerLocationRequestSchema.safeParse(request.query);
+    if (!parsed.success) {
+      reply.status(400).send(apiErrorSchema.parse({
+        code: "INVALID_PUBLIC_LOCATION_REQUEST",
+        message: "Valid brandId and locationId query parameters are required.",
+        requestId: request.id
+      }));
+      return undefined;
+    }
+    return parsed.data;
+  };
+  const validatePublicCustomerLocation = async (
+    request: FastifyRequest,
+    reply: FastifyReply,
+    location: z.output<typeof publicCustomerLocationRequestSchema>
+  ) => {
+    const query = new URLSearchParams({ brandId: location.brandId, locationId: location.locationId });
+    let response: Response;
+    try {
+      response = await fetch(`${catalogBaseUrl}/v1/catalog/internal/public-location-access?${query.toString()}`, {
+        method: "GET",
+        headers: {
+          ...(gatewayInternalApiToken ? { "x-gateway-token": gatewayInternalApiToken } : {}),
+          "x-request-id": request.id
+        }
+      });
+    } catch (error) {
+      request.log.warn({ error, requestId: request.id }, "catalog public location validation request failed");
+      reply.status(503).send(apiErrorSchema.parse({
+        code: "PUBLIC_LOCATION_VALIDATION_UNAVAILABLE",
+        message: "Location is temporarily unavailable.",
+        requestId: request.id
+      }));
+      return false;
+    }
+
+    if (response.status === 204) return true;
+    if (response.status === 404) {
+      reply.status(404).send(apiErrorSchema.parse({
+        code: "PUBLIC_LOCATION_NOT_AVAILABLE",
+        message: "Location not available.",
+        requestId: request.id
+      }));
+      return false;
+    }
+
+    request.log.warn({ requestId: request.id, catalogStatus: response.status }, "catalog public location validation was unavailable");
+    reply.status(503).send(apiErrorSchema.parse({
+      code: "PUBLIC_LOCATION_VALIDATION_UNAVAILABLE",
+      message: "Location is temporarily unavailable.",
+      requestId: request.id
+    }));
+    return false;
+  };
   const requireOperatorCapability = (capability: z.output<typeof operatorMeResponseSchema>["capabilities"][number]) =>
     async (request: FastifyRequest, reply: FastifyReply) =>
       resolveOperatorAccess({
@@ -1939,8 +2022,14 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
 
   app.post(
     "/v1/payments/stripe/mobile-session",
-    { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(checkoutRateLimit)] },
+    {
+      preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(checkoutRateLimit)],
+      attachValidation: true,
+      schema: { querystring: publicBrandQueryJsonSchema }
+    },
     async (request, reply) => {
+      const brandId = parsePublicBrandId(request, reply);
+      if (!brandId) return;
       const input = stripeMobilePaymentSessionRequestSchema.parse(request.body);
 
       return proxyUpstream({
@@ -1949,7 +2038,7 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
         baseUrl: paymentsBaseUrl,
         serviceLabel: "Payments",
         method: "POST",
-        path: "/v1/payments/stripe/mobile-session",
+        path: `/v1/payments/stripe/mobile-session?brandId=${encodeURIComponent(brandId)}`,
         body: input,
         additionalHeaders: {
           "x-gateway-token": gatewayInternalApiToken
@@ -1977,8 +2066,14 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
 
   app.post(
     "/v1/payments/stripe/mobile-session/finalize",
-    { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(checkoutRateLimit)] },
+    {
+      preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(checkoutRateLimit)],
+      attachValidation: true,
+      schema: { querystring: publicBrandQueryJsonSchema }
+    },
     async (request, reply) => {
+      const brandId = parsePublicBrandId(request, reply);
+      if (!brandId) return;
       const input = stripeMobilePaymentFinalizeRequestSchema.parse(request.body);
 
       return proxyUpstream({
@@ -1987,7 +2082,7 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
         baseUrl: paymentsBaseUrl,
         serviceLabel: "Payments",
         method: "POST",
-        path: "/v1/payments/stripe/mobile-session/finalize",
+        path: `/v1/payments/stripe/mobile-session/finalize?brandId=${encodeURIComponent(brandId)}`,
         body: input,
         additionalHeaders: {
           "x-gateway-token": gatewayInternalApiToken
@@ -2895,19 +2990,25 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
   );
 
   // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
-  app.get("/v1/menu", { preHandler: app.rateLimit(catalogReadRateLimit) }, async (request, reply) =>
-    proxyUpstream({
+  app.get("/v1/menu", {
+    preHandler: app.rateLimit(catalogReadRateLimit),
+    attachValidation: true,
+    schema: { querystring: publicCustomerLocationQueryJsonSchema }
+  }, async (request, reply) => {
+    const location = parsePublicCustomerLocation(request, reply);
+    if (!location) return;
+    const query = new URLSearchParams({ brandId: location.brandId, locationId: location.locationId });
+    return proxyUpstream({
       request,
       reply,
       baseUrl: catalogBaseUrl,
       serviceLabel: "Catalog",
       method: "GET",
-      path: "/v1/menu",
-      forwardQuery: true,
+      path: `/v1/menu?${query.toString()}`,
       forwardCacheControl: true,
       responseSchema: menuResponseSchema
-    })
-  );
+    });
+  });
 
   app.get("/v1/mobile/bootstrap", { preHandler: app.rateLimit(catalogReadRateLimit) }, async (request, reply) => {
     reply.header("cache-control", "no-store");
@@ -2935,61 +3036,85 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
     });
   });
 
-  app.get("/v1/app-config", { preHandler: app.rateLimit(catalogReadRateLimit) }, async (request, reply) =>
-    proxyUpstream({
+  app.get("/v1/app-config", {
+    preHandler: app.rateLimit(catalogReadRateLimit),
+    attachValidation: true,
+    schema: { querystring: publicCustomerLocationQueryJsonSchema }
+  }, async (request, reply) => {
+    const location = parsePublicCustomerLocation(request, reply);
+    if (!location) return;
+    const query = new URLSearchParams({ brandId: location.brandId, locationId: location.locationId });
+    return proxyUpstream({
       request,
       reply,
       baseUrl: catalogBaseUrl,
       serviceLabel: "Catalog",
       method: "GET",
-      path: "/v1/app-config",
-      forwardQuery: true,
+      path: `/v1/app-config?${query.toString()}`,
       forwardCacheControl: true,
       responseSchema: appConfigSchema
-    })
-  );
+    });
+  });
 
-  app.get("/v1/store/config", { preHandler: app.rateLimit(catalogReadRateLimit) }, async (request, reply) =>
-    proxyUpstream({
+  app.get("/v1/store/config", {
+    preHandler: app.rateLimit(catalogReadRateLimit),
+    attachValidation: true,
+    schema: { querystring: publicCustomerLocationQueryJsonSchema }
+  }, async (request, reply) => {
+    const location = parsePublicCustomerLocation(request, reply);
+    if (!location) return;
+    const query = new URLSearchParams({ brandId: location.brandId, locationId: location.locationId });
+    return proxyUpstream({
       request,
       reply,
       baseUrl: catalogBaseUrl,
       serviceLabel: "Catalog",
       method: "GET",
-      path: "/v1/store/config",
-      forwardQuery: true,
+      path: `/v1/store/config?${query.toString()}`,
       forwardCacheControl: true,
       responseSchema: storeConfigResponseSchema
-    })
-  );
+    });
+  });
 
-  app.get("/v1/mobile-experience", { preHandler: app.rateLimit(catalogReadRateLimit) }, async (request, reply) =>
-    proxyUpstream({
+  app.get("/v1/mobile-experience", {
+    preHandler: app.rateLimit(catalogReadRateLimit),
+    attachValidation: true,
+    schema: { querystring: publicCustomerLocationQueryJsonSchema }
+  }, async (request, reply) => {
+    const location = parsePublicCustomerLocation(request, reply);
+    if (!location) return;
+    const query = new URLSearchParams({ brandId: location.brandId, locationId: location.locationId });
+    return proxyUpstream({
       request,
       reply,
       baseUrl: catalogBaseUrl,
       serviceLabel: "Catalog",
       method: "GET",
-      path: "/v1/mobile-experience",
-      forwardQuery: true,
+      path: `/v1/mobile-experience?${query.toString()}`,
       forwardCacheControl: true,
       responseSchema: mobileExperienceDocumentSchema
-    })
-  );
+    });
+  });
 
-  app.get("/v1/store/cards", { preHandler: app.rateLimit(catalogReadRateLimit) }, async (request, reply) =>
-    proxyUpstream({
+  app.get("/v1/store/cards", {
+    preHandler: app.rateLimit(catalogReadRateLimit),
+    attachValidation: true,
+    schema: { querystring: publicCustomerLocationQueryJsonSchema }
+  }, async (request, reply) => {
+    const location = parsePublicCustomerLocation(request, reply);
+    if (!location) return;
+    const query = new URLSearchParams({ brandId: location.brandId, locationId: location.locationId });
+    return proxyUpstream({
       request,
       reply,
       baseUrl: catalogBaseUrl,
       serviceLabel: "Catalog",
       method: "GET",
-      path: "/v1/store/cards",
-      forwardQuery: true,
+      path: `/v1/store/cards?${query.toString()}`,
       forwardCacheControl: true,
       responseSchema: homeNewsCardsResponseSchema
-    })
-  );
+    });
+  });
 
   // Public self-service launch creates the initial onboarding draft only; additional commercial locations remain Nomly support/admin provisioned.
   app.post(
@@ -3103,8 +3228,14 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
   // lgtm [js/missing-rate-limiting] - Fastify route-level preHandler rate limiting is applied.
   app.post(
     "/v1/orders/checkouts",
-    { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(checkoutRateLimit)] },
+    {
+      preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(checkoutRateLimit)],
+      attachValidation: true,
+      schema: { querystring: publicBrandQueryJsonSchema }
+    },
     async (request, reply) => {
+      const brandId = parsePublicBrandId(request, reply);
+      if (!brandId) return;
       const input = createCheckoutDraftRequestSchema.parse(request.body);
       const userId = await resolveAuthenticatedUserId({ request, reply, identityBaseUrl, jwtSecretConfigured: Boolean(jwtSecret) });
       if (!userId) return;
@@ -3114,7 +3245,7 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
         baseUrl: ordersBaseUrl,
         serviceLabel: "Orders",
         method: "POST",
-        path: "/v1/orders/checkouts",
+        path: `/v1/orders/checkouts?brandId=${encodeURIComponent(brandId)}`,
         body: input,
         additionalHeaders: { "x-gateway-token": gatewayInternalApiToken, "x-user-id": userId },
         responseSchema: checkoutDraftSchema
@@ -3124,47 +3255,53 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
 
   app.post(
     "/v1/orders/quote",
-    { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(ordersWriteRateLimit)] },
+    {
+      preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(ordersWriteRateLimit)],
+      attachValidation: true,
+      schema: { querystring: publicBrandQueryJsonSchema }
+    },
     async (request, reply) => {
-    const input = quoteRequestSchema.parse(request.body);
-    const userId = await resolveAuthenticatedUserId({
-      request,
-      reply,
-      identityBaseUrl,
-      jwtSecretConfigured: Boolean(jwtSecret)
-    });
-    if (!userId) {
-      return;
-    }
-
-    return proxyUpstream({
-      request,
-      reply,
-      baseUrl: ordersBaseUrl,
-      serviceLabel: "Orders",
-      method: "POST",
-      path: "/v1/orders/quote",
-      body: input,
-      additionalHeaders: {
-        "x-gateway-token": gatewayInternalApiToken,
-        "x-user-id": userId
-      },
-      responseSchema: orderQuoteSchema,
-      onSuccess: (response) => {
-        request.log.info(
-          {
-            service: "gateway",
-            event: "order.quote.created",
-            timestamp: new Date().toISOString(),
-            requestId: request.id,
-            userId,
-            quoteId: response.quoteId,
-            locationId: response.locationId
-          },
-          "order quote created"
-        );
+      const brandId = parsePublicBrandId(request, reply);
+      if (!brandId) return;
+      const input = quoteRequestSchema.parse(request.body);
+      const userId = await resolveAuthenticatedUserId({
+        request,
+        reply,
+        identityBaseUrl,
+        jwtSecretConfigured: Boolean(jwtSecret)
+      });
+      if (!userId) {
+        return;
       }
-    });
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: ordersBaseUrl,
+        serviceLabel: "Orders",
+        method: "POST",
+        path: `/v1/orders/quote?brandId=${encodeURIComponent(brandId)}`,
+        body: input,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken,
+          "x-user-id": userId
+        },
+        responseSchema: orderQuoteSchema,
+        onSuccess: (response) => {
+          request.log.info(
+            {
+              service: "gateway",
+              event: "order.quote.created",
+              timestamp: new Date().toISOString(),
+              requestId: request.id,
+              userId,
+              quoteId: response.quoteId,
+              locationId: response.locationId
+            },
+            "order quote created"
+          );
+        }
+      });
     }
   );
 
@@ -4427,20 +4564,25 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
   app.get(
     "/v1/cards",
     {
-      preHandler: app.rateLimit(catalogReadRateLimit)
+      preHandler: app.rateLimit(catalogReadRateLimit),
+      attachValidation: true,
+      schema: { querystring: publicCustomerLocationQueryJsonSchema }
     },
-    async (request, reply) =>
-      proxyUpstream({
+    async (request, reply) => {
+      const location = parsePublicCustomerLocation(request, reply);
+      if (!location) return;
+      const query = new URLSearchParams({ brandId: location.brandId, locationId: location.locationId });
+      return proxyUpstream({
         request,
         reply,
         baseUrl: catalogBaseUrl,
         serviceLabel: "Catalog",
         method: "GET",
-        path: "/v1/cards",
-        forwardQuery: true,
+        path: `/v1/cards?${query.toString()}`,
         forwardCacheControl: true,
         responseSchema: homeNewsCardsResponseSchema
-      })
+      });
+    }
   );
 
   app.put(
@@ -5666,7 +5808,7 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
           }),
           fetchInternalJson({
             baseUrl: catalogBaseUrl,
-            path: `/v1/store/config?locationId=${encodeURIComponent(locationId)}`,
+            path: `/v1/catalog/internal/locations/${encodeURIComponent(locationId)}/store-config`,
             schema: storeConfigResponseSchema,
             serviceLabel: "Catalog",
             allowNotFound: true
@@ -6061,7 +6203,7 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
             }),
             readInternal({
               baseUrl: catalogBaseUrl,
-              path: `/v1/store/config?locationId=${encodeURIComponent(locationId)}`,
+              path: `/v1/catalog/internal/locations/${encodeURIComponent(locationId)}/store-config`,
               schema: storeConfigResponseSchema,
               serviceLabel: "Catalog",
               allowNotFound: true
@@ -6203,34 +6345,44 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
     }
   );
 
-  app.get("/v1/loyalty/balance", { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(loyaltyReadRateLimit)] }, async (request, reply) => {
+  app.get("/v1/loyalty/balance", {
+    preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(loyaltyReadRateLimit)],
+    attachValidation: true,
+    schema: { querystring: publicCustomerLocationQueryJsonSchema }
+  }, async (request, reply) => {
+    const location = parsePublicCustomerLocation(request, reply);
+    if (!location || !(await validatePublicCustomerLocation(request, reply, location))) return;
     return proxyUpstream({
       request,
       reply,
       baseUrl: loyaltyBaseUrl,
       serviceLabel: "Loyalty",
       method: "GET",
-      path: "/v1/loyalty/balance",
+      path: `/v1/loyalty/balance?locationId=${encodeURIComponent(location.locationId)}`,
       additionalHeaders: {
         "x-gateway-token": gatewayInternalApiToken
       },
-      forwardQuery: true,
       responseSchema: loyaltyBalanceSchema
     });
   });
 
-  app.get("/v1/loyalty/ledger", { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(loyaltyReadRateLimit)] }, async (request, reply) => {
+  app.get("/v1/loyalty/ledger", {
+    preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(loyaltyReadRateLimit)],
+    attachValidation: true,
+    schema: { querystring: publicCustomerLocationQueryJsonSchema }
+  }, async (request, reply) => {
+    const location = parsePublicCustomerLocation(request, reply);
+    if (!location || !(await validatePublicCustomerLocation(request, reply, location))) return;
     return proxyUpstream({
       request,
       reply,
       baseUrl: loyaltyBaseUrl,
       serviceLabel: "Loyalty",
       method: "GET",
-      path: "/v1/loyalty/ledger",
+      path: `/v1/loyalty/ledger?locationId=${encodeURIComponent(location.locationId)}`,
       additionalHeaders: {
         "x-gateway-token": gatewayInternalApiToken
       },
-      forwardQuery: true,
       responseSchema: z.array(loyaltyLedgerEntrySchema)
     });
   });

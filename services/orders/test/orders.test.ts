@@ -28,6 +28,7 @@ const sampleQuotePayload = {
   ],
   pointsToRedeem: 125
 };
+const publicTestBrandId = "test-public-runtime-brand";
 const defaultTestUserId = "123e4567-e89b-12d3-a456-426614174019";
 
 function customerHeaders(userId = defaultTestUserId) {
@@ -53,7 +54,7 @@ async function createQuotedOrder(
   const payload = options.payload ?? sampleQuotePayload;
   const quoteResponse = await app.inject({
     method: "POST",
-    url: "/v1/orders/quote",
+    url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
     payload
   });
   expect(quoteResponse.statusCode).toBe(200);
@@ -112,6 +113,8 @@ describe("orders service", () => {
     fetchMock.mockReset();
     vi.stubGlobal("fetch", fetchMock);
     vi.stubEnv("ORDERS_INTERNAL_API_TOKEN", "orders-internal-token");
+    vi.stubEnv("GATEWAY_INTERNAL_API_TOKEN", "orders-gateway-token");
+    vi.stubEnv("CATALOG_SERVICE_BASE_URL", "http://catalog.internal");
     vi.stubEnv("LOYALTY_INTERNAL_API_TOKEN", "loyalty-internal-token");
     vi.stubEnv("NOTIFICATIONS_INTERNAL_API_TOKEN", "notifications-internal-token");
     vi.stubEnv("ALLOW_UNAUTHENTICATED_ORDERS_GATEWAY", "true");
@@ -142,8 +145,31 @@ describe("orders service", () => {
           : {};
 
       const parsedUrl = new URL(url);
+      if (parsedUrl.pathname === "/v1/catalog/internal/public-location-access" && method === "GET") {
+        const allowed = parsedUrl.searchParams.get("brandId") === publicTestBrandId && parsedUrl.searchParams.get("locationId") === "flagship-01";
+        return allowed
+          ? new Response(null, { status: 204 })
+          : paymentsResponse({ code: "PUBLIC_LOCATION_NOT_AVAILABLE", message: "Location not available." }, 404);
+      }
       if (parsedUrl.pathname === "/v1/store/config" && method === "GET") {
         expect(parsedUrl.searchParams.get("locationId")).toBe("flagship-01");
+        const publicBrandId = parsedUrl.searchParams.get("brandId");
+        // Quote requests carry brand context. The test-only legacy order fixture predates
+        // branded checkout and is retired in non-test runtimes.
+        if (publicBrandId !== null) expect(publicBrandId).toBe(publicTestBrandId);
+        return paymentsResponse({
+          locationId: "flagship-01",
+          hoursText: "Daily · 7:00 AM - 6:00 PM",
+          isOpen: true,
+          nextOpenAt: null,
+          prepEtaMinutes: 12,
+          taxRateBasisPoints: 600,
+          pickupInstructions: "Pickup at the flagship order counter."
+        });
+      }
+      if (parsedUrl.pathname === "/v1/catalog/internal/locations/flagship-01/store-config" && method === "GET") {
+        const headers = new Headers(init?.headers);
+        expect(headers.get("x-gateway-token")).toBe(process.env.GATEWAY_INTERNAL_API_TOKEN);
         return paymentsResponse({
           locationId: "flagship-01",
           hoursText: "Daily · 7:00 AM - 6:00 PM",
@@ -338,11 +364,66 @@ describe("orders service", () => {
     await app.close();
   });
 
+  it("rejects cross-brand quote locations before catalog pricing or discounts are read", async () => {
+    const app = await buildApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/orders/quote?brandId=brand-a",
+      payload: sampleQuotePayload
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ code: "PUBLIC_LOCATION_NOT_AVAILABLE", message: "Location not available." });
+    expect(response.body).not.toContain("brandId");
+    expect(fetchMock.mock.calls).toHaveLength(1);
+    expect(new URL(fetchMock.mock.calls[0]![0] as string).pathname).toBe("/v1/catalog/internal/public-location-access");
+    await app.close();
+  });
+
+  it("requires public brand context before creating a quote", async () => {
+    const app = await buildApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/orders/quote",
+      payload: sampleQuotePayload
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ code: "INVALID_PUBLIC_BRAND_REQUEST" });
+    expect(fetchMock).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("rejects a checkout when its quote location is outside the selected brand", async () => {
+    const app = await buildApp();
+    const quoteResponse = await app.inject({
+      method: "POST",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
+      payload: sampleQuotePayload
+    });
+    expect(quoteResponse.statusCode).toBe(200);
+    const quote = orderQuoteSchema.parse(quoteResponse.json());
+    fetchMock.mockClear();
+
+    const checkoutResponse = await app.inject({
+      method: "POST",
+      url: "/v1/orders/checkouts?brandId=other-brand",
+      headers: customerHeaders(defaultTestUserId),
+      payload: { quoteId: quote.quoteId, quoteHash: quote.quoteHash }
+    });
+
+    expect(checkoutResponse.statusCode).toBe(404);
+    expect(checkoutResponse.json()).toMatchObject({ code: "PUBLIC_LOCATION_NOT_AVAILABLE", message: "Location not available." });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(new URL(fetchMock.mock.calls[0]![0] as string).pathname).toBe("/v1/catalog/internal/public-location-access");
+    await app.close();
+  });
+
   it("scopes checkout replay to the authenticated customer and quote location", async () => {
     const app = await buildApp();
     const quoteResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+    url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: { ...sampleQuotePayload, pointsToRedeem: 0 }
     });
     const quote = orderQuoteSchema.parse(quoteResponse.json());
@@ -350,7 +431,7 @@ describe("orders service", () => {
     const firstUser = "123e4567-e89b-12d3-a456-426614174880";
     const secondUser = "123e4567-e89b-12d3-a456-426614174881";
     const createDraft = (userId: string) => app.inject({
-      method: "POST", url: "/v1/orders/checkouts", headers: customerHeaders(userId), payload
+      method: "POST", url: `/v1/orders/checkouts?brandId=${publicTestBrandId}`, headers: customerHeaders(userId), payload
     });
 
     const first = checkoutDraftSchema.parse((await createDraft(firstUser)).json());
@@ -367,7 +448,7 @@ describe("orders service", () => {
 
     const quoteResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: sampleQuotePayload
     });
     expect(quoteResponse.statusCode).toBe(200);
@@ -451,14 +532,14 @@ describe("orders service", () => {
     const userId = "123e4567-e89b-12d3-a456-426614174880";
     const quoteResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: { ...sampleQuotePayload, pointsToRedeem: 0 }
     });
     const quote = orderQuoteSchema.parse(quoteResponse.json());
 
     const draftResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/checkouts",
+      url: `/v1/orders/checkouts?brandId=${publicTestBrandId}`,
       headers: customerHeaders(userId),
       payload: { quoteId: quote.quoteId, quoteHash: quote.quoteHash }
     });
@@ -531,13 +612,13 @@ describe("orders service", () => {
     const userId = "123e4567-e89b-12d3-a456-426614174881";
     const quoteResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: { ...sampleQuotePayload, pointsToRedeem: 0 }
     });
     const quote = orderQuoteSchema.parse(quoteResponse.json());
     const draftResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/checkouts",
+      url: `/v1/orders/checkouts?brandId=${publicTestBrandId}`,
       headers: customerHeaders(userId),
       payload: { quoteId: quote.quoteId, quoteHash: quote.quoteHash }
     });
@@ -561,13 +642,13 @@ describe("orders service", () => {
     const userId = "123e4567-e89b-12d3-a456-426614174882";
     const quoteResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: { ...sampleQuotePayload, pointsToRedeem: 0 }
     });
     const quote = orderQuoteSchema.parse(quoteResponse.json());
     const draftResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/checkouts",
+      url: `/v1/orders/checkouts?brandId=${publicTestBrandId}`,
       headers: customerHeaders(userId),
       payload: { quoteId: quote.quoteId, quoteHash: quote.quoteHash }
     });
@@ -635,7 +716,7 @@ describe("orders service", () => {
 
     const quoteResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: sampleQuotePayload
     });
     expect(quoteResponse.statusCode).toBe(200);
@@ -663,7 +744,7 @@ describe("orders service", () => {
 
     const firstQuoteResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: sampleQuotePayload
     });
     expect(firstQuoteResponse.statusCode).toBe(200);
@@ -685,7 +766,7 @@ describe("orders service", () => {
 
     const secondQuoteResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: {
         ...sampleQuotePayload,
         pointsToRedeem: 0
@@ -840,7 +921,7 @@ describe("orders service", () => {
 
     const quoteResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: {
         locationId: "flagship-01",
         items: [
@@ -869,7 +950,7 @@ describe("orders service", () => {
     const app = await buildApp();
     const quoteResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: sampleQuotePayload
     });
     const quote = orderQuoteSchema.parse(quoteResponse.json());
@@ -908,7 +989,7 @@ describe("orders service", () => {
     const app = await buildApp();
     const quoteResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: sampleQuotePayload
     });
     const quote = orderQuoteSchema.parse(quoteResponse.json());
@@ -995,7 +1076,7 @@ describe("orders service", () => {
     const app = await buildApp();
     const quoteResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: sampleQuotePayload
     });
     const quote = orderQuoteSchema.parse(quoteResponse.json());
@@ -1094,7 +1175,7 @@ describe("orders service", () => {
     const app = await buildApp();
     const quoteResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: sampleQuotePayload
     });
     const quote = orderQuoteSchema.parse(quoteResponse.json());
@@ -1145,7 +1226,7 @@ describe("orders service", () => {
 
     const quoteResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: sampleQuotePayload
     });
     const quote = orderQuoteSchema.parse(quoteResponse.json());
@@ -1240,7 +1321,7 @@ describe("orders service", () => {
 
     const quoteResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: sampleQuotePayload
     });
     const quote = orderQuoteSchema.parse(quoteResponse.json());
@@ -1287,7 +1368,7 @@ describe("orders service", () => {
     const app = await buildApp();
     const quoteResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: sampleQuotePayload
     });
     const quote = orderQuoteSchema.parse(quoteResponse.json());
@@ -1340,7 +1421,7 @@ describe("orders service", () => {
     const app = await buildApp();
     const quoteResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: sampleQuotePayload
     });
     const quote = orderQuoteSchema.parse(quoteResponse.json());
@@ -1404,7 +1485,7 @@ describe("orders service", () => {
 
     const rejectedRefundQuote = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: sampleQuotePayload
     });
     const rejectedQuote = orderQuoteSchema.parse(rejectedRefundQuote.json());
@@ -1442,7 +1523,7 @@ describe("orders service", () => {
     const app = await buildApp();
     const quoteResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: sampleQuotePayload
     });
     const quote = orderQuoteSchema.parse(quoteResponse.json());
@@ -1517,7 +1598,7 @@ describe("orders service", () => {
     const app = await buildApp();
     const quoteResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: sampleQuotePayload
     });
     const quote = orderQuoteSchema.parse(quoteResponse.json());
@@ -1654,7 +1735,7 @@ describe("orders service", () => {
     const app = await buildApp();
     const quoteResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: sampleQuotePayload
     });
     const quote = orderQuoteSchema.parse(quoteResponse.json());
@@ -1711,7 +1792,7 @@ describe("orders service", () => {
     const app = await buildApp();
     const quoteResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: sampleQuotePayload
     });
     const quote = orderQuoteSchema.parse(quoteResponse.json());
@@ -1807,7 +1888,7 @@ describe("orders service", () => {
 
     const quoteResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: sampleQuotePayload
     });
     expect(quoteResponse.statusCode).toBe(200);
@@ -2060,7 +2141,7 @@ describe("orders service", () => {
 
     const quoteResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: sampleQuotePayload
     });
     expect(quoteResponse.statusCode).toBe(200);
@@ -2166,14 +2247,14 @@ describe("orders service", () => {
     try {
       const firstQuote = await app.inject({
         method: "POST",
-        url: "/v1/orders/quote",
+        url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
         payload: sampleQuotePayload
       });
       expect(firstQuote.statusCode).toBe(200);
 
       const secondQuote = await app.inject({
         method: "POST",
-        url: "/v1/orders/quote",
+        url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
         payload: sampleQuotePayload
       });
       expect(secondQuote.statusCode).toBe(429);
@@ -2209,7 +2290,7 @@ describe("orders service", () => {
     const app = await buildApp();
     const quoteResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: sampleQuotePayload
     });
     expect(quoteResponse.statusCode).toBe(200);
@@ -2257,7 +2338,7 @@ describe("orders service", () => {
 
     const response = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: sampleQuotePayload
     });
 
@@ -2300,11 +2381,12 @@ describe("orders service", () => {
 
   it("requires gateway token on customer routes when configured", async () => {
     vi.stubEnv("GATEWAY_INTERNAL_API_TOKEN", "orders-gateway-token");
+    vi.stubEnv("ALLOW_UNAUTHENTICATED_ORDERS_GATEWAY", "false");
     const app = await buildApp();
 
     const unauthorizedQuote = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: sampleQuotePayload
     });
     expect(unauthorizedQuote.statusCode).toBe(401);
@@ -2314,7 +2396,7 @@ describe("orders service", () => {
 
     const authorizedQuote = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       headers: {
         "x-gateway-token": "orders-gateway-token"
       },

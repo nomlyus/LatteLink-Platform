@@ -16,6 +16,7 @@ import {
   type OrderServiceDeps
 } from "../src/service.js";
 import { buildApp as buildCatalogApp } from "../../catalog/src/app.js";
+import { DEFAULT_LOCATION_ID } from "../../catalog/src/tenant.js";
 
 const sampleQuotePayload = {
   locationId: "flagship-01",
@@ -80,6 +81,7 @@ async function createTestDeps(
   const deps: OrderServiceDeps = {
     repository,
     catalogBaseUrl: "http://catalog.test",
+    publicBrandId: "test-public-runtime-brand",
     paymentsBaseUrl: "http://payments.test",
     paymentsInternalToken,
     loyaltyBaseUrl: "http://loyalty.test",
@@ -177,9 +179,9 @@ describe("orders service layer", () => {
 
       const parsedUrl = new URL(url);
       if (parsedUrl.pathname === "/v1/store/config" && method === "GET") {
-        expect(parsedUrl.searchParams.get("locationId")).toBe("flagship-01");
+        const locationId = parsedUrl.searchParams.get("locationId") ?? "flagship-01";
         return paymentsResponse({
-          locationId: "flagship-01",
+          locationId,
           hoursText: "Daily · 7:00 AM - 6:00 PM",
           isOpen: storeConfigIsOpen,
           nextOpenAt: storeConfigIsOpen ? null : "2026-03-10T07:00:00.000Z",
@@ -409,31 +411,8 @@ describe("orders service layer", () => {
     const catalogApp = await buildCatalogApp();
     const catalogHeaders = {
       "x-gateway-token": "catalog-gateway-token",
-      "x-operator-location-id": "flagship-01"
+      "x-operator-location-id": DEFAULT_LOCATION_ID
     };
-
-    const bootstrapResponse = await catalogApp.inject({
-      method: "POST",
-      url: "/v1/catalog/internal/locations/bootstrap",
-      headers: { "x-gateway-token": "catalog-gateway-token" },
-      payload: {
-        brandId: "flagship-coffee",
-        brandName: "Flagship Coffee",
-        locationId: "flagship-01",
-        locationName: "Flagship",
-        marketLabel: "Detroit, MI",
-        storeName: "Flagship Coffee",
-        hours: "Daily · 7:00 AM - 6:00 PM",
-        pickupInstructions: "Pickup at the espresso counter.",
-        taxRateBasisPoints: 600,
-        capabilities: {
-          menu: { source: "platform_managed" },
-          operations: { fulfillmentMode: "staff", liveOrderTrackingEnabled: true, dashboardEnabled: true },
-          loyalty: { visible: true }
-        }
-      }
-    });
-    expect(bootstrapResponse.statusCode).toBe(200);
 
     const mutationResponse = await catalogApp.inject({
       method: "PUT",
@@ -455,7 +434,7 @@ describe("orders service layer", () => {
 
     const publicMenuResponse = await catalogApp.inject({
       method: "GET",
-      url: "/v1/menu?locationId=flagship-01"
+      url: `/v1/menu?brandId=test-public-runtime-brand&locationId=${DEFAULT_LOCATION_ID}`
     });
     const publicMenu = menuResponseSchema.parse(publicMenuResponse.json());
     const publicItem = publicMenu.categories.flatMap((category) => category.items).find((item) => item.id === "latte");
@@ -469,6 +448,7 @@ describe("orders service layer", () => {
     }
 
     const { deps } = await createTestDeps(repositories);
+    deps.publicBrandId = "test-public-runtime-brand";
     deps.repository.getCatalogItemsForQuote = vi.fn().mockResolvedValue(
       new Map([
         [
@@ -486,7 +466,7 @@ describe("orders service layer", () => {
 
     const quoteResult = await createQuote({
       input: {
-        locationId: "flagship-01",
+        locationId: DEFAULT_LOCATION_ID,
         items: [{ itemId: publicItem.id, quantity: 1, customization: { selectedOptions: [], notes: "" } }],
         pointsToRedeem: 0
       },

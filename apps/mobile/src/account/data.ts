@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import { API_BASE_URL, MOBILE_LOCATION_ID, apiClient } from "../api/client";
+import { API_BASE_URL, MOBILE_API_ENVIRONMENT, MOBILE_LOCATION_ID, apiClient } from "../api/client";
 import { withCriticalDataLoadSentry } from "../observability/criticalDataLoad";
 
 const orderStatusSchema = z.enum([
@@ -192,12 +192,12 @@ export function useLoyaltyBalanceQuery(enabled = true) {
           locationId: MOBILE_LOCATION_ID
         },
         async () => {
-          if (!MOBILE_LOCATION_ID) {
-            throw new Error("EXPO_PUBLIC_LOCATION_ID is required for loyalty balance reads.");
+          if (!MOBILE_API_ENVIRONMENT.brandId || !MOBILE_LOCATION_ID) {
+            throw new Error("Brand and location configuration are required for loyalty balance reads.");
           }
 
           return loyaltyBalanceSchema.parse(
-            await apiClient.get(`/loyalty/balance?locationId=${encodeURIComponent(MOBILE_LOCATION_ID)}`)
+            await apiClient.get(`/loyalty/balance?brandId=${encodeURIComponent(MOBILE_API_ENVIRONMENT.brandId)}&locationId=${encodeURIComponent(MOBILE_LOCATION_ID)}`)
           );
         }
       )
@@ -218,12 +218,12 @@ export function useLoyaltyLedgerQuery(enabled = true) {
           locationId: MOBILE_LOCATION_ID
         },
         async () => {
-          if (!MOBILE_LOCATION_ID) {
-            throw new Error("EXPO_PUBLIC_LOCATION_ID is required for loyalty ledger reads.");
+          if (!MOBILE_API_ENVIRONMENT.brandId || !MOBILE_LOCATION_ID) {
+            throw new Error("Brand and location configuration are required for loyalty ledger reads.");
           }
 
           return loyaltyLedgerSchema.parse(
-            await apiClient.get(`/loyalty/ledger?locationId=${encodeURIComponent(MOBILE_LOCATION_ID)}`)
+            await apiClient.get(`/loyalty/ledger?brandId=${encodeURIComponent(MOBILE_API_ENVIRONMENT.brandId)}&locationId=${encodeURIComponent(MOBILE_LOCATION_ID)}`)
           );
         }
       )
