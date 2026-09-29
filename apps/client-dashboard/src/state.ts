@@ -3,8 +3,7 @@ import type {
   AppConfig,
   MobileExperienceDraftResponse,
   MobileExperienceVersionsResponse,
-  MobileReleaseBuildJobListResponse,
-  MenuItemCustomizationGroup
+  MobileReleaseBuildJobListResponse
 } from "@lattelink/contracts-catalog";
 import type {
   DashboardLocation,
@@ -17,14 +16,9 @@ import type {
 import type {
   DashboardSection,
   OperatorMenuCategory,
-  OperatorMenuResponse,
   OperatorDiscountCode,
-  OperatorNewsCard,
-  OperatorOrder,
-  OperatorOrderFilter
+  OperatorNewsCard
 } from "./model";
-import type { OperatorReportingResponse } from "./api";
-import type { AdminOrderStreamState } from "./api";
 import { isStoreOperator } from "./model";
 import { loadStoredApiBaseUrl, loadStoredLocationSelection, loadStoredSection, loadStoredSession } from "./storage";
 
@@ -56,41 +50,11 @@ export type AppState = {
   updatingOnboarding: boolean;
   initializing: boolean;
   loading: boolean;
-  ordersRefreshing: boolean;
-  orderRefreshError: string | null;
   signingIn: boolean;
   errorMessage: string | null;
   notice: string | null;
   appConfig: AppConfig | null;
-  orders: OperatorOrder[];
-  ownerHome: {
-    period: "today" | "7d" | "30d";
-    chartMetric: "netSales" | "orders";
-    loading: boolean;
-    report: OperatorReportingResponse | null;
-    error: string | null;
-  };
-  orderFilter: OperatorOrderFilter;
-  ordersPage: number;
-  storeTicketFilter: "all" | "needs_action" | "in_progress" | "ready" | "closed";
   menuCategories: OperatorMenuCategory[];
-  menuItemsPage: number;
-  menuModifierGroups: OperatorMenuResponse["modifierGroups"];
-  menuActiveTab: "items" | "categories" | "modifier-groups";
-  menuSearch: string;
-  menuCategoryFilter: string;
-  menuAvailabilityFilter: "all" | "available" | "sold-out";
-  menuVisibilityFilter: "all" | "visible" | "hidden";
-  menuModifierGroupSearch: string;
-  menuCategoryItemSearch: string;
-  menuDialogKind: "item" | "create-item" | "category" | "create-category" | "modifier-group" | "create-modifier-group" | null;
-  menuDialogEntityId: string | null;
-  menuDialogOpening: boolean;
-  menuDialogClosing: boolean;
-  menuDialogClosingTimeoutHandle: ReturnType<typeof setTimeout> | null;
-  menuCreateModifierGroupForItemId: string | null;
-  menuLoadError: string | null;
-  menuCustomizationDrafts: Record<string, MenuItemCustomizationGroup[]>;
   newsCards: OperatorNewsCard[];
   discountCodes: OperatorDiscountCode[];
   storeConfig: AdminStoreConfig | null;
@@ -98,20 +62,6 @@ export type AppState = {
   mobileExperienceVersions: MobileExperienceVersionsResponse;
   mobileReleaseBuildJobs: MobileReleaseBuildJobListResponse;
   teamUsers: OperatorUser[];
-  selectedOrderId: string | null;
-  orderDetailsOpen: boolean;
-  orderDetailsOpening: boolean;
-  orderDetailsClosing: boolean;
-  orderDetailsClosingTimeoutHandle: ReturnType<typeof setTimeout> | null;
-  selectedMenuItemId: string | null;
-  menuItemDetailsOpen: boolean;
-  menuItemDetailsOpening: boolean;
-  menuItemDetailsClosing: boolean;
-  menuItemDetailsClosingTimeoutHandle: ReturnType<typeof setTimeout> | null;
-  busyOrderId: string | null;
-  busyMenuItemId: string | null;
-  busyMenuVisibilityItemId: string | null;
-  busyDeleteMenuItemId: string | null;
   busyNewsCardId: string | null;
   busyNewsCardVisibilityId: string | null;
   busyDeleteNewsCardId: string | null;
@@ -121,25 +71,10 @@ export type AppState = {
   savingMobileExperience: boolean;
   publishingMobileExperience: boolean;
   rollingBackMobileExperienceVersionId: string | null;
-  creatingMenuItem: boolean;
-  menuCreateWizardOpen: boolean;
-  menuCreateWizardStep: 1 | 2 | 3;
   creatingNewsCard: boolean;
   creatingDiscountCode: boolean;
   creatingTeamUser: boolean;
-  lastRefreshedAt: number | null;
-  autoRefreshHandle: ReturnType<typeof setInterval> | null;
-  orderStreamUnsubscribe: (() => void) | null;
-  orderConnectionState: AdminOrderStreamState;
-  pendingCancelOrderId: string | null;
-  pendingCancelTimeoutHandle: ReturnType<typeof setTimeout> | null;
-  menuCreateDraft: {
-    categoryId: string;
-    name: string;
-    description: string;
-    priceCents: string;
-    visible: boolean;
-  };
+  dashboardLoaded: boolean;
   toasts: Array<{
     id: string;
     message: string;
@@ -147,9 +82,6 @@ export type AppState = {
     dismissing: boolean;
   }>;
 };
-
-export const ordersRefreshIntervalMs = 30_000;
-export const cancelConfirmTimeoutMs = 10_000;
 
 const initialStoredSession = loadStoredSession();
 const initialSection =
@@ -188,41 +120,11 @@ export const state: AppState = {
   updatingOnboarding: false,
   initializing: true,
   loading: false,
-  ordersRefreshing: false,
-  orderRefreshError: null,
   signingIn: false,
   errorMessage: null,
   notice: null,
   appConfig: null,
-  orders: [],
-  ownerHome: {
-    period: "today",
-    chartMetric: "netSales",
-    loading: false,
-    report: null,
-    error: null
-  },
-  orderFilter: "active",
-  ordersPage: 1,
-  storeTicketFilter: "all",
   menuCategories: [],
-  menuItemsPage: 1,
-  menuModifierGroups: [],
-  menuActiveTab: "items",
-  menuSearch: "",
-  menuCategoryFilter: "all",
-  menuAvailabilityFilter: "all",
-  menuVisibilityFilter: "all",
-  menuModifierGroupSearch: "",
-  menuCategoryItemSearch: "",
-  menuDialogKind: null,
-  menuDialogEntityId: null,
-  menuDialogOpening: false,
-  menuDialogClosing: false,
-  menuDialogClosingTimeoutHandle: null,
-  menuCreateModifierGroupForItemId: null,
-  menuLoadError: null,
-  menuCustomizationDrafts: {},
   newsCards: [],
   discountCodes: [],
   storeConfig: null,
@@ -230,20 +132,6 @@ export const state: AppState = {
   mobileExperienceVersions: { locationId: initialSelectedLocationId === "all" ? "" : initialSelectedLocationId ?? "", versions: [] },
   mobileReleaseBuildJobs: { jobs: [] },
   teamUsers: [],
-  selectedOrderId: null,
-  orderDetailsOpen: false,
-  orderDetailsOpening: false,
-  orderDetailsClosing: false,
-  orderDetailsClosingTimeoutHandle: null,
-  selectedMenuItemId: null,
-  menuItemDetailsOpen: false,
-  menuItemDetailsOpening: false,
-  menuItemDetailsClosing: false,
-  menuItemDetailsClosingTimeoutHandle: null,
-  busyOrderId: null,
-  busyMenuItemId: null,
-  busyMenuVisibilityItemId: null,
-  busyDeleteMenuItemId: null,
   busyNewsCardId: null,
   busyNewsCardVisibilityId: null,
   busyDeleteNewsCardId: null,
@@ -253,26 +141,11 @@ export const state: AppState = {
   savingMobileExperience: false,
   publishingMobileExperience: false,
   rollingBackMobileExperienceVersionId: null,
-  creatingMenuItem: false,
-  menuCreateWizardOpen: false,
-  menuCreateWizardStep: 1,
   creatingNewsCard: false,
   creatingDiscountCode: false,
   creatingTeamUser: false,
-  lastRefreshedAt: null,
-  autoRefreshHandle: null,
-  orderStreamUnsubscribe: null,
-  orderConnectionState: "connecting",
-  pendingCancelOrderId: null,
-  pendingCancelTimeoutHandle: null,
-  toasts: [],
-  menuCreateDraft: {
-    categoryId: "",
-    name: "",
-    description: "",
-    priceCents: "675",
-    visible: true
-  }
+  dashboardLoaded: false,
+  toasts: []
 };
 
 export function setError(message: string | null) {
@@ -326,31 +199,7 @@ export function resetDashboardData() {
       : state.session.operator.locationId
     : null;
   state.appConfig = null;
-  state.orders = [];
-  state.ordersRefreshing = false;
-  state.orderRefreshError = null;
-  state.ownerHome = {
-    period: "today",
-    chartMetric: "netSales",
-    loading: false,
-    report: null,
-    error: null
-  };
-  state.storeTicketFilter = "all";
   state.menuCategories = [];
-  state.menuItemsPage = 1;
-  state.menuModifierGroups = [];
-  state.menuActiveTab = "items";
-  state.menuSearch = "";
-  state.menuCategoryFilter = "all";
-  state.menuAvailabilityFilter = "all";
-  state.menuVisibilityFilter = "all";
-  state.menuModifierGroupSearch = "";
-  state.menuCategoryItemSearch = "";
-  resetMenuDialog();
-  state.menuCreateModifierGroupForItemId = null;
-  state.menuLoadError = null;
-  state.menuCustomizationDrafts = {};
   state.newsCards = [];
   state.discountCodes = [];
   state.storeConfig = null;
@@ -364,21 +213,7 @@ export function resetDashboardData() {
   state.onboardingWizardOpen = false;
   state.onboardingWizardStep = 1;
   state.updatingOnboarding = false;
-  if (state.orderDetailsClosingTimeoutHandle !== null) {
-    clearTimeout(state.orderDetailsClosingTimeoutHandle);
-  }
-  state.orderDetailsClosingTimeoutHandle = null;
-  state.orderDetailsOpen = false;
-  state.orderDetailsOpening = false;
-  state.orderDetailsClosing = false;
-  state.selectedOrderId = null;
-  resetMenuItemDetails();
-  state.lastRefreshedAt = null;
-  state.orderConnectionState = "connecting";
-  state.busyOrderId = null;
-  state.busyMenuItemId = null;
-  state.busyMenuVisibilityItemId = null;
-  state.busyDeleteMenuItemId = null;
+  state.dashboardLoaded = false;
   state.busyNewsCardId = null;
   state.busyNewsCardVisibilityId = null;
   state.busyDeleteNewsCardId = null;
@@ -386,30 +221,6 @@ export function resetDashboardData() {
   state.savingStore = false;
   state.savingMobileExperience = false;
   state.publishingMobileExperience = false;
-  state.creatingMenuItem = false;
   state.creatingNewsCard = false;
   state.creatingTeamUser = false;
-}
-
-export function resetMenuItemDetails() {
-  if (state.menuItemDetailsClosingTimeoutHandle !== null) {
-    clearTimeout(state.menuItemDetailsClosingTimeoutHandle);
-  }
-  state.menuItemDetailsClosingTimeoutHandle = null;
-  state.selectedMenuItemId = null;
-  state.menuItemDetailsOpen = false;
-  state.menuItemDetailsOpening = false;
-  state.menuItemDetailsClosing = false;
-  resetMenuDialog();
-}
-
-export function resetMenuDialog() {
-  if (state.menuDialogClosingTimeoutHandle !== null) {
-    clearTimeout(state.menuDialogClosingTimeoutHandle);
-  }
-  state.menuDialogClosingTimeoutHandle = null;
-  state.menuDialogKind = null;
-  state.menuDialogEntityId = null;
-  state.menuDialogOpening = false;
-  state.menuDialogClosing = false;
 }

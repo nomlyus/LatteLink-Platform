@@ -98,7 +98,6 @@ export type DashboardLocation = {
 export type OperatorReportingResponse = ReportingResponse;
 export type OperatorDashboardSnapshot = {
   appConfig: z.output<typeof appConfigSchema> | null;
-  orders: OperatorOrder[];
   menu: OperatorMenuResponse;
   cards: OperatorNewsCard[];
   discountCodes: OperatorDiscountCode[];
@@ -635,7 +634,6 @@ export async function fetchOperatorSnapshot(
   const fallbackLocationId = locationId ?? session.operator.locationId;
   const [
     appConfig,
-    orders,
     menu,
     cards,
     discountCodeResponse,
@@ -653,17 +651,6 @@ export async function fetchOperatorSnapshot(
           schema: appConfigSchema
         })
       : Promise.resolve(null),
-    capabilitySet.has("orders:read")
-      ? locationId
-        ? requestJson({
-            apiBaseUrl: session.apiBaseUrl,
-            accessToken: session.accessToken,
-            path: "/admin/orders",
-            query,
-            schema: ordersSchema
-          })
-        : Promise.resolve([] as z.output<typeof ordersSchema>)
-      : Promise.resolve([] as z.output<typeof ordersSchema>),
     capabilitySet.has("menu:read")
       ? locationId
         ? requestJson({
@@ -756,7 +743,6 @@ export async function fetchOperatorSnapshot(
 
   return {
     appConfig,
-    orders: filterVisibleOrders(orders as OperatorOrder[]),
     menu,
     cards: cards.cards.map((card) => ({
       ...card

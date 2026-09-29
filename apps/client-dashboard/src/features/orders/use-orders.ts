@@ -9,6 +9,7 @@ import { canAccessCapability, canAdvanceOrderStatus, canCancelOrder, canRefundOr
 import { alertForNewOrders, disposeNewOrderAlertRuntime, enableNewOrderSound, isNewOrderSoundEnabled, resumeNewOrderSound } from "../../order-alert";
 import { resolveAppConfigFulfillmentMode } from "@lattelink/contracts-catalog";
 import { createOrdersRequestEpoch, mountOrdersRealtime, registerOrdersBrowserLifecycle, startOrdersPolling } from "./orders-lifecycle";
+import { mergeUpdatedOrder, resolveOrderMutationLocationId } from "./orders-domain";
 
 type OrdersLoadStatus = "loading" | "ready" | "error";
 type OrdersViewFilter = "all" | "active" | "completed" | "canceled";
@@ -44,13 +45,6 @@ const initialUiState: OrdersUiState = {
   refundOrderId: null, actionError: null, actionNotice: null, soundEnabled: false,
   online: typeof navigator === "undefined" || navigator.onLine
 };
-
-function mergeUpdatedOrder(orders: readonly OperatorOrder[], updated: OperatorOrder) {
-  const existing = orders.some((order) => order.id === updated.id);
-  return existing
-    ? orders.map((order) => order.id === updated.id ? { ...order, ...updated, customer: updated.customer ?? order.customer } : order)
-    : [updated, ...orders];
-}
 
 export function useOrders() {
   const { status: sessionStatus, session, refreshSession, logout } = useDashboardSession();
@@ -254,9 +248,12 @@ export function useOrders() {
     try {
       const currentSession = await refreshSession();
       if (!currentSession || !order) throw new Error("This order is no longer available. Refresh Orders and try again.");
-      const mutationLocationId = selectedLocationId === "all"
-        ? currentSession.operator.role === "owner" ? null : order.locationId
-        : scopedLocationId;
+      const mutationLocationId = resolveOrderMutationLocationId(
+        mutationLocationSelection,
+        mutationLocationSelection === "all" ? null : scopedLocationId,
+        currentSession.operator.role,
+        order.locationId
+      );
       const updated = await mutation(currentSession, mutationLocationId);
       if (!mounted.current || selectedLocationIdRef.current !== mutationLocationSelection || currentSession.operator.operatorUserId !== mutationOperatorId) return true;
       setUi((current) => ({ ...current, orders: mergeUpdatedOrder(current.orders, updated), actionNotice: successMessage, cancelOrderId: null, refundOrderId: null }));

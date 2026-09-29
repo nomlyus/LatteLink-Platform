@@ -2,7 +2,7 @@
 
 import React from "react";
 import type { OperatorMenuCategory, OperatorModifierGroup } from "../../../model";
-import { getModifierGroupUsage } from "../../../menu-page-model";
+import { getModifierGroupUsage } from "../menu-domain";
 
 export function ModifierGroupsPanel({
   groups,

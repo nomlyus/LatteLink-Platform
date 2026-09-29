@@ -4,7 +4,7 @@ import React from "react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import type { AdminMenuCategoryCreate, AdminMenuCategoryUpdate } from "@lattelink/contracts-catalog";
 import type { OperatorMenuCategory } from "../../../model";
-import { getUniqueMenuItems } from "../../../menu-page-model";
+import { getUniqueMenuItems } from "../menu-domain";
 import { MenuDialog } from "./MenuDialog";
 
 export function MenuCategoryEditor({

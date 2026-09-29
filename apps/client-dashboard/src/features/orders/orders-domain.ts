@@ -3,6 +3,26 @@ import type { OperatorOrder, OperatorOrderStatus } from "../../model";
 export type OrdersViewFilter = "all" | "active" | "completed" | "canceled";
 export type StoreOrdersFilter = "all" | "needs_action" | "in_progress" | "ready" | "closed";
 
+export function mergeUpdatedOrder(orders: readonly OperatorOrder[], updated: OperatorOrder): OperatorOrder[] {
+  const existing = orders.find((order) => order.id === updated.id);
+  const nextOrder = existing
+    ? { ...existing, ...updated, customer: updated.customer ?? existing.customer }
+    : updated;
+  return existing
+    ? orders.map((order) => order.id === updated.id ? nextOrder : order)
+    : [nextOrder, ...orders];
+}
+
+export function resolveOrderMutationLocationId(
+  selectedLocationId: string | "all" | null,
+  scopedLocationId: string | null,
+  operatorRole: string,
+  orderLocationId: string
+) {
+  if (selectedLocationId !== "all") return scopedLocationId;
+  return operatorRole === "owner" ? null : orderLocationId;
+}
+
 export function filterOrders(orders: readonly OperatorOrder[], filter: OrdersViewFilter, query: string) {
   const normalizedQuery = query.trim().toLocaleLowerCase();
   return orders.filter((order) => {

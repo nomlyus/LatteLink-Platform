@@ -16,7 +16,7 @@ export function getAvailableDashboardSections() {
 }
 
 export function ensureSectionIsAvailable() {
-  if (state.availableLocations.length === 0 && !state.appConfig && state.lastRefreshedAt === null) {
+  if (!state.dashboardLoaded) {
     return;
   }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resolveOrder } from "../src/model";
-import { filterOrders, filterStoreOrders, orderElapsedLabel, orderPaymentLabel, paginateOrders, sortStoreOrders } from "../src/features/orders/orders-domain";
+import { filterOrders, filterStoreOrders, mergeUpdatedOrder, orderElapsedLabel, orderPaymentLabel, paginateOrders, resolveOrderMutationLocationId, sortStoreOrders } from "../src/features/orders/orders-domain";
 
 function order(id: string, status: "PENDING_PAYMENT" | "PAID" | "IN_PREP" | "READY" | "COMPLETED" | "CANCELED" | "REFUNDED" | "PARTIALLY_REFUNDED", time: string, name = "Jordan Lee", email = "jordan@example.com") {
   return resolveOrder({
@@ -56,5 +56,20 @@ describe("React Orders domain helpers", () => {
     expect(orderPaymentLabel(data[2]!)).toBe("Refunded");
     expect(orderPaymentLabel(data[3]!)).toBe("Partially refunded");
     expect(orderElapsedLabel(data[0]!, Date.parse("2026-09-28T12:14:00.000Z"))).toBe("14m ago");
+  });
+
+  it("reconciles server mutation results without losing existing customer details", () => {
+    const updated = { ...data[0]!, status: "IN_PREP" as const, customer: undefined };
+    expect(mergeUpdatedOrder([data[0]!], updated)[0]).toMatchObject({
+      status: "IN_PREP",
+      customer: { name: "Jordan Lee", email: "jordan@example.com" }
+    });
+    expect(mergeUpdatedOrder([], updated)).toEqual([updated]);
+  });
+
+  it("keeps owner and manager mutation scope distinct in All Locations", () => {
+    expect(resolveOrderMutationLocationId("all", null, "owner", "loc-a")).toBeNull();
+    expect(resolveOrderMutationLocationId("all", null, "manager", "loc-a")).toBe("loc-a");
+    expect(resolveOrderMutationLocationId("loc-a", "loc-a", "manager", "loc-b")).toBe("loc-a");
   });
 });

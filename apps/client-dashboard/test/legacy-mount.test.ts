@@ -9,10 +9,6 @@ const state = vi.hoisted(() => ({
   authEmail: "",
   authPassword: "",
   selectedLocationId: null as string | "all" | null,
-  orderDetailsClosingTimeoutHandle: null as ReturnType<typeof setTimeout> | null,
-  orderDetailsOpen: false,
-  orderDetailsOpening: false,
-  orderDetailsClosing: false,
   toasts: [] as unknown[]
 }));
 const setNotice = vi.hoisted(() => vi.fn());
@@ -27,18 +23,11 @@ const handleStripeOnboardingStart = vi.hoisted(() => vi.fn());
 const handleStripeStatusRefresh = vi.hoisted(() => vi.fn());
 const cancelDashboardLoad = vi.hoisted(() => vi.fn());
 const loadDashboard = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
-const clearPendingCancel = vi.hoisted(() => vi.fn());
-const refreshOrderConnection = vi.hoisted(() => vi.fn());
-const stopAutoRefresh = vi.hoisted(() => vi.fn());
-const disposeNewOrderAlertRuntime = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
-const resumeNewOrderSound = vi.hoisted(() => vi.fn());
 const resetToastRuntime = vi.hoisted(() => vi.fn());
 const persistSection = vi.hoisted(() => vi.fn());
 const loadStoredSession = vi.hoisted(() => vi.fn(() => null));
 const loadStoredApiBaseUrl = vi.hoisted(() => vi.fn(() => "https://api-dev.nomly.us/v1"));
 const loadStoredLocationSelection = vi.hoisted(() => vi.fn(() => null));
-const resetMenuDialog = vi.hoisted(() => vi.fn());
-const resetMenuItemDetails = vi.hoisted(() => vi.fn());
 const resetDashboardData = vi.hoisted(() => vi.fn());
 
 const storedOperatorSession: OperatorSession = {
@@ -60,14 +49,12 @@ const storedOperatorSession: OperatorSession = {
   }
 };
 
-vi.mock("../src/state", () => ({ state, setNotice, resetMenuDialog, resetMenuItemDetails, resetDashboardData }));
+vi.mock("../src/state", () => ({ state, setNotice, resetDashboardData }));
 vi.mock("../src/render", () => ({ bindDashboardRoot, render }));
 vi.mock("../src/events", () => ({ registerEvents }));
 vi.mock("../src/controllers/auth", () => ({ handleGoogleCallback, handleOwnerInviteFromUrl, loadAuthProviders }));
 vi.mock("../src/controllers/onboarding", () => ({ handleStripeOnboardingStart, handleStripeStatusRefresh }));
 vi.mock("../src/lifecycle", () => ({ cancelDashboardLoad, loadDashboard }));
-vi.mock("../src/orders-runtime", () => ({ clearPendingCancel, refreshOrderConnection, stopAutoRefresh }));
-vi.mock("../src/order-alert", () => ({ disposeNewOrderAlertRuntime, resumeNewOrderSound }));
 vi.mock("../src/toast-runtime", () => ({ resetToastRuntime }));
 vi.mock("../src/storage", () => ({ persistSection, loadStoredSession, loadStoredApiBaseUrl, loadStoredLocationSelection }));
 vi.mock("../src/legacy/browser-lifecycle", () => ({ registerLegacyBrowserLifecycle }));
@@ -76,7 +63,6 @@ describe("legacy React host mount lifecycle", () => {
   afterEach(() => {
     state.session = null;
     state.selectedLocationId = null;
-    state.orderDetailsClosingTimeoutHandle = null;
     state.toasts = [];
     vi.clearAllMocks();
     vi.resetModules();
@@ -85,7 +71,7 @@ describe("legacy React host mount lifecycle", () => {
 
   it("deduplicates an active mount and disposes resources before a later remount", async () => {
     vi.stubGlobal("window", {
-      location: { pathname: "/", search: "" },
+      location: { pathname: "/legacy/cards", search: "" },
       history: { replaceState: vi.fn() }
     });
     const doc = { title: "Operator Dashboard", visibilityState: "hidden" };
@@ -100,20 +86,17 @@ describe("legacy React host mount lifecycle", () => {
     expect(registerLegacyBrowserLifecycle).toHaveBeenCalledTimes(1);
     const lifecycleHandlers = registerLegacyBrowserLifecycle.mock.calls[0]?.[1];
     lifecycleHandlers?.visible();
-    expect(resumeNewOrderSound).not.toHaveBeenCalled();
+    expect(loadDashboard).not.toHaveBeenCalled();
     doc.visibilityState = "visible";
     lifecycleHandlers?.visible();
     lifecycleHandlers?.online();
     lifecycleHandlers?.offline();
-    expect(resumeNewOrderSound).toHaveBeenCalledTimes(1);
-    expect(refreshOrderConnection).toHaveBeenCalledTimes(2);
+    expect(loadDashboard).toHaveBeenCalledTimes(2);
     expect(render).toHaveBeenCalled();
 
     firstDispose();
     firstDispose();
     expect(cancelDashboardLoad).toHaveBeenCalledTimes(1);
-    expect(stopAutoRefresh).toHaveBeenCalledTimes(1);
-    expect(clearPendingCancel).toHaveBeenCalledTimes(1);
     expect(resetToastRuntime).toHaveBeenCalledTimes(1);
 
     const secondDispose = mountLegacyDashboard({} as HTMLDivElement);
@@ -124,23 +107,43 @@ describe("legacy React host mount lifecycle", () => {
 
   it("rehydrates the current session and authorized location preference when entering a legacy route", async () => {
     vi.stubGlobal("window", {
-      location: { pathname: "/legacy/orders", search: "" },
+      location: { pathname: "/legacy/cards", search: "" },
       history: { replaceState: vi.fn() }
     });
     vi.stubGlobal("document", { title: "Operator Dashboard", visibilityState: "visible" });
     loadStoredSession.mockReturnValueOnce(storedOperatorSession as never);
     const { mountLegacyDashboard } = await import("../src/main");
 
-    const dispose = mountLegacyDashboard({} as HTMLDivElement, "orders");
+    const dispose = mountLegacyDashboard({} as HTMLDivElement, "cards");
 
     expect(state.session).toBe(storedOperatorSession);
     expect(state.authApiBaseUrl).toBe(storedOperatorSession.apiBaseUrl);
     expect(state.authEmail).toBe("owner@example.com");
     expect(state.authPassword).toBe("");
     expect(state.selectedLocationId).toBe("all");
-    expect(state.section).toBe("orders");
-    expect(persistSection).toHaveBeenCalledWith("orders");
+    expect(state.section).toBe("cards");
+    expect(persistSection).toHaveBeenCalledWith("cards");
     expect(resetDashboardData).toHaveBeenCalledTimes(1);
+    dispose();
+  });
+
+  it("sends store operators from the legacy host to React Orders and preserves the URL context", async () => {
+    const replace = vi.fn();
+    vi.stubGlobal("window", {
+      location: { pathname: "/legacy/cards", search: "?source=shortcut", hash: "#section", replace },
+      history: { replaceState: vi.fn() }
+    });
+    vi.stubGlobal("document", { title: "Operator Dashboard", visibilityState: "visible" });
+    loadStoredSession.mockReturnValueOnce({
+      ...storedOperatorSession,
+      operator: { ...storedOperatorSession.operator, role: "store" }
+    } as never);
+    const { mountLegacyDashboard } = await import("../src/main");
+
+    const dispose = mountLegacyDashboard({} as HTMLDivElement, "cards");
+
+    expect(replace).toHaveBeenCalledWith("/orders?source=shortcut#section");
+    expect(registerEvents).not.toHaveBeenCalled();
     dispose();
   });
 });

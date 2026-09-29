@@ -1,17 +1,16 @@
-import { setNotice, state, resetDashboardData, resetMenuDialog, resetMenuItemDetails } from "./state";
+import { setNotice, state, resetDashboardData } from "./state";
 import { bindDashboardRoot, render } from "./render";
 import { registerEvents } from "./events";
 import { handleGoogleCallback, handleOwnerInviteFromUrl, loadAuthProviders } from "./controllers/auth";
 import { handleStripeOnboardingStart, handleStripeStatusRefresh } from "./controllers/onboarding";
 import { cancelDashboardLoad, loadDashboard } from "./lifecycle";
-import { clearPendingCancel, refreshOrderConnection, stopAutoRefresh } from "./orders-runtime";
-import { disposeNewOrderAlertRuntime, resumeNewOrderSound } from "./order-alert";
 import { resetToastRuntime } from "./toast-runtime";
 import { loadStoredApiBaseUrl, loadStoredSession, persistSection } from "./storage";
 import { registerLegacyBrowserLifecycle } from "./legacy/browser-lifecycle";
 import { stripStripeReturnParams, readStripeReturnParams } from "./lib/navigation/route-callbacks";
-import type { DashboardSection } from "./model";
+import { isStoreOperator, type DashboardSection } from "./model";
 import { resolveLocationSelection } from "./features/location/location-compat";
+import { getDashboardDestination } from "./lib/navigation/dashboard-navigation";
 
 type LegacyRuntime = {
   root: HTMLDivElement;
@@ -96,8 +95,13 @@ export function mountLegacyDashboard(root: HTMLDivElement, initialSection?: Dash
   if (activeRuntime?.root === root) return activeRuntime.dispose;
   activeRuntime?.dispose();
 
-  bindDashboardRoot(root);
   const storedSession = loadStoredSession();
+  if (initialSection && storedSession && isStoreOperator(storedSession.operator) && typeof window !== "undefined") {
+    window.location.replace(`${getDashboardDestination("orders").href}${window.location.search}${window.location.hash}`);
+    return () => undefined;
+  }
+
+  bindDashboardRoot(root);
   const sessionChanged = state.session?.operator.operatorUserId !== storedSession?.operator.operatorUserId ||
     state.session?.accessToken !== storedSession?.accessToken;
   state.session = storedSession;
@@ -115,14 +119,13 @@ export function mountLegacyDashboard(root: HTMLDivElement, initialSection?: Dash
   const unregisterEvents = registerEvents(controller.signal);
   registerLegacyBrowserLifecycle(controller.signal, {
     online: () => {
-      refreshOrderConnection(loadDashboard);
+      void loadDashboard({ silent: true });
       render();
     },
     offline: render,
     visible: () => {
       if (document.visibilityState === "visible") {
-        void resumeNewOrderSound();
-        refreshOrderConnection(loadDashboard);
+        void loadDashboard({ silent: true });
       }
     }
   });
@@ -136,20 +139,8 @@ export function mountLegacyDashboard(root: HTMLDivElement, initialSection?: Dash
       controller.abort();
       unregisterEvents();
       cancelDashboardLoad();
-      stopAutoRefresh();
-      clearPendingCancel();
-      resetMenuDialog();
-      resetMenuItemDetails();
-      if (state.orderDetailsClosingTimeoutHandle !== null) {
-        clearTimeout(state.orderDetailsClosingTimeoutHandle);
-        state.orderDetailsClosingTimeoutHandle = null;
-      }
-      state.orderDetailsOpen = false;
-      state.orderDetailsOpening = false;
-      state.orderDetailsClosing = false;
       state.toasts = [];
       resetToastRuntime();
-      void disposeNewOrderAlertRuntime();
       bindDashboardRoot(null);
       if (activeRuntime === runtime) activeRuntime = null;
     }

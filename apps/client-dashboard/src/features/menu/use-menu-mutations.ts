@@ -24,8 +24,7 @@ import {
   type OperatorSession
 } from "../../api";
 import { canCreateMenuItems, canToggleMenuItemVisibility, type OperatorMenuItem, type OperatorMenuResponse } from "../../model";
-import { getUniqueMenuItems } from "../../menu-page-model";
-import { buildMenuItemUpdatePayload, getMenuApiErrorMessage } from "./menu-domain";
+import { buildCategoryMembershipUpdates, buildMenuItemUpdatePayload, getMenuApiErrorMessage, getUniqueMenuItems } from "./menu-domain";
 import { useDashboardSession } from "../auth/session-provider";
 import { useDashboardLocation } from "../location/location-provider";
 import { isSessionAuthFailure } from "../auth/session-compat";
@@ -174,23 +173,8 @@ export function useMenuMutations(menu: OperatorMenuResponse | null, reload: () =
       const latestMenu = menuRef.current;
       if (!latestMenu) throw new Error("The menu is no longer available. Reload and try again.");
       const items = getUniqueMenuItems(latestMenu.categories);
-      const selectedMembers = new Set(memberItemIds);
-      const updates: Array<{ item: OperatorMenuItem; categoryIds: string[] }> = [];
-      for (const item of items) {
-        const currentIds = item.categoryIds?.length ? item.categoryIds : [item.categoryId];
-        const currentlyBelongs = currentIds.includes(categoryId);
-        const shouldBelong = selectedMembers.has(item.itemId);
-        if (currentlyBelongs === shouldBelong) continue;
-        const nextIds = shouldBelong ? [...currentIds, categoryId] : currentIds.filter((id) => id !== categoryId);
-        if (nextIds.length === 0) {
-          throw new Error(`${item.name} must stay in at least one category. Add another category before removing this membership.`);
-        }
-        updates.push({ item, categoryIds: nextIds });
-      }
-      for (const update of updates) {
-        await updateOperatorMenuItem(currentSession, locationId, update.item.itemId, buildMenuItemUpdatePayload(update.item, {
-          categoryIds: update.categoryIds
-        }));
+      for (const update of buildCategoryMembershipUpdates(items, categoryId, memberItemIds)) {
+        await updateOperatorMenuItem(currentSession, locationId, update.item.itemId, update.payload);
       }
       return updateOperatorMenuCategory(currentSession, locationId, categoryId, input);
     }

@@ -810,7 +810,7 @@ describe("client dashboard api helpers", () => {
     );
   });
 
-  it("does not require store settings payloads for store-screen sessions", async () => {
+  it("keeps order data out of the legacy dashboard snapshot for store-screen sessions", async () => {
     const fetchSpy = vi
       .fn()
       .mockResolvedValueOnce(
@@ -873,22 +873,6 @@ describe("client dashboard api helpers", () => {
           }),
           { status: 200 }
         )
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify([
-            {
-              id: "123e4567-e89b-12d3-a456-426614174000",
-              locationId: "flagship-01",
-              status: "PAID",
-              items: [],
-              total: { currency: "USD", amountCents: 1200 },
-              pickupCode: "A1B2C3",
-              timeline: [{ status: "PENDING_PAYMENT", occurredAt: "2026-03-20T00:00:00.000Z" }]
-            }
-          ]),
-          { status: 200 }
-        )
       );
     vi.stubGlobal("fetch", fetchSpy);
 
@@ -916,7 +900,7 @@ describe("client dashboard api helpers", () => {
 
     expect(snapshot.storeConfig).toBeNull();
     expect(snapshot.team).toEqual([]);
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(fetchSpy).toHaveBeenNthCalledWith(
       1,
       "https://api.nomly.us/v1/app-config?locationId=flagship-01",
@@ -924,15 +908,9 @@ describe("client dashboard api helpers", () => {
         method: "GET"
       })
     );
-    expect(fetchSpy).toHaveBeenNthCalledWith(
-      2,
-      "https://api.nomly.us/v1/admin/orders?locationId=flagship-01",
-      expect.objectContaining({
-        method: "GET",
-        headers: expect.objectContaining({
-          authorization: "Bearer access-token"
-        })
-      })
+    expect(fetchSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining("/admin/orders"),
+      expect.anything()
     );
   });
 

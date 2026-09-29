@@ -1,6 +1,6 @@
 import { getSelectedLocation, hasMultipleLocations, isAllLocationsSelected, state } from "../state";
 import { escapeHtml, formatDashboardDate, formatDashboardHeadingDate, getOperatorInitials } from "../ui/format";
-import { filterOrdersByView, getOperatorRoleLabel, isOwnerOperator, isStoreOperator, type DashboardSection } from "../model";
+import { getOperatorRoleLabel, isOwnerOperator, isStoreOperator, type DashboardSection } from "../model";
 import {
   ensureSectionIsAvailable,
   getAvailableDashboardSections,
@@ -8,13 +8,9 @@ import {
 } from "../sections";
 import { getDashboardSectionIcon } from "../lib/navigation/dashboard-sections";
 import { getDashboardDestination, getDashboardRouteOwner } from "../lib/navigation/dashboard-navigation";
-import { reconcileMenuCreateDraft } from "../menu-wizard";
 import { renderBanner } from "./common";
 import { renderHomeState, renderOverviewSection, type HomeState } from "./overview";
 import { renderOnboardingWizard } from "./onboarding";
-import { renderOrdersSection } from "./orders";
-import { renderMenuSection } from "./menu";
-import { renderMenuCreateWizard } from "./menu-wizard";
 import { renderCardsSection } from "./cards";
 import { renderDiscountsSection } from "./discounts";
 import { renderExperienceSection } from "./experience";
@@ -52,13 +48,8 @@ function isHomeLoading() {
 }
 
 function renderNavItems(sections: DashboardSection[]) {
-  const activeOrders = filterOrdersByView(state.orders, "active").length;
   return sections
     .map((section) => {
-      const badge =
-        section === "orders" && activeOrders > 0
-          ? `<span class="dash-nav-badge">${activeOrders}</span>`
-          : "";
       const statusPill = section === "experience" ? `<span class="dash-nav-status">Planned</span>` : "";
       const active = state.section === section;
       const destination = getDashboardDestination(section);
@@ -68,7 +59,7 @@ function renderNavItems(sections: DashboardSection[]) {
               <span class="dash-nav-label">${escapeHtml(getDashboardSectionLabel(section))}</span>
             </span>
             ${statusPill}
-            ${badge}`;
+            `;
       if (getDashboardRouteOwner(section) === "react") {
         return `<a class="dash-nav-item ${active ? "dash-nav-item--active" : ""}" href="${destination.href}"${active ? ' aria-current="page"' : ""} title="${escapeHtml(getDashboardSectionLabel(section))}">${content}</a>`;
       }
@@ -180,10 +171,6 @@ function renderDashboardContent() {
   }
 
   switch (state.section) {
-    case "orders":
-      return renderOrdersSection();
-    case "menu":
-      return renderMenuSection();
     case "cards":
       return renderCardsSection();
     case "discounts":
@@ -195,7 +182,7 @@ function renderDashboardContent() {
     case "team":
       return renderTeamSection();
     case "overview":
-      // Owner Home is React-owned; legacy sign-in can render once before React observes the persisted session.
+      // Owner Home is React-owned; the legacy invite/section host only keeps a generic fallback here.
       return isOwnerOperator(state.session?.operator ?? null) ? "" : renderOverviewSection();
     default:
       return renderOverviewSection();
@@ -229,7 +216,7 @@ function getDashboardPageState(): Exclude<HomeState, "all"> | "all" | null {
     return "no-api";
   }
 
-  if (state.errorMessage && state.lastRefreshedAt === null) {
+  if (state.errorMessage && !state.dashboardLoaded) {
     return "error";
   }
 
@@ -293,7 +280,6 @@ function renderStoreModeSidebar() {
 
 export function renderDashboard() {
   ensureSectionIsAvailable();
-  reconcileMenuCreateDraft();
   const storeMode = isStoreOperator(state.session?.operator ?? null);
   const settingsAvailable = getAvailableDashboardSections().includes("store");
   const locationSelector = hasMultipleLocations()
@@ -326,14 +312,12 @@ export function renderDashboard() {
             ${renderDashboardContent()}
           </div>
         </main>
-        ${renderMenuCreateWizard()}
         ${renderOnboardingWizard()}
       </div>
     `;
   }
 
   const isHomeSection = state.section === "overview";
-  const isOrdersSection = state.section === "orders";
   const dashboardContent = `${renderBanner()}${renderDashboardContent()}`;
 
   return `
@@ -424,11 +408,10 @@ export function renderDashboard() {
           ${
             isHomeSection
               ? dashboardContent
-              : `<div class="dash-content__scroll${isOrdersSection ? " dash-content__scroll--orders" : ""}">${dashboardContent}</div>`
+              : `<div class="dash-content__scroll">${dashboardContent}</div>`
           }
         </div>
       </div>
-      ${renderMenuCreateWizard()}
       ${renderOnboardingWizard()}
     </div>
   `;

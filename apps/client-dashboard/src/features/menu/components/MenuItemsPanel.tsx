@@ -3,7 +3,7 @@
 import React from "react";
 import Image from "next/image";
 import type { OperatorMenuCategory, OperatorMenuItem, OperatorModifierGroup } from "../../../model";
-import { getItemCategories, getPageRange } from "../../../menu-page-model";
+import { getItemCategories, getPageRange } from "../menu-domain";
 import { formatMoney } from "../../../ui/format";
 
 const pageSize = 25;

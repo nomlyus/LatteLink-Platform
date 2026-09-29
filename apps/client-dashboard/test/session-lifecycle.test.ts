@@ -8,7 +8,7 @@ vi.mock("../src/api", async (importOriginal) => ({
   refreshOperatorSession,
   logoutOperatorSession
 }));
-vi.mock("../src/render", () => ({ render: vi.fn(), renderOrdersSectionOnly: vi.fn() }));
+vi.mock("../src/render", () => ({ render: vi.fn() }));
 
 const values = new Map<string, string>();
 const session = {

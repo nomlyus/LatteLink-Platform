@@ -6,8 +6,7 @@ import type { AdminMenuItemCreate, AdminMenuItemUpdate, AdminModifierGroupCreate
 import type { AdminMenuCategoryCreate } from "@lattelink/contracts-catalog";
 import type { OperatorMenuItem, OperatorModifierGroup, OperatorMenuResponse } from "../../../model";
 import { canCreateMenuItems, canToggleMenuItemVisibility } from "../../../model";
-import { filterMenuItems, getModifierGroupUsage, getUniqueMenuItems } from "../../../menu-page-model";
-import { buildMenuItemUpdatePayload } from "../menu-domain";
+import { buildMenuItemUpdatePayload, filterMenuItems, getModifierGroupUsage, getUniqueMenuItems } from "../menu-domain";
 import type { useMenuMutations } from "../use-menu-mutations";
 import { useDashboardSession } from "../../auth/session-provider";
 import { useDashboardLocation } from "../../location/location-provider";

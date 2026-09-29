@@ -1,8 +1,6 @@
 import {
   fetchDashboardLocations,
   fetchOperatorOnboardingSummary,
-  fetchOperatorOrders,
-  fetchOperatorReporting,
   fetchOperatorSnapshot,
   isApiRequestError,
   logoutOperatorSession,
@@ -20,20 +18,9 @@ import {
   persistSession
 } from "./storage";
 import { resetDashboardData, setError, setNotice, state } from "./state";
-import { snapshotCustomizationDrafts } from "./customizations";
-import { reconcileMenuCreateDraft, resetMenuCreateWizard } from "./menu-wizard";
-import {
-  alertForCurrentOrders,
-  clearPendingCancel,
-  reconcileSelectedOrder,
-  startAutoRefresh,
-  stopAutoRefresh
-} from "./orders-runtime";
-import { resetNewOrderAlert } from "./order-alert";
 import { ensureSectionIsAvailable } from "./sections";
 import { mergePendingTeamUserUpdates } from "./team-state";
-import { render, renderOrdersSectionOnly } from "./render";
-import { getOwnerReportingLocationIds, getReportingDateRange, reportingErrorCode, resolveOwnerReportingTimezone } from "./views/owner-home";
+import { render } from "./render";
 import { isSessionAuthFailure } from "./features/auth/session-compat";
 import { shouldAutoOpenOwnerOnboarding } from "./lib/navigation/dashboard-navigation";
 import {
@@ -44,7 +31,6 @@ import {
 } from "./features/location/location-compat";
 
 let dashboardLoadInFlight = false;
-let ordersRefreshInFlight = false;
 let dashboardLoadGeneration = 0;
 
 export function cancelDashboardLoad() {
@@ -52,59 +38,13 @@ export function cancelDashboardLoad() {
   dashboardLoadInFlight = false;
 }
 
-export async function loadOwnerHomeReport(options: { renderStart?: boolean } = {}) {
-  const session = state.session;
-  if (!session || !isOwnerOperator(session.operator) || state.section !== "overview") {
-    return;
-  }
-
-  const timezone = resolveOwnerReportingTimezone();
-  if (timezone === "mixed") {
-    state.ownerHome.report = null;
-    state.ownerHome.loading = false;
-    state.ownerHome.error = "MIXED_REPORTING_TIMEZONES";
-    if (options.renderStart !== false) render();
-    return;
-  }
-  const locationIds = getOwnerReportingLocationIds();
-  if (!timezone || locationIds.length === 0) {
-    state.ownerHome.report = null;
-    state.ownerHome.loading = false;
-    state.ownerHome.error = "Reporting location metadata is unavailable.";
-    if (options.renderStart !== false) render();
-    return;
-  }
-
-  state.ownerHome.loading = true;
-  state.ownerHome.error = null;
-  if (options.renderStart !== false) render();
-  try {
-    const range = getReportingDateRange(state.ownerHome.period, timezone);
-    state.ownerHome.report = await fetchOperatorReporting(session, locationIds, range);
-  } catch (error) {
-    if (isSessionAuthFailure(error)) {
-      await signOut("Your client dashboard session expired. Sign in again to continue.");
-      return;
-    }
-    state.ownerHome.report = null;
-    state.ownerHome.error = reportingErrorCode(error) ?? (error instanceof Error ? error.message : "Unable to load reporting data.");
-  } finally {
-    state.ownerHome.loading = false;
-    if (options.renderStart !== false) render();
-  }
-}
-
 export async function signOut(message = "") {
   const currentSession = state.session;
   clearStoredSession();
   state.session = null;
   state.authPassword = "";
-  stopAutoRefresh();
-  resetNewOrderAlert();
-  clearPendingCancel();
   clearLocationContext();
   resetDashboardData();
-  resetMenuCreateWizard();
   setError(null);
   setNotice(message);
   render();
@@ -134,65 +74,10 @@ async function ensureFreshSession() {
   if (!sessionNeedsRefresh(state.session.expiresAt)) {
     return state.session;
   }
-  stopAutoRefresh();
   const refreshedSession = await refreshOperatorSession(state.session);
   state.session = refreshedSession;
   persistSession(refreshedSession);
   return refreshedSession;
-}
-
-export async function refreshOrdersOnly() {
-  if (!state.session || dashboardLoadInFlight || ordersRefreshInFlight) return;
-
-  const requestedLocationId = state.selectedLocationId;
-  const locationIds = requestedLocationId === "all"
-    ? state.availableLocations.map((location) => location.locationId)
-    : requestedLocationId
-      ? [requestedLocationId]
-      : [];
-  if (locationIds.length === 0) {
-    state.orderRefreshError = "No location is available to refresh orders.";
-    renderOrdersSectionOnly();
-    return;
-  }
-
-  ordersRefreshInFlight = true;
-  state.ordersRefreshing = true;
-  state.orderRefreshError = null;
-  renderOrdersSectionOnly();
-
-  try {
-    const session = await ensureFreshSession();
-    if (!session) return;
-
-    const orderGroups = await Promise.all(locationIds.map((locationId) => fetchOperatorOrders(session, locationId)));
-    if (
-      state.session?.operator.operatorUserId !== session.operator.operatorUserId ||
-      state.selectedLocationId !== requestedLocationId
-    ) {
-      return;
-    }
-
-    state.orders = orderGroups.flat();
-    state.lastRefreshedAt = Date.now();
-    state.orderRefreshError = null;
-    alertForCurrentOrders();
-    reconcileSelectedOrder();
-  } catch (error) {
-    if (isSessionAuthFailure(error)) {
-      await signOut("Your client dashboard session expired. Sign in again to continue.");
-      return;
-    }
-    if (state.selectedLocationId === requestedLocationId) {
-      state.orderRefreshError = error instanceof Error ? error.message : "Unable to refresh orders.";
-    }
-  } finally {
-    ordersRefreshInFlight = false;
-    state.ordersRefreshing = false;
-    if (state.section === "orders") {
-      renderOrdersSectionOnly();
-    }
-  }
 }
 
 export function resolveSelectedLocationId() {
@@ -287,7 +172,6 @@ function applyLaunchEntryIntent() {
 export async function loadDashboard(options: { silent?: boolean } = {}): Promise<void> {
   if (!state.session) {
     state.loading = false;
-    stopAutoRefresh();
     render();
     return;
   }
@@ -299,12 +183,11 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
   const loadGeneration = dashboardLoadGeneration;
   dashboardLoadInFlight = true;
 
-  if (isStoreOperator(state.session.operator)) {
-    state.section = "orders";
-  } else {
-    state.section = loadStoredSection();
-  }
-  state.orderRefreshError = null;
+  const storedSection = loadStoredSection();
+  state.section = !isStoreOperator(state.session.operator) && storedSection !== "overview" &&
+    storedSection !== "orders" && storedSection !== "menu"
+    ? storedSection
+    : "overview";
 
   if (!silent) {
     state.loading = true;
@@ -324,26 +207,10 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
     state.selectedLocationId = resolveSelectedLocationId();
     state.selectedLocationId = publishLocationContext(session, state.availableLocations, state.selectedLocationId);
 
-    // Reporting is intentionally isolated from the order/snapshot read. A stale or
-    // unavailable orders API must not take down the analytics modules.
-    if (isOwnerOperator(session.operator) && state.section === "overview") {
-      await loadOwnerHomeReport({ renderStart: false });
-      if (loadGeneration !== dashboardLoadGeneration) return;
-    }
-
     try {
       if (state.selectedLocationId === "all") {
-        const orders = new Set(session.operator.capabilities).has("orders:read")
-          ? (
-              await Promise.all(state.availableLocations.map((location) => fetchOperatorOrders(session, location.locationId)))
-            ).flat()
-          : [];
         state.appConfig = null;
-        state.orders = orders;
         state.menuCategories = [];
-        state.menuModifierGroups = [];
-        state.menuLoadError = null;
-        state.menuCustomizationDrafts = {};
         state.newsCards = [];
         state.discountCodes = [];
         state.storeConfig = null;
@@ -355,12 +222,7 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
         const snapshot = await fetchOperatorSnapshot(session, state.selectedLocationId);
         if (loadGeneration !== dashboardLoadGeneration) return;
         state.appConfig = snapshot.appConfig;
-        state.orders = snapshot.orders;
         state.menuCategories = snapshot.menu.categories;
-        state.menuModifierGroups = snapshot.menu.modifierGroups;
-        state.menuLoadError = null;
-        reconcileMenuCreateDraft();
-        state.menuCustomizationDrafts = snapshotCustomizationDrafts(snapshot.menu.categories);
         state.newsCards = snapshot.cards;
         state.discountCodes = snapshot.discountCodes;
         state.storeConfig = snapshot.storeConfig;
@@ -371,29 +233,16 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
       }
     } catch (error) {
       if (isSessionAuthFailure(error)) throw error;
-      state.menuLoadError = "Unable to load this location’s menu. Try again.";
-      if (!silent) state.orders = [];
+      if (!silent) setError(error instanceof Error ? error.message : "Unable to load client dashboard data.");
     }
 
-    alertForCurrentOrders();
     await loadOwnerOnboarding(session);
     if (loadGeneration !== dashboardLoadGeneration) return;
     if (!applyLaunchEntryIntent()) {
       autoOpenOwnerOnboarding();
     }
-    state.lastRefreshedAt = Date.now();
+    state.dashboardLoaded = true;
     ensureSectionIsAvailable();
-    reconcileSelectedOrder();
-
-    if (!isOwnerOperator(session.operator) || state.section !== "overview") {
-      state.ownerHome.report = null;
-      state.ownerHome.error = null;
-      state.ownerHome.loading = false;
-    }
-
-    if (state.pendingCancelOrderId && !state.orders.some((order) => order.id === state.pendingCancelOrderId)) {
-      clearPendingCancel();
-    }
   } catch (error) {
     if (loadGeneration !== dashboardLoadGeneration) return;
     if (isSessionAuthFailure(error)) {
@@ -409,7 +258,6 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
       if (!silent) {
         state.loading = false;
       }
-      startAutoRefresh(loadDashboard);
       render();
     }
   }
@@ -440,8 +288,6 @@ export async function applyVerifiedSession(nextSession: OperatorSession, notice:
   persistSession(nextSession);
   setError(null);
   setNotice(notice);
-  stopAutoRefresh();
-  clearPendingCancel();
   resetDashboardData();
   state.selectedLocationId = isStoreOperator(nextSession.operator)
     ? nextSession.operator.locationId
@@ -449,7 +295,6 @@ export async function applyVerifiedSession(nextSession: OperatorSession, notice:
       ? "all"
       : nextSession.operator.locationId);
   state.launchEntryIntent = launchEntryIntent;
-  resetMenuCreateWizard();
   render();
   await loadDashboard();
 }

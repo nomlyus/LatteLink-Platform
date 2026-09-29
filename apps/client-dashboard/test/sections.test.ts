@@ -71,7 +71,7 @@ describe("dashboard sections", () => {
     state.availableLocations = [];
     state.appConfig = null;
     state.storeConfig = null;
-    state.lastRefreshedAt = null;
+    state.dashboardLoaded = false;
     state.selectedLocationId = null;
     state.teamUsers = [];
     state.mobileExperience = null;
@@ -115,7 +115,7 @@ describe("dashboard sections", () => {
     state.section = "orders";
     state.availableLocations = [];
     state.appConfig = null;
-    state.lastRefreshedAt = null;
+    state.dashboardLoaded = false;
 
     ensureSectionIsAvailable();
 
