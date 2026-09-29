@@ -1313,6 +1313,7 @@ async function fetchOrderForStream(params: {
   ordersBaseUrl: string;
   gatewayInternalApiToken: string | undefined;
   orderId: string;
+  brandId: string;
   userId: string;
   authorization: string;
   timeoutMs?: number;
@@ -1322,6 +1323,7 @@ async function fetchOrderForStream(params: {
     ordersBaseUrl,
     gatewayInternalApiToken,
     orderId,
+    brandId,
     userId,
     authorization,
     timeoutMs = toPositiveInteger(process.env.GATEWAY_UPSTREAM_TIMEOUT_MS, defaultUpstreamTimeoutMs)
@@ -1341,7 +1343,7 @@ async function fetchOrderForStream(params: {
   const timeoutHandle = setTimeout(() => timeoutController.abort(), timeoutMs);
 
   try {
-    upstreamResponse = await fetch(`${ordersBaseUrl}/v1/orders/${orderId}`, {
+    upstreamResponse = await fetch(`${ordersBaseUrl}/v1/orders/${orderId}?brandId=${encodeURIComponent(brandId)}`, {
       method: "GET",
       headers,
       signal: timeoutController.signal
@@ -1416,6 +1418,7 @@ async function fetchOrdersForStream(params: {
   ordersBaseUrl: string;
   gatewayInternalApiToken: string | undefined;
   userId: string;
+  brandId: string;
   authorization: string;
   timeoutMs?: number;
 }): Promise<StreamOrdersFetchSuccess | StreamOrdersFetchError> {
@@ -1424,6 +1427,7 @@ async function fetchOrdersForStream(params: {
     ordersBaseUrl,
     gatewayInternalApiToken,
     userId,
+    brandId,
     authorization,
     timeoutMs = toPositiveInteger(process.env.GATEWAY_UPSTREAM_TIMEOUT_MS, defaultUpstreamTimeoutMs)
   } = params;
@@ -1442,7 +1446,7 @@ async function fetchOrdersForStream(params: {
   const timeoutHandle = setTimeout(() => timeoutController.abort(), timeoutMs);
 
   try {
-    upstreamResponse = await fetch(`${ordersBaseUrl}/v1/orders`, {
+    upstreamResponse = await fetch(`${ordersBaseUrl}/v1/orders?brandId=${encodeURIComponent(brandId)}`, {
       method: "GET",
       headers,
       signal: timeoutController.signal
@@ -3331,7 +3335,13 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
     }));
   });
 
-  app.get("/v1/orders", { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(ordersReadRateLimit)] }, async (request, reply) => {
+  app.get("/v1/orders", {
+    preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(ordersReadRateLimit)],
+    attachValidation: true,
+    schema: { querystring: publicBrandQueryJsonSchema }
+  }, async (request, reply) => {
+    const brandId = parsePublicBrandId(request, reply);
+    if (!brandId) return;
     const userId = await resolveAuthenticatedUserId({
       request,
       reply,
@@ -3348,7 +3358,7 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
       baseUrl: ordersBaseUrl,
       serviceLabel: "Orders",
       method: "GET",
-      path: "/v1/orders",
+      path: `/v1/orders?brandId=${encodeURIComponent(brandId)}`,
       additionalHeaders: {
         "x-gateway-token": gatewayInternalApiToken,
         "x-user-id": userId
@@ -3357,7 +3367,13 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
     });
   });
 
-  app.get("/v1/orders/stream", { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(ordersReadRateLimit)] }, async (request, reply) => {
+  app.get("/v1/orders/stream", {
+    preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(ordersReadRateLimit)],
+    attachValidation: true,
+    schema: { querystring: publicBrandQueryJsonSchema }
+  }, async (request, reply) => {
+    const brandId = parsePublicBrandId(request, reply);
+    if (!brandId) return;
     const userId = await resolveAuthenticatedUserId({
       request,
       reply,
@@ -3378,6 +3394,7 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
       ordersBaseUrl,
       gatewayInternalApiToken,
       userId,
+      brandId,
       authorization
     });
     if ("error" in initialOrdersResult) {
@@ -3408,6 +3425,7 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
     let pollTimeout: ReturnType<typeof setTimeout> | undefined;
     let unsubscribeFromOrderEvents: (() => void) | null = null;
     let lastSeenRevision = buildOrdersStreamRevision(initialOrdersResult.orders);
+    let authorizedOrderLocations = new Map(initialOrdersResult.orders.map((order) => [order.id, order.locationId]));
 
     const cleanup = () => {
       if (pollTimeout) {
@@ -3448,6 +3466,7 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
         ordersBaseUrl,
         gatewayInternalApiToken,
         userId,
+        brandId,
         authorization
       });
 
@@ -3467,6 +3486,7 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
       }
 
       const nextRevision = buildOrdersStreamRevision(nextOrdersResult.orders);
+      authorizedOrderLocations = new Map(nextOrdersResult.orders.map((order) => [order.id, order.locationId]));
       if (nextRevision !== lastSeenRevision) {
         lastSeenRevision = nextRevision;
         sendEvent({
@@ -3498,7 +3518,12 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
     if (eventBusSubscriber) {
       try {
         unsubscribeFromOrderEvents = await eventBusSubscriber.subscribeToAllOrderEvents((event) => {
-          if (event.userId !== userId) {
+          const authorizedLocationId = authorizedOrderLocations.get(event.order.id);
+          if (
+            event.userId !== userId ||
+            !authorizedLocationId ||
+            event.order.locationId !== authorizedLocationId
+          ) {
             return;
           }
 
@@ -3524,8 +3549,14 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
     }, orderStreamPollIntervalMs);
   });
 
-  app.get("/v1/orders/:orderId", { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(ordersReadRateLimit)] }, async (request, reply) => {
+  app.get("/v1/orders/:orderId", {
+    preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(ordersReadRateLimit)],
+    attachValidation: true,
+    schema: { querystring: publicBrandQueryJsonSchema }
+  }, async (request, reply) => {
     const { orderId } = orderIdParamsSchema.parse(request.params);
+    const brandId = parsePublicBrandId(request, reply);
+    if (!brandId) return;
     const userId = await resolveAuthenticatedUserId({
       request,
       reply,
@@ -3542,7 +3573,7 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
       baseUrl: ordersBaseUrl,
       serviceLabel: "Orders",
       method: "GET",
-      path: `/v1/orders/${orderId}`,
+      path: `/v1/orders/${orderId}?brandId=${encodeURIComponent(brandId)}`,
       additionalHeaders: {
         "x-gateway-token": gatewayInternalApiToken,
         "x-user-id": userId
@@ -3568,9 +3599,15 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
 
   app.get(
     "/v1/orders/:orderId/stream",
-    { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(ordersReadRateLimit)] },
+    {
+      preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(ordersReadRateLimit)],
+      attachValidation: true,
+      schema: { querystring: publicBrandQueryJsonSchema }
+    },
     async (request, reply) => {
       const { orderId } = orderIdParamsSchema.parse(request.params);
+      const brandId = parsePublicBrandId(request, reply);
+      if (!brandId) return;
       const userId = await resolveAuthenticatedUserId({
         request,
         reply,
@@ -3591,6 +3628,7 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
         ordersBaseUrl,
         gatewayInternalApiToken,
         orderId,
+        brandId,
         userId,
         authorization
       });
@@ -3663,6 +3701,7 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
           ordersBaseUrl,
           gatewayInternalApiToken,
           orderId,
+          brandId,
           userId,
           authorization
         });
@@ -3723,7 +3762,8 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
       if (eventBusSubscriber) {
         try {
           unsubscribeFromOrderEvents = await eventBusSubscriber.subscribeToOrderStatus(orderId, (event) => {
-            if (closed || event.userId !== userId || event.order.id !== orderId) {
+            if (closed || event.userId !== userId || event.order.id !== orderId ||
+              event.order.locationId !== initialOrderResult.order.locationId) {
               return;
             }
 
@@ -3756,9 +3796,15 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
     }
   );
 
-  app.post("/v1/orders/:orderId/cancel", { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(checkoutRateLimit)] }, async (request, reply) => {
+  app.post("/v1/orders/:orderId/cancel", {
+    preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(checkoutRateLimit)],
+    attachValidation: true,
+    schema: { querystring: publicBrandQueryJsonSchema }
+  }, async (request, reply) => {
     const { orderId } = orderIdParamsSchema.parse(request.params);
     const input = cancelOrderRequestSchema.parse(request.body);
+    const brandId = parsePublicBrandId(request, reply);
+    if (!brandId) return;
     const userId = await resolveAuthenticatedUserId({
       request,
       reply,
@@ -3775,7 +3821,7 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
       baseUrl: ordersBaseUrl,
       serviceLabel: "Orders",
       method: "POST",
-      path: `/v1/orders/${orderId}/cancel`,
+      path: `/v1/orders/${orderId}/cancel?brandId=${encodeURIComponent(brandId)}`,
       body: input,
       additionalHeaders: {
         "x-gateway-token": gatewayInternalApiToken,
@@ -6387,7 +6433,30 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
     });
   });
 
-  app.put("/v1/devices/push-token", { preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(pushTokenRateLimit)] }, async (request, reply) => {
+  app.put("/v1/devices/push-token", {
+    preHandler: [enforceProtectedPreAuthRateLimit, requireCustomerAuth, app.rateLimit(pushTokenRateLimit)],
+    schema: {
+      body: {
+        type: "object",
+        required: ["brandId", "deviceId", "platform", "expoPushToken"],
+        additionalProperties: false,
+        properties: {
+          brandId: { type: "string", minLength: 1, maxLength: 160 },
+          deviceId: { type: "string", minLength: 1 },
+          platform: { type: "string", enum: ["ios", "android"] },
+          expoPushToken: { type: "string", pattern: "^ExponentPushToken\\[" }
+        }
+      },
+      response: {
+        200: {
+          type: "object",
+          required: ["success"],
+          additionalProperties: false,
+          properties: { success: { type: "boolean", const: true } }
+        }
+      }
+    }
+  }, async (request, reply) => {
     const input = pushTokenUpsertSchema.parse(request.body);
 
     return proxyUpstream({

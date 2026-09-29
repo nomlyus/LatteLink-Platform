@@ -78,6 +78,7 @@ const loyaltyLedgerEntrySchema = z.object({
   createdAt: z.string().datetime()
 });
 const pushTokenUpsertSchema = z.object({
+  brandId: z.string().trim().min(1).max(160),
   deviceId: z.string().min(1),
   platform: z.enum(["ios", "android"]),
   expoPushToken: z.string().startsWith("ExponentPushToken[")
@@ -95,7 +96,7 @@ const activeOrderStatusSchema = orderStatusSchema.exclude([
   "PARTIALLY_REFUNDED",
   "PENDING_PAYMENT"
 ]);
-export const orderHistoryQueryKey = ["account", "orders"] as const;
+export const orderHistoryQueryKey = (brandId: string) => ["account", "orders", brandId] as const;
 
 export type OrderHistoryEntry = z.output<typeof orderSchema>;
 export type LoyaltyBalance = z.output<typeof loyaltyBalanceSchema>;
@@ -151,9 +152,11 @@ export function mergeOrderIntoHistory(
 }
 
 export function useOrderHistoryQuery(enabled = true) {
+  const { brandId, isReady } = useLocationContext();
+  const queryKey = orderHistoryQueryKey(brandId);
   return useQuery({
-    queryKey: orderHistoryQueryKey,
-    enabled,
+    queryKey,
+    enabled: enabled && isReady && Boolean(brandId),
     queryFn: async (): Promise<OrderHistoryEntry[]> =>
       normalizeOrderHistory(orderListSchema.parse(await apiClient.listOrders()))
   });
@@ -161,17 +164,21 @@ export function useOrderHistoryQuery(enabled = true) {
 
 export function useCancelOrderMutation() {
   const queryClient = useQueryClient();
+  const { brandId, isReady } = useLocationContext();
+  const queryKey = orderHistoryQueryKey(brandId);
 
   return useMutation({
-    mutationFn: async (input: CancelOrderInput) =>
-      orderSchema.parse(await apiClient.cancelOrder(input.orderId, { reason: input.reason })),
+    mutationFn: async (input: CancelOrderInput) => {
+      if (!isReady || !brandId) throw new Error("A configured brand is required to update an order.");
+      return orderSchema.parse(await apiClient.cancelOrder(input.orderId, { reason: input.reason }));
+    },
     onSuccess: async (order) => {
-      queryClient.setQueryData<OrderHistoryEntry[] | undefined>(orderHistoryQueryKey, (currentOrders) =>
+      queryClient.setQueryData<OrderHistoryEntry[] | undefined>(queryKey, (currentOrders) =>
         mergeOrderIntoHistory(currentOrders, order)
       );
 
       await Promise.allSettled([
-        queryClient.invalidateQueries({ queryKey: orderHistoryQueryKey }),
+        queryClient.invalidateQueries({ queryKey }),
         queryClient.invalidateQueries({ queryKey: ["account", "loyalty", "balance"] }),
         queryClient.invalidateQueries({ queryKey: ["account", "loyalty", "ledger"] })
       ]);

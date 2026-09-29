@@ -219,8 +219,13 @@ async function streamOrders(params: {
 }) {
   let response: Response;
 
+  const brandId = MOBILE_API_ENVIRONMENT.brandId;
+  if (!brandId) {
+    throw new Error("A configured public brand is required for customer order updates.");
+  }
+
   try {
-    response = await fetch(resolveConfiguredApiUrl(API_BASE_URL, "/orders/stream"), {
+    response = await fetch(resolveConfiguredApiUrl(API_BASE_URL, `/orders/stream?brandId=${encodeURIComponent(brandId)}`), {
       method: "GET",
       headers: {
         Accept: "text/event-stream",

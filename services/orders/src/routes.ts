@@ -124,6 +124,18 @@ const discountCodeIdParamsSchema = z.object({
 const locationQuerySchema = z.object({
   locationId: z.string().min(1)
 });
+const customerBrandQuerySchema = mobileBrandBootstrapRequestSchema;
+
+function parseCustomerBrandId(request: FastifyRequest, reply: FastifyReply) {
+  const parsed = customerBrandQuerySchema.safeParse(request.query);
+  if (parsed.success) return parsed.data.brandId;
+  reply.status(400).send(serviceErrorSchema.parse({
+    code: "INVALID_PUBLIC_BRAND_REQUEST",
+    message: "A valid brandId query parameter is required.",
+    requestId: request.id
+  }));
+  return undefined;
+}
 
 const discountRedemptionsQuerySchema = z.object({
   locationId: z.string().min(1),
@@ -763,7 +775,7 @@ export async function registerRoutes(app: FastifyInstance) {
         return sendServiceError(reply, request, result.error);
       }
 
-      await repository.saveQuote(result.quote);
+      await repository.saveQuote(result.quote, parsedBrand.data.brandId);
       return result.quote;
     }
   );
@@ -1029,11 +1041,16 @@ export async function registerRoutes(app: FastifyInstance) {
       if (requestUserContext.error) {
         return sendServiceError(reply, request, requestUserContext.error);
       }
+      const brandId = requestUserContext.userId && !operatorLocationId
+        ? parseCustomerBrandId(request, reply)
+        : undefined;
+      if (requestUserContext.userId && !operatorLocationId && !brandId) return;
 
       const result = await listOrdersForRead({
         requestId: request.id,
         requestUserId: requestUserContext.userId,
         locationId: operatorLocationId,
+        brandId,
         deps: getServiceDeps(request)
       });
 
@@ -1061,10 +1078,15 @@ export async function registerRoutes(app: FastifyInstance) {
       if (requestUserContext.error) {
         return sendServiceError(reply, request, requestUserContext.error);
       }
+      const brandId = requestUserContext.userId && !operatorLocationId
+        ? parseCustomerBrandId(request, reply)
+        : undefined;
+      if (requestUserContext.userId && !operatorLocationId && !brandId) return;
       const result = await getOrderForRead({
         orderId,
         locationId: operatorLocationId,
         requestUserId: requestUserContext.userId,
+        brandId,
         requestId: request.id,
         deps: getServiceDeps(request)
       });
@@ -1098,6 +1120,10 @@ export async function registerRoutes(app: FastifyInstance) {
         ? parsedOperatorHeaders.data["x-operator-location-id"]
         : undefined;
       const requestUserContext = parseRequestUserContext(request);
+      const brandId = cancelSource === "customer"
+        ? parseCustomerBrandId(request, reply)
+        : undefined;
+      if (cancelSource === "customer" && !brandId) return;
       const result = await cancelOrder({
         orderId,
         input,
@@ -1105,6 +1131,7 @@ export async function registerRoutes(app: FastifyInstance) {
         locationId: operatorLocationId,
         requestId: request.id,
         requestUserContext,
+        brandId,
         deps: getServiceDeps(request)
       });
 

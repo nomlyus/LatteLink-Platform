@@ -325,6 +325,7 @@ export interface InternalAdminSessionTable {
 export interface NotificationsPushTokenTable {
   user_id: string;
   device_id: string;
+  brand_id: string | null;
   platform: "ios" | "android";
   expo_push_token: string;
   created_at: Generated<string>;
@@ -344,6 +345,7 @@ export interface NotificationsOutboxTable {
   id: string;
   user_id: string;
   device_id: string;
+  brand_id: Generated<string | null>;
   platform: "ios" | "android";
   expo_push_token: string;
   payload_json: unknown;

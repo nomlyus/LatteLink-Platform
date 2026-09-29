@@ -1787,12 +1787,15 @@ export async function listOrdersForRead(params: {
   requestId: string;
   requestUserId?: string;
   locationId?: string;
+  brandId?: string;
   deps: OrderServiceDeps;
 }): Promise<{ orders: Order[] }> {
   const orders = params.locationId
     ? await params.deps.repository.listOrdersByLocation(params.locationId)
     : params.requestUserId
-      ? await params.deps.repository.listOrdersByUser(params.requestUserId)
+      ? params.brandId
+        ? await params.deps.repository.listOrdersByUserAndBrand(params.requestUserId, params.brandId)
+        : await params.deps.repository.listOrdersByUser(params.requestUserId)
       : await params.deps.repository.listOrders();
 
   const reconciledOrders = await Promise.all(
@@ -1819,6 +1822,7 @@ export async function getOrderForRead(params: {
   orderId: string;
   locationId?: string;
   requestUserId?: string;
+  brandId?: string;
   requestId: string;
   deps: OrderServiceDeps;
 }): Promise<{ order: Order } | { error: ServiceError }> {
@@ -1838,7 +1842,10 @@ export async function getOrderForRead(params: {
 
   if (params.requestUserId) {
     const orderUserId = await params.deps.repository.getOrderUserId(params.orderId);
-    if (orderUserId !== params.requestUserId) {
+    const orderBrandId = params.brandId
+      ? await params.deps.repository.getOrderBrandId(params.orderId)
+      : undefined;
+    if (orderUserId !== params.requestUserId || (params.brandId && orderBrandId !== params.brandId)) {
       return {
         error: buildOrderNotFoundError(params.orderId)
       };
@@ -1865,11 +1872,12 @@ export async function cancelOrder(params: {
   locationId?: string;
   requestId: string;
   requestUserContext?: RequestUserContext;
+  brandId?: string;
   operatorRole?: "owner" | "manager" | "store";
   operation?: OperatorOrderOperation;
   deps: OrderServiceDeps;
 }): Promise<{ order: Order } | { error: ServiceError }> {
-  const { orderId, input, cancelSource, locationId, requestId, requestUserContext, operatorRole, operation = "cancel", deps } = params;
+  const { orderId, input, cancelSource, locationId, requestId, requestUserContext, brandId, operatorRole, operation = "cancel", deps } = params;
   const isCompletedRefund = operation === "refund";
   if (isCompletedRefund && operatorRole !== "owner" && operatorRole !== "manager") {
     return { error: buildServiceError({ statusCode: 403, code: "REFUND_AUTHORIZATION_REQUIRED", message: "Only owners and managers can refund completed orders", details: { orderId } }) };
@@ -1893,6 +1901,10 @@ export async function cancelOrder(params: {
   }
 
   if (cancelSource === "customer") {
+    const orderBrandId = brandId ? await deps.repository.getOrderBrandId(orderId) : undefined;
+    if (brandId && orderBrandId !== brandId) {
+      return { error: buildOrderNotFoundError(orderId) };
+    }
     const ownershipError = await verifyCustomerOrderOwnership({
       orderId,
       requestUserContext,

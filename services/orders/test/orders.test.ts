@@ -29,6 +29,7 @@ const sampleQuotePayload = {
   pointsToRedeem: 125
 };
 const publicTestBrandId = "test-public-runtime-brand";
+const secondTestBrandId = "test-second-public-runtime-brand";
 const defaultTestUserId = "123e4567-e89b-12d3-a456-426614174019";
 
 function customerHeaders(userId = defaultTestUserId) {
@@ -48,13 +49,15 @@ async function createQuotedOrder(
   app: Awaited<ReturnType<typeof buildApp>>,
   options: {
     userId?: string;
+    brandId?: string;
     payload?: typeof sampleQuotePayload;
   } = {}
 ) {
   const payload = options.payload ?? sampleQuotePayload;
+  const brandId = options.brandId ?? publicTestBrandId;
   const quoteResponse = await app.inject({
     method: "POST",
-    url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
+    url: `/v1/orders/quote?brandId=${brandId}`,
     payload
   });
   expect(quoteResponse.statusCode).toBe(200);
@@ -146,7 +149,8 @@ describe("orders service", () => {
 
       const parsedUrl = new URL(url);
       if (parsedUrl.pathname === "/v1/catalog/internal/public-location-access" && method === "GET") {
-        const allowed = parsedUrl.searchParams.get("brandId") === publicTestBrandId && parsedUrl.searchParams.get("locationId") === "flagship-01";
+        const allowedBrandId = parsedUrl.searchParams.get("brandId");
+        const allowed = (allowedBrandId === publicTestBrandId || allowedBrandId === secondTestBrandId) && parsedUrl.searchParams.get("locationId") === "flagship-01";
         return allowed
           ? new Response(null, { status: 204 })
           : paymentsResponse({ code: "PUBLIC_LOCATION_NOT_AVAILABLE", message: "Location not available." }, 404);
@@ -156,7 +160,7 @@ describe("orders service", () => {
         const publicBrandId = parsedUrl.searchParams.get("brandId");
         // Quote requests carry brand context. The test-only legacy order fixture predates
         // branded checkout and is retired in non-test runtimes.
-        if (publicBrandId !== null) expect(publicBrandId).toBe(publicTestBrandId);
+        if (publicBrandId !== null) expect([publicTestBrandId, secondTestBrandId]).toContain(publicBrandId);
         return paymentsResponse({
           locationId: "flagship-01",
           hoursText: "Daily · 7:00 AM - 6:00 PM",
@@ -485,14 +489,14 @@ describe("orders service", () => {
 
     const getResponse = await app.inject({
       method: "GET",
-      url: `/v1/orders/${order.id}`
+      url: `/v1/orders/${order.id}?brandId=${publicTestBrandId}`
     });
     expect(getResponse.statusCode).toBe(200);
     expect(orderSchema.parse(getResponse.json()).id).toBe(order.id);
 
     const listResponse = await app.inject({
       method: "GET",
-      url: "/v1/orders"
+      url: `/v1/orders?brandId=${publicTestBrandId}`
     });
     expect(listResponse.statusCode).toBe(200);
     const listed = listResponse.json() as Array<{ id: string }>;
@@ -548,7 +552,7 @@ describe("orders service", () => {
     expect(checkout.status).toBe("OPEN");
     expect(checkout.orderId).toBeUndefined();
 
-    const beforePayment = await app.inject({ method: "GET", url: "/v1/orders", headers: customerHeaders(userId) });
+    const beforePayment = await app.inject({ method: "GET", url: `/v1/orders?brandId=${publicTestBrandId}`, headers: customerHeaders(userId) });
     expect(beforePayment.json()).toEqual([]);
 
     const confirmationResponse = await app.inject({
@@ -602,7 +606,7 @@ describe("orders service", () => {
     expect(conflictingConfirmation.statusCode).toBe(409);
     expect(conflictingConfirmation.json()).toMatchObject({ code: "CHECKOUT_PAYMENT_CONFLICT" });
 
-    const afterPayment = await app.inject({ method: "GET", url: "/v1/orders", headers: customerHeaders(userId) });
+    const afterPayment = await app.inject({ method: "GET", url: `/v1/orders?brandId=${publicTestBrandId}`, headers: customerHeaders(userId) });
     expect(orderSchema.array().parse(afterPayment.json())).toHaveLength(1);
     await app.close();
   });
@@ -632,7 +636,7 @@ describe("orders service", () => {
 
     expect(expirationResponse.statusCode).toBe(200);
     expect(expirationResponse.json()).toEqual({ expired: true });
-    const ordersResponse = await app.inject({ method: "GET", url: "/v1/orders", headers: customerHeaders(userId) });
+    const ordersResponse = await app.inject({ method: "GET", url: `/v1/orders?brandId=${publicTestBrandId}`, headers: customerHeaders(userId) });
     expect(ordersResponse.json()).toEqual([]);
     await app.close();
   });
@@ -793,7 +797,7 @@ describe("orders service", () => {
 
     const firstOrderRead = await app.inject({
       method: "GET",
-      url: `/v1/orders/${firstOrder.id}`
+      url: `/v1/orders/${firstOrder.id}?brandId=${publicTestBrandId}`
     });
     expect(firstOrderRead.statusCode).toBe(200);
     expect(orderSchema.parse(firstOrderRead.json()).status).toBe("CANCELED");
@@ -819,14 +823,14 @@ describe("orders service", () => {
 
     const firstUserListResponse = await app.inject({
       method: "GET",
-      url: "/v1/orders",
+      url: `/v1/orders?brandId=${publicTestBrandId}`,
       headers: {
         "x-user-id": firstUserId
       }
     });
     const secondUserListResponse = await app.inject({
       method: "GET",
-      url: "/v1/orders",
+      url: `/v1/orders?brandId=${publicTestBrandId}`,
       headers: {
         "x-user-id": secondUserId
       }
@@ -848,7 +852,7 @@ describe("orders service", () => {
 
     const ownerReadResponse = await app.inject({
       method: "GET",
-      url: `/v1/orders/${order.id}`,
+      url: `/v1/orders/${order.id}?brandId=${publicTestBrandId}`,
       headers: customerHeaders(ownerUserId)
     });
     expect(ownerReadResponse.statusCode).toBe(200);
@@ -856,7 +860,7 @@ describe("orders service", () => {
 
     const otherReadResponse = await app.inject({
       method: "GET",
-      url: `/v1/orders/${order.id}`,
+      url: `/v1/orders/${order.id}?brandId=${publicTestBrandId}`,
       headers: customerHeaders(otherUserId)
     });
     expect(otherReadResponse.statusCode).toBe(404);
@@ -866,7 +870,7 @@ describe("orders service", () => {
 
     const otherCancelResponse = await app.inject({
       method: "POST",
-      url: `/v1/orders/${order.id}/cancel`,
+      url: `/v1/orders/${order.id}/cancel?brandId=${publicTestBrandId}`,
       headers: customerHeaders(otherUserId),
       payload: { reason: "not mine" }
     });
@@ -877,7 +881,7 @@ describe("orders service", () => {
 
     const ownerCancelResponse = await app.inject({
       method: "POST",
-      url: `/v1/orders/${order.id}/cancel`,
+      url: `/v1/orders/${order.id}/cancel?brandId=${publicTestBrandId}`,
       headers: customerHeaders(ownerUserId),
       payload: { reason: "changed mind" }
     });
@@ -886,6 +890,48 @@ describe("orders service", () => {
       id: order.id,
       status: "CANCELED"
     });
+
+    await app.close();
+  });
+
+  it("scopes customer history and direct order actions to the requested brand", async () => {
+    const app = await buildApp();
+    const userId = "123e4567-e89b-12d3-a456-426614174023";
+    const brandAOrder = await createQuotedOrder(app, { userId, brandId: publicTestBrandId });
+    const brandBOrder = await createQuotedOrder(app, { userId, brandId: secondTestBrandId });
+
+    const brandAHistory = await app.inject({
+      method: "GET",
+      url: `/v1/orders?brandId=${publicTestBrandId}`,
+      headers: customerHeaders(userId)
+    });
+    expect(brandAHistory.statusCode).toBe(200);
+    expect(brandAHistory.json()).toEqual([expect.objectContaining({ id: brandAOrder.order.id })]);
+
+    const brandBHistory = await app.inject({
+      method: "GET",
+      url: `/v1/orders?brandId=${secondTestBrandId}`,
+      headers: customerHeaders(userId)
+    });
+    expect(brandBHistory.statusCode).toBe(200);
+    expect(brandBHistory.json()).toEqual([expect.objectContaining({ id: brandBOrder.order.id })]);
+
+    const crossBrandRead = await app.inject({
+      method: "GET",
+      url: `/v1/orders/${brandBOrder.order.id}?brandId=${publicTestBrandId}`,
+      headers: customerHeaders(userId)
+    });
+    expect(crossBrandRead.statusCode).toBe(404);
+    expect(crossBrandRead.json()).toMatchObject({ code: "ORDER_NOT_FOUND" });
+
+    const crossBrandCancel = await app.inject({
+      method: "POST",
+      url: `/v1/orders/${brandBOrder.order.id}/cancel?brandId=${publicTestBrandId}`,
+      headers: customerHeaders(userId),
+      payload: { reason: "wrong branded app" }
+    });
+    expect(crossBrandCancel.statusCode).toBe(404);
+    expect(crossBrandCancel.json()).toMatchObject({ code: "ORDER_NOT_FOUND" });
 
     await app.close();
   });
@@ -902,7 +948,7 @@ describe("orders service", () => {
 
     const listResponse = await app.inject({
       method: "GET",
-      url: "/v1/orders"
+      url: `/v1/orders?brandId=${publicTestBrandId}`
     });
 
     expect(listResponse.statusCode).toBe(200);
@@ -1121,7 +1167,7 @@ describe("orders service", () => {
 
     const cancelResponse = await app.inject({
       method: "POST",
-      url: `/v1/orders/${order.id}/cancel`,
+      url: `/v1/orders/${order.id}/cancel?brandId=${publicTestBrandId}`,
       headers: {
         ...customerHeaders(),
         "x-order-cancel-source": "staff"
@@ -1199,7 +1245,7 @@ describe("orders service", () => {
 
     const cancelResponse = await app.inject({
       method: "POST",
-      url: `/v1/orders/${order.id}/cancel`,
+      url: `/v1/orders/${order.id}/cancel?brandId=${publicTestBrandId}`,
       headers: {
         "x-order-cancel-source": "staff"
       },
@@ -1252,14 +1298,14 @@ describe("orders service", () => {
     vi.setSystemTime(new Date("2026-03-10T00:04:59.000Z"));
     const beforePrepResponse = await app.inject({
       method: "GET",
-      url: `/v1/orders/${createdOrder.id}`
+      url: `/v1/orders/${createdOrder.id}?brandId=${publicTestBrandId}`
     });
     expect(orderSchema.parse(beforePrepResponse.json()).status).toBe("PAID");
 
     vi.setSystemTime(new Date("2026-03-10T00:05:00.000Z"));
     const inPrepResponse = await app.inject({
       method: "GET",
-      url: `/v1/orders/${createdOrder.id}`
+      url: `/v1/orders/${createdOrder.id}?brandId=${publicTestBrandId}`
     });
     const inPrepOrder = orderSchema.parse(inPrepResponse.json());
     expect(inPrepOrder.status).toBe("IN_PREP");
@@ -1272,7 +1318,7 @@ describe("orders service", () => {
     vi.setSystemTime(new Date("2026-03-10T00:10:00.000Z"));
     const readyListResponse = await app.inject({
       method: "GET",
-      url: "/v1/orders"
+      url: `/v1/orders?brandId=${publicTestBrandId}`
     });
     const readyList = orderSchema.array().parse(readyListResponse.json());
     const readyOrder = readyList.find((entry) => entry.id === createdOrder.id);
@@ -1290,7 +1336,7 @@ describe("orders service", () => {
     vi.setSystemTime(new Date("2026-03-10T00:15:00.000Z"));
     const completedResponse = await app.inject({
       method: "GET",
-      url: `/v1/orders/${createdOrder.id}`
+      url: `/v1/orders/${createdOrder.id}?brandId=${publicTestBrandId}`
     });
     const completedOrder = orderSchema.parse(completedResponse.json());
     expect(completedOrder.status).toBe("COMPLETED");
@@ -1304,7 +1350,7 @@ describe("orders service", () => {
 
     const repeatedCompletedResponse = await app.inject({
       method: "GET",
-      url: `/v1/orders/${createdOrder.id}`
+      url: `/v1/orders/${createdOrder.id}?brandId=${publicTestBrandId}`
     });
     const repeatedCompletedOrder = orderSchema.parse(repeatedCompletedResponse.json());
     expect(repeatedCompletedOrder.timeline).toHaveLength(completedOrder.timeline.length);
@@ -1346,7 +1392,7 @@ describe("orders service", () => {
     vi.setSystemTime(new Date("2026-03-10T00:30:00.000Z"));
     const getResponse = await app.inject({
       method: "GET",
-      url: `/v1/orders/${createdOrder.id}`
+      url: `/v1/orders/${createdOrder.id}?brandId=${publicTestBrandId}`
     });
     const orderAfterRead = orderSchema.parse(getResponse.json());
     expect(orderAfterRead.status).toBe("PAID");
@@ -1354,7 +1400,7 @@ describe("orders service", () => {
 
     const listResponse = await app.inject({
       method: "GET",
-      url: "/v1/orders"
+      url: `/v1/orders?brandId=${publicTestBrandId}`
     });
     const orders = orderSchema.array().parse(listResponse.json());
     const listedOrder = orders.find((entry) => entry.id === createdOrder.id);
@@ -1398,7 +1444,7 @@ describe("orders service", () => {
 
     const cancelResponse = await app.inject({
       method: "POST",
-      url: `/v1/orders/${order.id}/cancel`,
+      url: `/v1/orders/${order.id}/cancel?brandId=${publicTestBrandId}`,
       headers: customerHeaders(),
       payload: { reason: "changed mind" }
     });
@@ -1407,7 +1453,7 @@ describe("orders service", () => {
 
     const repeatedCancel = await app.inject({
       method: "POST",
-      url: `/v1/orders/${order.id}/cancel`,
+      url: `/v1/orders/${order.id}/cancel?brandId=${publicTestBrandId}`,
       headers: customerHeaders(),
       payload: { reason: "still changed mind" }
     });
@@ -1446,7 +1492,7 @@ describe("orders service", () => {
 
     const successfulCancel = await app.inject({
       method: "POST",
-      url: `/v1/orders/${paidOrderCandidate.id}/cancel`,
+      url: `/v1/orders/${paidOrderCandidate.id}/cancel?brandId=${publicTestBrandId}`,
       headers: {
         ...customerHeaders(),
         "x-order-cancel-source": "staff"
@@ -1506,7 +1552,7 @@ describe("orders service", () => {
 
     const rejectedCancel = await app.inject({
       method: "POST",
-      url: `/v1/orders/${rejectedOrder.id}/cancel`,
+      url: `/v1/orders/${rejectedOrder.id}/cancel?brandId=${publicTestBrandId}`,
       headers: {
         ...customerHeaders(),
         "x-order-cancel-source": "staff"
@@ -1553,7 +1599,7 @@ describe("orders service", () => {
 
     const firstCancel = await app.inject({
       method: "POST",
-      url: `/v1/orders/${createdOrder.id}/cancel`,
+      url: `/v1/orders/${createdOrder.id}/cancel?brandId=${publicTestBrandId}`,
       headers: {
         ...customerHeaders(),
         "x-order-cancel-source": "staff"
@@ -1564,7 +1610,7 @@ describe("orders service", () => {
 
     const repeatedCancel = await app.inject({
       method: "POST",
-      url: `/v1/orders/${createdOrder.id}/cancel`,
+      url: `/v1/orders/${createdOrder.id}/cancel?brandId=${publicTestBrandId}`,
       headers: {
         ...customerHeaders(),
         "x-order-cancel-source": "staff"
@@ -1695,7 +1741,7 @@ describe("orders service", () => {
 
     const finalOrder = await app.inject({
       method: "GET",
-      url: `/v1/orders/${order.id}`
+      url: `/v1/orders/${order.id}?brandId=${publicTestBrandId}`
     });
     expect(finalOrder.statusCode).toBe(200);
     expect(orderSchema.parse(finalOrder.json()).status).toBe("CANCELED");
@@ -1778,7 +1824,7 @@ describe("orders service", () => {
 
     const finalOrder = await app.inject({
       method: "GET",
-      url: `/v1/orders/${order.id}`
+      url: `/v1/orders/${order.id}?brandId=${publicTestBrandId}`
     });
     expect(finalOrder.statusCode).toBe(200);
     expect(orderSchema.parse(finalOrder.json()).status).toBe("PAID");
@@ -1853,7 +1899,7 @@ describe("orders service", () => {
 
     const finalOrder = await app.inject({
       method: "GET",
-      url: `/v1/orders/${order.id}`
+      url: `/v1/orders/${order.id}?brandId=${publicTestBrandId}`
     });
     expect(finalOrder.statusCode).toBe(200);
     expect(orderSchema.parse(finalOrder.json()).status).toBe("REFUNDED");
@@ -2026,7 +2072,7 @@ describe("orders service", () => {
     expect(statusResponse.statusCode).toBe(404);
     expect(statusResponse.json()).toMatchObject({ code: "ORDER_NOT_FOUND" });
 
-    const readResponse = await app.inject({ method: "GET", url: `/v1/orders/${order.id}` });
+    const readResponse = await app.inject({ method: "GET", url: `/v1/orders/${order.id}?brandId=${publicTestBrandId}` });
     expect(orderSchema.parse(readResponse.json())).toMatchObject({ id: order.id, locationId: "flagship-01", status: "PENDING_PAYMENT" });
     await app.close();
   });
@@ -2219,7 +2265,7 @@ describe("orders service", () => {
 
     const cancelResponse = await app.inject({
       method: "POST",
-      url: `/v1/orders/${order.id}/cancel`,
+      url: `/v1/orders/${order.id}/cancel?brandId=${publicTestBrandId}`,
       headers: {
         "x-order-cancel-source": "staff"
       },
@@ -2249,7 +2295,7 @@ describe("orders service", () => {
 
     const cancelResponse = await app.inject({
       method: "POST",
-      url: `/v1/orders/${order.id}/cancel`,
+      url: `/v1/orders/${order.id}/cancel?brandId=${publicTestBrandId}`,
       headers: {
         "x-order-cancel-source": "staff"
       },
@@ -2301,13 +2347,13 @@ describe("orders service", () => {
     try {
       const firstRead = await app.inject({
         method: "GET",
-        url: "/v1/orders"
+        url: `/v1/orders?brandId=${publicTestBrandId}`
       });
       expect(firstRead.statusCode).toBe(200);
 
       const secondRead = await app.inject({
         method: "GET",
-        url: "/v1/orders"
+        url: `/v1/orders?brandId=${publicTestBrandId}`
       });
       expect(secondRead.statusCode).toBe(429);
       expect(secondRead.json()).toMatchObject({ statusCode: 429 });

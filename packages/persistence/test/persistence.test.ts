@@ -38,6 +38,9 @@ import * as migration0047 from "../src/migrations/0047_backfill_refund_allocatio
 import * as migration0052 from "../src/migrations/0052_backfill_order_refund_statuses.js";
 import * as migration0053 from "../src/migrations/0053_catalog_relational_model.js";
 import * as migration0054 from "../src/migrations/0054_catalog_modifier_metadata.js";
+import * as migration0055 from "../src/migrations/0055_orders_relational_location.js";
+import * as migration0056 from "../src/migrations/0056_drop_orders_json_location_index.js";
+import * as migration0057 from "../src/migrations/0057_notifications_brand_scoped_tokens.js";
 import { resolveMigrationFolderPath } from "../src/migrate.js";
 
 describe("persistence", () => {
@@ -168,7 +171,10 @@ describe("persistence", () => {
       "0047_backfill_refund_allocations": migration0047,
       "0052_backfill_order_refund_statuses": migration0052,
       "0053_catalog_relational_model": migration0053,
-      "0054_catalog_modifier_metadata": migration0054
+      "0054_catalog_modifier_metadata": migration0054,
+      "0055_orders_relational_location": migration0055,
+      "0056_drop_orders_json_location_index": migration0056,
+      "0057_notifications_brand_scoped_tokens": migration0057
     };
 
     expect(basename(resolveMigrationFolderPath())).toBe("migrations");
@@ -201,7 +207,10 @@ describe("persistence", () => {
       "0047_backfill_refund_allocations",
       "0052_backfill_order_refund_statuses",
       "0053_catalog_relational_model",
-      "0054_catalog_modifier_metadata"
+      "0054_catalog_modifier_metadata",
+      "0055_orders_relational_location",
+      "0056_drop_orders_json_location_index",
+      "0057_notifications_brand_scoped_tokens"
     ]);
 
     for (const migration of Object.values(migrations)) {

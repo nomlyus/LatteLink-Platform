@@ -311,6 +311,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     fetchMock.mockImplementation(async (input, init) => {
       const url = typeof input === "string" ? input : input.url;
+      const requestPath = new URL(url).pathname;
       const method = init?.method ?? "GET";
       const authHeader = init?.headers ? new Headers(init.headers as HeadersInit).get("authorization") : null;
 
@@ -1212,7 +1213,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
-      if (url.endsWith("/v1/orders") && method === "POST") {
+      if (url.split("?")[0]?.endsWith("/v1/orders") && method === "POST") {
         const body = JSON.parse(String(init?.body ?? "{}")) as { quoteHash: string };
         return new Response(
           JSON.stringify({
@@ -1233,7 +1234,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
-      if (url.endsWith("/v1/orders") && method === "GET") {
+      if (url.split("?")[0]?.endsWith("/v1/orders") && method === "GET") {
         if (queuedOrderListPayloads.length > 0) {
           return new Response(JSON.stringify(queuedOrderListPayloads.shift()), {
             status: 200,
@@ -1363,7 +1364,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
-      const expireCheckoutMatch = url.match(/\/v1\/orders\/internal\/checkouts\/([0-9a-f-]{36})\/expire$/);
+      const expireCheckoutMatch = requestPath.match(/\/v1\/orders\/internal\/checkouts\/([0-9a-f-]{36})\/expire$/);
       if (expireCheckoutMatch && method === "POST") {
         return new Response(JSON.stringify({ expired: true }), {
           status: 200,
@@ -1371,7 +1372,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         });
       }
 
-      const supportCancelMatch = url.match(/\/v1\/orders\/internal\/support\/orders\/([0-9a-f-]{36})\/cancel$/);
+      const supportCancelMatch = requestPath.match(/\/v1\/orders\/internal\/support\/orders\/([0-9a-f-]{36})\/cancel$/);
       if (supportCancelMatch && method === "POST") {
         return new Response(JSON.stringify(buildOrderPayload(supportCancelMatch[1], "CANCELED")), {
           status: 200,
@@ -1389,7 +1390,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         });
       }
 
-      const getOrderMatch = url.match(/\/v1\/orders\/([0-9a-f-]{36})$/);
+      const getOrderMatch = requestPath.match(/\/v1\/orders\/([0-9a-f-]{36})$/);
       if (getOrderMatch && method === "GET") {
         const orderId = getOrderMatch[1];
         const headers = new Headers((init?.headers ?? {}) as HeadersInit);
@@ -1427,7 +1428,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
-      const updateOrderStatusMatch = url.match(/\/v1\/orders\/([0-9a-f-]{36})\/status$/);
+      const updateOrderStatusMatch = requestPath.match(/\/v1\/orders\/([0-9a-f-]{36})\/status$/);
       if (updateOrderStatusMatch && method === "POST") {
         const orderId = updateOrderStatusMatch[1];
         const body = JSON.parse(String(init?.body ?? "{}")) as { status?: string; note?: string };
@@ -1461,7 +1462,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
-      const cancelOrderMatch = url.match(/\/v1\/orders\/([0-9a-f-]{36})\/cancel$/);
+      const cancelOrderMatch = requestPath.match(/\/v1\/orders\/([0-9a-f-]{36})\/cancel$/);
       if (cancelOrderMatch && method === "POST") {
         const orderId = cancelOrderMatch[1];
         const headers = new Headers((init?.headers ?? {}) as HeadersInit);
@@ -3355,7 +3356,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const getResponse = await app.inject({
       method: "GET",
-      url: `/v1/orders/${orderId}`,
+      url: `/v1/orders/${orderId}?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
     expect(getResponse.statusCode).toBe(200);
@@ -3363,7 +3364,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const cancelResponse = await app.inject({
       method: "POST",
-      url: `/v1/orders/${orderId}/cancel`,
+      url: `/v1/orders/${orderId}/cancel?brandId=${publicTestBrandId}`,
       headers: authHeader,
       payload: { reason: "changed mind" }
     });
@@ -3378,7 +3379,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const response = await app.inject({
       method: "GET",
-      url: "/v1/orders",
+      url: `/v1/orders?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
 
@@ -3392,7 +3393,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const ordersCall = fetchMock.mock.calls.find(([input, init]) => {
       const url = typeof input === "string" ? input : input.url;
-      return url === "http://orders.internal/v1/orders" && (init?.method ?? "GET") === "GET";
+      return url === `http://orders.internal/v1/orders?brandId=${publicTestBrandId}` && (init?.method ?? "GET") === "GET";
     });
     expect(ordersCall).toBeDefined();
     if (ordersCall) {
@@ -3404,6 +3405,15 @@ let previousFreeClientDashboardDomain: string | undefined;
     await app.close();
   });
 
+  it("requires explicit brand context for customer order history", async () => {
+    const app = await buildApp();
+    const response = await app.inject({ method: "GET", url: "/v1/orders", headers: authHeader });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ code: "INVALID_PUBLIC_BRAND_REQUEST" });
+    expect(fetchMock.mock.calls.some(([input]) => String(input).startsWith("http://orders.internal/v1/orders"))).toBe(false);
+    await app.close();
+  });
+
   it("streams the initial order snapshot as text/event-stream", async () => {
     const app = await buildApp();
     const orderId = "123e4567-e89b-12d3-a456-426614174116";
@@ -3411,7 +3421,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const response = await app.inject({
       method: "GET",
-      url: `/v1/orders/${orderId}/stream`,
+      url: `/v1/orders/${orderId}/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
 
@@ -3422,7 +3432,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const streamOrderCall = fetchMock.mock.calls.find(([input, init]) => {
       const url = typeof input === "string" ? input : input.url;
-      return url === `http://orders.internal/v1/orders/${orderId}` && (init?.method ?? "GET") === "GET";
+      return url === `http://orders.internal/v1/orders/${orderId}?brandId=${publicTestBrandId}` && (init?.method ?? "GET") === "GET";
     });
     expect(streamOrderCall).toBeDefined();
     if (streamOrderCall) {
@@ -3443,7 +3453,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const response = await app.inject({
       method: "GET",
-      url: "/v1/orders/stream",
+      url: `/v1/orders/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
 
@@ -3466,7 +3476,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const firstStream = app.inject({
       method: "GET",
-      url: `/v1/orders/${firstOrderId}/stream`,
+      url: `/v1/orders/${firstOrderId}/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
     firstStream.catch(() => undefined);
@@ -3474,14 +3484,14 @@ let previousFreeClientDashboardDomain: string | undefined;
     await vi.waitFor(() => {
       const firstOrderFetch = fetchMock.mock.calls.some(([input, init]) => {
         const url = typeof input === "string" ? input : input.url;
-        return url === `http://orders.internal/v1/orders/${firstOrderId}` && (init?.method ?? "GET") === "GET";
+        return url === `http://orders.internal/v1/orders/${firstOrderId}?brandId=${publicTestBrandId}` && (init?.method ?? "GET") === "GET";
       });
       expect(firstOrderFetch).toBe(true);
     });
 
     const rejectedResponse = await app.inject({
       method: "GET",
-      url: `/v1/orders/${secondOrderId}/stream`,
+      url: `/v1/orders/${secondOrderId}/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
 
@@ -3503,14 +3513,14 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const firstResponse = await app.inject({
       method: "GET",
-      url: `/v1/orders/${firstOrderId}/stream`,
+      url: `/v1/orders/${firstOrderId}/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
     expect(firstResponse.statusCode).toBe(200);
 
     const secondResponse = await app.inject({
       method: "GET",
-      url: `/v1/orders/${secondOrderId}/stream`,
+      url: `/v1/orders/${secondOrderId}/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
     expect(secondResponse.statusCode).toBe(200);
@@ -3529,7 +3539,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const firstStream = app.inject({
       method: "GET",
-      url: `/v1/orders/${orderId}/stream`,
+      url: `/v1/orders/${orderId}/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
     firstStream.catch(() => undefined);
@@ -3537,7 +3547,7 @@ let previousFreeClientDashboardDomain: string | undefined;
     await vi.waitFor(() => {
       const firstOrderFetch = fetchMock.mock.calls.some(([input, init]) => {
         const url = typeof input === "string" ? input : input.url;
-        return url === `http://orders.internal/v1/orders/${orderId}` && (init?.method ?? "GET") === "GET";
+        return url === `http://orders.internal/v1/orders/${orderId}?brandId=${publicTestBrandId}` && (init?.method ?? "GET") === "GET";
       });
       expect(firstOrderFetch).toBe(true);
     });
@@ -3566,7 +3576,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const response = await app.inject({
       method: "GET",
-      url: "/v1/orders/stream",
+      url: `/v1/orders/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
 
@@ -3595,7 +3605,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const response = await app.inject({
       method: "GET",
-      url: "/v1/orders/stream",
+      url: `/v1/orders/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
 
@@ -3612,6 +3622,43 @@ let previousFreeClientDashboardDomain: string | undefined;
     await app.close();
   });
 
+  it("does not deliver another brand's same-user order event to a customer stream", async () => {
+    process.env.GATEWAY_ORDER_STREAM_POLL_MS = "5";
+    process.env.VALKEY_URL = "redis://valkey.test:6379";
+    failOrderListFetchWhenQueueEmpty = true;
+    const app = await buildApp();
+    const authorizedOrder = buildOrderPayload("123e4567-e89b-12d3-a456-426614174191", "PAID");
+    const otherBrandOrder = {
+      ...buildOrderPayload("123e4567-e89b-12d3-a456-426614174192", "READY"),
+      locationId: "brand-b-location"
+    };
+    queuedOrderListPayloads = [[authorizedOrder]];
+    eventBusMocks.subscribeToAllOrderEvents.mockImplementationOnce(async (handler) => {
+      setTimeout(() => {
+        handler({ userId: "123e4567-e89b-12d3-a456-426614174000", order: otherBrandOrder });
+        handler({ userId: "123e4567-e89b-12d3-a456-426614174000", order: {
+          ...authorizedOrder,
+          status: "READY",
+          timeline: [...authorizedOrder.timeline, { status: "READY", occurredAt: new Date().toISOString() }]
+        } });
+      }, 0);
+      return () => undefined;
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/v1/orders/stream?brandId=${publicTestBrandId}`,
+      headers: authHeader
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain(authorizedOrder.id);
+    expect(response.body).toContain('"type":"order_update"');
+    expect(response.body).not.toContain(otherBrandOrder.id);
+    expect(response.body).not.toContain("brand-b-location");
+    await app.close();
+  });
+
   it("keeps customer order list polling alive when event bus subscription fails", async () => {
     process.env.GATEWAY_ORDER_STREAM_POLL_MS = "5";
     process.env.VALKEY_URL = "redis://valkey.test:6379";
@@ -3624,7 +3671,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const response = await app.inject({
       method: "GET",
-      url: "/v1/orders/stream",
+      url: `/v1/orders/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
 
@@ -3647,7 +3694,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const response = await app.inject({
       method: "GET",
-      url: `/v1/orders/${orderId}/stream`,
+      url: `/v1/orders/${orderId}/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
 
@@ -3662,7 +3709,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const orderFetchCalls = fetchMock.mock.calls.filter(([input, init]) => {
       const url = typeof input === "string" ? input : input.url;
-      return url === `http://orders.internal/v1/orders/${orderId}` && (init?.method ?? "GET") === "GET";
+      return url === `http://orders.internal/v1/orders/${orderId}?brandId=${publicTestBrandId}` && (init?.method ?? "GET") === "GET";
     });
     expect(orderFetchCalls).toHaveLength(2);
 
@@ -3693,7 +3740,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const response = await app.inject({
       method: "GET",
-      url: `/v1/orders/${orderId}/stream`,
+      url: `/v1/orders/${orderId}/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
 
@@ -3709,7 +3756,7 @@ let previousFreeClientDashboardDomain: string | undefined;
     expect(dataEvents[2]).toContain(`"status":"COMPLETED"`);
     const orderFetchCalls = fetchMock.mock.calls.filter(([input, init]) => {
       const url = typeof input === "string" ? input : input.url;
-      return url === `http://orders.internal/v1/orders/${orderId}` && (init?.method ?? "GET") === "GET";
+      return url === `http://orders.internal/v1/orders/${orderId}?brandId=${publicTestBrandId}` && (init?.method ?? "GET") === "GET";
     });
     expect(orderFetchCalls).toHaveLength(1);
 
@@ -3726,7 +3773,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const response = await app.inject({
       method: "GET",
-      url: `/v1/orders/${orderId}/stream`,
+      url: `/v1/orders/${orderId}/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
 
@@ -3766,7 +3813,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const response = await app.inject({
       method: "GET",
-      url: `/v1/orders/${orderId}/stream`,
+      url: `/v1/orders/${orderId}/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
 
@@ -5492,6 +5539,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         "x-user-id": "123e4567-e89b-12d3-a456-426614174000"
       },
       payload: {
+        brandId: "test-brand",
         deviceId: "ios-device-1",
         platform: "ios",
         expoPushToken: "ExponentPushToken[abc123]"

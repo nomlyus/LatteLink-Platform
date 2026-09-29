@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { LoyaltyLedgerEntry } from "../src/account/data";
 import { isAbortedCheckoutOrder } from "../src/account/data";
+import { orderHistoryQueryKey } from "../src/account/data";
 import { findLoyaltyReversalEntriesForOrder, hasLoyaltyReversalActivity } from "../src/orders/history";
 
 vi.mock("../src/location/LocationProvider", () => ({
@@ -8,6 +9,13 @@ vi.mock("../src/location/LocationProvider", () => ({
 }));
 
 describe("order history visibility", () => {
+  it("keys customer history by brand rather than the selected location", () => {
+    expect(orderHistoryQueryKey("brand-a")).toEqual(["account", "orders", "brand-a"]);
+    expect(orderHistoryQueryKey("brand-a")).not.toContain("location-a1");
+    expect(orderHistoryQueryKey("brand-a")).not.toContain("location-a2");
+    expect(orderHistoryQueryKey("brand-b")).not.toEqual(orderHistoryQueryKey("brand-a"));
+  });
+
   it("treats canceled unpaid orders as aborted checkout attempts", () => {
     expect(
       isAbortedCheckoutOrder({

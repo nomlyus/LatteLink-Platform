@@ -1,13 +1,16 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { mergeOrderIntoHistory, normalizeOrderHistory, orderHistoryQueryKey, type OrderHistoryEntry } from "../account/data";
 import { apiClient } from "../api/client";
+import { useLocationContext } from "../location/LocationProvider";
 
 export function useOrdersRealtimeSync(isAuthenticated: boolean) {
   const queryClient = useQueryClient();
+  const { brandId, isReady } = useLocationContext();
+  const queryKey = useMemo(() => orderHistoryQueryKey(brandId), [brandId]);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!isAuthenticated || !isReady || !brandId) {
       return;
     }
 
@@ -15,13 +18,13 @@ export function useOrdersRealtimeSync(isAuthenticated: boolean) {
       (event) => {
         if (event.type === "snapshot") {
           queryClient.setQueryData<OrderHistoryEntry[] | undefined>(
-            orderHistoryQueryKey,
+            queryKey,
             normalizeOrderHistory(event.orders as OrderHistoryEntry[])
           );
           return;
         }
 
-        queryClient.setQueryData<OrderHistoryEntry[] | undefined>(orderHistoryQueryKey, (currentOrders) =>
+        queryClient.setQueryData<OrderHistoryEntry[] | undefined>(queryKey, (currentOrders) =>
           mergeOrderIntoHistory(currentOrders, event.order as OrderHistoryEntry)
         );
       },
@@ -31,5 +34,5 @@ export function useOrdersRealtimeSync(isAuthenticated: boolean) {
         }
       }
     );
-  }, [isAuthenticated, queryClient]);
+  }, [brandId, isAuthenticated, isReady, queryClient, queryKey]);
 }

@@ -381,7 +381,7 @@ export default function CheckoutScreen() {
         status: finalizedOrder.status,
         occurredAt
       });
-      queryClient.setQueryData<OrderHistoryEntry[] | undefined>(orderHistoryQueryKey, (currentOrders) =>
+      queryClient.setQueryData<OrderHistoryEntry[] | undefined>(orderHistoryQueryKey(location.brandId), (currentOrders) =>
         mergeOrderIntoHistory(currentOrders, nextOrder)
       );
       setConfirmation({

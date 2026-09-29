@@ -318,19 +318,19 @@ export class GazelleApiClient {
   }
 
   async listOrders(): Promise<Array<z.output<typeof orderSchema>>> {
-    const data = await this.get<unknown>("/orders");
+    const data = await this.get<unknown>(`/orders${this.brandQuery()}`);
     return z.array(orderSchema).parse(data);
   }
 
   async getOrder(orderId: string): Promise<z.output<typeof orderSchema>> {
     z.string().uuid().parse(orderId);
-    const data = await this.get<unknown>(`/orders/${orderId}`);
+    const data = await this.get<unknown>(`/orders/${orderId}${this.brandQuery()}`);
     return orderSchema.parse(data);
   }
 
   async cancelOrder(orderId: string, input: { reason: string }): Promise<z.output<typeof orderSchema>> {
     z.string().uuid().parse(orderId);
-    const data = await this.post<unknown>(`/orders/${orderId}/cancel`, input);
+    const data = await this.post<unknown>(`/orders/${orderId}/cancel${this.brandQuery()}`, input);
     return orderSchema.parse(data);
   }
 

@@ -815,7 +815,7 @@ describe.sequential("orders + payments e2e", () => {
 
     const customerCancel = await ordersApp.inject({
       method: "POST",
-      url: `/v1/orders/${order.id}/cancel`,
+      url: `/v1/orders/${order.id}/cancel?brandId=${publicTestBrandId}`,
       headers: {
         "x-user-id": defaultOrderUserId
       },
@@ -906,7 +906,7 @@ describe.sequential("orders + payments e2e", () => {
     expect(payResponse.statusCode).toBe(200);
     const paidOrderResponse = await ordersApp.inject({
       method: "GET",
-      url: `/v1/orders/${order.id}`,
+      url: `/v1/orders/${order.id}?brandId=${publicTestBrandId}`,
       headers: {
         "x-user-id": userId
       }

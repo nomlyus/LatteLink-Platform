@@ -22,6 +22,36 @@ describe("sdk-mobile", () => {
     expect(client).toBeInstanceOf(GazelleApiClient);
   });
 
+  it("includes the configured brand on customer order history, detail, and cancel requests", async () => {
+    const order = {
+      id: "123e4567-e89b-12d3-a456-426614174000",
+      locationId: "flagship-01",
+      status: "PAID",
+      items: [],
+      total: { currency: "USD", amountCents: 530 },
+      pickupCode: "A1B2C3",
+      timeline: [{ status: "PAID", occurredAt: "2026-09-28T12:00:00.000Z" }]
+    };
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify([order]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(order), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(order), { status: 200 }));
+    const client = new GazelleApiClient({
+      baseUrl: "https://api.gazellecoffee.com/v1",
+      brandId: "brand-a"
+    });
+
+    await client.listOrders();
+    await client.getOrder(order.id);
+    await client.cancelOrder(order.id, { reason: "customer request" });
+
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
+      "https://api.gazellecoffee.com/v1/orders?brandId=brand-a",
+      `https://api.gazellecoffee.com/v1/orders/${order.id}?brandId=brand-a`,
+      `https://api.gazellecoffee.com/v1/orders/${order.id}/cancel?brandId=brand-a`
+    ]);
+  });
+
   it("throws a stable reachability error when the api base url is missing", async () => {
     const client = new GazelleApiClient({ baseUrl: "", brandId: "gazelle" });
 
@@ -480,7 +510,7 @@ describe("sdk-mobile", () => {
   });
 
   it("retries concurrent unauthorized requests behind a single refresh", async () => {
-    const client = new GazelleApiClient({ baseUrl: "https://api.gazellecoffee.com/v1" });
+    const client = new GazelleApiClient({ baseUrl: "https://api.gazellecoffee.com/v1", brandId: "gazelle" });
     client.setAccessToken("access-old");
     const refreshHandler = vi.fn(async () => ({
       accessToken: "access-new",
@@ -510,7 +540,7 @@ describe("sdk-mobile", () => {
         );
       }
 
-      if (url.endsWith("/orders")) {
+      if (url.endsWith("/orders?brandId=gazelle")) {
         if (authHeader === "Bearer access-old") {
           return new Response(JSON.stringify({ code: "UNAUTHORIZED" }), { status: 401 });
         }
