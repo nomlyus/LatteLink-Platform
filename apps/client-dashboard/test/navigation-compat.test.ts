@@ -10,12 +10,15 @@ import {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("dashboard route ownership compatibility", () => {
-  it("keeps all unmigrated product sections on the explicit legacy host", () => {
+  it("routes Home and Orders to React while keeping the other product sections on the legacy host", () => {
     expect(getDashboardRouteOwner("overview")).toBe("react");
     expect(getDashboardDestination("overview")).toEqual({ ownership: "react", href: "/" });
     expect(isLegacyDashboardSection("overview")).toBe(false);
+    expect(getDashboardRouteOwner("orders")).toBe("react");
+    expect(getDashboardDestination("orders")).toEqual({ ownership: "react", href: "/orders" });
+    expect(isLegacyDashboardSection("orders")).toBe(false);
 
-    for (const section of ["orders", "menu", "cards", "discounts", "experience", "store", "team"] as const) {
+    for (const section of ["menu", "cards", "discounts", "experience", "store", "team"] as const) {
       expect(getDashboardRouteOwner(section)).toBe("legacy");
       expect(getDashboardDestination(section)).toEqual({ ownership: "legacy", href: `/legacy/${section}` });
       expect(isLegacyDashboardSection(section)).toBe(true);
@@ -28,14 +31,15 @@ describe("dashboard route ownership compatibility", () => {
 
   it("marks the root as the React-owned entry while invite and legacy hosts retain compatibility ownership", () => {
     expect(getDashboardPathOwner("/")).toBe("react");
+    expect(getDashboardPathOwner("/orders")).toBe("react");
     expect(getDashboardPathOwner("/invites")).toBe("legacy");
-    expect(getDashboardPathOwner("/legacy/orders")).toBe("legacy");
+    expect(getDashboardPathOwner("/legacy/orders")).toBe("unknown");
     expect(getDashboardPathOwner("/legacy/not-a-section")).toBe("unknown");
-    expect(getDashboardPathOwner("/orders")).toBe("unknown");
   });
 
   it("does not let automatic owner setup override an explicit legacy destination", () => {
     expect(shouldAutoOpenOwnerOnboarding("/")).toBe(true);
+    expect(shouldAutoOpenOwnerOnboarding("/orders")).toBe(false);
     expect(shouldAutoOpenOwnerOnboarding("/legacy/orders")).toBe(false);
     expect(shouldAutoOpenOwnerOnboarding("/legacy/store")).toBe(false);
     expect(shouldAutoOpenOwnerOnboarding("/invites")).toBe(false);

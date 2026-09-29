@@ -10,6 +10,7 @@ import {
   deleteOperatorStaffUser,
   extractApiErrorMessage,
   fetchDashboardLocations,
+  fetchOperatorOrders,
   fetchOperatorOnboardingSummary,
   fetchOperatorSnapshot,
   isApiRequestError,
@@ -41,6 +42,20 @@ describe("client dashboard api helpers", () => {
     expect(buildOperatorHeaders("operator-access-token", false)).toEqual({
       authorization: "Bearer operator-access-token"
     });
+  });
+
+  it("forwards route-lifecycle cancellation to the Orders API request", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const controller = new AbortController();
+    const session = { apiBaseUrl: "https://api.nomly.us/v1", accessToken: "access-token" } as OperatorSession;
+
+    await fetchOperatorOrders(session, "loc-a", controller.signal);
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://api.nomly.us/v1/admin/orders?locationId=loc-a",
+      expect.objectContaining({ signal: controller.signal })
+    );
   });
 
   it("prefers upstream error messages when present", () => {

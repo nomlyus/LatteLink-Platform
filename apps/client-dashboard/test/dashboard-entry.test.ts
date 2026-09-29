@@ -29,7 +29,7 @@ describe("React dashboard root ownership", () => {
   it("retains store-user Orders landing and unrelated query parameters", () => {
     expect(resolveDashboardEntryPlan("authenticated", store, "?source=tablet")).toEqual({
       kind: "redirect",
-      href: "/legacy/orders?source=tablet"
+      href: "/orders?source=tablet"
     });
   });
 

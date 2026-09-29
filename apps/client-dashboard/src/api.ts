@@ -602,12 +602,13 @@ export function fetchOperatorLocationStoreConfig(session: OperatorSession, locat
   });
 }
 
-export async function fetchOperatorOrders(session: OperatorSession, locationId: string) {
+export async function fetchOperatorOrders(session: OperatorSession, locationId: string, signal?: AbortSignal) {
   const orders = await requestJson({
     apiBaseUrl: session.apiBaseUrl,
     accessToken: session.accessToken,
     path: "/admin/orders",
     query: { locationId },
+    signal,
     schema: ordersSchema
   });
 

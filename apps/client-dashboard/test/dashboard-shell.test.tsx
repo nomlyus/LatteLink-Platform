@@ -28,7 +28,7 @@ const locations = [
 ] as unknown as DashboardLocation[];
 
 describe("React Dashboard V3 shell", () => {
-  it("renders Home as React-owned and unmigrated Orders/Menu as explicit legacy routes", () => {
+  it("renders React-owned Home and Orders alongside unmigrated legacy Menu", () => {
     const html = renderToStaticMarkup(
       <DashboardShellView
         session={session("owner", ["orders:read", "menu:read", "store:read", "team:read"])}
@@ -40,7 +40,7 @@ describe("React Dashboard V3 shell", () => {
       ><div>Home content</div></DashboardShellView>
     );
     expect(html).toContain('aria-current="page" title="Home" href="/"');
-    expect(html).toContain('href="/legacy/orders"');
+    expect(html).toContain('href="/orders"');
     expect(html).toContain('href="/legacy/menu"');
     expect(html).toContain('aria-label="Dashboard sections"');
     expect(html).toContain("Home content");
@@ -81,7 +81,7 @@ describe("React Dashboard V3 shell", () => {
         onLogout={() => undefined}
       ><div /></DashboardShellView>
     );
-    expect(html).not.toContain('href="/legacy/orders"');
+    expect(html).not.toContain('href="/orders"');
     expect(html).not.toContain('href="/legacy/menu"');
     expect(html).toContain('href="/legacy/store"');
   });
@@ -98,6 +98,6 @@ describe("React Dashboard V3 shell", () => {
       ><div /></DashboardShellView>
     );
     expect(html).toContain('aria-label="Dashboard navigation loading"');
-    expect(html).not.toContain('href="/legacy/orders"');
+    expect(html).not.toContain('href="/orders"');
   });
 });

@@ -8,7 +8,7 @@ import type { DashboardLocation, OperatorSession } from "../../api";
 import { getAvailableDashboardSectionsFor } from "../../lib/navigation/dashboard-sections";
 import { getDashboardDestination } from "../../lib/navigation/dashboard-navigation";
 import { getDashboardSectionIcon, getDashboardSectionLabel } from "../../lib/navigation/dashboard-sections";
-import { isStoreOperator, type DashboardSection } from "../../model";
+import type { DashboardSection } from "../../model";
 import { formatDashboardHeadingDate, getOperatorInitials } from "../../ui/format";
 import { getOperatorRoleLabel } from "../../model";
 import { useDashboardSession } from "../../features/auth/session-provider";
@@ -77,11 +77,12 @@ function DashboardNavItem({ section, active }: { section: DashboardSection; acti
   );
 }
 
-function DashboardSidebar({ session, sections, loading, storeLabel, onLogout }: {
+function DashboardSidebar({ session, sections, loading, storeLabel, activeSection, onLogout }: {
   session: OperatorSession;
   sections: DashboardSection[];
   loading: boolean;
   storeLabel: string;
+  activeSection: DashboardSection;
   onLogout: () => void;
 }) {
   const visiblePrimary = primarySections.filter((section) => sections.includes(section));
@@ -109,7 +110,7 @@ function DashboardSidebar({ session, sections, loading, storeLabel, onLogout }: 
       <nav className="dash-nav" aria-label="Dashboard sections">
         <div className="dash-nav-group">
           <div className="dash-nav-group__label">Primary</div>
-          {visiblePrimary.map((section) => <DashboardNavItem key={section} section={section} active={section === "overview"} />)}
+          {visiblePrimary.map((section) => <DashboardNavItem key={section} section={section} active={section === activeSection} />)}
         </div>
         {visibleOperations.length ? (
           <div className="dash-nav-group">
@@ -123,8 +124,9 @@ function DashboardSidebar({ session, sections, loading, storeLabel, onLogout }: 
   );
 }
 
-function DashboardTopbar({ session, locations, selectedLocationId, locationStatus, onLocationChange }: {
+function DashboardTopbar({ session, title, locations, selectedLocationId, locationStatus, onLocationChange }: {
   session: OperatorSession;
+  title: string;
   locations: readonly DashboardLocation[];
   selectedLocationId: string | "all" | null;
   locationStatus: "idle" | "loading" | "ready" | "error";
@@ -135,7 +137,7 @@ function DashboardTopbar({ session, locations, selectedLocationId, locationStatu
   return (
     <header className="dash-topbar">
       <div className="dash-page-stack">
-        <div className="dash-page-title">Home</div>
+        <div className="dash-page-title">{title}</div>
         <DashboardPageDate loading={locationLoading} />
       </div>
       <div className="dash-global-search" aria-hidden="true">
@@ -166,6 +168,7 @@ function DashboardPageDate({ loading }: { loading: boolean }) {
 
 export function DashboardShellView({
   session,
+  activeSection = "overview",
   locations,
   selectedLocationId,
   locationStatus,
@@ -175,6 +178,7 @@ export function DashboardShellView({
   onLogout
 }: {
   session: OperatorSession;
+  activeSection?: DashboardSection;
   locations: readonly DashboardLocation[];
   selectedLocationId: string | "all" | null;
   locationStatus: "idle" | "loading" | "ready" | "error";
@@ -189,10 +193,10 @@ export function DashboardShellView({
   const storeLabel = selectedLocationId === "all" ? "All locations" : selected?.storeName ?? selected?.locationName ?? "Store";
   return (
     <div className="dash-shell">
-      <DashboardSidebar session={session} sections={sections} loading={loading} storeLabel={storeLabel} onLogout={onLogout} />
+      <DashboardSidebar session={session} sections={sections} loading={loading} storeLabel={storeLabel} activeSection={activeSection} onLogout={onLogout} />
       <div className="dash-main">
-        <DashboardTopbar session={session} locations={locations} selectedLocationId={selectedLocationId} locationStatus={locationStatus} onLocationChange={onSelectLocation} />
-        <div className="dash-content dash-content--home">
+        <DashboardTopbar session={session} title={getDashboardSectionLabel(activeSection)} locations={locations} selectedLocationId={selectedLocationId} locationStatus={locationStatus} onLocationChange={onSelectLocation} />
+        <div className={`dash-content dash-content--${activeSection === "overview" ? "home" : activeSection}`}>
           {notice ? <div className="banner banner--notice" role="status">{notice}</div> : null}
           {children}
         </div>
@@ -201,17 +205,18 @@ export function DashboardShellView({
   );
 }
 
-export function DashboardShell({ children, notice }: { children: ReactNode; notice?: string | null }) {
+export function DashboardShell({ children, notice, activeSection = "overview" }: { children: ReactNode; notice?: string | null; activeSection?: DashboardSection }) {
   const { session, logout } = useDashboardSession();
   const location = useDashboardLocation();
   useEffect(() => {
     if (session) void location.loadAvailableLocations();
   }, [session, location.loadAvailableLocations]);
 
-  if (!session || isStoreOperator(session.operator)) return null;
+  if (!session) return null;
   return (
     <DashboardShellView
       session={session}
+      activeSection={activeSection}
       locations={location.availableLocations}
       selectedLocationId={location.selectedLocationId}
       locationStatus={location.status}
