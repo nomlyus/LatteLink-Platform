@@ -109,6 +109,7 @@ type PersistedOrderRow = {
   order_id: string;
   user_id: string;
   quote_id: string;
+  location_id: string;
   order_json: unknown;
   payment_id: string | null;
   successful_charge_json: unknown;
@@ -710,6 +711,9 @@ function createInMemoryRepository(): OrdersRepository {
       if (!record) {
         throw new Error("order not found while updating");
       }
+      if (record.order.locationId !== order.locationId) {
+        throw new Error("Order location is immutable");
+      }
       ordersById.set(orderId, {
         ...record,
         order
@@ -1187,7 +1191,13 @@ async function createPostgresRepository(
       await db.transaction().execute(async (trx) => {
         const inserted = await trx
           .insertInto("orders")
-          .values({ order_id: checkoutId, user_id: userId, quote_id: quoteId, order_json: order })
+          .values({
+            order_id: checkoutId,
+            user_id: userId,
+            quote_id: quoteId,
+            location_id: order.locationId,
+            order_json: order
+          })
           .onConflict((conflict) => conflict.column("order_id").doNothing())
           .returning("order_id")
           .executeTakeFirst();
@@ -1209,6 +1219,7 @@ async function createPostgresRepository(
           order_id: order.id,
           user_id: userId,
           quote_id: quoteId,
+          location_id: order.locationId,
           order_json: order
         })
         .execute();
@@ -1233,7 +1244,7 @@ async function createPostgresRepository(
       const rows = await db
         .selectFrom("orders")
         .selectAll()
-        .where(sql`order_json->>'locationId'`, "=", locationId)
+        .where("location_id", "=", locationId)
         .orderBy("created_at", "desc")
         .execute();
       return rows.map((row) => parseOrder((row as PersistedOrderRow).order_json));
@@ -1437,6 +1448,18 @@ async function createPostgresRepository(
       return row?.successful_refund_json === null ? undefined : row?.successful_refund_json;
     },
     async updateOrder(orderId, order) {
+      const current = await db
+        .selectFrom("orders")
+        .select("location_id")
+        .where("order_id", "=", orderId)
+        .executeTakeFirst();
+      if (!current) {
+        throw new Error("order not found while updating");
+      }
+      if (current.location_id !== order.locationId) {
+        throw new Error("Order location is immutable");
+      }
+
       const updated = await db
         .updateTable("orders")
         .set({
@@ -1444,6 +1467,7 @@ async function createPostgresRepository(
           updated_at: new Date().toISOString()
         })
         .where("order_id", "=", orderId)
+        .where("location_id", "=", current.location_id)
         .executeTakeFirst();
 
       if (Number(updated.numUpdatedRows ?? 0) === 0) {
@@ -1522,7 +1546,7 @@ async function createPostgresRepository(
         .limit(limit);
 
       if (input.locationId) {
-        rowsQuery = rowsQuery.where(sql`orders.order_json->>'locationId'`, "=", input.locationId);
+        rowsQuery = rowsQuery.where("orders.location_id", "=", input.locationId);
       }
 
       const rows = await rowsQuery.execute();
@@ -1783,7 +1807,7 @@ async function createPostgresRepository(
         .selectFrom("orders")
         .select(sql<number>`count(*)::int`.as("count"))
         .where("user_id", "=", userId)
-        .where(sql`orders.order_json->>'locationId'`, "=", locationId)
+        .where("orders.location_id", "=", locationId)
         .where(sql`orders.order_json->>'status'`, "in", ["PAID", "IN_PREP", "READY", "COMPLETED"])
         .executeTakeFirst();
 

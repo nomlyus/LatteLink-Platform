@@ -2114,6 +2114,14 @@ describe("orders service", () => {
       quoteId: randomUUID(),
       userId: "123e4567-e89b-12d3-a456-426614174888"
     });
+    const movedOrder = orderSchema.parse({ ...order, locationId: "other-location" });
+    await expect(repository.updateOrder(order.id, movedOrder)).rejects.toThrow("Order location is immutable");
+    const canceledOrder = orderSchema.parse({ ...order, status: "CANCELED" });
+    await expect(repository.updateOrder(order.id, canceledOrder)).resolves.toMatchObject({
+      id: order.id,
+      locationId: order.locationId,
+      status: "CANCELED"
+    });
     await repository.setPaymentId(order.id, "pay_support_123");
 
     await expect(repository.lookupSupportOrders({ query: "5550123" })).resolves.toMatchObject([

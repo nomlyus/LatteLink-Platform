@@ -9,6 +9,7 @@ import {
   getDatabaseUrl,
   getPersistenceReadinessMetadata,
   runMigrations,
+  sql,
   type PersistenceDb
 } from "@lattelink/persistence";
 import { captureOperationalError } from "@lattelink/observability";
@@ -793,6 +794,23 @@ export function createPostgresPaymentsRepository(db: PersistenceDb): PaymentsRep
         .executeTakeFirstOrThrow()) as PersistedStripeWebhookEventRow;
     },
     async saveStripePaymentIntent(input) {
+      const order = await db
+        .selectFrom("orders")
+        .select("location_id")
+        .where("order_id", "=", input.orderId)
+        .executeTakeFirst();
+      const checkout = order ? undefined : await db
+        .selectFrom("order_checkout_drafts as drafts")
+        .innerJoin("orders_quotes as quotes", "quotes.quote_id", "drafts.quote_id")
+        .select(sql<string>`quotes.quote_json->>'locationId'`.as("location_id"))
+        .where("drafts.checkout_id", "=", input.orderId)
+        .where("drafts.status", "=", "OPEN")
+        .executeTakeFirst();
+      const canonicalLocationId = order?.location_id ?? checkout?.location_id;
+      if (!canonicalLocationId || canonicalLocationId !== input.locationId) {
+        throw new Error("Stripe PaymentIntent location does not match its stored order or checkout quote");
+      }
+
       await db
         .insertInto("payments_stripe_payment_intents")
         .values({

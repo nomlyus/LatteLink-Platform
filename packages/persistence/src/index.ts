@@ -141,6 +141,7 @@ export interface OrdersTable {
   order_id: string;
   user_id: string;
   quote_id: string;
+  location_id: string;
   order_json: unknown;
   payment_id: string | null;
   successful_charge_json: unknown;

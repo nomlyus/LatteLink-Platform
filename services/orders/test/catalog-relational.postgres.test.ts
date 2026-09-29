@@ -308,6 +308,20 @@ describeWithPostgres("Orders against the relational catalog (PostgreSQL)", () =>
     expect("error" in created).toBe(false);
     if ("error" in created) throw new Error(created.error.code);
 
+    const persistedLocation = await db
+      .selectFrom("orders")
+      .select(["location_id", "order_json"])
+      .where("order_id", "=", created.order.id)
+      .executeTakeFirstOrThrow();
+    expect(persistedLocation.location_id).toBe(locationId);
+    expect(persistedLocation.order_json).toMatchObject({ locationId });
+    await expect(repository.listOrdersByLocation(locationId)).resolves.toEqual([created.order]);
+    await expect(repository.listOrdersByLocation("other-location")).resolves.toEqual([]);
+    await expect(repository.updateOrder(created.order.id, {
+      ...created.order,
+      locationId: "other-location"
+    })).rejects.toThrow("Order location is immutable");
+
     await db.updateTable("catalog_menu_items").set({ name: "Renamed Espresso", price_cents: 900 }).where("location_id", "=", locationId).where("item_id", "=", itemId).execute();
     await db.updateTable("catalog_modifier_options").set({ price_delta_cents: 125 }).where("location_id", "=", locationId).where("modifier_group_id", "=", "extras").where("option_id", "=", "light").execute();
 
