@@ -26,17 +26,8 @@ import {
   modifierGroupSchema,
   adminStoreConfigSchema,
   appConfigSchema,
-  mobileReleaseBuildJobListResponseSchema,
   merchantLaunchRequestSchema,
-  merchantLaunchResponseSchema,
-  onboardingSummarySchema,
-  operatorAppIdentityProfileUpdateSchema,
-  operatorOnboardingUpdateSchema,
-  stripeConnectDashboardLinkRequestSchema,
-  stripeConnectLinkResponseSchema,
-  stripeConnectOnboardingLinkRequestSchema,
-  stripeConnectStatusRefreshRequestSchema,
-  stripeConnectStatusRefreshResponseSchema
+  merchantLaunchResponseSchema
 } from "@lattelink/contracts-catalog";
 import {
   reportingQueryRequestSchema,
@@ -52,8 +43,7 @@ import {
   normalizeMenuItemForm,
   operatorMenuItemSchema,
   operatorMenuResponseSchema,
-  type OperatorOrder,
-  type OperatorMenuResponse
+  type OperatorOrder
 } from "./model";
 
 const ordersSchema = z.array(orderSchema);
@@ -69,7 +59,6 @@ export type OperatorAuthProviders = z.output<typeof operatorAuthProvidersSchema>
 export type OperatorInviteLookup = z.output<typeof operatorInviteLookupResponseSchema>;
 export type OperatorInviteAcceptResponse = z.output<typeof operatorInviteAcceptResponseSchema>;
 export type MerchantLaunchResponse = z.output<typeof merchantLaunchResponseSchema>;
-export type OperatorOnboardingSummary = z.output<typeof onboardingSummarySchema>;
 export type DashboardLocation = {
   locationId: string;
   locationName: string;
@@ -81,9 +70,7 @@ export type DashboardLocation = {
 export type OperatorReportingResponse = ReportingResponse;
 export type OperatorDashboardSnapshot = {
   appConfig: z.output<typeof appConfigSchema> | null;
-  menu: OperatorMenuResponse;
   storeConfig: z.output<typeof adminStoreConfigSchema> | null;
-  mobileReleaseBuildJobs: z.output<typeof mobileReleaseBuildJobListResponseSchema>;
 };
 
 type RequestMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -592,13 +579,7 @@ export async function fetchOperatorSnapshot(
 ): Promise<OperatorDashboardSnapshot> {
   const capabilitySet = new Set(session.operator.capabilities);
   const query = locationId ? { locationId } : undefined;
-  const fallbackLocationId = locationId ?? session.operator.locationId;
-  const [
-    appConfig,
-    menu,
-    storeConfig,
-    mobileReleaseBuildJobs
-  ] = await Promise.all([
+  const [appConfig, storeConfig] = await Promise.all([
     locationId
       ? requestJson({
           apiBaseUrl: session.apiBaseUrl,
@@ -607,17 +588,6 @@ export async function fetchOperatorSnapshot(
           schema: appConfigSchema
         })
       : Promise.resolve(null),
-    capabilitySet.has("menu:read")
-      ? locationId
-        ? requestJson({
-            apiBaseUrl: session.apiBaseUrl,
-            accessToken: session.accessToken,
-            path: "/admin/menu",
-            query,
-            schema: operatorMenuResponseSchema
-          })
-        : Promise.resolve(operatorMenuResponseSchema.parse({ locationId: fallbackLocationId, categories: [] }))
-      : Promise.resolve(operatorMenuResponseSchema.parse({ locationId: fallbackLocationId, categories: [] })),
     capabilitySet.has("store:read")
       ? locationId
         ? requestJson({
@@ -628,122 +598,13 @@ export async function fetchOperatorSnapshot(
             schema: adminStoreConfigSchema
           })
         : Promise.resolve(null)
-      : Promise.resolve(null),
-    capabilitySet.has("store:read")
-      ? locationId
-        ? requestJson({
-            apiBaseUrl: session.apiBaseUrl,
-            accessToken: session.accessToken,
-            path: "/admin/mobile-release/build-jobs",
-            query,
-            schema: mobileReleaseBuildJobListResponseSchema
-          })
-        : Promise.resolve(mobileReleaseBuildJobListResponseSchema.parse({ jobs: [] }))
-      : Promise.resolve(mobileReleaseBuildJobListResponseSchema.parse({ jobs: [] })),
+      : Promise.resolve(null)
   ]);
 
   return {
     appConfig,
-    menu,
-    storeConfig,
-    mobileReleaseBuildJobs
+    storeConfig
   };
-}
-
-export function fetchOperatorOnboardingSummary(session: OperatorSession, locationId: string) {
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: "/admin/onboarding",
-    query: { locationId },
-    schema: onboardingSummarySchema
-  });
-}
-
-export function updateOperatorOnboarding(
-  session: OperatorSession,
-  locationId: string,
-  input: z.input<typeof operatorOnboardingUpdateSchema>
-) {
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: "/admin/onboarding",
-    query: { locationId },
-    method: "PATCH",
-    body: operatorOnboardingUpdateSchema.parse(input),
-    schema: onboardingSummarySchema
-  });
-}
-
-export function updateOperatorAppIdentity(
-  session: OperatorSession,
-  locationId: string,
-  input: z.input<typeof operatorAppIdentityProfileUpdateSchema>
-) {
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: "/admin/app-identity",
-    query: { locationId },
-    method: "PATCH",
-    body: operatorAppIdentityProfileUpdateSchema.parse(input),
-    schema: onboardingSummarySchema
-  });
-}
-
-export function submitOperatorOnboardingReview(session: OperatorSession, locationId: string) {
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: "/admin/onboarding/submit-review",
-    query: { locationId },
-    method: "POST",
-    body: {},
-    schema: onboardingSummarySchema
-  });
-}
-
-export function createOperatorStripeOnboardingLink(
-  session: OperatorSession,
-  locationId: string,
-  input: Omit<z.input<typeof stripeConnectOnboardingLinkRequestSchema>, "locationId">
-) {
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: "/admin/payments/stripe/onboarding-link",
-    query: { locationId },
-    method: "POST",
-    body: stripeConnectOnboardingLinkRequestSchema
-      .omit({ locationId: true })
-      .parse(input),
-    schema: stripeConnectLinkResponseSchema
-  });
-}
-
-export function createOperatorStripeDashboardLink(session: OperatorSession, locationId: string) {
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: "/admin/payments/stripe/dashboard-link",
-    query: { locationId },
-    method: "POST",
-    body: stripeConnectDashboardLinkRequestSchema.omit({ locationId: true }).parse({}),
-    schema: stripeConnectLinkResponseSchema
-  });
-}
-
-export function refreshOperatorStripeStatus(session: OperatorSession, locationId: string) {
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: "/admin/payments/stripe/status-refresh",
-    query: { locationId },
-    method: "POST",
-    body: stripeConnectStatusRefreshRequestSchema.omit({ locationId: true }).parse({}),
-    schema: stripeConnectStatusRefreshResponseSchema
-  });
 }
 
 function requireSelectedLocationId(locationId: string | null) {

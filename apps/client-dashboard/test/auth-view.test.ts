@@ -5,7 +5,7 @@ import { renderAuthScreen } from "../src/views/auth";
 describe("operator auth view", () => {
   afterEach(() => {
     state.ownerInvite = null;
-    state.launchEntryIntent = false;
+    state.launchSignInIntent = false;
     state.authEmail = "";
     state.authPassword = "";
     state.authProviders = null;
@@ -34,7 +34,7 @@ describe("operator auth view", () => {
   });
 
   it("renders launch setup copy when merchants arrive from nomly.us", () => {
-    state.launchEntryIntent = true;
+    state.launchSignInIntent = true;
     state.authProviders = { google: { configured: false } };
 
     const html = renderAuthScreen();
@@ -49,7 +49,7 @@ describe("operator auth view", () => {
   });
 
   it("renders launch request confirmation after workspace creation", () => {
-    state.launchEntryIntent = true;
+    state.launchSignInIntent = true;
     state.launchRequest = {
       submitting: false,
       submitted: true,

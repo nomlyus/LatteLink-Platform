@@ -1,19 +1,11 @@
-import type {
-  AdminStoreConfig,
-  AppConfig,
-  MobileReleaseBuildJobListResponse
-} from "@lattelink/contracts-catalog";
+import type { AdminStoreConfig, AppConfig } from "@lattelink/contracts-catalog";
 import type {
   DashboardLocation,
   OperatorAuthProviders,
   OperatorInviteLookup,
-  OperatorOnboardingSummary,
   OperatorSession
 } from "./api";
-import type {
-  DashboardSection,
-  OperatorMenuCategory
-} from "./model";
+import type { DashboardSection } from "./model";
 import { isStoreOperator } from "./model";
 import { loadStoredApiBaseUrl, loadStoredLocationSelection, loadStoredSection, loadStoredSession } from "./storage";
 
@@ -32,26 +24,19 @@ export type AppState = {
     lookup: OperatorInviteLookup | null;
     accepting: boolean;
   } | null;
-  onboardingSummary: OperatorOnboardingSummary | null;
-  launchEntryIntent: boolean;
+  launchSignInIntent: boolean;
   launchRequest: {
     submitting: boolean;
     submitted: boolean;
     ownerEmail: string | null;
   };
-  onboardingAutoOpened: boolean;
-  onboardingWizardOpen: boolean;
-  onboardingWizardStep: 1 | 2 | 3 | 4 | 5;
-  updatingOnboarding: boolean;
   initializing: boolean;
   loading: boolean;
   signingIn: boolean;
   errorMessage: string | null;
   notice: string | null;
   appConfig: AppConfig | null;
-  menuCategories: OperatorMenuCategory[];
   storeConfig: AdminStoreConfig | null;
-  mobileReleaseBuildJobs: MobileReleaseBuildJobListResponse;
   dashboardLoaded: boolean;
   toasts: Array<{
     id: string;
@@ -85,26 +70,19 @@ export const state: AppState = {
   authPassword: "",
   authProviders: null,
   ownerInvite: null,
-  onboardingSummary: null,
-  launchEntryIntent: false,
+  launchSignInIntent: false,
   launchRequest: {
     submitting: false,
     submitted: false,
     ownerEmail: null
   },
-  onboardingAutoOpened: false,
-  onboardingWizardOpen: false,
-  onboardingWizardStep: 1,
-  updatingOnboarding: false,
   initializing: true,
   loading: false,
   signingIn: false,
   errorMessage: null,
   notice: null,
   appConfig: null,
-  menuCategories: [],
   storeConfig: null,
-  mobileReleaseBuildJobs: { jobs: [] },
   dashboardLoaded: false,
   toasts: []
 };
@@ -160,14 +138,7 @@ export function resetDashboardData() {
       : state.session.operator.locationId
     : null;
   state.appConfig = null;
-  state.menuCategories = [];
   state.storeConfig = null;
-  state.mobileReleaseBuildJobs = { jobs: [] };
-  state.onboardingSummary = null;
-  state.launchEntryIntent = false;
-  state.onboardingAutoOpened = false;
-  state.onboardingWizardOpen = false;
-  state.onboardingWizardStep = 1;
-  state.updatingOnboarding = false;
+  state.launchSignInIntent = false;
   state.dashboardLoaded = false;
 }

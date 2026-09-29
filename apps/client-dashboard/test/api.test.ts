@@ -5,25 +5,27 @@ import {
   acceptOperatorInvite,
   cancelAndRefundOperatorOrder,
   createMerchantLaunch,
-  createOperatorStripeDashboardLink,
-  createOperatorStripeOnboardingLink,
   extractApiErrorMessage,
   fetchDashboardLocations,
   fetchOperatorLocationStoreConfig,
   fetchOperatorOrders,
-  fetchOperatorOnboardingSummary,
   fetchOperatorSnapshot,
   isApiRequestError,
   lookupOperatorInvite,
   normalizeApiBaseUrl,
-  refreshOperatorStripeStatus,
-  submitOperatorOnboardingReview,
   signInOperatorWithPassword,
-  updateOperatorOnboarding,
   updateOperatorOrderStatus,
   uploadOperatorMenuItemImage,
   type OperatorSession
 } from "../src/api";
+import {
+  createOperatorStripeDashboardLink,
+  createOperatorStripeOnboardingLink,
+  fetchOperatorOnboardingSummary,
+  refreshOperatorStripeStatus,
+  submitOperatorOnboardingReview,
+  updateOperatorOnboarding
+} from "../src/features/onboarding/onboarding-api";
 
 describe("client dashboard api helpers", () => {
   it("does not load feature-owned Team, Cards, Discounts, or App Builder data in the legacy dashboard snapshot", async () => {
@@ -58,7 +60,7 @@ describe("client dashboard api helpers", () => {
     expect(requestedUrls).not.toContain("https://api-dev.nomly.us/v1/admin/mobile-experience?locationId=loc-a");
     expect(requestedUrls).not.toContain("https://api-dev.nomly.us/v1/admin/mobile-experience/versions?locationId=loc-a");
     expect(requestedUrls).not.toContain("https://api-dev.nomly.us/v1/admin/staff?locationId=loc-a");
-    expect(requestedUrls).toContain("https://api-dev.nomly.us/v1/admin/mobile-release/build-jobs?locationId=loc-a");
+    expect(requestedUrls).not.toContain("https://api-dev.nomly.us/v1/admin/mobile-release/build-jobs?locationId=loc-a");
   });
 
   it("normalizes operator api base URLs onto /v1", () => {
@@ -594,8 +596,8 @@ describe("client dashboard api helpers", () => {
     };
 
     const onboardingLink = await createOperatorStripeOnboardingLink(session, "northside-01", {
-      returnUrl: "https://dashboard.example.com/?stripeReturn=1",
-      refreshUrl: "https://dashboard.example.com/?stripeRefresh=1"
+      returnUrl: "https://dashboard.example.com/onboarding?stripeReturn=1",
+      refreshUrl: "https://dashboard.example.com/onboarding?stripeRefresh=1"
     });
     const dashboardLink = await createOperatorStripeDashboardLink(session, "northside-01");
     const refreshedStatus = await refreshOperatorStripeStatus(session, "northside-01");
@@ -613,8 +615,8 @@ describe("client dashboard api helpers", () => {
           "content-type": "application/json"
         },
         body: JSON.stringify({
-          returnUrl: "https://dashboard.example.com/?stripeReturn=1",
-          refreshUrl: "https://dashboard.example.com/?stripeRefresh=1"
+          returnUrl: "https://dashboard.example.com/onboarding?stripeReturn=1",
+          refreshUrl: "https://dashboard.example.com/onboarding?stripeRefresh=1"
         })
       })
     );

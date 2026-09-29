@@ -35,6 +35,7 @@ describe("root callback URL compatibility", () => {
     expect(readStripeReturnParams("?stripeReturn=1&keep=value")).toEqual({ returned: true, refreshRequested: false });
     expect(readStripeReturnParams("?stripeRefresh=1")).toEqual({ returned: false, refreshRequested: true });
     expect(stripStripeReturnParams("/", "?stripeReturn=1&stripeRefresh=1&keep=value")).toBe("/?keep=value");
+    expect(stripStripeReturnParams("/", "?stripeReturn=1&keep=value", "#details")).toBe("/?keep=value#details");
     expect(stripStripeReturnParams("/", "?keep=value")).toBe("/?keep=value");
   });
 });

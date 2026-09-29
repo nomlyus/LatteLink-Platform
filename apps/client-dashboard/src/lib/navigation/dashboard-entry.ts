@@ -1,6 +1,6 @@
 import { isOwnerOperator, isStoreOperator } from "../../model";
 import type { OperatorUser } from "../../model";
-import { getDashboardDestination, legacyOnboardingPath } from "./dashboard-navigation";
+import { getDashboardDestination, onboardingPath } from "./dashboard-navigation";
 import { readStripeReturnParams } from "./route-callbacks";
 
 export type DashboardEntryPlan =
@@ -26,14 +26,18 @@ export function resolveDashboardEntryPlan(
 
   const stripe = readStripeReturnParams(search);
   const launchIntent = params.get("intent")?.trim().toLowerCase() === "launch" || params.get("start")?.trim().toLowerCase() === "app";
+  const launchComplete = params.get("launchComplete") === "1";
   if (stripe.returned || stripe.refreshRequested) {
-    return { kind: "redirect", href: preserveSearch(legacyOnboardingPath, search) };
+    return { kind: "redirect", href: preserveSearch(onboardingPath, search) };
   }
   if (isStoreOperator(operator)) {
     return { kind: "redirect", href: preserveSearch(getDashboardDestination("orders").href, search) };
   }
+  if (launchComplete) {
+    return { kind: "dashboard", launchNotice: "Your workspace is ready.", stripLaunchParams: true };
+  }
   if (launchIntent && isOwnerOperator(operator)) {
-    return { kind: "redirect", href: preserveSearch(legacyOnboardingPath, search) };
+    return { kind: "redirect", href: preserveSearch(onboardingPath, search) };
   }
   return {
     kind: "dashboard",
@@ -46,6 +50,7 @@ export function stripLaunchEntryParams(pathname: string, search: string, hash = 
   const params = new URLSearchParams(search);
   params.delete("intent");
   params.delete("start");
+  params.delete("launchComplete");
   const nextSearch = params.toString();
   return `${pathname}${nextSearch ? `?${nextSearch}` : ""}${hash}`;
 }

@@ -19,10 +19,10 @@ describe("React dashboard root ownership", () => {
     expect(resolveDashboardEntryPlan("signed-out", null, "")).toEqual({ kind: "legacy-auth" });
   });
 
-  it("routes Stripe return query parameters to the onboarding compatibility flow", () => {
+  it("routes Stripe return query parameters to React Onboarding", () => {
     expect(resolveDashboardEntryPlan("authenticated", owner, "?stripeReturn=1&session_id=cs_test&keep=1")).toEqual({
       kind: "redirect",
-      href: "/legacy/onboarding?stripeReturn=1&session_id=cs_test&keep=1"
+      href: "/onboarding?stripeReturn=1&session_id=cs_test&keep=1"
     });
   });
 
@@ -33,10 +33,10 @@ describe("React dashboard root ownership", () => {
     });
   });
 
-  it("keeps owner app-launch behavior on the onboarding compatibility flow", () => {
+  it("routes owner app-launch behavior to React Onboarding", () => {
     expect(resolveDashboardEntryPlan("authenticated", owner, "?intent=launch&keep=1")).toEqual({
       kind: "redirect",
-      href: "/legacy/onboarding?intent=launch&keep=1"
+      href: "/onboarding?intent=launch&keep=1"
     });
   });
 
@@ -55,5 +55,14 @@ describe("React dashboard root ownership", () => {
       launchNotice: null,
       stripLaunchParams: false
     });
+  });
+
+  it("shows the completion notice after onboarding returns the owner to Home", () => {
+    expect(resolveDashboardEntryPlan("authenticated", owner, "?launchComplete=1&keep=1")).toEqual({
+      kind: "dashboard",
+      launchNotice: "Your workspace is ready.",
+      stripLaunchParams: true
+    });
+    expect(stripLaunchEntryParams("/", "?launchComplete=1&keep=1", "#home")).toBe("/?keep=1#home");
   });
 });

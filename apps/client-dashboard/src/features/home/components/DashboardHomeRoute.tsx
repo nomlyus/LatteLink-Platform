@@ -8,6 +8,7 @@ import { DashboardShell, DashboardShellLoading } from "../../../components/dashb
 import { useDashboardSession } from "../../auth/session-provider";
 import { OwnerHomePage } from "./OwnerHomePage";
 import { OperatorOverviewPage } from "./OperatorOverviewPage";
+import { OwnerHomeWizardPrompt } from "../../onboarding/components/OwnerHomeWizardPrompt";
 import { stripLaunchEntryParams, resolveDashboardEntryPlan } from "../../../lib/navigation/dashboard-entry";
 
 export function DashboardHomeRoute() {
@@ -25,7 +26,7 @@ export function DashboardHomeRoute() {
     if (plan.kind === "dashboard" && plan.launchNotice) setLaunchNotice(plan.launchNotice);
     if (plan.kind === "redirect" && redirectStarted.current !== plan.href) {
       redirectStarted.current = plan.href;
-      router.replace(plan.href);
+      router.replace(`${plan.href}${window.location.hash}`);
       return;
     }
     if (plan.kind === "dashboard" && plan.stripLaunchParams && !launchIntentConsumed) {
@@ -43,7 +44,7 @@ export function DashboardHomeRoute() {
 
   return (
     <DashboardShell notice={launchNotice}>
-      {session.operator.role === "owner" ? <OwnerHomePage /> : <OperatorOverviewPage search={search} />}
+      {session.operator.role === "owner" ? <><OwnerHomePage /><OwnerHomeWizardPrompt /></> : <OperatorOverviewPage search={search} />}
     </DashboardShell>
   );
 }

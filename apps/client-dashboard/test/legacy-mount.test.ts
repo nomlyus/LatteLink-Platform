@@ -19,8 +19,6 @@ const registerLegacyBrowserLifecycle = vi.hoisted(() => vi.fn());
 const handleGoogleCallback = vi.hoisted(() => vi.fn().mockResolvedValue(false));
 const handleOwnerInviteFromUrl = vi.hoisted(() => vi.fn().mockResolvedValue(false));
 const loadAuthProviders = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
-const handleStripeOnboardingStart = vi.hoisted(() => vi.fn());
-const handleStripeStatusRefresh = vi.hoisted(() => vi.fn());
 const cancelDashboardLoad = vi.hoisted(() => vi.fn());
 const loadDashboard = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const resetToastRuntime = vi.hoisted(() => vi.fn());
@@ -53,7 +51,6 @@ vi.mock("../src/state", () => ({ state, setNotice, resetDashboardData }));
 vi.mock("../src/render", () => ({ bindDashboardRoot, render }));
 vi.mock("../src/events", () => ({ registerEvents }));
 vi.mock("../src/controllers/auth", () => ({ handleGoogleCallback, handleOwnerInviteFromUrl, loadAuthProviders }));
-vi.mock("../src/controllers/onboarding", () => ({ handleStripeOnboardingStart, handleStripeStatusRefresh }));
 vi.mock("../src/lifecycle", () => ({ cancelDashboardLoad, loadDashboard }));
 vi.mock("../src/toast-runtime", () => ({ resetToastRuntime }));
 vi.mock("../src/storage", () => ({ persistSection, loadStoredSession, loadStoredApiBaseUrl, loadStoredLocationSelection }));
@@ -71,7 +68,7 @@ describe("legacy React host mount lifecycle", () => {
 
   it("deduplicates an active mount and disposes resources before a later remount", async () => {
     vi.stubGlobal("window", {
-      location: { pathname: "/legacy/onboarding", search: "" },
+      location: { pathname: "/invites", search: "" },
       history: { replaceState: vi.fn() }
     });
     const doc = { title: "Operator Dashboard", visibilityState: "hidden" };
@@ -107,43 +104,24 @@ describe("legacy React host mount lifecycle", () => {
 
   it("rehydrates the current session and authorized location preference when entering a legacy route", async () => {
     vi.stubGlobal("window", {
-      location: { pathname: "/legacy/onboarding", search: "" },
+      location: { pathname: "/invites", search: "" },
       history: { replaceState: vi.fn() }
     });
     vi.stubGlobal("document", { title: "Operator Dashboard", visibilityState: "visible" });
     loadStoredSession.mockReturnValueOnce(storedOperatorSession as never);
     const { mountLegacyDashboard } = await import("../src/main");
 
-    const dispose = mountLegacyDashboard({} as HTMLDivElement, "store");
+    const dispose = mountLegacyDashboard({} as HTMLDivElement);
 
     expect(state.session).toBe(storedOperatorSession);
     expect(state.authApiBaseUrl).toBe(storedOperatorSession.apiBaseUrl);
     expect(state.authEmail).toBe("owner@example.com");
     expect(state.authPassword).toBe("");
     expect(state.selectedLocationId).toBe("all");
-    expect(state.section).toBe("store");
-    expect(persistSection).toHaveBeenCalledWith("store");
+    expect(state.section).toBe("overview");
+    expect(persistSection).not.toHaveBeenCalled();
     expect(resetDashboardData).toHaveBeenCalledTimes(1);
     dispose();
   });
 
-  it("sends store operators from the legacy host to React Orders and preserves the URL context", async () => {
-    const replace = vi.fn();
-    vi.stubGlobal("window", {
-      location: { pathname: "/legacy/onboarding", search: "?source=shortcut", hash: "#section", replace },
-      history: { replaceState: vi.fn() }
-    });
-    vi.stubGlobal("document", { title: "Operator Dashboard", visibilityState: "visible" });
-    loadStoredSession.mockReturnValueOnce({
-      ...storedOperatorSession,
-      operator: { ...storedOperatorSession.operator, role: "store" }
-    } as never);
-    const { mountLegacyDashboard } = await import("../src/main");
-
-    const dispose = mountLegacyDashboard({} as HTMLDivElement, "store");
-
-    expect(replace).toHaveBeenCalledWith("/orders?source=shortcut#section");
-    expect(registerEvents).not.toHaveBeenCalled();
-    dispose();
-  });
 });

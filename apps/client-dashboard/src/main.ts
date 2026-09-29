@@ -2,12 +2,10 @@ import { setNotice, state, resetDashboardData } from "./state";
 import { bindDashboardRoot, render } from "./render";
 import { registerEvents } from "./events";
 import { handleGoogleCallback, handleOwnerInviteFromUrl, loadAuthProviders } from "./controllers/auth";
-import { handleStripeOnboardingStart, handleStripeStatusRefresh } from "./controllers/onboarding";
 import { cancelDashboardLoad, loadDashboard } from "./lifecycle";
 import { resetToastRuntime } from "./toast-runtime";
 import { loadStoredApiBaseUrl, loadStoredSession, persistSection } from "./storage";
 import { registerLegacyBrowserLifecycle } from "./legacy/browser-lifecycle";
-import { stripStripeReturnParams, readStripeReturnParams } from "./lib/navigation/route-callbacks";
 import { isStoreOperator, type DashboardSection } from "./model";
 import { resolveLocationSelection } from "./features/location/location-compat";
 import { getDashboardDestination } from "./lib/navigation/dashboard-navigation";
@@ -19,30 +17,7 @@ type LegacyRuntime = {
 
 let activeRuntime: LegacyRuntime | null = null;
 
-function handleStripeReturnParams() {
-  if (typeof window === "undefined") {
-    return { returned: false, refreshRequested: false };
-  }
-
-  const { returned, refreshRequested } = readStripeReturnParams(window.location.search);
-  if (!returned && !refreshRequested) {
-    return { returned: false, refreshRequested: false };
-  }
-
-  setNotice(
-    refreshRequested
-      ? "Stripe requested a refreshed onboarding link."
-      : "Returned from Stripe. Payment readiness will refresh from the latest account status."
-  );
-  window.history.replaceState(
-    {},
-    document.title,
-    stripStripeReturnParams(window.location.pathname, window.location.search)
-  );
-  return { returned, refreshRequested };
-}
-
-function handleLaunchEntryParams() {
+function readSignInLaunchIntent() {
   if (typeof window === "undefined") {
     return;
   }
@@ -54,19 +29,15 @@ function handleLaunchEntryParams() {
     return;
   }
 
-  state.launchEntryIntent = true;
+  state.launchSignInIntent = true;
   setNotice("Sign in to create and launch your branded app.");
-  params.delete("intent");
-  params.delete("start");
-  const nextSearch = params.toString();
-  window.history.replaceState({}, document.title, `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}`);
 }
 
 async function bootstrap(signal: AbortSignal) {
   if (signal.aborted) return;
   state.initializing = false;
-  const stripeReturn = handleStripeReturnParams();
-  handleLaunchEntryParams();
+  // Preserve callback and launch query state until React owns the authenticated route.
+  readSignInLaunchIntent();
 
   const handledOwnerInvite = await handleOwnerInviteFromUrl();
   if (signal.aborted || handledOwnerInvite) return;
@@ -79,12 +50,6 @@ async function bootstrap(signal: AbortSignal) {
 
   if (state.session) {
     await loadDashboard();
-    if (signal.aborted) return;
-    if (stripeReturn.refreshRequested) {
-      await handleStripeOnboardingStart();
-    } else if (stripeReturn.returned) {
-      await handleStripeStatusRefresh();
-    }
     return;
   }
 

@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import type { OperatorDashboardSnapshot } from "../../../api";
-import { legacyOnboardingPath } from "../../../lib/navigation/dashboard-navigation";
+import { onboardingPath } from "../../../lib/navigation/dashboard-navigation";
 import type { StoreSettingsFormInput } from "../store-settings-domain";
 import { StoreSettingsForm } from "./StoreSettingsForm";
 
@@ -49,7 +49,7 @@ export function StoreSettingsPage({
           <h1 className="dash-section-title">Settings</h1>
           <p className="muted-copy">Manage storefront details for one location at a time.</p>
         </div>
-        {isOwner ? <Link className="button button--secondary" href={legacyOnboardingPath}>Launch setup</Link> : null}
+        {isOwner ? <Link className="button button--secondary" href={onboardingPath}>Launch setup</Link> : null}
       </div>
 
       {mutationError ? <div className="banner banner--error" role="alert">{mutationError}</div> : null}

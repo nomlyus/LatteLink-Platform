@@ -13,7 +13,8 @@ import {
 } from "./team-domain";
 import { createOperatorTeamMember, deleteOperatorTeamMember, updateOperatorTeamMember } from "./team-api";
 import { createTeamMutationGate } from "./team-lifecycle";
-import { ApiRequestError, fetchOperatorOnboardingSummary, updateOperatorOnboarding } from "../../api";
+import { ApiRequestError } from "../../api";
+import { fetchOperatorOnboardingSummary, updateOperatorOnboarding } from "../onboarding/onboarding-api";
 
 type TeamAccessors = {
   scopeKey: string;

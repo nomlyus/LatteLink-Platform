@@ -6,10 +6,10 @@ export function readStripeReturnParams(search: string) {
   };
 }
 
-export function stripStripeReturnParams(pathname: string, search: string) {
+export function stripStripeReturnParams(pathname: string, search: string, hash = "") {
   const params = new URLSearchParams(search);
   params.delete("stripeReturn");
   params.delete("stripeRefresh");
   const nextSearch = params.toString();
-  return `${pathname}${nextSearch ? `?${nextSearch}` : ""}`;
+  return `${pathname}${nextSearch ? `?${nextSearch}` : ""}${hash}`;
 }

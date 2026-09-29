@@ -110,7 +110,7 @@ export function renderAuthScreen() {
     return renderOwnerInviteScreen();
   }
 
-  const launchEntry = state.launchEntryIntent;
+  const launchEntry = state.launchSignInIntent;
   const launchRequest = state.launchRequest;
   const googleSsoConfigured = isGoogleSignInConfigured();
   const googleButtonHint =

@@ -5,14 +5,12 @@ const refreshOperatorSession = vi.hoisted(() => vi.fn());
 const logoutOperatorSession = vi.hoisted(() => vi.fn());
 const fetchDashboardLocations = vi.hoisted(() => vi.fn());
 const fetchOperatorSnapshot = vi.hoisted(() => vi.fn());
-const fetchOperatorOnboardingSummary = vi.hoisted(() => vi.fn());
 vi.mock("../src/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../src/api")>()),
   refreshOperatorSession,
   logoutOperatorSession,
   fetchDashboardLocations,
-  fetchOperatorSnapshot,
-  fetchOperatorOnboardingSummary
+  fetchOperatorSnapshot
 }));
 vi.mock("../src/render", () => ({ render: vi.fn() }));
 
@@ -47,7 +45,7 @@ function mockBrowserStorage(pathname = "/") {
   });
 }
 
-describe("existing dashboard session expiration behavior", () => {
+describe("existing dashboard session behavior", () => {
   afterEach(() => {
     values.clear();
     vi.clearAllMocks();
@@ -73,59 +71,22 @@ describe("existing dashboard session expiration behavior", () => {
     expect(values.has("lattelink.operator.session.v2")).toBe(false);
   });
 
-  it("lands completed owner launch intents on Home instead of the removed editor", async () => {
-    mockBrowserStorage();
-    const ownerSession: OperatorSession = {
-      ...session,
-      expiresAt: "2099-01-01T00:00:00.000Z",
-      operator: { ...session.operator, role: "owner", capabilities: ["store:read", "menu:read"] }
-    };
-    fetchDashboardLocations.mockResolvedValue([]);
-    fetchOperatorSnapshot.mockResolvedValue({
-      appConfig: null,
-      menu: { locationId: "location-a", categories: [], modifierGroups: [] },
-      storeConfig: null,
-      mobileReleaseBuildJobs: { jobs: [] }
-    });
-    fetchOperatorOnboardingSummary.mockResolvedValue({ locationId: "location-a", status: "approved" });
-    const { state } = await import("../src/state");
-    const { persistSession } = await import("../src/storage");
-    const { loadDashboard } = await import("../src/lifecycle");
-    persistSession(ownerSession);
-    state.session = ownerSession;
-    state.selectedLocationId = "location-a";
-    state.section = "store";
-    state.launchEntryIntent = true;
-
-    await loadDashboard();
-
-    expect(state.section).toBe("overview");
-    expect(state.launchEntryIntent).toBe(false);
-    expect(state.notice).toBe("Your workspace is ready.");
-    expect(values.get("lattelink.operator.section.v2")).toBe("overview");
-  });
-
-  it("keeps an owner on the onboarding compatibility route after a fresh sign-in", async () => {
-    mockBrowserStorage("/legacy/onboarding");
+  it("does not route a verified owner session into the deleted legacy onboarding section", async () => {
+    mockBrowserStorage("/onboarding");
     const ownerSession: OperatorSession = {
       ...session,
       expiresAt: "2099-01-01T00:00:00.000Z",
       operator: { ...session.operator, role: "owner", capabilities: ["store:read", "store:write"] }
     };
     fetchDashboardLocations.mockResolvedValue([]);
-    fetchOperatorSnapshot.mockResolvedValue({
-      appConfig: null,
-      menu: { locationId: "location-a", categories: [], modifierGroups: [] },
-      storeConfig: null,
-      mobileReleaseBuildJobs: { jobs: [] }
-    });
-    fetchOperatorOnboardingSummary.mockResolvedValue({ locationId: "location-a", status: "in_progress" });
+    fetchOperatorSnapshot.mockResolvedValue({ appConfig: null, storeConfig: null });
     const { state } = await import("../src/state");
     const { applyVerifiedSession } = await import("../src/lifecycle");
 
-    await applyVerifiedSession(ownerSession, "");
+    await applyVerifiedSession(ownerSession, "Signed in.");
 
-    expect(state.section).toBe("store");
-    expect(values.get("lattelink.operator.section.v2")).toBe("store");
+    expect(state.section).not.toBe("store");
+    expect(state.session?.operator.role).toBe("owner");
+    expect(values.get("lattelink.operator.section.v2")).not.toBe("onboarding");
   });
 });

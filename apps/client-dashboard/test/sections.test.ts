@@ -1,232 +1,32 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+import { getAvailableDashboardSectionsFor } from "../src/lib/navigation/dashboard-sections";
 import type { OperatorSession } from "../src/api";
-import { ensureSectionIsAvailable, getAvailableDashboardSections } from "../src/sections";
-import { state } from "../src/state";
-import { renderOnboardingSection, renderOnboardingWizard } from "../src/views/onboarding";
 
-const ownerSession: OperatorSession = {
-  accessToken: "access-token",
-  refreshToken: "refresh-token",
-  apiBaseUrl: "https://api.nomly.us/v1",
-  expiresAt: "2026-05-06T13:00:00.000Z",
-  operator: {
-    operatorUserId: "11111111-1111-4111-8111-111111111111",
-    displayName: "Pilot Owner",
-    email: "owner@example.com",
-    role: "owner",
-    locationId: "northside-01",
-    locationIds: ["northside-01"],
-    active: true,
-    capabilities: ["store:read", "store:write"],
-    createdAt: "2026-05-06T12:00:00.000Z",
-    updatedAt: "2026-05-06T12:00:00.000Z"
-  }
-};
-
-const onboardingSummary = {
-  tenantId: "tenant-northside",
-  brandId: "northside-coffee",
-  brandName: "Northside Coffee",
-  locationId: "northside-01",
-  locationName: "Northside Flagship",
-  marketLabel: "Detroit, MI",
-  status: "in_progress" as const,
-  readyForReview: false,
-  checklist: [],
+const owner: OperatorSession["operator"] = {
+  operatorUserId: "11111111-1111-4111-8111-111111111111",
+  displayName: "Pilot Owner",
+  email: "owner@example.com",
+  role: "owner",
+  locationId: "location-a",
+  locationIds: ["location-a"],
+  active: true,
+  capabilities: ["store:read", "store:write", "team:read"],
+  createdAt: "2026-05-06T12:00:00.000Z",
   updatedAt: "2026-05-06T12:00:00.000Z"
 };
 
-const storeConfig = {
-  locationId: "northside-01",
-  storeName: "Northside Coffee",
-  locationName: "Northside Flagship",
-  hours: "Daily 8 AM - 4 PM",
-  pickupInstructions: "Pick up at the front counter.",
-  taxRateBasisPoints: 600,
-  capabilities: {
-    menu: {
-      source: "platform_managed" as const
-    },
-    operations: {
-      fulfillmentMode: "staff" as const,
-      liveOrderTrackingEnabled: true,
-      dashboardEnabled: true
-    },
-    loyalty: {
-      visible: true
-    }
-  }
-};
-
-describe("dashboard sections", () => {
-  afterEach(() => {
-    state.section = "overview";
-    state.session = null;
-    state.onboardingSummary = null;
-    state.onboardingWizardOpen = false;
-    state.onboardingWizardStep = 1;
-    state.availableLocations = [];
-    state.appConfig = null;
-    state.storeConfig = null;
-    state.dashboardLoaded = false;
-    state.selectedLocationId = null;
-    state.menuCategories = [];
+describe("legacy dashboard section boundary", () => {
+  it("keeps launch readiness out of legacy section navigation", () => {
+    const sections = getAvailableDashboardSectionsFor(owner, []);
+    expect(sections).toContain("store");
+    expect(sections).toContain("team");
+    expect(sections).not.toContain("onboarding");
   });
 
-  it("keeps launch setup out of navigation and exposes it only to owners on the compatibility route", () => {
-    state.session = ownerSession;
-    state.onboardingSummary = onboardingSummary;
-    state.storeConfig = storeConfig;
-
-    expect(getAvailableDashboardSections()).not.toContain("onboarding");
-    expect(getAvailableDashboardSections()).toContain("store");
-    expect(renderOnboardingSection()).toContain("Launch setup");
-    expect(renderOnboardingSection()).toContain("7 setup items left");
-    expect(renderOnboardingSection()).toContain("Optional connectors");
-
-    state.session = {
-      ...ownerSession,
-      operator: {
-        ...ownerSession.operator,
-        role: "manager"
-      }
-    };
-    expect(getAvailableDashboardSections()).not.toContain("onboarding");
-    expect(renderOnboardingSection()).toBe("");
-
-    state.session = ownerSession;
-    state.onboardingSummary = {
-      ...onboardingSummary,
-      status: "approved"
-    };
-    expect(getAvailableDashboardSections()).not.toContain("onboarding");
-    expect(renderOnboardingSection()).toContain("Launch approved");
+  it("keeps store operators pinned to Orders rather than exposing setup sections", () => {
+    const storeOperator: OperatorSession["operator"] = { ...owner, role: "store", capabilities: ["orders:read"] };
+    const sections = getAvailableDashboardSectionsFor(storeOperator, [{ appConfig: null }]);
+    expect(sections).not.toContain("store");
+    expect(sections).not.toContain("onboarding");
   });
-
-  it("preserves the saved section until location capabilities have loaded", () => {
-    state.session = ownerSession;
-    state.section = "orders";
-    state.availableLocations = [];
-    state.appConfig = null;
-    state.dashboardLoaded = false;
-
-    ensureSectionIsAvailable();
-
-    expect(state.section).toBe("orders");
-  });
-
-  it("renders incomplete owner onboarding as a popup wizard when opened", () => {
-    state.session = ownerSession;
-    state.onboardingSummary = onboardingSummary;
-    state.storeConfig = storeConfig;
-    state.onboardingWizardOpen = true;
-
-    const html = renderOnboardingWizard();
-
-    expect(html).toContain("role=\"dialog\"");
-    expect(html).toContain("Northside Coffee launch setup");
-    expect(html).toContain("We only need the essentials first.");
-    expect(html).toContain("Details");
-    expect(html).not.toContain("Launch review");
-  });
-
-  it("renders Stripe recovery controls in the owner onboarding payments step", () => {
-    state.session = ownerSession;
-    state.onboardingSummary = {
-      ...onboardingSummary,
-      paymentReadiness: {
-        ready: false,
-        onboardingState: "pending",
-        missingRequiredFields: ["stripeChargesEnabled", "stripePayoutsEnabled"]
-      }
-    };
-    state.appConfig = {
-      paymentCapabilities: {
-        stripe: {
-          enabled: true,
-          onboarded: false,
-          dashboardEnabled: true
-        }
-      }
-    } as unknown as NonNullable<typeof state.appConfig>;
-    state.storeConfig = storeConfig;
-    state.onboardingWizardOpen = true;
-    state.onboardingWizardStep = 3;
-
-    const html = renderOnboardingWizard();
-
-    expect(html).toContain("Continue Stripe setup");
-    expect(html).toContain("Refresh status");
-    expect(html).toContain("Open Stripe Express");
-    expect(html).toContain("stripeChargesEnabled, stripePayoutsEnabled");
-    expect(html).toContain('data-action="refresh-stripe-status"');
-  });
-
-  it("renders approved and live launch states as read-only setup status", () => {
-    state.session = ownerSession;
-    state.storeConfig = storeConfig;
-    state.onboardingSummary = {
-      ...onboardingSummary,
-      status: "approved",
-      approvedAt: "2026-05-06T15:00:00.000Z",
-      mobileRelease: {
-        locationId: "northside-01",
-        status: "ready_for_launch",
-        buildNumber: "42"
-      }
-    };
-
-    const approvedHtml = renderOnboardingSection();
-    expect(approvedHtml).toContain("Launch approved");
-    expect(approvedHtml).toContain("Ready for launch");
-
-    state.onboardingSummary = {
-      ...state.onboardingSummary,
-      status: "live",
-      liveAt: "2026-05-06T16:00:00.000Z",
-      mobileRelease: {
-        locationId: "northside-01",
-        status: "live",
-        appStoreUrl: "https://apps.apple.com/us/app/example/id123456789",
-        buildNumber: "42"
-      }
-    };
-
-    const liveHtml = renderOnboardingSection();
-    expect(liveHtml).toContain("App is live");
-    expect(liveHtml).toContain("Live");
-  });
-
-  it("renders mobile release progress as read-only onboarding status", () => {
-    state.session = ownerSession;
-    state.storeConfig = storeConfig;
-    state.onboardingSummary = {
-      ...onboardingSummary,
-      checklist: [
-        {
-          id: "mobile_release_ready",
-          label: "Mobile release ready",
-          status: "pending",
-          passed: false,
-          required: true,
-          manual: true
-        }
-      ],
-      mobileRelease: {
-        locationId: "northside-01",
-        status: "submitted_for_review",
-        buildNumber: "42",
-        testFlightUrl: "https://testflight.apple.com/join/example",
-        updatedAt: "2026-05-06T12:00:00.000Z"
-      }
-    };
-
-    const html = renderOnboardingSection();
-
-    expect(html).toContain("Submitted to App Store");
-    expect(html).toContain("TestFlight");
-    expect(html).toContain("Build");
-    expect(html).not.toContain("data-action=\"mobile-release\"");
-  });
-
 });

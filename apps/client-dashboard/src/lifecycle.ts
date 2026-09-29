@@ -1,18 +1,14 @@
 import {
   fetchDashboardLocations,
-  fetchOperatorOnboardingSummary,
   fetchOperatorSnapshot,
-  isApiRequestError,
   logoutOperatorSession,
   refreshOperatorSession,
   type OperatorSession
 } from "./api";
-import { isOwnerOperator, isStoreOperator, sessionNeedsRefresh } from "./model";
+import { isStoreOperator, sessionNeedsRefresh } from "./model";
 import {
   clearStoredSession,
-  hasSeenOnboardingWizard,
   loadStoredSection,
-  markOnboardingWizardSeen,
   persistApiBaseUrl,
   persistSection,
   persistSession
@@ -21,8 +17,6 @@ import { resetDashboardData, setError, setNotice, state } from "./state";
 import { ensureSectionIsAvailable } from "./sections";
 import { render } from "./render";
 import { isSessionAuthFailure } from "./features/auth/session-compat";
-import { isOnboardingIncomplete } from "./features/onboarding/onboarding-domain";
-import { isLegacyOnboardingPath, shouldAutoOpenOwnerOnboarding } from "./lib/navigation/dashboard-navigation";
 import {
   clearLocationContext,
   initializeLocationContext,
@@ -89,86 +83,6 @@ export function resolveSelectedLocationId() {
   );
 }
 
-async function loadOwnerOnboarding(session: OperatorSession) {
-  if (!isOwnerOperator(session.operator) || !state.selectedLocationId || state.selectedLocationId === "all") {
-    state.onboardingSummary = null;
-    return;
-  }
-
-  try {
-    state.onboardingSummary = await fetchOperatorOnboardingSummary(session, state.selectedLocationId);
-  } catch (error) {
-    if (isApiRequestError(error) && error.statusCode === 404) {
-      state.onboardingSummary = null;
-      return;
-    }
-    throw error;
-  }
-}
-
-function autoOpenOwnerOnboarding() {
-  if (typeof window !== "undefined" && !shouldAutoOpenOwnerOnboarding(window.location.pathname)) {
-    return;
-  }
-
-  const operator = state.session?.operator ?? null;
-  if (
-    state.onboardingAutoOpened ||
-    !operator ||
-    !isOwnerOperator(operator) ||
-    !state.onboardingSummary ||
-    !isOnboardingIncomplete(state.onboardingSummary.status)
-  ) {
-    return;
-  }
-
-  if (hasSeenOnboardingWizard(operator.operatorUserId, state.onboardingSummary.locationId)) {
-    state.onboardingAutoOpened = true;
-    return;
-  }
-
-  state.section = "store";
-  persistSection(state.section);
-  state.onboardingWizardOpen = true;
-  state.onboardingWizardStep = 1;
-  state.onboardingAutoOpened = true;
-  markOnboardingWizardSeen(operator.operatorUserId, state.onboardingSummary.locationId);
-}
-
-function applyLaunchEntryIntent() {
-  if (!state.launchEntryIntent) {
-    return false;
-  }
-
-  const operator = state.session?.operator ?? null;
-  if (!operator) {
-    return false;
-  }
-
-  if (!isOwnerOperator(operator)) {
-    state.launchEntryIntent = false;
-    setNotice("Sign in with an owner account to create and launch a branded app.");
-    return false;
-  }
-
-  if (state.onboardingSummary && isOnboardingIncomplete(state.onboardingSummary.status)) {
-    state.section = "store";
-    persistSection(state.section);
-    state.onboardingWizardOpen = true;
-    state.onboardingWizardStep = 1;
-    state.onboardingAutoOpened = true;
-    state.launchEntryIntent = false;
-    setNotice("Continue your branded app launch setup.");
-    return true;
-  }
-
-  state.section = "overview";
-  persistSection(state.section);
-  state.launchEntryIntent = false;
-  setNotice("Your workspace is ready.");
-  return true;
-}
-
 export async function loadDashboard(options: { silent?: boolean } = {}): Promise<void> {
   if (!state.session) {
     state.loading = false;
@@ -210,27 +124,18 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
     try {
       if (state.selectedLocationId === "all") {
         state.appConfig = null;
-        state.menuCategories = [];
         state.storeConfig = null;
-        state.mobileReleaseBuildJobs = { jobs: [] };
       } else {
         const snapshot = await fetchOperatorSnapshot(session, state.selectedLocationId);
         if (loadGeneration !== dashboardLoadGeneration) return;
         state.appConfig = snapshot.appConfig;
-        state.menuCategories = snapshot.menu.categories;
         state.storeConfig = snapshot.storeConfig;
-        state.mobileReleaseBuildJobs = snapshot.mobileReleaseBuildJobs;
       }
     } catch (error) {
       if (isSessionAuthFailure(error)) throw error;
       if (!silent) setError(error instanceof Error ? error.message : "Unable to load client dashboard data.");
     }
 
-    await loadOwnerOnboarding(session);
-    if (loadGeneration !== dashboardLoadGeneration) return;
-    if (!applyLaunchEntryIntent()) {
-      autoOpenOwnerOnboarding();
-    }
     state.dashboardLoaded = true;
     ensureSectionIsAvailable();
   } catch (error) {
@@ -254,19 +159,15 @@ export async function loadDashboard(options: { silent?: boolean } = {}): Promise
 }
 
 export async function applyVerifiedSession(nextSession: OperatorSession, notice: string) {
-  const launchEntryIntent = state.launchEntryIntent;
   const currentSession = state.session;
   const shouldPreserveSection =
     currentSession?.operator.operatorUserId === nextSession.operator.operatorUserId;
-  const requestedOnboardingRoute = typeof window !== "undefined" && isLegacyOnboardingPath(window.location.pathname);
   state.session = nextSession;
   const locationContext = initializeLocationContext(nextSession);
   state.section = isStoreOperator(nextSession.operator)
     ? "orders"
     : shouldPreserveSection
       ? state.section
-      : requestedOnboardingRoute
-        ? "store"
       : "overview";
   state.selectedLocationId = isStoreOperator(nextSession.operator)
     ? nextSession.operator.locationId
@@ -287,7 +188,6 @@ export async function applyVerifiedSession(nextSession: OperatorSession, notice:
     : locationContext.selectedLocationId ?? ((nextSession.operator.locationIds?.length ?? 1) > 1
       ? "all"
       : nextSession.operator.locationId);
-  state.launchEntryIntent = launchEntryIntent;
   render();
   await loadDashboard();
 }

@@ -18,17 +18,6 @@ import {
   handlePasswordSignIn,
   showSignInScreen
 } from "./controllers/auth";
-import {
-  handleOnboardingAppIdentitySubmit,
-  handleOnboardingBusinessProfileSubmit,
-  handleOnboardingReviewSubmit,
-  handleOnboardingStepSubmit,
-  handleOnboardingStoreBasicsSubmit,
-  handleOnboardingStoreOperationsSubmit,
-  handleStripeDashboardOpen,
-  handleStripeOnboardingStart,
-  handleStripeStatusRefresh
-} from "./controllers/onboarding";
 
 function closeOpenAccountMenus(target?: Node) {
   root.querySelectorAll<HTMLDetailsElement>(".dash-account-menu[open]").forEach((menu) => {
@@ -58,11 +47,6 @@ export function registerEvents(parentSignal?: AbortSignal) {
       case "auth-sign-in": void handlePasswordSignIn(form); return;
       case "merchant-launch": void handleMerchantLaunchSubmit(form); return;
       case "owner-invite-accept": void handleOwnerInviteAccept(form); return;
-      case "onboarding-step": void handleOnboardingStepSubmit(form); return;
-      case "onboarding-business-profile": void handleOnboardingBusinessProfileSubmit(form); return;
-      case "onboarding-store-operations": void handleOnboardingStoreOperationsSubmit(form); return;
-      case "onboarding-store-basics": void handleOnboardingStoreBasicsSubmit(form); return;
-      case "onboarding-app-identity": void handleOnboardingAppIdentitySubmit(form); return;
     }
   }, { signal });
 
@@ -100,37 +84,6 @@ export function registerEvents(parentSignal?: AbortSignal) {
       case "show-sign-in": showSignInScreen(); return;
       case "sign-out": void signOut(); return;
       case "refresh": void loadDashboard(); return;
-      case "return-to-onboarding":
-        state.section = "store";
-        state.onboardingWizardOpen = false;
-        persistSection(state.section);
-        render();
-        return;
-      case "close-onboarding-wizard":
-        state.onboardingWizardOpen = false;
-        render();
-        return;
-      case "open-onboarding-wizard":
-        state.section = "store";
-        state.onboardingWizardOpen = true;
-        state.onboardingWizardStep = ["2", "3", "4", "5"].includes(actionElement.dataset.onboardingStep ?? "")
-          ? Number(actionElement.dataset.onboardingStep) as 2 | 3 | 4 | 5
-          : 1;
-        persistSection(state.section);
-        render();
-        return;
-      case "onboarding-wizard-next":
-        state.onboardingWizardStep = Math.min(state.onboardingWizardStep + 1, 5) as 1 | 2 | 3 | 4 | 5;
-        render();
-        return;
-      case "onboarding-wizard-prev":
-        state.onboardingWizardStep = Math.max(state.onboardingWizardStep - 1, 1) as 1 | 2 | 3 | 4 | 5;
-        render();
-        return;
-      case "submit-onboarding-review": void handleOnboardingReviewSubmit(); return;
-      case "start-stripe-onboarding": void handleStripeOnboardingStart(); return;
-      case "open-stripe-dashboard": void handleStripeDashboardOpen(); return;
-      case "refresh-stripe-status": void handleStripeStatusRefresh(); return;
     }
 
     if (action === "set-section") {
