@@ -4,6 +4,7 @@ import {
   canStartLocationSensitiveQueries,
   hasMultipleBootstrapLocations,
   locationPreferenceStorageKey,
+  persistConfirmedLocationSwitch,
   resolveLocationSelectionAttempt,
   resolvePersistedLocationSelection
 } from "../src/location/model";
@@ -118,14 +119,58 @@ describe("mobile location runtime model", () => {
     ).toEqual({ ok: true, selectedLocationId: "northside-02" });
   });
 
-  it("blocks location switching while the cart contains items", () => {
+  it("requests confirmation without changing cart ownership or persisted selection", () => {
     const locations = readyBootstrap(["northside-01", "northside-02"]).locations;
+    const preferences = preferenceStore("northside-01");
+    const cart = { locationId: "northside-01", items: [{ menuItemId: "latte" }], discountCode: "SAVE10" };
     expect(resolveLocationSelectionAttempt({
       locations,
       selectedLocationId: "northside-01",
       requestedLocationId: "northside-02",
       cartIsNonEmpty: true
-    })).toEqual({ ok: false, reason: "cart_not_empty" });
+    })).toEqual({ ok: false, reason: "confirmation_required" });
+    expect(preferences.set).not.toHaveBeenCalled();
+    expect(preferences.value()).toBe("northside-01");
+    expect(cart).toEqual({ locationId: "northside-01", items: [{ menuItemId: "latte" }], discountCode: "SAVE10" });
+  });
+
+  it("clears cart and checkout state only after confirmed location switch is persisted", async () => {
+    const preferences = preferenceStore("northside-01");
+    const events: string[] = [];
+    const result = await persistConfirmedLocationSwitch({
+      brandId: "northside-coffee",
+      locations: readyBootstrap(["northside-01", "northside-02"]).locations,
+      selectedLocationId: "northside-01",
+      requestedLocationId: "northside-02",
+      preferences,
+      clearCart: () => events.push("cart-cleared"),
+      clearCheckoutState: () => events.push("checkout-cleared"),
+      commitSelection: (locationId) => events.push(`selected:${locationId}`)
+    });
+
+    expect(result).toEqual({ ok: true, selectedLocationId: "northside-02" });
+    expect(preferences.value()).toBe("northside-02");
+    expect(events).toEqual(["cart-cleared", "checkout-cleared", "selected:northside-02"]);
+  });
+
+  it("keeps cart and selection untouched if confirmed preference persistence fails", async () => {
+    const preferences = preferenceStore("northside-01");
+    preferences.set.mockRejectedValue(new Error("storage unavailable"));
+    const events: string[] = [];
+    const result = await persistConfirmedLocationSwitch({
+      brandId: "northside-coffee",
+      locations: readyBootstrap(["northside-01", "northside-02"]).locations,
+      selectedLocationId: "northside-01",
+      requestedLocationId: "northside-02",
+      preferences,
+      clearCart: () => events.push("cart-cleared"),
+      clearCheckoutState: () => events.push("checkout-cleared"),
+      commitSelection: (locationId) => events.push(`selected:${locationId}`)
+    });
+
+    expect(result).toEqual({ ok: false, reason: "persistence_failed" });
+    expect(events).toEqual([]);
+    expect(preferences.value()).toBe("northside-01");
   });
 
   it("does not start location-sensitive queries before bootstrap and selection are ready", () => {

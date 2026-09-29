@@ -1,21 +1,25 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  addCartItem,
+  addCartItemAtLocation,
   calculateItemCount,
   calculateSubtotalCents,
-  removeCartItem,
-  setCartItemQuantity,
+  clearCartSnapshot,
+  removeCartSnapshotItem,
+  setCartSnapshotItemQuantity,
+  type AddCartItemAtLocationResult,
   type CartItem,
-  type CartItemInput
+  type CartItemInput,
+  type CartSnapshot
 } from "./model";
 
 type CartContextValue = {
+  locationId: string | null;
   items: CartItem[];
   itemCount: number;
   subtotalCents: number;
   discountCode: string;
   setDiscountCode: (code: string) => void;
-  addItem: (item: CartItemInput) => void;
+  addItem: (item: CartItemInput, selectedLocationId: string | null) => AddCartItemAtLocationResult;
   setQuantity: (lineId: string, quantity: number) => void;
   removeItem: (lineId: string) => void;
   clear: () => void;
@@ -24,30 +28,44 @@ type CartContextValue = {
 const CartContext = createContext<CartContextValue | undefined>(undefined);
 
 export function CartProvider({ children }: { children: ReactNode }) {
-  const [items, setItems] = useState<CartItem[]>([]);
-  const [discountCode, setDiscountCodeState] = useState("");
+  const [cart, setCart] = useState<CartSnapshot>(clearCartSnapshot);
+  const cartRef = useRef(cart);
+  cartRef.current = cart;
+
+  const commit = (nextCart: CartSnapshot) => {
+    cartRef.current = nextCart;
+    setCart(nextCart);
+  };
 
   const value = useMemo<CartContextValue>(() => {
-    const itemCount = calculateItemCount(items);
-    const subtotalCents = calculateSubtotalCents(items);
+    const itemCount = calculateItemCount(cart.items);
+    const subtotalCents = calculateSubtotalCents(cart.items);
 
     return {
-      items,
+      locationId: cart.locationId,
+      items: cart.items,
       itemCount,
       subtotalCents,
-      discountCode,
-      setDiscountCode: (code) => setDiscountCodeState(code.toUpperCase().replace(/[^A-Z0-9_-]/g, "")),
-      addItem: (item) => {
-        setItems((prev) => addCartItem(prev, item));
+      discountCode: cart.discountCode,
+      setDiscountCode: (code) => {
+        commit({ ...cartRef.current, discountCode: code.toUpperCase().replace(/[^A-Z0-9_-]/g, "") });
       },
-      setQuantity: (lineId, quantity) => setItems((prev) => setCartItemQuantity(prev, lineId, quantity)),
-      removeItem: (lineId) => setItems((prev) => removeCartItem(prev, lineId)),
-      clear: () => {
-        setItems([]);
-        setDiscountCodeState("");
-      }
+      addItem: (item, selectedLocationId) => {
+        const result = addCartItemAtLocation(cartRef.current, selectedLocationId, item);
+        if (result.ok) {
+          commit(result.cart);
+        }
+        return result;
+      },
+      setQuantity: (lineId, quantity) => {
+        commit(setCartSnapshotItemQuantity(cartRef.current, lineId, quantity));
+      },
+      removeItem: (lineId) => {
+        commit(removeCartSnapshotItem(cartRef.current, lineId));
+      },
+      clear: () => commit(clearCartSnapshot())
     };
-  }, [discountCode, items]);
+  }, [cart]);
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }

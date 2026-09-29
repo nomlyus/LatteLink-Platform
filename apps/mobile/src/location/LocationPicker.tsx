@@ -10,23 +10,51 @@ export function LocationPicker({ children, color = uiPalette.text }: { children:
     locations,
     selectedLocationId,
     selectLocation,
-    isSwitchBlockedByCart,
+    confirmLocationSwitch,
     isSwitchingLocation
   } = useLocationContext();
   const [isOpen, setIsOpen] = useState(false);
-  const [selectionError, setSelectionError] = useState(false);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
+  const [pendingLocationId, setPendingLocationId] = useState<string | null>(null);
 
   if (!hasMultipleLocations) {
     return <>{children}</>;
   }
 
   const chooseLocation = async (locationId: string) => {
-    setSelectionError(false);
+    setSelectionError(null);
     const result = await selectLocation(locationId);
     if (result.ok) {
       setIsOpen(false);
+      setPendingLocationId(null);
+    } else if (result.reason === "confirmation_required") {
+      setPendingLocationId(locationId);
     } else if (result.reason === "persistence_failed") {
-      setSelectionError(true);
+      setSelectionError("Could not save that location. Please try again.");
+    } else if (result.reason === "not_available") {
+      setSelectionError("That location is no longer available. Choose another location.");
+    }
+  };
+
+  const cancelSwitch = () => {
+    if (isSwitchingLocation) return;
+    setPendingLocationId(null);
+    setSelectionError(null);
+    setIsOpen(false);
+  };
+
+  const confirmSwitch = async () => {
+    if (!pendingLocationId) return;
+    setSelectionError(null);
+    const result = await confirmLocationSwitch(pendingLocationId);
+    if (result.ok) {
+      setPendingLocationId(null);
+      setIsOpen(false);
+    } else if (result.reason === "persistence_failed") {
+      setSelectionError("Could not save that location. Please try again.");
+    } else if (result.reason === "not_available") {
+      setPendingLocationId(null);
+      setSelectionError("That location is no longer available. Choose another location.");
     }
   };
 
@@ -44,12 +72,12 @@ export function LocationPicker({ children, color = uiPalette.text }: { children:
         <Ionicons name="chevron-down" size={14} color={color} />
       </Pressable>
 
-      <Modal visible={isOpen} transparent animationType="fade" onRequestClose={() => setIsOpen(false)}>
+      <Modal visible={isOpen} transparent animationType="fade" onRequestClose={cancelSwitch}>
         <View style={styles.modalRoot}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Close location chooser"
-            onPress={() => setIsOpen(false)}
+            onPress={cancelSwitch}
             style={StyleSheet.absoluteFill}
           />
           <View style={styles.sheet}>
@@ -61,24 +89,47 @@ export function LocationPicker({ children, color = uiPalette.text }: { children:
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Close location chooser"
-                onPress={() => setIsOpen(false)}
+                onPress={cancelSwitch}
                 style={styles.closeButton}
               >
                 <Ionicons name="close" size={20} color={uiPalette.text} />
               </Pressable>
             </View>
 
-            {isSwitchBlockedByCart ? (
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sheetNote}>Empty your cart before switching locations.</Text>
+            {pendingLocationId ? (
+              <>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sheetNote}>
+                  Changing location will clear your cart. Your discount and any pending checkout will also be removed.
+                </Text>
+                <View style={styles.confirmActions}>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={cancelSwitch}
+                    disabled={isSwitchingLocation}
+                    style={({ pressed }) => [styles.cancelButton, pressed ? styles.locationRowPressed : null]}
+                  >
+                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.cancelButtonText}>Cancel</Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => void confirmSwitch()}
+                    disabled={isSwitchingLocation}
+                    style={({ pressed }) => [styles.confirmButton, pressed ? styles.locationRowPressed : null]}
+                  >
+                    {isSwitchingLocation ? <ActivityIndicator color={uiPalette.surfaceStrong} size="small" /> : null}
+                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.confirmButtonText}>Clear cart and switch</Text>
+                  </Pressable>
+                </View>
+              </>
             ) : (
               <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sheetNote}>Your menu and store details will update for the selected location.</Text>
             )}
-            {selectionError ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.errorText}>Could not save that location. Please try again.</Text> : null}
+            {selectionError ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.errorText}>{selectionError}</Text> : null}
 
-            <View style={styles.locationList}>
+            {!pendingLocationId ? <View style={styles.locationList}>
               {locations.map((location) => {
                 const isSelected = location.locationId === selectedLocationId;
-                const disabled = isSelected || isSwitchBlockedByCart || isSwitchingLocation;
+                const disabled = isSelected || isSwitchingLocation;
                 return (
                   <Pressable
                     key={location.locationId}
@@ -104,7 +155,7 @@ export function LocationPicker({ children, color = uiPalette.text }: { children:
                   </Pressable>
                 );
               })}
-            </View>
+            </View> : null}
           </View>
         </View>
       </Modal>
@@ -180,6 +231,40 @@ const styles = StyleSheet.create({
   errorText: {
     color: uiPalette.warning,
     fontSize: 13
+  },
+  confirmActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 6
+  },
+  cancelButton: {
+    minHeight: 48,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 18,
+    borderRadius: 15,
+    backgroundColor: uiPalette.surfaceMuted
+  },
+  cancelButtonText: {
+    color: uiPalette.text,
+    fontSize: 14,
+    fontWeight: "600"
+  },
+  confirmButton: {
+    minHeight: 48,
+    flex: 1,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    borderRadius: 15,
+    backgroundColor: uiPalette.primary
+  },
+  confirmButtonText: {
+    color: uiPalette.surfaceStrong,
+    fontSize: 14,
+    fontWeight: "700"
   },
   locationList: {
     gap: 8,

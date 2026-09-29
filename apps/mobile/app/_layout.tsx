@@ -278,10 +278,10 @@ function RootLayout() {
           <BottomSheetModalProvider>
             <AuthSessionProvider>
               <CartProvider>
-                <LocationProvider>
-                  <StartupCatalogGate onReadyToDisplay={hideSplash}>
-                    <AppInitializer />
-                    <CheckoutFlowProvider>
+                <CheckoutFlowProvider>
+                  <LocationProvider>
+                    <StartupCatalogGate onReadyToDisplay={hideSplash}>
+                      <AppInitializer />
                       <Stack
                         screenOptions={{
                           headerShown: false,
@@ -362,9 +362,9 @@ function RootLayout() {
                           }}
                         />
                       </Stack>
-                    </CheckoutFlowProvider>
-                  </StartupCatalogGate>
-                </LocationProvider>
+                    </StartupCatalogGate>
+                  </LocationProvider>
+                </CheckoutFlowProvider>
               </CartProvider>
             </AuthSessionProvider>
           </BottomSheetModalProvider>

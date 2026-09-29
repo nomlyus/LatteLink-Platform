@@ -3,8 +3,11 @@ import { normalizeCustomizationGroups } from "@lattelink/contracts-catalog";
 import { createCartItem, DEFAULT_CUSTOMIZATION } from "../src/cart/model";
 import {
   CheckoutSubmissionError,
+  checkoutSnapshotMatchesCart,
   createCheckoutIdempotencyKey,
   createDemoApplePayToken,
+  isCheckoutLocationConsistent,
+  isRetryableCheckoutForCart,
   prepareStripeCheckout,
   resolveInlineCheckoutErrorMessage,
   shouldShowCheckoutFailureScreen,
@@ -42,6 +45,44 @@ const espressoGroups = normalizeCustomizationGroups([
 ]);
 
 describe("checkout helpers", () => {
+  it("requires cart and selected locations to match before creating a quote", async () => {
+    const checkoutApi = {
+      quoteOrder: vi.fn(),
+      createCheckoutDraft: vi.fn(),
+      createStripeMobilePaymentSession: vi.fn()
+    };
+
+    expect(isCheckoutLocationConsistent("northside-01", "northside-01")).toBe(true);
+    expect(isCheckoutLocationConsistent("northside-01", "northside-02")).toBe(false);
+    expect(isCheckoutLocationConsistent(null, "northside-02")).toBe(false);
+    await expect(prepareStripeCheckout({
+      cartLocationId: "northside-01",
+      selectedLocationId: "northside-02",
+      items: [createCartItem({ menuItemId: "latte", itemName: "Latte", basePriceCents: 575, customizationGroups: [], customization: DEFAULT_CUSTOMIZATION })]
+    }, checkoutApi)).rejects.toMatchObject({ stage: "quote" });
+    expect(checkoutApi.quoteOrder).not.toHaveBeenCalled();
+  });
+
+  it("prevents reuse of a retry checkout from another location", () => {
+    const checkout: CheckoutDraftSnapshot = {
+      checkoutId: "123e4567-e89b-12d3-a456-426614174000",
+      quoteId: "5ec083a1-0f31-4d04-a525-7808a0d7624b",
+      quoteHash: "quote-hash-123",
+      locationId: "northside-01",
+      status: "OPEN",
+      items: [],
+      total: { currency: "USD", amountCents: 575 },
+      expiresAt: "2030-03-10T00:00:00.000Z",
+      quoteItems: []
+    };
+
+    expect(isRetryableCheckoutForCart(checkout, [], "northside-01", "northside-01")).toBe(true);
+    expect(isRetryableCheckoutForCart(checkout, [], "northside-02", "northside-02")).toBe(false);
+    expect(isRetryableCheckoutForCart(checkout, [], "northside-01", "northside-02")).toBe(false);
+    expect(checkoutSnapshotMatchesCart(checkout, [], "northside-01", "northside-01")).toBe(true);
+    expect(checkoutSnapshotMatchesCart(checkout, [], "northside-01", "northside-02")).toBe(false);
+  });
+
   it("aggregates cart lines by menu item id for quote input", () => {
     const items = [
       createCartItem({
@@ -184,7 +225,7 @@ describe("checkout helpers", () => {
       customization: DEFAULT_CUSTOMIZATION
     })];
 
-    await expect(prepareStripeCheckout({ locationId: "flagship-01", items, existingCheckout }, checkoutApi))
+    await expect(prepareStripeCheckout({ cartLocationId: "flagship-01", selectedLocationId: "flagship-01", items, existingCheckout: { ...existingCheckout, quoteItems: toQuoteItems(items) } }, checkoutApi))
       .rejects.toMatchObject({
         stage: "pay",
         message: "Ordering is unavailable at this location right now. Please try again later."
@@ -271,7 +312,8 @@ describe("checkout helpers", () => {
 
     const preparedCheckout = await prepareStripeCheckout(
       {
-        locationId: "flagship-01",
+        cartLocationId: "flagship-01",
+        selectedLocationId: "flagship-01",
         items
       },
       checkoutApi
@@ -357,7 +399,8 @@ describe("checkout helpers", () => {
 
     await prepareStripeCheckout(
       {
-        locationId: "flagship-01",
+        cartLocationId: "flagship-01",
+        selectedLocationId: "flagship-01",
         items,
         discountCode: "LAUNCH10"
       },
@@ -370,6 +413,69 @@ describe("checkout helpers", () => {
       pointsToRedeem: 0,
       discountCode: "LAUNCH10"
     });
+  });
+
+  it("stops before checkout creation if the returned quote location is wrong", async () => {
+    const items = [createCartItem({
+      menuItemId: "latte",
+      itemName: "Latte",
+      basePriceCents: 575,
+      customizationGroups: [],
+      customization: DEFAULT_CUSTOMIZATION
+    })];
+    const checkoutApi = {
+      quoteOrder: vi.fn().mockResolvedValue({
+        quoteId: "5ec083a1-0f31-4d04-a525-7808a0d7624b",
+        quoteHash: "quote-hash-123",
+        locationId: "northside-02"
+      }),
+      createCheckoutDraft: vi.fn(),
+      createStripeMobilePaymentSession: vi.fn()
+    };
+
+    await expect(prepareStripeCheckout({
+      cartLocationId: "northside-01",
+      selectedLocationId: "northside-01",
+      items
+    }, checkoutApi)).rejects.toMatchObject({ stage: "quote" });
+    expect(checkoutApi.quoteOrder).toHaveBeenCalledWith(expect.objectContaining({ locationId: "northside-01" }));
+    expect(checkoutApi.createCheckoutDraft).not.toHaveBeenCalled();
+    expect(checkoutApi.createStripeMobilePaymentSession).not.toHaveBeenCalled();
+  });
+
+  it("does not create a payment session for a draft that differs from its quote location", async () => {
+    const items = [createCartItem({
+      menuItemId: "latte",
+      itemName: "Latte",
+      basePriceCents: 575,
+      customizationGroups: [],
+      customization: DEFAULT_CUSTOMIZATION
+    })];
+    const checkoutApi = {
+      quoteOrder: vi.fn().mockResolvedValue({
+        quoteId: "5ec083a1-0f31-4d04-a525-7808a0d7624b",
+        quoteHash: "quote-hash-123",
+        locationId: "northside-01"
+      }),
+      createCheckoutDraft: vi.fn().mockResolvedValue({
+        checkoutId: "123e4567-e89b-12d3-a456-426614174000",
+        quoteId: "5ec083a1-0f31-4d04-a525-7808a0d7624b",
+        quoteHash: "quote-hash-123",
+        locationId: "northside-02",
+        status: "OPEN",
+        items: [],
+        total: { currency: "USD", amountCents: 575 },
+        expiresAt: "2030-03-10T00:00:00.000Z"
+      }),
+      createStripeMobilePaymentSession: vi.fn()
+    };
+
+    await expect(prepareStripeCheckout({
+      cartLocationId: "northside-01",
+      selectedLocationId: "northside-01",
+      items
+    }, checkoutApi)).rejects.toMatchObject({ stage: "create" });
+    expect(checkoutApi.createStripeMobilePaymentSession).not.toHaveBeenCalled();
   });
 
   it("reuses an existing open checkout when retrying Stripe checkout", async () => {
@@ -423,7 +529,8 @@ describe("checkout helpers", () => {
 
     const preparedCheckout = await prepareStripeCheckout(
       {
-        locationId: "flagship-01",
+        cartLocationId: "flagship-01",
+        selectedLocationId: "flagship-01",
         items,
         existingCheckout: {
           ...existingCheckout,
@@ -439,5 +546,41 @@ describe("checkout helpers", () => {
       checkoutId: existingCheckout.checkoutId
     });
     expect(preparedCheckout.checkout.checkoutId).toBe(existingCheckout.checkoutId);
+    expect(preparedCheckout.checkout.locationId).toBe("flagship-01");
+  });
+
+  it("rejects an existing checkout when its stored location differs from the cart", async () => {
+    const items = [createCartItem({
+      menuItemId: "latte",
+      itemName: "Latte",
+      basePriceCents: 575,
+      customizationGroups: [],
+      customization: DEFAULT_CUSTOMIZATION
+    })];
+    const existingCheckout: CheckoutDraftSnapshot = {
+      checkoutId: "123e4567-e89b-12d3-a456-426614174000",
+      quoteId: "5ec083a1-0f31-4d04-a525-7808a0d7624b",
+      quoteHash: "quote-hash-123",
+      locationId: "northside-01",
+      status: "OPEN",
+      items: [],
+      total: { currency: "USD", amountCents: 575 },
+      expiresAt: "2030-03-10T00:00:00.000Z",
+      quoteItems: toQuoteItems(items)
+    };
+    const checkoutApi = {
+      quoteOrder: vi.fn(),
+      createCheckoutDraft: vi.fn(),
+      createStripeMobilePaymentSession: vi.fn()
+    };
+
+    await expect(prepareStripeCheckout({
+      cartLocationId: "northside-02",
+      selectedLocationId: "northside-02",
+      items,
+      existingCheckout
+    }, checkoutApi)).rejects.toMatchObject({ stage: "quote" });
+    expect(checkoutApi.quoteOrder).not.toHaveBeenCalled();
+    expect(checkoutApi.createStripeMobilePaymentSession).not.toHaveBeenCalled();
   });
 });

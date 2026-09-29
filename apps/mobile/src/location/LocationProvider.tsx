@@ -4,9 +4,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { MOBILE_API_ENVIRONMENT, isBackendReachabilityError, mobileBootstrapApiClient } from "../api/client";
 import { useCart } from "../cart/store";
+import { reconcileCartLocation } from "../cart/model";
+import { useCheckoutFlow } from "../orders/flow";
 import { secureLocationPreferenceStore } from "./preference";
 import {
   hasMultipleBootstrapLocations,
+  persistConfirmedLocationSwitch,
   resolveLocationSelectionAttempt,
   resolvePersistedLocationSelection,
   type LocationSelectionResult
@@ -30,9 +33,11 @@ export type LocationContextValue = {
   orderingEnabled: boolean;
   canSwitchLocations: boolean;
   isSwitchingLocation: boolean;
-  isSwitchBlockedByCart: boolean;
+  cartInvalidatedNotice: string | null;
   retryBootstrap: () => Promise<void>;
   selectLocation: (locationId: string) => Promise<LocationSelectionResult>;
+  confirmLocationSwitch: (locationId: string) => Promise<LocationSelectionResult>;
+  dismissCartInvalidatedNotice: () => void;
 };
 
 const LocationContext = createContext<LocationContextValue | undefined>(undefined);
@@ -44,9 +49,12 @@ function selectionSignature(brandId: string, bootstrap: MobileBrandBootstrap) {
 
 export function LocationProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
-  const { items } = useCart();
-  const itemsRef = useRef(items);
-  itemsRef.current = items;
+  const cart = useCart();
+  const cartRef = useRef(cart);
+  cartRef.current = cart;
+  const checkoutFlow = useCheckoutFlow();
+  const checkoutFlowRef = useRef(checkoutFlow);
+  checkoutFlowRef.current = checkoutFlow;
   const brandId = MOBILE_API_ENVIRONMENT.brandId;
   const apiConfigurationError = MOBILE_API_ENVIRONMENT.apiConfigurationError;
   const bootstrapQuery = useQuery({
@@ -64,6 +72,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     locationId: string | null;
   } | null>(null);
   const [isSwitchingLocation, setIsSwitchingLocation] = useState(false);
+  const [cartInvalidatedNotice, setCartInvalidatedNotice] = useState<string | null>(null);
   const switchInFlight = useRef(false);
 
   useEffect(() => {
@@ -110,7 +119,6 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   const isResolvingSelection = bootstrapStatus === "ready" && !selectionIsResolved;
   const isReady = bootstrapStatus === "ready" && selectionIsResolved && selectedLocationId !== null && selectedLocation !== null;
   const hasMultipleLocations = bootstrap ? hasMultipleBootstrapLocations(bootstrap) : false;
-  const isSwitchBlockedByCart = items.length > 0;
 
   const previousSelectedLocationRef = useRef<string | null>(null);
   useEffect(() => {
@@ -125,10 +133,26 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     void queryClient.cancelQueries(queryFilter).then(() => queryClient.removeQueries(queryFilter));
   }, [brandId, queryClient, selectedLocationId]);
 
+  useEffect(() => {
+    if ((bootstrapStatus !== "ready" && bootstrapStatus !== "unavailable") || cart.items.length === 0) return;
+    const reconciled = reconcileCartLocation(
+      { locationId: cart.locationId, items: cart.items, discountCode: cart.discountCode },
+      locations.map((location) => location.locationId)
+    );
+    if (reconciled.items.length === cart.items.length && reconciled.locationId === cart.locationId) return;
+
+    setCartInvalidatedNotice("Your cart was cleared because its store is no longer available.");
+    cart.clear();
+    checkoutFlow.clearFailure();
+    checkoutFlow.clearRetryOrder();
+  }, [bootstrapStatus, cart.clear, cart.discountCode, cart.items, cart.locationId, checkoutFlow.clearFailure, checkoutFlow.clearRetryOrder, locations]);
+
   const refetchBootstrap = bootstrapQuery.refetch;
   const retryBootstrap = useCallback(async () => {
     await refetchBootstrap();
   }, [refetchBootstrap]);
+
+  const dismissCartInvalidatedNotice = useCallback(() => setCartInvalidatedNotice(null), []);
 
   const selectLocation = useCallback(
     async (locationId: string) => {
@@ -139,7 +163,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         locations,
         selectedLocationId,
         requestedLocationId: locationId,
-        cartIsNonEmpty: itemsRef.current.length > 0
+        cartIsNonEmpty: cartRef.current.items.length > 0
       });
       if (!result.ok || result.selectedLocationId === selectedLocationId) {
         return result;
@@ -149,17 +173,42 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       setIsSwitchingLocation(true);
       try {
         await secureLocationPreferenceStore.set(brandId, result.selectedLocationId);
-        if (itemsRef.current.length > 0) {
-          try {
-            if (selectedLocationId) await secureLocationPreferenceStore.set(brandId, selectedLocationId);
-          } catch {
-            // The in-memory selection remains unchanged if storage rollback is unavailable.
-          }
-          return { ok: false, reason: "cart_not_empty" } as const;
-        }
-
+        checkoutFlowRef.current.clearFailure();
+        checkoutFlowRef.current.clearRetryOrder();
         setResolvedSelection({ signature, locationId: result.selectedLocationId });
         return result;
+      } catch {
+        return { ok: false, reason: "persistence_failed" } as const;
+      } finally {
+        switchInFlight.current = false;
+        setIsSwitchingLocation(false);
+      }
+    },
+    [brandId, locations, selectedLocationId, signature]
+  );
+
+  const confirmLocationSwitch = useCallback(
+    async (locationId: string) => {
+      if (switchInFlight.current) {
+        return { ok: false, reason: "switch_in_progress" } as const;
+      }
+      switchInFlight.current = true;
+      setIsSwitchingLocation(true);
+      try {
+        return await persistConfirmedLocationSwitch({
+          brandId,
+          locations,
+          selectedLocationId,
+          requestedLocationId: locationId,
+          preferences: secureLocationPreferenceStore,
+          // This method is called only after the customer confirms the destructive switch.
+          clearCart: () => cartRef.current.clear(),
+          clearCheckoutState: () => {
+            checkoutFlowRef.current.clearFailure();
+            checkoutFlowRef.current.clearRetryOrder();
+          },
+          commitSelection: (nextLocationId) => setResolvedSelection({ signature, locationId: nextLocationId })
+        });
       } catch {
         return { ok: false, reason: "persistence_failed" } as const;
       } finally {
@@ -183,11 +232,13 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       isResolvingSelection,
       isReady,
       orderingEnabled: isReady && bootstrap?.status === "ready" && bootstrap.orderingEnabled,
-      canSwitchLocations: hasMultipleLocations && !isSwitchBlockedByCart && !isSwitchingLocation,
+      canSwitchLocations: hasMultipleLocations && !isSwitchingLocation,
       isSwitchingLocation,
-      isSwitchBlockedByCart,
+      cartInvalidatedNotice,
       retryBootstrap,
-      selectLocation
+      selectLocation,
+      confirmLocationSwitch,
+      dismissCartInvalidatedNotice
     }),
     [
       brandId,
@@ -202,11 +253,13 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       primaryLocationId,
       retryBootstrap,
       selectLocation,
+      confirmLocationSwitch,
+      cartInvalidatedNotice,
+      dismissCartInvalidatedNotice,
       hasMultipleLocations,
       selectedLocation,
       selectedLocationId,
-      isSwitchingLocation,
-      isSwitchBlockedByCart
+      isSwitchingLocation
     ]
   );
 
