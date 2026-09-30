@@ -33,7 +33,8 @@ export function fetchOperatorOnboardingSummary(session: OperatorSession, locatio
 export function fetchOperatorOnboardingAppConfig(session: OperatorSession, locationId: string, signal?: AbortSignal) {
   return requestJson({
     apiBaseUrl: session.apiBaseUrl,
-    path: "/app-config",
+    accessToken: session.accessToken,
+    path: "/admin/app-config",
     query: { locationId },
     signal,
     schema: appConfigSchema

@@ -4730,6 +4730,46 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
   );
 
   app.get(
+    "/v1/admin/app-config",
+    {
+      preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("orders:read"), app.rateLimit(staffReadRateLimit)],
+      schema: {
+        querystring: {
+          type: "object",
+          required: ["locationId"],
+          additionalProperties: false,
+          properties: { locationId: { type: "string", minLength: 1 } }
+        }
+      }
+    },
+    async (request, reply) => {
+      const locationContext = resolveRequestedOperatorLocationId(request, { required: true });
+      if (locationContext.error) {
+        return reply.status(locationContext.error.code === "FORBIDDEN" ? 403 : 400).send(locationContext.error);
+      }
+      const locationId = locationContext.locationId;
+      if (!locationId) {
+        return reply.status(400).send(invalidRequest(request.id, "A locationId is required for this request"));
+      }
+
+      return proxyUpstream({
+        request,
+        reply,
+        baseUrl: catalogBaseUrl,
+        serviceLabel: "Catalog",
+        method: "GET",
+        path: `/v1/catalog/internal/locations/${encodeURIComponent(locationId)}/app-config`,
+        additionalHeaders: {
+          "x-gateway-token": gatewayInternalApiToken,
+          ...operatorLocationHeader(locationId)
+        },
+        forwardUserIdHeader: false,
+        responseSchema: appConfigSchema
+      });
+    }
+  );
+
+  app.get(
     "/v1/admin/store/config",
     {
       preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("store:read"), app.rateLimit(staffReadRateLimit)]

@@ -317,7 +317,8 @@ export async function fetchDashboardLocations(session: OperatorSession): Promise
       const [appConfig, storeConfig] = await Promise.all([
         requestJson({
           apiBaseUrl: session.apiBaseUrl,
-          path: "/app-config",
+          accessToken: session.accessToken,
+          path: "/admin/app-config",
           query: { locationId },
           schema: appConfigSchema
         }),
@@ -399,7 +400,8 @@ export async function fetchOperatorSnapshot(
     locationId
       ? requestJson({
           apiBaseUrl: session.apiBaseUrl,
-          path: "/app-config",
+          accessToken: session.accessToken,
+          path: "/admin/app-config",
           query,
           schema: appConfigSchema
         })

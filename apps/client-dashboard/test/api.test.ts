@@ -19,6 +19,7 @@ import { acceptOperatorInvite, lookupOperatorInvite } from "../src/features/invi
 import {
   createOperatorStripeDashboardLink,
   createOperatorStripeOnboardingLink,
+  fetchOperatorOnboardingAppConfig,
   fetchOperatorOnboardingSummary,
   refreshOperatorStripeStatus,
   submitOperatorOnboardingReview,
@@ -84,6 +85,29 @@ describe("client dashboard api helpers", () => {
     expect(normalizeApiBaseUrl("http://127.0.0.1:8080")).toBe("http://127.0.0.1:8080/v1");
     expect(normalizeApiBaseUrl("http://127.0.0.1:8080/")).toBe("http://127.0.0.1:8080/v1");
     expect(normalizeApiBaseUrl("http://127.0.0.1:8080/v1")).toBe("http://127.0.0.1:8080/v1");
+  });
+
+  it("loads onboarding app configuration through the authenticated operator route", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ code: "UNAUTHORIZED", message: "Sign in required" }), { status: 401 })
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    const session = {
+      apiBaseUrl: "https://api-dev.nomly.us/v1",
+      accessToken: "access-token",
+      refreshToken: "refresh-token",
+      expiresAt: "2026-04-23T23:00:00.000Z",
+      operator: authSessionPayload.operator
+    } as OperatorSession;
+
+    await expect(fetchOperatorOnboardingAppConfig(session, "loc-a")).rejects.toThrow();
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://api-dev.nomly.us/v1/admin/app-config?locationId=loc-a",
+      expect.objectContaining({
+        method: "GET",
+        headers: expect.objectContaining({ authorization: "Bearer access-token" })
+      })
+    );
   });
 
   it("builds bearer headers for authenticated operator requests", () => {
@@ -923,16 +947,18 @@ describe("client dashboard api helpers", () => {
     expect(locations.map((location) => location.locationId)).toEqual(["flagship-01", "northside-01"]);
     expect(fetchSpy).toHaveBeenNthCalledWith(
       1,
-      "https://api.nomly.us/v1/app-config?locationId=flagship-01",
+      "https://api.nomly.us/v1/admin/app-config?locationId=flagship-01",
       expect.objectContaining({
-        method: "GET"
+        method: "GET",
+        headers: expect.objectContaining({ authorization: "Bearer access-token" })
       })
     );
     expect(fetchSpy).toHaveBeenNthCalledWith(
       2,
-      "https://api.nomly.us/v1/app-config?locationId=northside-01",
+      "https://api.nomly.us/v1/admin/app-config?locationId=northside-01",
       expect.objectContaining({
-        method: "GET"
+        method: "GET",
+        headers: expect.objectContaining({ authorization: "Bearer access-token" })
       })
     );
   });
@@ -1029,9 +1055,10 @@ describe("client dashboard api helpers", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(fetchSpy).toHaveBeenNthCalledWith(
       1,
-      "https://api.nomly.us/v1/app-config?locationId=flagship-01",
+      "https://api.nomly.us/v1/admin/app-config?locationId=flagship-01",
       expect.objectContaining({
-        method: "GET"
+        method: "GET",
+        headers: expect.objectContaining({ authorization: "Bearer access-token" })
       })
     );
     expect(fetchSpy).not.toHaveBeenCalledWith(
