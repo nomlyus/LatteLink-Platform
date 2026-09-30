@@ -270,6 +270,52 @@ let previousFreeClientDashboardDomain: string | undefined;
     };
   }
 
+  function buildOperatorAppConfig(locationId: string) {
+    return {
+      brand: {
+        brandId: "gazelle-default",
+        brandName: "Gazelle Coffee",
+        locationId,
+        locationName: locationId === "flagship-01" ? "Gazelle Coffee Flagship" : "Northside",
+        marketLabel: "Ann Arbor, MI"
+      },
+      theme: {
+        background: "#F7F4ED",
+        backgroundAlt: "#F0ECE4",
+        surface: "#FFFDF8",
+        surfaceMuted: "#F3EFE7",
+        foreground: "#171513",
+        foregroundMuted: "#605B55",
+        muted: "#9B9389",
+        border: "rgba(23, 21, 19, 0.08)",
+        primary: "#1E1B18",
+        accent: "#2D2823"
+      },
+      header: { background: "#F7F4ED" },
+      enabledTabs: ["home", "menu", "orders", "account"],
+      featureFlags: {
+        loyalty: true,
+        pushNotifications: true,
+        refunds: true,
+        orderTracking: true,
+        staffDashboard: true,
+        menuEditing: true
+      },
+      loyaltyEnabled: true,
+      paymentCapabilities: {
+        applePay: true,
+        card: true,
+        cash: false,
+        refunds: true,
+        stripe: { enabled: false, onboarded: false, dashboardEnabled: false }
+      },
+      fulfillment: {
+        mode: "staff",
+        timeBasedScheduleMinutes: { inPrep: 5, ready: 10, completed: 15 }
+      }
+    };
+  }
+
   beforeEach(() => {
     fetchMock.mockReset();
     previousIdentityBaseUrl = process.env.IDENTITY_SERVICE_BASE_URL;
@@ -1558,6 +1604,14 @@ let previousFreeClientDashboardDomain: string | undefined;
           }),
           { status: 200, headers: { "content-type": "application/json" } }
         );
+      }
+
+      const internalAppConfigMatch = url.match(/\/v1\/catalog\/internal\/locations\/([^/]+)\/app-config$/);
+      if (internalAppConfigMatch && method === "GET") {
+        return new Response(JSON.stringify(buildOperatorAppConfig(decodeURIComponent(internalAppConfigMatch[1]))), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
       }
 
       if (url.endsWith("/v1/catalog/admin/store/config") && method === "PUT") {
@@ -3977,6 +4031,44 @@ let previousFreeClientDashboardDomain: string | undefined;
       const upstreamHeaders = new Headers((adminOrdersCall[1]?.headers ?? {}) as HeadersInit);
       expect(upstreamHeaders.get("x-user-id")).toBeNull();
     }
+
+    await app.close();
+  });
+
+  it("serves operator app configuration for an authorized store location without public brand lookup", async () => {
+    const app = await buildApp();
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/admin/app-config?locationId=flagship-01",
+      headers: storeOperatorHeaders
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      brand: { brandId: "gazelle-default", locationId: "flagship-01" },
+      fulfillment: { mode: "staff" }
+    });
+
+    const catalogCall = fetchMock.mock.calls.find(([input]) => {
+      const url = typeof input === "string" ? input : input.url;
+      return url === "http://catalog.internal/v1/catalog/internal/locations/flagship-01/app-config";
+    });
+    expect(catalogCall).toBeDefined();
+    if (catalogCall) {
+      const headers = new Headers((catalogCall[1]?.headers ?? {}) as HeadersInit);
+      expect(headers.get("x-gateway-token")).toBe("gateway-test-token");
+      expect(headers.get("x-operator-location-id")).toBe("flagship-01");
+      expect(headers.get("x-user-id")).toBeNull();
+    }
+
+    const callCount = fetchMock.mock.calls.length;
+    const forbiddenResponse = await app.inject({
+      method: "GET",
+      url: "/v1/admin/app-config?locationId=northside-01",
+      headers: storeOperatorHeaders
+    });
+    expect(forbiddenResponse.statusCode).toBe(403);
+    expect(fetchMock.mock.calls).toHaveLength(callCount + 1);
 
     await app.close();
   });

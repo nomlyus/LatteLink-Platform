@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { OperatorSession } from "../src/api";
 
 const storage = new Map<string, string>();
 
@@ -9,9 +10,30 @@ function mockLocalStorage(hostname = "localhost") {
       getItem: (key: string) => storage.get(key) ?? null,
       setItem: (key: string, value: string) => storage.set(key, value),
       removeItem: (key: string) => storage.delete(key)
-    }
+    },
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn()
   });
 }
+
+const persistedSession: OperatorSession = {
+  accessToken: "operator-access-token",
+  refreshToken: "operator-refresh-token",
+  apiBaseUrl: "https://api-dev.nomly.us/v1",
+  expiresAt: "2026-09-28T12:00:00.000Z",
+  operator: {
+    operatorUserId: "11111111-1111-4111-8111-111111111111",
+    displayName: "Dashboard Owner",
+    email: "owner@example.com",
+    role: "owner",
+    locationId: "location-a",
+    locationIds: ["location-a", "location-b"],
+    active: true,
+    capabilities: ["orders:read", "menu:read"],
+    createdAt: "2026-09-28T12:00:00.000Z",
+    updatedAt: "2026-09-28T12:00:00.000Z"
+  }
+};
 
 describe("client dashboard storage", () => {
   afterEach(() => {
@@ -59,13 +81,93 @@ describe("client dashboard storage", () => {
     expect(loadStoredApiBaseUrl()).toBe("");
   });
 
-  it("migrates the legacy setup section to settings", async () => {
+  it("clears obsolete SPA section state during React session restoration", async () => {
     mockLocalStorage();
-    storage.set("lattelink.operator.section.v2", "onboarding");
+    storage.set("lattelink.operator.section.v2", "menu");
+    const { loadStoredSession } = await import("../src/storage");
 
-    const { loadStoredSection } = await import("../src/storage");
+    expect(loadStoredSession()).toBeNull();
+    expect(storage.has("lattelink.operator.section.v2")).toBe(false);
+  });
 
-    expect(loadStoredSection()).toBe("store");
+  it("restores the persisted browser session with the same bearer and refresh tokens", async () => {
+    mockLocalStorage();
+    const { loadStoredSession, persistSession } = await import("../src/storage");
+
+    persistSession(persistedSession);
+
+    expect(loadStoredSession()).toEqual(persistedSession);
+    expect(JSON.parse(storage.get("lattelink.operator.session.v2") ?? "{}")).toMatchObject({
+      accessToken: "operator-access-token",
+      refreshToken: "operator-refresh-token",
+      apiBaseUrl: "https://api-dev.nomly.us/v1"
+    });
+  });
+
+  it("keeps an expired but schema-valid session available for the existing refresh flow", async () => {
+    mockLocalStorage();
+    const expiredSession = { ...persistedSession, expiresAt: "2020-01-01T00:00:00.000Z" };
+    const { loadStoredSession, persistSession } = await import("../src/storage");
+    const { sessionNeedsRefresh } = await import("../src/model");
+
+    persistSession(expiredSession);
+
+    expect(loadStoredSession()).toEqual(expiredSession);
+    expect(sessionNeedsRefresh(expiredSession.expiresAt)).toBe(true);
+  });
+
+  it("clears malformed session state without clearing the configured API or location preference", async () => {
+    mockLocalStorage();
+    storage.set("lattelink.operator.session.v2", "{not-json");
+    storage.set("lattelink.operator.api-base-url.v2", "https://api-dev.nomly.us/v1");
+    storage.set("lattelink.operator.location.v1.11111111-1111-4111-8111-111111111111", "location-b");
+    const { loadStoredSession } = await import("../src/storage");
+
+    expect(loadStoredSession()).toBeNull();
+    expect(storage.has("lattelink.operator.session.v2")).toBe(false);
+    expect(storage.get("lattelink.operator.api-base-url.v2")).toBe("https://api-dev.nomly.us/v1");
+    expect(storage.get("lattelink.operator.location.v1.11111111-1111-4111-8111-111111111111")).toBe("location-b");
+  });
+
+  it("logout storage cleanup removes only the session token record", async () => {
+    mockLocalStorage();
+    storage.set("lattelink.operator.session.v2", JSON.stringify(persistedSession));
+    storage.set("lattelink.operator.api-base-url.v2", persistedSession.apiBaseUrl);
+    storage.set("lattelink.operator.location.v1.11111111-1111-4111-8111-111111111111", "all");
+    const { clearStoredSession } = await import("../src/storage");
+
+    clearStoredSession();
+
+    expect(storage.has("lattelink.operator.session.v2")).toBe(false);
+    expect(storage.get("lattelink.operator.api-base-url.v2")).toBe(persistedSession.apiBaseUrl);
+    expect(storage.get("lattelink.operator.location.v1.11111111-1111-4111-8111-111111111111")).toBe("all");
+  });
+
+  it("notifies the React compatibility boundary when the legacy runtime restores, refreshes, or clears a session", async () => {
+    mockLocalStorage();
+    const { clearStoredSession, persistSession, subscribeToStoredSession } = await import("../src/storage");
+    const changed = vi.fn();
+    const unsubscribe = subscribeToStoredSession(changed);
+
+    persistSession(persistedSession);
+    clearStoredSession();
+    expect(changed).toHaveBeenCalledTimes(2);
+
+    unsubscribe();
+    persistSession(persistedSession);
+    expect(changed).toHaveBeenCalledTimes(2);
+  });
+
+  it("restores section-scoped location choice per operator, including distinct all-location state", async () => {
+    mockLocalStorage();
+    const { loadStoredLocationSelection, persistLocationSelection } = await import("../src/storage");
+    const operatorId = persistedSession.operator.operatorUserId;
+
+    persistLocationSelection(operatorId, "location-b");
+    expect(loadStoredLocationSelection(operatorId)).toBe("location-b");
+    persistLocationSelection(operatorId, "all");
+    expect(loadStoredLocationSelection(operatorId)).toBe("all");
+    expect(loadStoredLocationSelection("22222222-2222-4222-8222-222222222222")).toBeNull();
   });
 
   it("tracks whether the first onboarding wizard has already been shown for an operator location", async () => {

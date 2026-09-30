@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import { DashboardProviders } from "./providers";
 import "../styles.css";
 
 const inter = Inter({
@@ -21,7 +22,9 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={inter.variable}>
-      <body>{children}</body>
+      <body>
+        <DashboardProviders>{children}</DashboardProviders>
+      </body>
     </html>
   );
 }

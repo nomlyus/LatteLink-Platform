@@ -2,34 +2,112 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiRequestError,
   buildOperatorHeaders,
-  acceptOperatorInvite,
   cancelAndRefundOperatorOrder,
-  createMerchantLaunch,
-  createOperatorStripeDashboardLink,
-  createOperatorStripeOnboardingLink,
-  deleteOperatorStaffUser,
   extractApiErrorMessage,
   fetchDashboardLocations,
-  fetchOperatorOnboardingSummary,
+  fetchOperatorLocationStoreConfig,
+  fetchOperatorOrders,
   fetchOperatorSnapshot,
   isApiRequestError,
-  lookupOperatorInvite,
   normalizeApiBaseUrl,
-  refreshOperatorStripeStatus,
-  submitOperatorOnboardingReview,
-  signInOperatorWithPassword,
-  updateOperatorOnboarding,
   updateOperatorOrderStatus,
   uploadOperatorMenuItemImage,
   type OperatorSession
 } from "../src/api";
+import { createMerchantLaunch, logoutOperatorSession, refreshOperatorSession, signInOperatorWithPassword } from "../src/features/auth/auth-api";
+import { acceptOperatorInvite, lookupOperatorInvite } from "../src/features/invites/invite-api";
+import {
+  createOperatorStripeDashboardLink,
+  createOperatorStripeOnboardingLink,
+  fetchOperatorOnboardingAppConfig,
+  fetchOperatorOnboardingSummary,
+  refreshOperatorStripeStatus,
+  submitOperatorOnboardingReview,
+  updateOperatorOnboarding
+} from "../src/features/onboarding/onboarding-api";
 
 describe("client dashboard api helpers", () => {
+  const authSessionPayload = {
+    accessToken: "access-token-placeholder",
+    refreshToken: "refresh-token-placeholder",
+    expiresAt: "2027-01-01T00:00:00.000Z",
+    operator: {
+      operatorUserId: "11111111-1111-4111-8111-111111111111",
+      displayName: "Owner",
+      email: "owner@example.test",
+      role: "owner",
+      locationId: "loc-a",
+      locationIds: ["loc-a"],
+      active: true,
+      capabilities: ["orders:read"],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    }
+  };
+
+  it("keeps feature-owned data out of the shared dashboard snapshot", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ message: "Not used by this characterization" }), { status: 401 })
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    const session = {
+      apiBaseUrl: "https://api-dev.nomly.us/v1",
+      accessToken: "access-token",
+      refreshToken: "refresh-token",
+      expiresAt: "2026-04-23T23:00:00.000Z",
+      operator: {
+        operatorUserId: "11111111-1111-4111-8111-111111111111",
+        displayName: "Owner",
+        email: "owner@example.com",
+        role: "owner",
+        locationId: "loc-a",
+        locationIds: ["loc-a"],
+        active: true,
+        capabilities: ["menu:read", "store:read", "team:read"],
+        createdAt: "2026-04-23T20:00:00.000Z",
+        updatedAt: "2026-04-23T20:00:00.000Z"
+      }
+    } as OperatorSession;
+
+    await expect(fetchOperatorSnapshot(session, "loc-a")).rejects.toThrow();
+
+    const requestedUrls = fetchSpy.mock.calls.map(([url]) => String(url));
+    expect(requestedUrls).not.toContain("https://api-dev.nomly.us/v1/admin/cards?locationId=loc-a");
+    expect(requestedUrls).not.toContain("https://api-dev.nomly.us/v1/admin/discount-codes?locationId=loc-a");
+    expect(requestedUrls).not.toContain("https://api-dev.nomly.us/v1/admin/mobile-experience?locationId=loc-a");
+    expect(requestedUrls).not.toContain("https://api-dev.nomly.us/v1/admin/mobile-experience/versions?locationId=loc-a");
+    expect(requestedUrls).not.toContain("https://api-dev.nomly.us/v1/admin/staff?locationId=loc-a");
+    expect(requestedUrls).not.toContain("https://api-dev.nomly.us/v1/admin/mobile-release/build-jobs?locationId=loc-a");
+  });
+
   it("normalizes operator api base URLs onto /v1", () => {
     expect(normalizeApiBaseUrl("")).toBe("");
     expect(normalizeApiBaseUrl("http://127.0.0.1:8080")).toBe("http://127.0.0.1:8080/v1");
     expect(normalizeApiBaseUrl("http://127.0.0.1:8080/")).toBe("http://127.0.0.1:8080/v1");
     expect(normalizeApiBaseUrl("http://127.0.0.1:8080/v1")).toBe("http://127.0.0.1:8080/v1");
+  });
+
+  it("loads onboarding app configuration through the authenticated operator route", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ code: "UNAUTHORIZED", message: "Sign in required" }), { status: 401 })
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    const session = {
+      apiBaseUrl: "https://api-dev.nomly.us/v1",
+      accessToken: "access-token",
+      refreshToken: "refresh-token",
+      expiresAt: "2026-04-23T23:00:00.000Z",
+      operator: authSessionPayload.operator
+    } as OperatorSession;
+
+    await expect(fetchOperatorOnboardingAppConfig(session, "loc-a")).rejects.toThrow();
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://api-dev.nomly.us/v1/admin/app-config?locationId=loc-a",
+      expect.objectContaining({
+        method: "GET",
+        headers: expect.objectContaining({ authorization: "Bearer access-token" })
+      })
+    );
   });
 
   it("builds bearer headers for authenticated operator requests", () => {
@@ -41,6 +119,43 @@ describe("client dashboard api helpers", () => {
     expect(buildOperatorHeaders("operator-access-token", false)).toEqual({
       authorization: "Bearer operator-access-token"
     });
+  });
+
+  it("forwards route-lifecycle cancellation to the Orders API request", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const controller = new AbortController();
+    const session = { apiBaseUrl: "https://api.nomly.us/v1", accessToken: "access-token" } as OperatorSession;
+
+    await fetchOperatorOrders(session, "loc-a", controller.signal);
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://api.nomly.us/v1/admin/orders?locationId=loc-a",
+      expect.objectContaining({ signal: controller.signal })
+    );
+  });
+
+  it("forwards route-lifecycle cancellation to the location-scoped store settings request", async () => {
+    const response = {
+      locationId: "loc-a",
+      storeName: "Northside Coffee",
+      locationName: "Downtown",
+      timezone: "America/Detroit",
+      hours: "Daily 8 AM - 4 PM",
+      pickupInstructions: "Front counter",
+      taxRateBasisPoints: 625
+    };
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify(response), { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const controller = new AbortController();
+    const session = { apiBaseUrl: "https://api.nomly.us/v1", accessToken: "access-token" } as OperatorSession;
+
+    await fetchOperatorLocationStoreConfig(session, "loc-a", controller.signal);
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://api.nomly.us/v1/admin/store/config?locationId=loc-a",
+      expect.objectContaining({ signal: controller.signal })
+    );
   });
 
   it("prefers upstream error messages when present", () => {
@@ -91,6 +206,57 @@ describe("client dashboard api helpers", () => {
       "https://api.nomly.us/v1/operator/auth/sign-in",
       expect.objectContaining({
         method: "POST"
+      })
+    );
+  });
+
+  it("preserves password sign-in request fields and the configured API base URL", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify(authSessionPayload), { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const session = await signInOperatorWithPassword({
+      apiBaseUrl: "https://api-dev.nomly.us",
+      email: " owner@example.test ",
+      password: "placeholder-password",
+      locationId: "loc-a"
+    });
+
+    expect(session.apiBaseUrl).toBe("https://api-dev.nomly.us/v1");
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://api-dev.nomly.us/v1/operator/auth/sign-in",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ email: "owner@example.test", password: "placeholder-password", locationId: "loc-a" })
+      })
+    );
+  });
+
+  it("keeps refresh-token and bearer-auth logout semantics", async () => {
+    const fetchSpy = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(authSessionPayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const session = {
+      ...authSessionPayload,
+      apiBaseUrl: "https://api-dev.nomly.us/v1"
+    } as unknown as OperatorSession;
+
+    await refreshOperatorSession(session);
+    await logoutOperatorSession(session);
+
+    expect(fetchSpy).toHaveBeenNthCalledWith(
+      1,
+      "https://api-dev.nomly.us/v1/operator/auth/refresh",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ refreshToken: "refresh-token-placeholder" }) })
+    );
+    expect(fetchSpy.mock.calls[0]?.[1]).not.toHaveProperty("headers.authorization");
+    expect(fetchSpy).toHaveBeenNthCalledWith(
+      2,
+      "https://api-dev.nomly.us/v1/operator/auth/logout",
+      expect.objectContaining({
+        method: "POST",
+        headers: { authorization: "Bearer access-token-placeholder", "content-type": "application/json" },
+        body: JSON.stringify({ refreshToken: "refresh-token-placeholder" })
       })
     );
   });
@@ -521,8 +687,8 @@ describe("client dashboard api helpers", () => {
     };
 
     const onboardingLink = await createOperatorStripeOnboardingLink(session, "northside-01", {
-      returnUrl: "https://dashboard.example.com/?stripeReturn=1",
-      refreshUrl: "https://dashboard.example.com/?stripeRefresh=1"
+      returnUrl: "https://dashboard.example.com/onboarding?stripeReturn=1",
+      refreshUrl: "https://dashboard.example.com/onboarding?stripeRefresh=1"
     });
     const dashboardLink = await createOperatorStripeDashboardLink(session, "northside-01");
     const refreshedStatus = await refreshOperatorStripeStatus(session, "northside-01");
@@ -540,8 +706,8 @@ describe("client dashboard api helpers", () => {
           "content-type": "application/json"
         },
         body: JSON.stringify({
-          returnUrl: "https://dashboard.example.com/?stripeReturn=1",
-          refreshUrl: "https://dashboard.example.com/?stripeRefresh=1"
+          returnUrl: "https://dashboard.example.com/onboarding?stripeReturn=1",
+          refreshUrl: "https://dashboard.example.com/onboarding?stripeRefresh=1"
         })
       })
     );
@@ -781,21 +947,23 @@ describe("client dashboard api helpers", () => {
     expect(locations.map((location) => location.locationId)).toEqual(["flagship-01", "northside-01"]);
     expect(fetchSpy).toHaveBeenNthCalledWith(
       1,
-      "https://api.nomly.us/v1/app-config?locationId=flagship-01",
+      "https://api.nomly.us/v1/admin/app-config?locationId=flagship-01",
       expect.objectContaining({
-        method: "GET"
+        method: "GET",
+        headers: expect.objectContaining({ authorization: "Bearer access-token" })
       })
     );
     expect(fetchSpy).toHaveBeenNthCalledWith(
       2,
-      "https://api.nomly.us/v1/app-config?locationId=northside-01",
+      "https://api.nomly.us/v1/admin/app-config?locationId=northside-01",
       expect.objectContaining({
-        method: "GET"
+        method: "GET",
+        headers: expect.objectContaining({ authorization: "Bearer access-token" })
       })
     );
   });
 
-  it("does not require store settings payloads for store-screen sessions", async () => {
+  it("keeps order data out of the legacy dashboard snapshot for store-screen sessions", async () => {
     const fetchSpy = vi
       .fn()
       .mockResolvedValueOnce(
@@ -858,22 +1026,6 @@ describe("client dashboard api helpers", () => {
           }),
           { status: 200 }
         )
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify([
-            {
-              id: "123e4567-e89b-12d3-a456-426614174000",
-              locationId: "flagship-01",
-              status: "PAID",
-              items: [],
-              total: { currency: "USD", amountCents: 1200 },
-              pickupCode: "A1B2C3",
-              timeline: [{ status: "PENDING_PAYMENT", occurredAt: "2026-03-20T00:00:00.000Z" }]
-            }
-          ]),
-          { status: 200 }
-        )
       );
     vi.stubGlobal("fetch", fetchSpy);
 
@@ -900,24 +1052,18 @@ describe("client dashboard api helpers", () => {
     );
 
     expect(snapshot.storeConfig).toBeNull();
-    expect(snapshot.team).toEqual([]);
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(fetchSpy).toHaveBeenNthCalledWith(
       1,
-      "https://api.nomly.us/v1/app-config?locationId=flagship-01",
-      expect.objectContaining({
-        method: "GET"
-      })
-    );
-    expect(fetchSpy).toHaveBeenNthCalledWith(
-      2,
-      "https://api.nomly.us/v1/admin/orders?locationId=flagship-01",
+      "https://api.nomly.us/v1/admin/app-config?locationId=flagship-01",
       expect.objectContaining({
         method: "GET",
-        headers: expect.objectContaining({
-          authorization: "Bearer access-token"
-        })
+        headers: expect.objectContaining({ authorization: "Bearer access-token" })
       })
+    );
+    expect(fetchSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining("/admin/orders"),
+      expect.anything()
     );
   });
 
@@ -977,43 +1123,4 @@ describe("client dashboard api helpers", () => {
     ).toThrow("Choose a specific location before managing store settings.");
   });
 
-  it("deletes operator staff users through the selected location", async () => {
-    const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true }), { status: 200 }));
-    vi.stubGlobal("fetch", fetchSpy);
-
-    await expect(
-      deleteOperatorStaffUser(
-        {
-          accessToken: "access-token",
-          refreshToken: "refresh-token",
-          apiBaseUrl: "https://api.nomly.us/v1",
-          expiresAt: "2026-04-23T23:00:00.000Z",
-          operator: {
-            operatorUserId: "11111111-1111-4111-8111-111111111111",
-            displayName: "Pilot Owner",
-            email: "owner@store.com",
-            role: "owner",
-            locationId: "flagship-01",
-            locationIds: ["flagship-01"],
-            active: true,
-            capabilities: ["team:write"],
-            createdAt: "2026-04-23T20:00:00.000Z",
-            updatedAt: "2026-04-23T20:00:00.000Z"
-          }
-        },
-        "flagship-01",
-        "22222222-2222-4222-8222-222222222222"
-      )
-    ).resolves.toEqual({ success: true });
-
-    expect(fetchSpy).toHaveBeenCalledWith(
-      "https://api.nomly.us/v1/admin/staff/22222222-2222-4222-8222-222222222222?locationId=flagship-01",
-      expect.objectContaining({
-        method: "DELETE",
-        headers: expect.objectContaining({
-          authorization: "Bearer access-token"
-        })
-      })
-    );
-  });
 });

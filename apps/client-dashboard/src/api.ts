@@ -1,18 +1,5 @@
 import { z } from "zod";
 import {
-  googleOAuthStartResponseSchema,
-  operatorAuthProvidersSchema,
-  operatorDevAccessRequestSchema,
-  operatorGoogleExchangeRequestSchema,
-  operatorInviteAcceptRequestSchema,
-  operatorInviteAcceptResponseSchema,
-  operatorInviteLookupResponseSchema,
-  operatorPasswordSignInSchema,
-  operatorSessionSchema,
-  operatorUserListResponseSchema,
-  operatorUserSchema
-} from "@lattelink/contracts-auth";
-import {
   adminMenuItemCreateSchema,
   adminMenuCategoryCreateSchema,
   adminMenuCategoryReorderSchema,
@@ -26,25 +13,7 @@ import {
   adminModifierGroupUpdateSchema,
   modifierGroupSchema,
   adminStoreConfigSchema,
-  adminStoreConfigUpdateSchema,
-  appConfigSchema,
-  homeNewsCardsResponseSchema,
-  mobileExperienceDraftResponseSchema,
-  mobileExperienceDocumentSchema,
-  mobileExperienceRollbackRequestSchema,
-  mobileExperienceSaveDraftRequestSchema,
-  mobileExperienceVersionsResponseSchema,
-  mobileReleaseBuildJobListResponseSchema,
-  merchantLaunchRequestSchema,
-  merchantLaunchResponseSchema,
-  onboardingSummarySchema,
-  operatorAppIdentityProfileUpdateSchema,
-  operatorOnboardingUpdateSchema,
-  stripeConnectDashboardLinkRequestSchema,
-  stripeConnectLinkResponseSchema,
-  stripeConnectOnboardingLinkRequestSchema,
-  stripeConnectStatusRefreshRequestSchema,
-  stripeConnectStatusRefreshResponseSchema
+  appConfigSchema
 } from "@lattelink/contracts-catalog";
 import {
   reportingQueryRequestSchema,
@@ -52,11 +21,7 @@ import {
   type ReportingResponse
 } from "@lattelink/contracts-reporting";
 import {
-  createDiscountCodeRequestSchema,
-  discountCodeListResponseSchema,
-  discountCodeSchema,
-  orderSchema,
-  updateDiscountCodeRequestSchema
+  orderSchema
 } from "@lattelink/contracts-orders";
 import {
   filterVisibleOrders,
@@ -64,32 +29,19 @@ import {
   normalizeMenuItemForm,
   operatorMenuItemSchema,
   operatorMenuResponseSchema,
-  normalizeOperatorUserCreateForm,
-  normalizeOperatorUserUpdateForm,
-  normalizeStoreConfigForm,
-  type OperatorOrder,
-  type OperatorMenuResponse,
-  type OperatorNewsCard,
-  type OperatorDiscountCode
+  type OperatorOrder
 } from "./model";
+import type { OperatorSession } from "./features/auth/auth-types";
+
+export type { OperatorSession } from "./features/auth/auth-types";
 
 const ordersSchema = z.array(orderSchema);
 const unreachableBackendMessage = "Unable to reach backend.";
 
-const storedOperatorSessionSchema = operatorSessionSchema.extend({
-  apiBaseUrl: z.string().min(1)
-});
-
-export type OperatorUser = z.output<typeof operatorUserSchema>;
-export type OperatorSession = z.output<typeof storedOperatorSessionSchema>;
-export type OperatorAuthProviders = z.output<typeof operatorAuthProvidersSchema>;
-export type OperatorInviteLookup = z.output<typeof operatorInviteLookupResponseSchema>;
-export type OperatorInviteAcceptResponse = z.output<typeof operatorInviteAcceptResponseSchema>;
-export type MerchantLaunchResponse = z.output<typeof merchantLaunchResponseSchema>;
-export type OperatorOnboardingSummary = z.output<typeof onboardingSummarySchema>;
 export type DashboardLocation = {
   locationId: string;
   locationName: string;
+  storeName?: string;
   marketLabel: string;
   timezone?: string;
   appConfig: z.output<typeof appConfigSchema>;
@@ -97,15 +49,7 @@ export type DashboardLocation = {
 export type OperatorReportingResponse = ReportingResponse;
 export type OperatorDashboardSnapshot = {
   appConfig: z.output<typeof appConfigSchema> | null;
-  orders: OperatorOrder[];
-  menu: OperatorMenuResponse;
-  cards: OperatorNewsCard[];
-  discountCodes: OperatorDiscountCode[];
   storeConfig: z.output<typeof adminStoreConfigSchema> | null;
-  mobileExperience: z.output<typeof mobileExperienceDraftResponseSchema> | null;
-  mobileExperienceVersions: z.output<typeof mobileExperienceVersionsResponseSchema>;
-  mobileReleaseBuildJobs: z.output<typeof mobileReleaseBuildJobListResponseSchema>;
-  team: OperatorUser[];
 };
 
 type RequestMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -160,24 +104,6 @@ function normalizeOperatorLocationIds(primaryLocationId: string, locationIds?: r
   return Array.from(new Set([primaryLocationId, ...(locationIds ?? [])]));
 }
 
-function normalizeNewsCardsPayload(input: {
-  locationId: string;
-  cards: Array<{
-    cardId: string;
-    label: string;
-    title: string;
-    body: string;
-    note?: string | null;
-    sortOrder: number;
-    visible: boolean;
-  }>;
-}) {
-  return homeNewsCardsResponseSchema.parse({
-    locationId: input.locationId,
-    cards: input.cards
-  });
-}
-
 export function normalizeApiBaseUrl(input: string) {
   const trimmed = input.trim();
   if (!trimmed) {
@@ -229,13 +155,6 @@ export function isApiRequestError(error: unknown): error is ApiRequestError {
   return error instanceof ApiRequestError;
 }
 
-function toStoredSession(apiBaseUrl: string, payload: z.output<typeof operatorSessionSchema>): OperatorSession {
-  return storedOperatorSessionSchema.parse({
-    apiBaseUrl: normalizeApiBaseUrl(apiBaseUrl),
-    ...payload
-  });
-}
-
 function requireApiBaseUrl(apiBaseUrl: string) {
   const normalized = normalizeApiBaseUrl(apiBaseUrl);
   if (!normalized) {
@@ -245,16 +164,17 @@ function requireApiBaseUrl(apiBaseUrl: string) {
   return normalized;
 }
 
-async function requestJson<TSchema extends z.ZodTypeAny>(params: {
+export async function requestJson<TSchema extends z.ZodTypeAny>(params: {
   apiBaseUrl: string;
   accessToken?: string;
   path: string;
   query?: Record<string, string | undefined>;
   method?: RequestMethod;
   body?: unknown;
+  signal?: AbortSignal;
   schema: TSchema;
 }): Promise<z.output<TSchema>> {
-  const { apiBaseUrl, accessToken, path, query, method = "GET", body, schema } = params;
+  const { apiBaseUrl, accessToken, path, query, method = "GET", body, signal, schema } = params;
   const resolvedPath = buildPathWithQuery(path, query);
   const response = await (async () => {
     try {
@@ -265,9 +185,11 @@ async function requestJson<TSchema extends z.ZodTypeAny>(params: {
           : body !== undefined
             ? { "content-type": "application/json" }
             : undefined,
-        body: body === undefined ? undefined : JSON.stringify(body)
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal
       });
     } catch (error) {
+      if (signal?.aborted) throw error;
       throw new Error(unreachableBackendMessage, {
         cause: error instanceof Error ? error : undefined
       });
@@ -387,162 +309,6 @@ async function uploadMenuItemImageVariants(file: File, variantUploads: MenuImage
   );
 }
 
-export async function signInOperatorWithPassword(params: {
-  apiBaseUrl: string;
-  email: string;
-  password: string;
-  locationId?: string;
-}) {
-  const session = await requestJson({
-    apiBaseUrl: params.apiBaseUrl,
-    path: "/operator/auth/sign-in",
-    method: "POST",
-    body: operatorPasswordSignInSchema.parse({
-      email: params.email.trim(),
-      password: params.password,
-      locationId: params.locationId
-    }),
-    schema: operatorSessionSchema
-  });
-
-  return toStoredSession(params.apiBaseUrl, session);
-}
-
-export async function requestOperatorDevAccess(params: { apiBaseUrl: string; email: string }) {
-  const session = await requestJson({
-    apiBaseUrl: params.apiBaseUrl,
-    path: "/operator/auth/dev-access",
-    method: "POST",
-    body: operatorDevAccessRequestSchema.parse({
-      email: params.email.trim()
-    }),
-    schema: operatorSessionSchema
-  });
-
-  return toStoredSession(params.apiBaseUrl, session);
-}
-
-export function lookupOperatorInvite(params: { apiBaseUrl: string; token: string }) {
-  return requestJson({
-    apiBaseUrl: params.apiBaseUrl,
-    path: "/operator/invites/lookup",
-    method: "POST",
-    body: { token: params.token },
-    schema: operatorInviteLookupResponseSchema
-  });
-}
-
-export function acceptOperatorInvite(params: { apiBaseUrl: string; token: string; password: string }) {
-  return requestJson({
-    apiBaseUrl: params.apiBaseUrl,
-    path: "/operator/invites/accept",
-    method: "POST",
-    body: operatorInviteAcceptRequestSchema.parse({
-      token: params.token,
-      password: params.password
-    }),
-    schema: operatorInviteAcceptResponseSchema
-  });
-}
-
-export function createMerchantLaunch(params: {
-  apiBaseUrl: string;
-  businessName: string;
-  locationName: string;
-  marketLabel: string;
-  ownerName: string;
-  ownerEmail: string;
-  storeName?: string;
-}) {
-  return requestJson({
-    apiBaseUrl: params.apiBaseUrl,
-    path: "/merchant/launch",
-    method: "POST",
-    body: merchantLaunchRequestSchema.parse({
-      businessName: params.businessName,
-      locationName: params.locationName,
-      marketLabel: params.marketLabel,
-      ownerName: params.ownerName,
-      ownerEmail: params.ownerEmail,
-      storeName: params.storeName
-    }),
-    schema: merchantLaunchResponseSchema
-  });
-}
-
-export function startOperatorGoogleSignIn(params: { apiBaseUrl: string; redirectUri: string; locationId?: string }) {
-  const search = new URLSearchParams({
-    redirectUri: params.redirectUri
-  });
-  if (params.locationId) {
-    search.set("locationId", params.locationId);
-  }
-
-  return requestJson({
-    apiBaseUrl: params.apiBaseUrl,
-    path: `/operator/auth/google/start?${search.toString()}`,
-    schema: googleOAuthStartResponseSchema
-  });
-}
-
-export function fetchOperatorAuthProviders(params: { apiBaseUrl: string }) {
-  return requestJson({
-    apiBaseUrl: params.apiBaseUrl,
-    path: "/operator/auth/providers",
-    schema: operatorAuthProvidersSchema
-  });
-}
-
-export async function exchangeOperatorGoogleCode(params: {
-  apiBaseUrl: string;
-  code: string;
-  state: string;
-  redirectUri: string;
-  locationId?: string;
-}) {
-  const session = await requestJson({
-    apiBaseUrl: params.apiBaseUrl,
-    path: "/operator/auth/google/exchange",
-    method: "POST",
-    body: operatorGoogleExchangeRequestSchema.parse({
-      code: params.code,
-      state: params.state,
-      redirectUri: params.redirectUri,
-      locationId: params.locationId
-    }),
-    schema: operatorSessionSchema
-  });
-
-  return toStoredSession(params.apiBaseUrl, session);
-}
-
-export async function refreshOperatorSession(session: OperatorSession) {
-  const nextSession = await requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    path: "/operator/auth/refresh",
-    method: "POST",
-    body: {
-      refreshToken: session.refreshToken
-    },
-    schema: operatorSessionSchema
-  });
-
-  return toStoredSession(session.apiBaseUrl, nextSession);
-}
-
-export async function logoutOperatorSession(session: OperatorSession) {
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: "/operator/auth/logout",
-    method: "POST",
-    body: {
-      refreshToken: session.refreshToken
-    },
-    schema: z.object({ success: z.literal(true) })
-  });
-}
-
 export async function fetchDashboardLocations(session: OperatorSession): Promise<DashboardLocation[]> {
   const locationIds = normalizeOperatorLocationIds(session.operator.locationId, session.operator.locationIds ?? []);
   const canReadStoreConfig = new Set(session.operator.capabilities).has("store:read");
@@ -551,7 +317,8 @@ export async function fetchDashboardLocations(session: OperatorSession): Promise
       const [appConfig, storeConfig] = await Promise.all([
         requestJson({
           apiBaseUrl: session.apiBaseUrl,
-          path: "/app-config",
+          accessToken: session.accessToken,
+          path: "/admin/app-config",
           query: { locationId },
           schema: appConfigSchema
         }),
@@ -564,6 +331,7 @@ export async function fetchDashboardLocations(session: OperatorSession): Promise
   return locations.map(({ appConfig, storeConfig }) => ({
     locationId: appConfig.brand.locationId,
     locationName: appConfig.brand.locationName,
+    storeName: storeConfig?.storeName,
     marketLabel: appConfig.brand.marketLabel,
     timezone: storeConfig?.timezone ?? "America/Detroit",
     appConfig
@@ -573,7 +341,8 @@ export async function fetchDashboardLocations(session: OperatorSession): Promise
 export function fetchOperatorReporting(
   session: OperatorSession,
   locationIds: string[],
-  input: { start: string; end: string; granularity: "hour" | "day" }
+  input: { start: string; end: string; granularity: "hour" | "day" },
+  signal?: AbortSignal
 ) {
   return requestJson({
     apiBaseUrl: session.apiBaseUrl,
@@ -581,30 +350,44 @@ export function fetchOperatorReporting(
     path: "/admin/reporting/query",
     method: "POST",
     body: reportingQueryRequestSchema.parse({ locationIds, ...input }),
+    signal,
     schema: reportingResponseSchema
   });
 }
 
-export function fetchOperatorLocationStoreConfig(session: OperatorSession, locationId: string) {
+export function fetchOperatorLocationStoreConfig(session: OperatorSession, locationId: string, signal?: AbortSignal) {
   return requestJson({
     apiBaseUrl: session.apiBaseUrl,
     accessToken: session.accessToken,
     path: "/admin/store/config",
     query: { locationId },
+    signal,
     schema: adminStoreConfigSchema
   });
 }
 
-export async function fetchOperatorOrders(session: OperatorSession, locationId: string) {
+export async function fetchOperatorOrders(session: OperatorSession, locationId: string, signal?: AbortSignal) {
   const orders = await requestJson({
     apiBaseUrl: session.apiBaseUrl,
     accessToken: session.accessToken,
     path: "/admin/orders",
     query: { locationId },
+    signal,
     schema: ordersSchema
   });
 
   return filterVisibleOrders(orders as OperatorOrder[]);
+}
+
+export function fetchOperatorMenu(session: OperatorSession, locationId: string, signal?: AbortSignal) {
+  return requestJson({
+    apiBaseUrl: session.apiBaseUrl,
+    accessToken: session.accessToken,
+    path: "/admin/menu",
+    query: { locationId: requireSelectedLocationId(locationId) },
+    signal,
+    schema: operatorMenuResponseSchema
+  });
 }
 
 export async function fetchOperatorSnapshot(
@@ -613,71 +396,16 @@ export async function fetchOperatorSnapshot(
 ): Promise<OperatorDashboardSnapshot> {
   const capabilitySet = new Set(session.operator.capabilities);
   const query = locationId ? { locationId } : undefined;
-  const fallbackLocationId = locationId ?? session.operator.locationId;
-  const [
-    appConfig,
-    orders,
-    menu,
-    cards,
-    discountCodeResponse,
-    storeConfig,
-    mobileExperience,
-    mobileExperienceVersions,
-    mobileReleaseBuildJobs,
-    teamResponse
-  ] = await Promise.all([
+  const [appConfig, storeConfig] = await Promise.all([
     locationId
       ? requestJson({
           apiBaseUrl: session.apiBaseUrl,
-          path: "/app-config",
+          accessToken: session.accessToken,
+          path: "/admin/app-config",
           query,
           schema: appConfigSchema
         })
       : Promise.resolve(null),
-    capabilitySet.has("orders:read")
-      ? locationId
-        ? requestJson({
-            apiBaseUrl: session.apiBaseUrl,
-            accessToken: session.accessToken,
-            path: "/admin/orders",
-            query,
-            schema: ordersSchema
-          })
-        : Promise.resolve([] as z.output<typeof ordersSchema>)
-      : Promise.resolve([] as z.output<typeof ordersSchema>),
-    capabilitySet.has("menu:read")
-      ? locationId
-        ? requestJson({
-            apiBaseUrl: session.apiBaseUrl,
-            accessToken: session.accessToken,
-            path: "/admin/menu",
-            query,
-            schema: operatorMenuResponseSchema
-          })
-        : Promise.resolve(operatorMenuResponseSchema.parse({ locationId: fallbackLocationId, categories: [] }))
-      : Promise.resolve(operatorMenuResponseSchema.parse({ locationId: fallbackLocationId, categories: [] })),
-    capabilitySet.has("menu:read")
-      ? locationId
-        ? requestJson({
-            apiBaseUrl: session.apiBaseUrl,
-            accessToken: session.accessToken,
-            path: "/admin/cards",
-            query,
-            schema: homeNewsCardsResponseSchema
-          })
-        : Promise.resolve(homeNewsCardsResponseSchema.parse({ locationId: fallbackLocationId, cards: [] }))
-      : Promise.resolve(homeNewsCardsResponseSchema.parse({ locationId: fallbackLocationId, cards: [] })),
-    capabilitySet.has("menu:read")
-      ? locationId
-        ? requestJson({
-            apiBaseUrl: session.apiBaseUrl,
-            accessToken: session.accessToken,
-            path: "/admin/discount-codes",
-            query,
-            schema: discountCodeListResponseSchema
-          })
-        : Promise.resolve(discountCodeListResponseSchema.parse({ discountCodes: [] }))
-      : Promise.resolve(discountCodeListResponseSchema.parse({ discountCodes: [] })),
     capabilitySet.has("store:read")
       ? locationId
         ? requestJson({
@@ -688,163 +416,13 @@ export async function fetchOperatorSnapshot(
             schema: adminStoreConfigSchema
           })
         : Promise.resolve(null)
-      : Promise.resolve(null),
-    capabilitySet.has("store:read")
-      ? locationId
-        ? requestJson({
-            apiBaseUrl: session.apiBaseUrl,
-            accessToken: session.accessToken,
-            path: "/admin/mobile-experience",
-            query,
-            schema: mobileExperienceDraftResponseSchema
-          })
-        : Promise.resolve(null)
-      : Promise.resolve(null),
-    capabilitySet.has("store:read")
-      ? locationId
-        ? requestJson({
-            apiBaseUrl: session.apiBaseUrl,
-            accessToken: session.accessToken,
-            path: "/admin/mobile-experience/versions",
-            query,
-            schema: mobileExperienceVersionsResponseSchema
-          })
-        : Promise.resolve(mobileExperienceVersionsResponseSchema.parse({ locationId: fallbackLocationId, versions: [] }))
-      : Promise.resolve(mobileExperienceVersionsResponseSchema.parse({ locationId: fallbackLocationId, versions: [] })),
-    capabilitySet.has("store:read")
-      ? locationId
-        ? requestJson({
-            apiBaseUrl: session.apiBaseUrl,
-            accessToken: session.accessToken,
-            path: "/admin/mobile-release/build-jobs",
-            query,
-            schema: mobileReleaseBuildJobListResponseSchema
-          })
-        : Promise.resolve(mobileReleaseBuildJobListResponseSchema.parse({ jobs: [] }))
-      : Promise.resolve(mobileReleaseBuildJobListResponseSchema.parse({ jobs: [] })),
-    capabilitySet.has("team:read")
-      ? locationId
-        ? requestJson({
-            apiBaseUrl: session.apiBaseUrl,
-            accessToken: session.accessToken,
-            path: "/admin/staff",
-            query,
-            schema: operatorUserListResponseSchema
-          })
-        : Promise.resolve(operatorUserListResponseSchema.parse({ users: [] }))
-      : Promise.resolve(operatorUserListResponseSchema.parse({ users: [] }))
+      : Promise.resolve(null)
   ]);
 
   return {
     appConfig,
-    orders: filterVisibleOrders(orders as OperatorOrder[]),
-    menu,
-    cards: cards.cards.map((card) => ({
-      ...card
-    })),
-    discountCodes: discountCodeResponse.discountCodes,
-    storeConfig,
-    mobileExperience,
-    mobileExperienceVersions,
-    mobileReleaseBuildJobs,
-    team: teamResponse.users
+    storeConfig
   };
-}
-
-export function fetchOperatorOnboardingSummary(session: OperatorSession, locationId: string) {
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: "/admin/onboarding",
-    query: { locationId },
-    schema: onboardingSummarySchema
-  });
-}
-
-export function updateOperatorOnboarding(
-  session: OperatorSession,
-  locationId: string,
-  input: z.input<typeof operatorOnboardingUpdateSchema>
-) {
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: "/admin/onboarding",
-    query: { locationId },
-    method: "PATCH",
-    body: operatorOnboardingUpdateSchema.parse(input),
-    schema: onboardingSummarySchema
-  });
-}
-
-export function updateOperatorAppIdentity(
-  session: OperatorSession,
-  locationId: string,
-  input: z.input<typeof operatorAppIdentityProfileUpdateSchema>
-) {
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: "/admin/app-identity",
-    query: { locationId },
-    method: "PATCH",
-    body: operatorAppIdentityProfileUpdateSchema.parse(input),
-    schema: onboardingSummarySchema
-  });
-}
-
-export function submitOperatorOnboardingReview(session: OperatorSession, locationId: string) {
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: "/admin/onboarding/submit-review",
-    query: { locationId },
-    method: "POST",
-    body: {},
-    schema: onboardingSummarySchema
-  });
-}
-
-export function createOperatorStripeOnboardingLink(
-  session: OperatorSession,
-  locationId: string,
-  input: Omit<z.input<typeof stripeConnectOnboardingLinkRequestSchema>, "locationId">
-) {
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: "/admin/payments/stripe/onboarding-link",
-    query: { locationId },
-    method: "POST",
-    body: stripeConnectOnboardingLinkRequestSchema
-      .omit({ locationId: true })
-      .parse(input),
-    schema: stripeConnectLinkResponseSchema
-  });
-}
-
-export function createOperatorStripeDashboardLink(session: OperatorSession, locationId: string) {
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: "/admin/payments/stripe/dashboard-link",
-    query: { locationId },
-    method: "POST",
-    body: stripeConnectDashboardLinkRequestSchema.omit({ locationId: true }).parse({}),
-    schema: stripeConnectLinkResponseSchema
-  });
-}
-
-export function refreshOperatorStripeStatus(session: OperatorSession, locationId: string) {
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: "/admin/payments/stripe/status-refresh",
-    query: { locationId },
-    method: "POST",
-    body: stripeConnectStatusRefreshRequestSchema.omit({ locationId: true }).parse({}),
-    schema: stripeConnectStatusRefreshResponseSchema
-  });
 }
 
 function requireSelectedLocationId(locationId: string | null) {
@@ -1098,164 +676,6 @@ export function deleteOperatorModifierGroup(session: OperatorSession, locationId
     apiBaseUrl: session.apiBaseUrl,
     accessToken: session.accessToken,
     path: `/admin/menu/modifier-groups/${modifierGroupId}`,
-    query: { locationId: requireSelectedLocationId(locationId) },
-    method: "DELETE",
-    schema: adminMutationSuccessSchema
-  });
-}
-
-export function replaceOperatorNewsCards(session: OperatorSession, locationId: string | null, cards: OperatorNewsCard[]) {
-  const selectedLocationId = requireSelectedLocationId(locationId);
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: "/admin/cards",
-    query: { locationId: selectedLocationId },
-    method: "PUT",
-    body: normalizeNewsCardsPayload({
-      locationId: selectedLocationId,
-      cards
-    }),
-    schema: homeNewsCardsResponseSchema
-  });
-}
-
-export function createOperatorDiscountCode(
-  session: OperatorSession,
-  locationId: string | null,
-  input: Omit<z.input<typeof createDiscountCodeRequestSchema>, "locationId">
-) {
-  const selectedLocationId = requireSelectedLocationId(locationId);
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: "/admin/discount-codes",
-    query: { locationId: selectedLocationId },
-    method: "POST",
-    body: createDiscountCodeRequestSchema.parse({
-      locationId: selectedLocationId,
-      ...input
-    }),
-    schema: discountCodeSchema
-  });
-}
-
-export function updateOperatorDiscountCode(
-  session: OperatorSession,
-  locationId: string | null,
-  discountCodeId: string,
-  input: Omit<z.input<typeof updateDiscountCodeRequestSchema>, "locationId">
-) {
-  const selectedLocationId = requireSelectedLocationId(locationId);
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: `/admin/discount-codes/${discountCodeId}`,
-    query: { locationId: selectedLocationId },
-    method: "PATCH",
-    body: updateDiscountCodeRequestSchema.parse({
-      locationId: selectedLocationId,
-      ...input
-    }),
-    schema: discountCodeSchema
-  });
-}
-
-export function updateOperatorStoreConfig(
-  session: OperatorSession,
-  locationId: string | null,
-  input: Parameters<typeof normalizeStoreConfigForm>[0]
-) {
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: "/admin/store/config",
-    query: { locationId: requireSelectedLocationId(locationId) },
-    method: "PUT",
-    body: adminStoreConfigUpdateSchema.parse(normalizeStoreConfigForm(input)),
-    schema: adminStoreConfigSchema
-  });
-}
-
-export function saveOperatorMobileExperienceDraft(
-  session: OperatorSession,
-  locationId: string | null,
-  input: z.input<typeof mobileExperienceSaveDraftRequestSchema>
-) {
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: "/admin/mobile-experience/draft",
-    query: { locationId: requireSelectedLocationId(locationId) },
-    method: "PUT",
-    body: mobileExperienceSaveDraftRequestSchema.parse(input),
-    schema: mobileExperienceDraftResponseSchema
-  });
-}
-
-export function publishOperatorMobileExperience(session: OperatorSession, locationId: string | null, draftVersionId?: string) {
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: "/admin/mobile-experience/publish",
-    query: { locationId: requireSelectedLocationId(locationId) },
-    method: "POST",
-    body: { draftVersionId },
-    schema: mobileExperienceDocumentSchema
-  });
-}
-
-export function rollbackOperatorMobileExperience(session: OperatorSession, locationId: string | null, versionId: string) {
-  const body = mobileExperienceRollbackRequestSchema.parse({ versionId });
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: "/admin/mobile-experience/rollback",
-    query: { locationId: requireSelectedLocationId(locationId) },
-    method: "POST",
-    body,
-    schema: mobileExperienceDocumentSchema
-  });
-}
-
-export function createOperatorStaffUser(
-  session: OperatorSession,
-  locationId: string | null,
-  input: Parameters<typeof normalizeOperatorUserCreateForm>[0]
-) {
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: "/admin/staff",
-    query: { locationId: requireSelectedLocationId(locationId) },
-    method: "POST",
-    body: normalizeOperatorUserCreateForm(input),
-    schema: operatorUserSchema
-  });
-}
-
-export function updateOperatorStaffUser(
-  session: OperatorSession,
-  locationId: string | null,
-  operatorUserId: string,
-  input: Parameters<typeof normalizeOperatorUserUpdateForm>[0]
-) {
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: `/admin/staff/${operatorUserId}`,
-    query: { locationId: requireSelectedLocationId(locationId) },
-    method: "PATCH",
-    body: normalizeOperatorUserUpdateForm(input),
-    schema: operatorUserSchema
-  });
-}
-
-export function deleteOperatorStaffUser(session: OperatorSession, locationId: string | null, operatorUserId: string) {
-  return requestJson({
-    apiBaseUrl: session.apiBaseUrl,
-    accessToken: session.accessToken,
-    path: `/admin/staff/${operatorUserId}`,
     query: { locationId: requireSelectedLocationId(locationId) },
     method: "DELETE",
     schema: adminMutationSuccessSchema

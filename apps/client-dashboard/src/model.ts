@@ -2,9 +2,7 @@ import { z } from "zod";
 import {
   operatorCapabilitySchema,
   operatorRoleSchema,
-  operatorUserCreateSchema,
   operatorUserSchema,
-  operatorUserUpdateSchema
 } from "@lattelink/contracts-auth";
 import {
   adminMenuCategorySchema,
@@ -12,7 +10,6 @@ import {
   adminMenuItemCreateSchema,
   adminMenuItemUpdateSchema,
   adminMenuResponseSchema,
-  adminStoreConfigUpdateSchema,
   appConfigSchema,
   homeNewsCardSchema,
   isLoyaltyVisible,
@@ -38,7 +35,6 @@ const operatorOrderSchema = orderSchema.extend({
 export type OperatorOrder = z.output<typeof operatorOrderSchema>;
 export type OperatorOrderStatus = z.output<typeof orderStatusSchema>;
 export type OperatorOrderFilter = "all" | "active" | "completed";
-export type DashboardSection = "overview" | "orders" | "menu" | "cards" | "discounts" | "experience" | "store" | "team";
 export type OperatorCapability = z.output<typeof operatorCapabilitySchema>;
 export type OperatorUser = z.output<typeof operatorUserSchema>;
 export const operatorMenuItemSchema = adminMenuItemSchema;
@@ -89,32 +85,8 @@ export type OperatorMenuItemCreateFormInput = {
   badgeCodes?: string | string[];
 };
 
-export type OperatorStoreConfigFormInput = {
-  storeName?: string;
-  locationName?: string;
-  hours?: string;
-  pickupInstructions?: string;
-  taxRateBasisPoints?: string | number;
-};
-
-export type OperatorUserCreateFormInput = {
-  displayName?: string;
-  email?: string;
-  role?: string;
-  password?: string;
-};
-
-export type OperatorUserUpdateFormInput = {
-  displayName?: string;
-  email?: string;
-  role?: string;
-  active?: boolean | string;
-  password?: string;
-};
-
 export type OperatorMenuItemUpdate = z.output<typeof operatorMenuItemUpdateSchema>;
 export type OperatorMenuItemCreate = z.output<typeof adminMenuItemCreateSchema>;
-export type OperatorStoreConfigUpdate = z.output<typeof adminStoreConfigUpdateSchema>;
 export type OperatorAppConfig = AppConfig;
 
 function normalizeText(value: unknown) {
@@ -156,29 +128,6 @@ function normalizeCents(value: unknown) {
   }
 
   return 0;
-}
-
-function normalizeOptionalBasisPoints(value: unknown) {
-  if (value === undefined || value === null) {
-    return undefined;
-  }
-
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return Math.max(0, Math.min(10000, Math.trunc(value)));
-  }
-
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return undefined;
-    }
-    const parsed = Number(trimmed);
-    if (Number.isFinite(parsed)) {
-      return Math.max(0, Math.min(10000, Math.trunc(parsed)));
-    }
-  }
-
-  return undefined;
 }
 
 function normalizeBoolean(value: unknown) {
@@ -226,10 +175,6 @@ export function isOwnerOperator(
   return operator?.role === "owner";
 }
 
-export function isOnboardingIncomplete(status: string | null | undefined) {
-  return Boolean(status && status !== "approved" && status !== "live");
-}
-
 export function formatOrderStatus(status: OperatorOrderStatus) {
   return status.replaceAll("_", " ");
 }
@@ -252,47 +197,6 @@ export function canAccessCapability(
   capability: OperatorCapability
 ) {
   return operator?.capabilities.includes(capability) ?? false;
-}
-
-export function getAvailableSections(
-  operator: Pick<OperatorUser, "capabilities" | "role"> | null | undefined,
-  appConfig: Pick<AppConfig, "featureFlags" | "storeCapabilities" | "loyaltyEnabled" | "fulfillment"> | null | undefined
-) {
-  if (isStoreOperator(operator)) {
-    return canAccessCapability(operator, "orders:read") &&
-      isStaffDashboardEnabled(appConfig) &&
-      isOrderTrackingEnabled(appConfig)
-      ? (["orders"] as DashboardSection[])
-      : ([] as DashboardSection[]);
-  }
-
-  const sections: DashboardSection[] = ["overview"];
-
-  if (
-    canAccessCapability(operator, "orders:read") &&
-    isStaffDashboardEnabled(appConfig) &&
-    isOrderTrackingEnabled(appConfig)
-  ) {
-    sections.push("orders");
-  }
-  if (canAccessCapability(operator, "menu:read") && isPlatformManagedMenu(appConfig)) {
-    sections.push("menu");
-  }
-  if (canAccessCapability(operator, "menu:read")) {
-    sections.push("cards");
-  }
-  if (canAccessCapability(operator, "menu:read")) {
-    sections.push("discounts");
-  }
-  if (canAccessCapability(operator, "store:read")) {
-    sections.push("experience");
-    sections.push("store");
-  }
-  if (canAccessCapability(operator, "team:read")) {
-    sections.push("team");
-  }
-
-  return sections;
 }
 
 export function canManageOrderStatus(
@@ -603,45 +507,6 @@ export function normalizeMenuItemCreateForm(input: OperatorMenuItemCreateFormInp
           .split(",")
           .map((badge) => badge.trim())
           .filter(Boolean)
-  });
-}
-
-export function normalizeStoreConfigForm(
-  input: OperatorStoreConfigFormInput | unknown
-): OperatorStoreConfigUpdate {
-  const value = toRecord(input);
-
-  return adminStoreConfigUpdateSchema.parse({
-    storeName: normalizeText(value.storeName),
-    locationName: normalizeText(value.locationName),
-    hours: normalizeText(value.hours),
-    pickupInstructions: normalizeText(value.pickupInstructions),
-    ...(normalizeOptionalBasisPoints(value.taxRateBasisPoints) === undefined
-      ? {}
-      : { taxRateBasisPoints: normalizeOptionalBasisPoints(value.taxRateBasisPoints) })
-  });
-}
-
-export function normalizeOperatorUserCreateForm(input: OperatorUserCreateFormInput | unknown) {
-  const value = toRecord(input);
-
-  return operatorUserCreateSchema.parse({
-    displayName: normalizeText(value.displayName),
-    email: normalizeText(value.email),
-    role: normalizeText(value.role),
-    password: normalizeText(value.password)
-  });
-}
-
-export function normalizeOperatorUserUpdateForm(input: OperatorUserUpdateFormInput | unknown) {
-  const value = toRecord(input);
-
-  return operatorUserUpdateSchema.parse({
-    ...(normalizeOptionalText(value.displayName) ? { displayName: normalizeOptionalText(value.displayName) } : {}),
-    ...(normalizeOptionalText(value.email) ? { email: normalizeOptionalText(value.email) } : {}),
-    ...(normalizeOptionalText(value.role) ? { role: normalizeOptionalText(value.role) } : {}),
-    ...(normalizeOptionalText(value.password) ? { password: normalizeOptionalText(value.password) } : {}),
-    ...(value.active !== undefined ? { active: normalizeBoolean(value.active) } : {})
   });
 }
 

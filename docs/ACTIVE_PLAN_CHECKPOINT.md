@@ -6,6 +6,15 @@ This is a temporary checkpoint for resuming product work after the backend
 availability detour. It records the agreed sequence and does not replace the
 long-term roadmaps.
 
+## Operator Dashboard V2 Scope Update (2026-09-28)
+
+The experimental Operator Dashboard App Builder/editor is removed from the V2
+surface. The customer mobile app's published experience schema, runtime,
+Catalog persistence, and existing service-side draft/publish/version APIs remain
+in place; the dashboard no longer exposes an authoring or preview editor.
+Current merchant work remains focused on onboarding, branded-app identity,
+readiness, and release tracking.
+
 ## Decision Lock
 
 - All current product work stays on `develop`.
@@ -37,7 +46,7 @@ Finish a repeatable, secure, multi-tenant merchant journey:
 3. Nomly collects business, organization, and location information.
 4. Nomly recommends the appropriate plan.
 5. The merchant connects Stripe and enters the workspace.
-6. The merchant configures and previews a branded customer app.
+6. Nomly prepares a branded customer app from merchant identity and catalog data.
 7. Readiness checks prevent incomplete submissions.
 8. Nomly prepares, builds, submits, and tracks the merchant-specific app.
 9. The merchant can operate and support the live product without database
@@ -52,8 +61,8 @@ The following foundation exists in code on `develop`:
 - Onboarding state and readiness tracking.
 - Stripe Connect onboarding and recovery handling.
 - Branded app identity and launch checklist.
-- Mobile experience editor with configurable sections.
-- Draft, publish, revision, and rollback behavior for mobile experiences.
+- Published mobile experience schema/runtime consumed by the customer app;
+  service-side draft, publish, revision, and rollback APIs remain available.
 - Merchant mobile-build preparation, release jobs, worker, and status metadata.
 - Submission gates for incomplete merchant applications.
 - Checkout and payment recovery actions in the support surface.
@@ -69,8 +78,8 @@ The following areas have foundations but are not complete product workflows:
 
 - Merchant-specific binary creation and App Store submission are tracked and
   prepared, but are not fully automated end to end. See #356, #257, and #295.
-- The app builder is functional infrastructure, not yet the complete polished
-  Shopify-style merchant editing experience.
+- The Operator Dashboard App Builder/editor is outside the V2 product surface;
+  the published mobile experience runtime and app-release infrastructure remain.
 - Self-serve onboarding exists in code, but the newly approved authentication
   and onboarding UX is still a Figma design and has not been implemented.
 - Operator authentication still needs the unified authenticator model, Sign in
@@ -89,7 +98,7 @@ The current Figma direction includes:
 - Passkey enrollment and recovery.
 - Guided business onboarding in a focused modal environment.
 - Plan recommendation and Stripe connection.
-- Workspace entry, guided readiness, app creation, and publishing.
+- Workspace entry, guided readiness, and branded-app release preparation.
 - Desktop and mobile variants for the account-to-launch journey.
 
 This is design work only. It must not be described as shipped product
@@ -154,7 +163,7 @@ Resume the product plan in this order:
 
 - Implement the approved authentication and account-creation experience.
 - Implement the guided business-onboarding journey.
-- Refine the operator workspace and app-builder experience.
+- Refine the operator workspace and branded-app onboarding/release experience.
 - Implement the approved public landing-page direction.
 - Validate responsive behavior, accessibility, empty/error/loading states, and
   recovery paths.

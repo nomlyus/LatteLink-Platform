@@ -15,7 +15,6 @@ import {
   filterVisibleOrders,
   formatOrderStatus,
   getAppConfigCapabilityLabels,
-  getAvailableSections,
   getOrderCancelUnavailableMessage,
   getOrderControlUnavailableMessage,
   getOperatorRoleLabel,
@@ -23,19 +22,16 @@ import {
   getOrderCustomerLabel,
   isAbortedCheckoutOrder,
   isActiveOrder,
-  isOnboardingIncomplete,
   isOwnerOperator,
   normalizeMenuItemCreateForm,
   normalizeMenuItemForm,
-  normalizeOperatorUserCreateForm,
-  normalizeOperatorUserUpdateForm,
-  normalizeStoreConfigForm,
   resolveAppConfig,
   resolveOrder,
   sessionNeedsRefresh,
   type OperatorMenuCategory,
   type OperatorUser
 } from "../src/model";
+import { normalizeStoreSettingsForm } from "../src/features/settings/store-settings-domain";
 
 const sampleOrder = resolveOrder({
   id: "123e4567-e89b-12d3-a456-426614174000",
@@ -276,7 +272,7 @@ describe("client dashboard model", () => {
     expect(getOrderCustomerLabel({ ...sampleOrder, customer: undefined })).toBe("Customer details unavailable");
   });
 
-  it("derives capability labels and available sections from runtime config", () => {
+  it("derives capability labels from runtime config", () => {
     expect(getAppConfigCapabilityLabels(sampleAppConfig)).toEqual([
       "Apple Pay",
       "Card",
@@ -292,45 +288,6 @@ describe("client dashboard model", () => {
       "orders tab"
     ]);
 
-    expect(getAvailableSections(sampleOperator, sampleAppConfig)).toEqual([
-      "overview",
-      "orders",
-      "menu",
-      "cards",
-      "discounts",
-      "experience",
-      "store",
-      "team"
-    ]);
-    expect(
-      getAvailableSections(
-        { ...sampleOperator, capabilities: ["menu:read"] },
-        {
-          ...sampleAppConfig,
-          storeCapabilities: {
-            ...sampleAppConfig.storeCapabilities,
-            operations: {
-              ...sampleAppConfig.storeCapabilities.operations,
-              liveOrderTrackingEnabled: false
-            }
-          }
-        }
-      )
-    ).toEqual(["overview", "menu", "cards", "discounts"]);
-    expect(
-      getAvailableSections(
-        { ...sampleOperator, capabilities: ["menu:read"] },
-        {
-          ...sampleAppConfig,
-          storeCapabilities: {
-            ...sampleAppConfig.storeCapabilities,
-            menu: {
-              source: "external_sync"
-            }
-          }
-        }
-      )
-    ).toEqual(["overview", "cards", "discounts"]);
   });
 
   it("resolves role labels and capability access", () => {
@@ -340,10 +297,6 @@ describe("client dashboard model", () => {
 
     expect(isOwnerOperator({ role: "owner" })).toBe(true);
     expect(isOwnerOperator({ role: "manager" })).toBe(false);
-    expect(isOnboardingIncomplete("in_progress")).toBe(true);
-    expect(isOnboardingIncomplete("ready_for_review")).toBe(true);
-    expect(isOnboardingIncomplete("approved")).toBe(false);
-    expect(isOnboardingIncomplete("live")).toBe(false);
 
     expect(canAccessCapability(sampleOperator, "orders:write")).toBe(true);
     expect(canAccessCapability(sampleOperator, "team:write")).toBe(false);
@@ -391,7 +344,7 @@ describe("client dashboard model", () => {
     ).toBe("Live order tracking is disabled for this store.");
   });
 
-  it("normalizes menu, store, and team form inputs before submission", () => {
+  it("normalizes menu and store form inputs before submission", () => {
     expect(
       normalizeMenuItemForm({
         name: "  Brown Sugar Latte  ",
@@ -479,7 +432,7 @@ describe("client dashboard model", () => {
     });
 
     expect(
-      normalizeStoreConfigForm({
+      normalizeStoreSettingsForm({
         storeName: "  LatteLink Flagship  ",
         locationName: "  Ann Arbor, MI  ",
         hours: "  Daily · 7:00 AM - 6:00 PM  ",
@@ -494,31 +447,6 @@ describe("client dashboard model", () => {
       taxRateBasisPoints: 625
     });
 
-    expect(
-      normalizeOperatorUserCreateForm({
-        displayName: "  Avery Quinn  ",
-        email: "  avery@store.com  ",
-        role: "manager",
-        password: "  Password123!  "
-      })
-    ).toEqual({
-      displayName: "Avery Quinn",
-      email: "avery@store.com",
-      role: "manager",
-      password: "Password123!"
-    });
-
-    expect(
-      normalizeOperatorUserUpdateForm({
-        displayName: "  Avery Q.  ",
-        password: "  NewPassword123!  ",
-        active: "false"
-      })
-    ).toEqual({
-      displayName: "Avery Q.",
-      password: "NewPassword123!",
-      active: false
-    });
   });
 
   it("counts menu visibility and refresh windows correctly", () => {
