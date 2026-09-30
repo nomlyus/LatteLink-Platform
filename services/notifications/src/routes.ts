@@ -449,6 +449,7 @@ export async function registerRoutes(app: FastifyInstance) {
         {
           requestId: request.id,
           userId,
+          brandId: input.brandId,
           deviceId: input.deviceId,
           platform: input.platform
         },

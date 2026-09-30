@@ -71,4 +71,20 @@ describe("critical data-load observability", () => {
 
     expect(getSentryMock().captureException).toHaveBeenCalledTimes(1);
   });
+
+  it("does not report canceled location requests as backend failures", async () => {
+    const { withCriticalDataLoadSentry } = await import("../src/observability/criticalDataLoad");
+    const abortError = new Error("The operation was aborted.");
+    abortError.name = "AbortError";
+
+    await expect(withCriticalDataLoadSentry({
+      feature: "menu",
+      operation: "load_menu",
+      endpoint: "/menu",
+      apiBaseUrl: "https://api-dev.nomly.us/v1",
+      locationId: "location-a"
+    }, async () => { throw abortError; })).rejects.toBe(abortError);
+
+    expect(getSentryMock().captureException).not.toHaveBeenCalled();
+  });
 });

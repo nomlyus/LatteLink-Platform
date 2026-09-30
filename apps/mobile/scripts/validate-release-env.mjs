@@ -1,16 +1,26 @@
+import { existsSync } from "node:fs";
+import { dirname, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
+
 const VALID_VARIANTS = new Set(["beta", "production"]);
 const REQUIRED_KEYS = [
   "APP_VARIANT",
   "EXPO_PUBLIC_APP_VARIANT",
   "APP_DISPLAY_NAME_BASE",
+  "APP_DISPLAY_NAME",
+  "EXPO_PUBLIC_APP_DISPLAY_NAME",
+  "EXPO_PUBLIC_APP_ICON_PATH",
+  "EXPO_PUBLIC_APP_SPLASH_PATH",
   "APP_VERSION",
   "EXPO_SLUG",
   "EXPO_SCHEME",
   "IOS_BUNDLE_IDENTIFIER",
   "EXPO_PUBLIC_IOS_BUNDLE_IDENTIFIER",
   "EXPO_PUBLIC_API_BASE_URL",
+  "EXPO_PUBLIC_BRAND_ID",
   "EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID",
   "EXPO_PUBLIC_BRAND_NAME",
+  "EAS_PROJECT_ID",
   "EXPO_PUBLIC_SENTRY_DSN",
   "SENTRY_ORG",
   "SENTRY_PROJECT"
@@ -36,6 +46,34 @@ for (const key of REQUIRED_KEYS) {
   }
 }
 
+const brandId = process.env.EXPO_PUBLIC_BRAND_ID?.trim() ?? "";
+if (brandId.length > 160) {
+  errors.push("EXPO_PUBLIC_BRAND_ID must not exceed 160 characters.");
+}
+
+const appDisplayName = process.env.APP_DISPLAY_NAME?.trim() ?? "";
+const nativeDisplayName = process.env.EXPO_PUBLIC_APP_DISPLAY_NAME?.trim() ?? "";
+if (appDisplayName && nativeDisplayName && appDisplayName !== nativeDisplayName) {
+  errors.push("EXPO_PUBLIC_APP_DISPLAY_NAME must match APP_DISPLAY_NAME for the native iOS bundle.");
+}
+
+const legacyRawaqIdentity = [
+  appDisplayName,
+  process.env.EXPO_SLUG?.trim() ?? "",
+  process.env.EXPO_SCHEME?.trim() ?? "",
+  process.env.IOS_BUNDLE_IDENTIFIER?.trim() ?? "",
+  process.env.EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID?.trim() ?? "",
+  process.env.EXPO_PUBLIC_BRAND_NAME?.trim() ?? ""
+].some((value) => /rawaq|lattelink/i.test(value));
+if (legacyRawaqIdentity && brandId.toLowerCase() !== "rawaqcoffee") {
+  errors.push("Rawaq/LatteLink native identity values cannot be used for a different EXPO_PUBLIC_BRAND_ID.");
+}
+const normalizedIconPath = process.env.EXPO_PUBLIC_APP_ICON_PATH?.trim().replace(/^\.\//, "");
+const normalizedSplashPath = process.env.EXPO_PUBLIC_APP_SPLASH_PATH?.trim().replace(/^\.\//, "");
+if (brandId.toLowerCase() !== "rawaqcoffee" && (normalizedIconPath === "assets/icon.png" || normalizedSplashPath === "assets/splash.png")) {
+  errors.push("Rawaq local native assets cannot be used for a different EXPO_PUBLIC_BRAND_ID.");
+}
+
 const variant = process.env.APP_VARIANT?.trim();
 if (variant && variant !== profile) {
   errors.push(`APP_VARIANT must match the target profile. Expected ${profile}, received ${variant}.`);
@@ -52,7 +90,7 @@ if (appVersion && !/^\d+\.\d+\.\d+([.-][0-9A-Za-z.-]+)?$/.test(appVersion)) {
 }
 
 const slug = process.env.EXPO_SLUG?.trim() ?? "";
-if (slug === "example" || slug.includes(" ")) {
+if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/i.test(slug)) {
   errors.push(`EXPO_SLUG must be a valid Expo slug. Received: ${slug}`);
 }
 
@@ -70,7 +108,7 @@ if (bundleIdentifier && publicBundleIdentifier && bundleIdentifier !== publicBun
 }
 
 if (bundleIdentifier) {
-  if (!/^[A-Za-z0-9.-]+$/.test(bundleIdentifier)) {
+  if (!/^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9]*)+$/.test(bundleIdentifier)) {
     errors.push(`IOS_BUNDLE_IDENTIFIER contains invalid characters. Received: ${bundleIdentifier}`);
   }
 
@@ -146,6 +184,21 @@ if (merchantIdentifier) {
     warnings.push(
       `Non-production ${profile} build is using the production-looking Apple Pay merchant identifier: ${merchantIdentifier}`
     );
+  }
+}
+
+const easProjectId = process.env.EAS_PROJECT_ID?.trim() ?? "";
+if (easProjectId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(easProjectId)) {
+  errors.push("EAS_PROJECT_ID must be a valid UUID for this merchant app's EAS/update identity.");
+}
+
+const mobileDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+for (const key of ["EXPO_PUBLIC_APP_ICON_PATH", "EXPO_PUBLIC_APP_SPLASH_PATH"]) {
+  const assetPath = process.env[key]?.trim() ?? "";
+  if (!assetPath) continue;
+  const resolvedAssetPath = resolve(mobileDirectory, assetPath);
+  if (!resolvedAssetPath.startsWith(`${mobileDirectory}${sep}`) || !existsSync(resolvedAssetPath)) {
+    errors.push(`${key} must point to an existing file within the mobile project. Received: ${assetPath}`);
   }
 }
 

@@ -23,6 +23,8 @@ vi.mock("@lattelink/event-bus", () => ({
 import { buildApp } from "../src/app.js";
 
 describe("gateway", () => {
+  const publicTestBrandId = "gazelle-default";
+  const publicTestLocationId = "flagship-01";
   const fetchMock = vi.fn<typeof fetch>();
   const authHeader = { authorization: "Bearer access-token" } as const;
   const ownerOperatorHeaders = { authorization: "Bearer operator-owner-access-token" } as const;
@@ -355,8 +357,20 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     fetchMock.mockImplementation(async (input, init) => {
       const url = typeof input === "string" ? input : input.url;
+      const requestPath = new URL(url).pathname;
       const method = init?.method ?? "GET";
       const authHeader = init?.headers ? new Headers(init.headers as HeadersInit).get("authorization") : null;
+
+      if (url.includes("/v1/catalog/internal/public-location-access") && method === "GET") {
+        const parsedUrl = new URL(url);
+        if (
+          parsedUrl.searchParams.get("brandId") === "brand-a" &&
+          parsedUrl.searchParams.get("locationId") === "brand-b-location"
+        ) {
+          return new Response(null, { status: 404 });
+        }
+        return new Response(null, { status: 204 });
+      }
 
       if (url.endsWith("/v1/reporting/query") && method === "POST") {
         const body = JSON.parse(String(init?.body ?? "{}")) as { locationIds?: string[] };
@@ -1077,7 +1091,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         });
       }
 
-      if (url.endsWith("/v1/menu") && method === "GET") {
+      if (new URL(url).pathname === "/v1/menu" && method === "GET") {
         return new Response(
           JSON.stringify({
             locationId: "flagship-01",
@@ -1103,7 +1117,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
-      if (url.endsWith("/v1/app-config") && method === "GET") {
+      if (new URL(url).pathname === "/v1/app-config" && method === "GET") {
         return new Response(
           JSON.stringify({
             brand: {
@@ -1165,15 +1179,17 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
-      if (url.endsWith("/v1/store/config") && method === "GET") {
+      if ((new URL(url).pathname === "/v1/store/config" || /^\/v1\/catalog\/internal\/locations\/[^/]+\/store-config$/.test(new URL(url).pathname)) && method === "GET") {
+        const parsedUrl = new URL(url);
+        const locationId = parsedUrl.searchParams.get("locationId") ?? parsedUrl.pathname.match(/locations\/([^/]+)\/store-config/)?.[1] ?? "flagship-01";
         return new Response(
           JSON.stringify({
-            locationId: "flagship-01",
+            locationId,
             hoursText: "Daily · 7:00 AM - 6:00 PM",
             isOpen: true,
             nextOpenAt: null,
             prepEtaMinutes: 12,
-            taxRateBasisPoints: 600,
+            taxRateBasisPoints: locationId === "launch-ready-01" || locationId === "zero-tax-ready-01" ? 0 : 600,
             pickupInstructions: "Pickup at the flagship order counter."
           }),
           { status: 200, headers: { "content-type": "application/json" } }
@@ -1211,7 +1227,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
-      if (url.endsWith("/v1/orders/quote") && method === "POST") {
+      if (new URL(url).pathname === "/v1/orders/quote" && method === "POST") {
         const body = JSON.parse(String(init?.body ?? "{}")) as {
           locationId: string;
           items: Array<{ itemId: string; quantity: number }>;
@@ -1243,7 +1259,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
-      if (url.endsWith("/v1/orders") && method === "POST") {
+      if (url.split("?")[0]?.endsWith("/v1/orders") && method === "POST") {
         const body = JSON.parse(String(init?.body ?? "{}")) as { quoteHash: string };
         return new Response(
           JSON.stringify({
@@ -1264,7 +1280,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
-      if (url.endsWith("/v1/orders") && method === "GET") {
+      if (url.split("?")[0]?.endsWith("/v1/orders") && method === "GET") {
         if (queuedOrderListPayloads.length > 0) {
           return new Response(JSON.stringify(queuedOrderListPayloads.shift()), {
             status: 200,
@@ -1394,7 +1410,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
-      const expireCheckoutMatch = url.match(/\/v1\/orders\/internal\/checkouts\/([0-9a-f-]{36})\/expire$/);
+      const expireCheckoutMatch = requestPath.match(/\/v1\/orders\/internal\/checkouts\/([0-9a-f-]{36})\/expire$/);
       if (expireCheckoutMatch && method === "POST") {
         return new Response(JSON.stringify({ expired: true }), {
           status: 200,
@@ -1402,7 +1418,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         });
       }
 
-      const supportCancelMatch = url.match(/\/v1\/orders\/internal\/support\/orders\/([0-9a-f-]{36})\/cancel$/);
+      const supportCancelMatch = requestPath.match(/\/v1\/orders\/internal\/support\/orders\/([0-9a-f-]{36})\/cancel$/);
       if (supportCancelMatch && method === "POST") {
         return new Response(JSON.stringify(buildOrderPayload(supportCancelMatch[1], "CANCELED")), {
           status: 200,
@@ -1420,7 +1436,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         });
       }
 
-      const getOrderMatch = url.match(/\/v1\/orders\/([0-9a-f-]{36})$/);
+      const getOrderMatch = requestPath.match(/\/v1\/orders\/([0-9a-f-]{36})$/);
       if (getOrderMatch && method === "GET") {
         const orderId = getOrderMatch[1];
         const headers = new Headers((init?.headers ?? {}) as HeadersInit);
@@ -1458,7 +1474,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
-      const updateOrderStatusMatch = url.match(/\/v1\/orders\/([0-9a-f-]{36})\/status$/);
+      const updateOrderStatusMatch = requestPath.match(/\/v1\/orders\/([0-9a-f-]{36})\/status$/);
       if (updateOrderStatusMatch && method === "POST") {
         const orderId = updateOrderStatusMatch[1];
         const body = JSON.parse(String(init?.body ?? "{}")) as { status?: string; note?: string };
@@ -1492,7 +1508,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
-      const cancelOrderMatch = url.match(/\/v1\/orders\/([0-9a-f-]{36})\/cancel$/);
+      const cancelOrderMatch = requestPath.match(/\/v1\/orders\/([0-9a-f-]{36})\/cancel$/);
       if (cancelOrderMatch && method === "POST") {
         const orderId = cancelOrderMatch[1];
         const headers = new Headers((init?.headers ?? {}) as HeadersInit);
@@ -2071,7 +2087,7 @@ let previousFreeClientDashboardDomain: string | undefined;
                     testOrderCompleted: true,
                     mobileReleaseStatus: "ready_for_launch"
                   }
-                : { locationId, appIdentityReady: locationId === "northside-01" }
+                : { locationId, appIdentityReady: locationId === "northside-01" || locationId === "zero-tax-ready-01" }
             )
           ),
           {
@@ -2360,7 +2376,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         );
       }
 
-      if (url.endsWith("/v1/payments/stripe/mobile-session") && method === "POST") {
+      if (new URL(url).pathname === "/v1/payments/stripe/mobile-session" && method === "POST") {
         const headers = new Headers((init?.headers ?? {}) as HeadersInit);
         const body = JSON.parse(String(init?.body ?? "{}")) as { checkoutId?: string };
         expect(headers.get("x-gateway-token")).toBe("gateway-test-token");
@@ -2559,8 +2575,8 @@ let previousFreeClientDashboardDomain: string | undefined;
       if (url.includes("/v1/loyalty/balance") && method === "GET") {
         return new Response(
           JSON.stringify({
+            brandId: "northside-coffee",
             userId: "123e4567-e89b-12d3-a456-426614174000",
-            locationId: "flagship-01",
             availablePoints: 240,
             pendingPoints: 0,
             lifetimeEarned: 600
@@ -2574,6 +2590,8 @@ let previousFreeClientDashboardDomain: string | undefined;
           JSON.stringify([
             {
               id: "123e4567-e89b-12d3-a456-426614174210",
+              brandId: "northside-coffee",
+              userId: "123e4567-e89b-12d3-a456-426614174000",
               type: "EARN",
               points: 240,
               orderId: "123e4567-e89b-12d3-a456-426614174211",
@@ -2582,6 +2600,8 @@ let previousFreeClientDashboardDomain: string | undefined;
             },
             {
               id: "123e4567-e89b-12d3-a456-426614174212",
+              brandId: "northside-coffee",
+              userId: "123e4567-e89b-12d3-a456-426614174000",
               type: "REDEEM",
               points: -120,
               orderId: "123e4567-e89b-12d3-a456-426614174213",
@@ -2894,7 +2914,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
   it("returns v1 menu", async () => {
     const app = await buildApp();
-    const response = await app.inject({ method: "GET", url: "/v1/menu" });
+    const response = await app.inject({ method: "GET", url: `/v1/menu?brandId=${publicTestBrandId}&locationId=${publicTestLocationId}` });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
@@ -2902,14 +2922,85 @@ let previousFreeClientDashboardDomain: string | undefined;
       categories: expect.arrayContaining([expect.objectContaining({ id: "espresso" })])
     });
     const requestedUrls = fetchMock.mock.calls.map(([input]) => (typeof input === "string" ? input : input.url));
-    expect(requestedUrls).toContain("http://catalog.internal/v1/menu");
+    expect(requestedUrls).toContain(`http://catalog.internal/v1/menu?brandId=${publicTestBrandId}&locationId=${publicTestLocationId}`);
     expect(response.headers["cache-control"]).toBe("public, max-age=60");
+    await app.close();
+  });
+
+  it("requires public brand context and safely preserves Catalog access rejection", async () => {
+    const app = await buildApp();
+    const missingContext = await app.inject({ method: "GET", url: "/v1/menu" });
+    expect(missingContext.statusCode).toBe(400);
+    expect(missingContext.json()).toMatchObject({ code: "INVALID_PUBLIC_LOCATION_REQUEST" });
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      code: "PUBLIC_LOCATION_NOT_AVAILABLE",
+      message: "Location not available.",
+      requestId: "catalog-request"
+    }), { status: 404, headers: { "content-type": "application/json" } }));
+    const rejected = await app.inject({
+      method: "GET",
+      url: `/v1/menu?brandId=brand-a&locationId=location-b`
+    });
+    expect(rejected.statusCode).toBe(404);
+    expect(rejected.json()).toMatchObject({ code: "PUBLIC_LOCATION_NOT_AVAILABLE", message: "Location not available." });
+    expect(rejected.body).not.toContain("tenantId");
+    await app.close();
+  });
+
+  it("forwards the public mobile bootstrap query without requiring internal identity", async () => {
+    const bootstrap = {
+      schemaVersion: 1,
+      status: "ready",
+      brand: { brandId: "northside-coffee", displayName: "Northside Coffee" },
+      locations: [
+        { locationId: "northside-01", displayName: "Flagship", marketLabel: "Detroit, MI", timezone: "America/Detroit" }
+      ],
+      primaryLocationId: "northside-01",
+      orderingEnabled: true,
+      compatibility: {}
+    };
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(bootstrap), {
+      status: 200,
+      headers: { "content-type": "application/json", "cache-control": "no-store" }
+    }));
+    const app = await buildApp();
+    const response = await app.inject({ method: "GET", url: "/v1/mobile/bootstrap?brandId=northside-coffee" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(response.json()).toEqual(bootstrap);
+    const [input, init] = fetchMock.mock.calls[0]!;
+    expect(typeof input === "string" ? input : input.url)
+      .toBe("http://catalog.internal/v1/mobile/bootstrap?brandId=northside-coffee");
+    const headers = new Headers(init?.headers as HeadersInit);
+    expect(headers.get("x-request-id")).toBeTruthy();
+    expect(headers.get("x-gateway-token")).toBeNull();
+    expect(headers.get("x-user-id")).toBeNull();
+    expect(headers.get("authorization")).toBeNull();
+    await app.close();
+  });
+
+  it("preserves safe mobile bootstrap error statuses from catalog", async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      code: "MOBILE_BRAND_NOT_FOUND",
+      message: "The requested brand is unavailable.",
+      requestId: "catalog-request-id"
+    }), { status: 404, headers: { "content-type": "application/json" } }));
+    const app = await buildApp();
+    const response = await app.inject({ method: "GET", url: "/v1/mobile/bootstrap?brandId=unknown-brand" });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(response.json()).toMatchObject({ code: "MOBILE_BRAND_NOT_FOUND" });
+    expect(response.body).not.toContain("tenantId");
     await app.close();
   });
 
   it("returns v1 app-config through the catalog proxy", async () => {
     const app = await buildApp();
-    const response = await app.inject({ method: "GET", url: "/v1/app-config" });
+    const response = await app.inject({ method: "GET", url: `/v1/app-config?brandId=${publicTestBrandId}&locationId=${publicTestLocationId}` });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
@@ -2922,13 +3013,13 @@ let previousFreeClientDashboardDomain: string | undefined;
     });
 
     const requestedUrls = fetchMock.mock.calls.map(([input]) => (typeof input === "string" ? input : input.url));
-    expect(requestedUrls).toContain("http://catalog.internal/v1/app-config");
+    expect(requestedUrls).toContain(`http://catalog.internal/v1/app-config?brandId=${publicTestBrandId}&locationId=${publicTestLocationId}`);
     await app.close();
   });
 
   it("returns v1 mobile experience through the catalog proxy", async () => {
     const app = await buildApp();
-    const response = await app.inject({ method: "GET", url: "/v1/mobile-experience?locationId=flagship-01" });
+    const response = await app.inject({ method: "GET", url: `/v1/mobile-experience?brandId=${publicTestBrandId}&locationId=${publicTestLocationId}` });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
@@ -2938,7 +3029,28 @@ let previousFreeClientDashboardDomain: string | undefined;
     });
 
     const requestedUrls = fetchMock.mock.calls.map(([input]) => (typeof input === "string" ? input : input.url));
-    expect(requestedUrls).toContain("http://catalog.internal/v1/mobile-experience?locationId=flagship-01");
+    expect(requestedUrls).toContain(`http://catalog.internal/v1/mobile-experience?brandId=${publicTestBrandId}&locationId=${publicTestLocationId}`);
+    await app.close();
+  });
+
+  it("requires and forwards brand plus location for the legacy public cards route", async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ locationId: "flagship-01", cards: [] }), {
+      status: 200,
+      headers: { "content-type": "application/json", "cache-control": "public, max-age=60" }
+    }));
+    const app = await buildApp();
+    const missing = await app.inject({ method: "GET", url: "/v1/cards" });
+    expect(missing.statusCode).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/v1/cards?brandId=${publicTestBrandId}&locationId=${publicTestLocationId}`
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["cache-control"]).toBe("public, max-age=60");
+    expect(fetchMock.mock.calls.map(([input]) => (typeof input === "string" ? input : input.url)))
+      .toContain(`http://catalog.internal/v1/cards?brandId=${publicTestBrandId}&locationId=${publicTestLocationId}`);
     await app.close();
   });
 
@@ -3265,7 +3377,7 @@ let previousFreeClientDashboardDomain: string | undefined;
     const app = await buildApp();
     const response = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       headers: authHeader,
       payload: {
         locationId: "flagship-01",
@@ -3302,7 +3414,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const getResponse = await app.inject({
       method: "GET",
-      url: `/v1/orders/${orderId}`,
+      url: `/v1/orders/${orderId}?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
     expect(getResponse.statusCode).toBe(200);
@@ -3310,7 +3422,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const cancelResponse = await app.inject({
       method: "POST",
-      url: `/v1/orders/${orderId}/cancel`,
+      url: `/v1/orders/${orderId}/cancel?brandId=${publicTestBrandId}`,
       headers: authHeader,
       payload: { reason: "changed mind" }
     });
@@ -3325,7 +3437,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const response = await app.inject({
       method: "GET",
-      url: "/v1/orders",
+      url: `/v1/orders?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
 
@@ -3339,7 +3451,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const ordersCall = fetchMock.mock.calls.find(([input, init]) => {
       const url = typeof input === "string" ? input : input.url;
-      return url === "http://orders.internal/v1/orders" && (init?.method ?? "GET") === "GET";
+      return url === `http://orders.internal/v1/orders?brandId=${publicTestBrandId}` && (init?.method ?? "GET") === "GET";
     });
     expect(ordersCall).toBeDefined();
     if (ordersCall) {
@@ -3351,6 +3463,15 @@ let previousFreeClientDashboardDomain: string | undefined;
     await app.close();
   });
 
+  it("requires explicit brand context for customer order history", async () => {
+    const app = await buildApp();
+    const response = await app.inject({ method: "GET", url: "/v1/orders", headers: authHeader });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ code: "INVALID_PUBLIC_BRAND_REQUEST" });
+    expect(fetchMock.mock.calls.some(([input]) => String(input).startsWith("http://orders.internal/v1/orders"))).toBe(false);
+    await app.close();
+  });
+
   it("streams the initial order snapshot as text/event-stream", async () => {
     const app = await buildApp();
     const orderId = "123e4567-e89b-12d3-a456-426614174116";
@@ -3358,7 +3479,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const response = await app.inject({
       method: "GET",
-      url: `/v1/orders/${orderId}/stream`,
+      url: `/v1/orders/${orderId}/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
 
@@ -3369,7 +3490,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const streamOrderCall = fetchMock.mock.calls.find(([input, init]) => {
       const url = typeof input === "string" ? input : input.url;
-      return url === `http://orders.internal/v1/orders/${orderId}` && (init?.method ?? "GET") === "GET";
+      return url === `http://orders.internal/v1/orders/${orderId}?brandId=${publicTestBrandId}` && (init?.method ?? "GET") === "GET";
     });
     expect(streamOrderCall).toBeDefined();
     if (streamOrderCall) {
@@ -3390,7 +3511,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const response = await app.inject({
       method: "GET",
-      url: "/v1/orders/stream",
+      url: `/v1/orders/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
 
@@ -3413,7 +3534,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const firstStream = app.inject({
       method: "GET",
-      url: `/v1/orders/${firstOrderId}/stream`,
+      url: `/v1/orders/${firstOrderId}/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
     firstStream.catch(() => undefined);
@@ -3421,14 +3542,14 @@ let previousFreeClientDashboardDomain: string | undefined;
     await vi.waitFor(() => {
       const firstOrderFetch = fetchMock.mock.calls.some(([input, init]) => {
         const url = typeof input === "string" ? input : input.url;
-        return url === `http://orders.internal/v1/orders/${firstOrderId}` && (init?.method ?? "GET") === "GET";
+        return url === `http://orders.internal/v1/orders/${firstOrderId}?brandId=${publicTestBrandId}` && (init?.method ?? "GET") === "GET";
       });
       expect(firstOrderFetch).toBe(true);
     });
 
     const rejectedResponse = await app.inject({
       method: "GET",
-      url: `/v1/orders/${secondOrderId}/stream`,
+      url: `/v1/orders/${secondOrderId}/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
 
@@ -3450,14 +3571,14 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const firstResponse = await app.inject({
       method: "GET",
-      url: `/v1/orders/${firstOrderId}/stream`,
+      url: `/v1/orders/${firstOrderId}/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
     expect(firstResponse.statusCode).toBe(200);
 
     const secondResponse = await app.inject({
       method: "GET",
-      url: `/v1/orders/${secondOrderId}/stream`,
+      url: `/v1/orders/${secondOrderId}/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
     expect(secondResponse.statusCode).toBe(200);
@@ -3476,7 +3597,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const firstStream = app.inject({
       method: "GET",
-      url: `/v1/orders/${orderId}/stream`,
+      url: `/v1/orders/${orderId}/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
     firstStream.catch(() => undefined);
@@ -3484,7 +3605,7 @@ let previousFreeClientDashboardDomain: string | undefined;
     await vi.waitFor(() => {
       const firstOrderFetch = fetchMock.mock.calls.some(([input, init]) => {
         const url = typeof input === "string" ? input : input.url;
-        return url === `http://orders.internal/v1/orders/${orderId}` && (init?.method ?? "GET") === "GET";
+        return url === `http://orders.internal/v1/orders/${orderId}?brandId=${publicTestBrandId}` && (init?.method ?? "GET") === "GET";
       });
       expect(firstOrderFetch).toBe(true);
     });
@@ -3513,7 +3634,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const response = await app.inject({
       method: "GET",
-      url: "/v1/orders/stream",
+      url: `/v1/orders/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
 
@@ -3542,7 +3663,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const response = await app.inject({
       method: "GET",
-      url: "/v1/orders/stream",
+      url: `/v1/orders/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
 
@@ -3559,6 +3680,43 @@ let previousFreeClientDashboardDomain: string | undefined;
     await app.close();
   });
 
+  it("does not deliver another brand's same-user order event to a customer stream", async () => {
+    process.env.GATEWAY_ORDER_STREAM_POLL_MS = "5";
+    process.env.VALKEY_URL = "redis://valkey.test:6379";
+    failOrderListFetchWhenQueueEmpty = true;
+    const app = await buildApp();
+    const authorizedOrder = buildOrderPayload("123e4567-e89b-12d3-a456-426614174191", "PAID");
+    const otherBrandOrder = {
+      ...buildOrderPayload("123e4567-e89b-12d3-a456-426614174192", "READY"),
+      locationId: "brand-b-location"
+    };
+    queuedOrderListPayloads = [[authorizedOrder]];
+    eventBusMocks.subscribeToAllOrderEvents.mockImplementationOnce(async (handler) => {
+      setTimeout(() => {
+        handler({ userId: "123e4567-e89b-12d3-a456-426614174000", order: otherBrandOrder });
+        handler({ userId: "123e4567-e89b-12d3-a456-426614174000", order: {
+          ...authorizedOrder,
+          status: "READY",
+          timeline: [...authorizedOrder.timeline, { status: "READY", occurredAt: new Date().toISOString() }]
+        } });
+      }, 0);
+      return () => undefined;
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/v1/orders/stream?brandId=${publicTestBrandId}`,
+      headers: authHeader
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain(authorizedOrder.id);
+    expect(response.body).toContain('"type":"order_update"');
+    expect(response.body).not.toContain(otherBrandOrder.id);
+    expect(response.body).not.toContain("brand-b-location");
+    await app.close();
+  });
+
   it("keeps customer order list polling alive when event bus subscription fails", async () => {
     process.env.GATEWAY_ORDER_STREAM_POLL_MS = "5";
     process.env.VALKEY_URL = "redis://valkey.test:6379";
@@ -3571,7 +3729,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const response = await app.inject({
       method: "GET",
-      url: "/v1/orders/stream",
+      url: `/v1/orders/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
 
@@ -3594,7 +3752,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const response = await app.inject({
       method: "GET",
-      url: `/v1/orders/${orderId}/stream`,
+      url: `/v1/orders/${orderId}/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
 
@@ -3609,7 +3767,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const orderFetchCalls = fetchMock.mock.calls.filter(([input, init]) => {
       const url = typeof input === "string" ? input : input.url;
-      return url === `http://orders.internal/v1/orders/${orderId}` && (init?.method ?? "GET") === "GET";
+      return url === `http://orders.internal/v1/orders/${orderId}?brandId=${publicTestBrandId}` && (init?.method ?? "GET") === "GET";
     });
     expect(orderFetchCalls).toHaveLength(2);
 
@@ -3640,7 +3798,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const response = await app.inject({
       method: "GET",
-      url: `/v1/orders/${orderId}/stream`,
+      url: `/v1/orders/${orderId}/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
 
@@ -3656,7 +3814,7 @@ let previousFreeClientDashboardDomain: string | undefined;
     expect(dataEvents[2]).toContain(`"status":"COMPLETED"`);
     const orderFetchCalls = fetchMock.mock.calls.filter(([input, init]) => {
       const url = typeof input === "string" ? input : input.url;
-      return url === `http://orders.internal/v1/orders/${orderId}` && (init?.method ?? "GET") === "GET";
+      return url === `http://orders.internal/v1/orders/${orderId}?brandId=${publicTestBrandId}` && (init?.method ?? "GET") === "GET";
     });
     expect(orderFetchCalls).toHaveLength(1);
 
@@ -3673,7 +3831,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const response = await app.inject({
       method: "GET",
-      url: `/v1/orders/${orderId}/stream`,
+      url: `/v1/orders/${orderId}/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
 
@@ -3713,7 +3871,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const response = await app.inject({
       method: "GET",
-      url: `/v1/orders/${orderId}/stream`,
+      url: `/v1/orders/${orderId}/stream?brandId=${publicTestBrandId}`,
       headers: authHeader
     });
 
@@ -4376,6 +4534,40 @@ let previousFreeClientDashboardDomain: string | undefined;
     await app.close();
   });
 
+  it("scopes the operator order stream snapshot and event subscription to one authorized location", async () => {
+    process.env.GATEWAY_ORDER_STREAM_POLL_MS = "60000";
+    process.env.VALKEY_URL = "redis://valkey.test:6379";
+    const app = await buildApp();
+    const locationOrder = {
+      ...buildOrderPayload("123e4567-e89b-12d3-a456-426614174231", "PAID"),
+      locationId: "northside-01"
+    };
+    queuedOrderListPayloads = [[locationOrder]];
+
+    const streamRequest = app.inject({
+      method: "GET",
+      url: "/v1/admin/orders/stream?locationId=northside-01",
+      headers: multiLocationOperatorHeaders
+    });
+    streamRequest.catch(() => undefined);
+
+    await vi.waitFor(() => {
+      expect(eventBusMocks.subscribeToOrderEvents).toHaveBeenCalledWith("northside-01", expect.any(Function));
+    });
+    expect(eventBusMocks.subscribeToAllOrderEvents).not.toHaveBeenCalled();
+    const snapshotCall = fetchMock.mock.calls.find(([input]) => {
+      const url = typeof input === "string" ? input : input.url;
+      return url === "http://orders.internal/v1/orders";
+    });
+    expect(snapshotCall).toBeDefined();
+    if (snapshotCall) {
+      const upstreamHeaders = new Headers((snapshotCall[1]?.headers ?? {}) as HeadersInit);
+      expect(upstreamHeaders.get("x-operator-location-id")).toBe("northside-01");
+    }
+
+    await app.close();
+  });
+
   it("rejects operator requests for locations outside their access set", async () => {
     const app = await buildApp();
     const response = await app.inject({
@@ -4664,9 +4856,24 @@ let previousFreeClientDashboardDomain: string | undefined;
         expect.objectContaining({ id: "owner_provisioned", passed: true }),
         expect.objectContaining({ id: "stripe_onboarded", passed: true }),
         expect.objectContaining({ id: "menu_has_items", passed: true }),
+        expect.objectContaining({ id: "tax_configured", passed: true, detail: "6.00%" }),
         expect.objectContaining({ id: "fulfillment_mode_set", passed: true }),
         expect.objectContaining({ id: "test_order_confirmed", manual: true, passed: false })
       ])
+    });
+    expect(fetchMock.mock.calls.map(([input]) => (typeof input === "string" ? input : input.url)))
+      .toContain("http://catalog.internal/v1/catalog/internal/locations/northside-01/store-config");
+
+    const zeroTaxReadinessResponse = await app.inject({
+      method: "GET",
+      url: "/v1/internal/locations/zero-tax-ready-01/readiness",
+      headers: ownerInternalAdminHeaders
+    });
+    expect(zeroTaxReadinessResponse.statusCode, zeroTaxReadinessResponse.body).toBe(200);
+    expect(zeroTaxReadinessResponse.json()).toMatchObject({
+      locationId: "zero-tax-ready-01",
+      ready: true,
+      checks: expect.arrayContaining([expect.objectContaining({ id: "tax_configured", passed: true, detail: "0.00%" })])
     });
 
     const supportResponse = await app.inject({
@@ -5364,12 +5571,12 @@ let previousFreeClientDashboardDomain: string | undefined;
     await app.close();
   });
 
-  it("forwards loyalty balance and ledger routes", async () => {
+  it("validates brand/location membership before forwarding loyalty balance and ledger", async () => {
     const app = await buildApp();
 
     const balanceResponse = await app.inject({
       method: "GET",
-      url: "/v1/loyalty/balance?locationId=flagship-01",
+      url: "/v1/loyalty/balance?brandId=northside-coffee&locationId=flagship-01",
       headers: authHeader
     });
     expect(balanceResponse.statusCode).toBe(200);
@@ -5380,7 +5587,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const ledgerResponse = await app.inject({
       method: "GET",
-      url: "/v1/loyalty/ledger?locationId=flagship-01",
+      url: "/v1/loyalty/ledger?brandId=northside-coffee&locationId=flagship-01",
       headers: authHeader
     });
     expect(ledgerResponse.statusCode).toBe(200);
@@ -5392,8 +5599,28 @@ let previousFreeClientDashboardDomain: string | undefined;
     );
 
     const requestedUrls = fetchMock.mock.calls.map(([input]) => (typeof input === "string" ? input : input.url));
-    expect(requestedUrls).toContain("http://loyalty.internal/v1/loyalty/balance?locationId=flagship-01");
-    expect(requestedUrls).toContain("http://loyalty.internal/v1/loyalty/ledger?locationId=flagship-01");
+    expect(requestedUrls).toContain("http://loyalty.internal/v1/loyalty/balance?brandId=northside-coffee&locationId=flagship-01");
+    expect(requestedUrls).toContain("http://loyalty.internal/v1/loyalty/ledger?brandId=northside-coffee&locationId=flagship-01");
+    expect(requestedUrls).toContain("http://catalog.internal/v1/catalog/internal/public-location-access?brandId=northside-coffee&locationId=flagship-01");
+
+    const missingBrandResponse = await app.inject({
+      method: "GET",
+      url: "/v1/loyalty/balance?locationId=flagship-01",
+      headers: authHeader
+    });
+    expect(missingBrandResponse.statusCode).toBe(400);
+
+    const crossBrandResponse = await app.inject({
+      method: "GET",
+      url: "/v1/loyalty/ledger?brandId=brand-a&locationId=brand-b-location",
+      headers: authHeader
+    });
+    expect(crossBrandResponse.statusCode).toBe(404);
+    expect(crossBrandResponse.json()).toMatchObject({ code: "PUBLIC_LOCATION_NOT_AVAILABLE" });
+    const loyaltyUrls = fetchMock.mock.calls
+      .map(([input]) => (typeof input === "string" ? input : input.url))
+      .filter((url) => url.startsWith("http://loyalty.internal/"));
+    expect(loyaltyUrls).toHaveLength(2);
 
     await app.close();
   });
@@ -5408,6 +5635,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         "x-user-id": "123e4567-e89b-12d3-a456-426614174000"
       },
       payload: {
+        brandId: "test-brand",
         deviceId: "ios-device-1",
         platform: "ios",
         expoPushToken: "ExponentPushToken[abc123]"
@@ -5435,7 +5663,7 @@ let previousFreeClientDashboardDomain: string | undefined;
     const checkoutId = "123e4567-e89b-12d3-a456-426614174112";
     const response = await app.inject({
       method: "POST",
-      url: "/v1/payments/stripe/mobile-session",
+      url: `/v1/payments/stripe/mobile-session?brandId=${publicTestBrandId}`,
       headers: authHeader,
       payload: {
         checkoutId
@@ -5451,7 +5679,7 @@ let previousFreeClientDashboardDomain: string | undefined;
     });
 
     const sessionCall = fetchMock.mock.calls.find(
-      ([input]) => (typeof input === "string" ? input : input.url) === "http://payments.internal/v1/payments/stripe/mobile-session"
+      ([input]) => (typeof input === "string" ? input : input.url) === `http://payments.internal/v1/payments/stripe/mobile-session?brandId=${publicTestBrandId}`
     );
     expect(sessionCall).toBeDefined();
 
@@ -5781,7 +6009,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
     const quoteResponse = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       headers: {
         ...authHeader,
         "x-request-id": requestId
@@ -5796,7 +6024,7 @@ let previousFreeClientDashboardDomain: string | undefined;
     expect(quoteResponse.headers["x-request-id"]).toBe(requestId);
 
     const quoteCall = fetchMock.mock.calls.find(([input]) =>
-      (typeof input === "string" ? input : input.url).endsWith("/v1/orders/quote")
+      (typeof input === "string" ? input : input.url).includes("/v1/orders/quote?brandId=")
     );
     expect(quoteCall).toBeDefined();
     if (quoteCall) {
@@ -5828,7 +6056,7 @@ let previousFreeClientDashboardDomain: string | undefined;
     const app = await buildApp();
     const response = await app.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       payload: {
         locationId: "flagship-01",
         items: [{ itemId: "latte", quantity: 1 }],
@@ -5867,7 +6095,7 @@ let previousFreeClientDashboardDomain: string | undefined;
     try {
       const response = await app.inject({
         method: "GET",
-        url: "/v1/menu"
+        url: `/v1/menu?brandId=${publicTestBrandId}&locationId=${publicTestLocationId}`
       });
 
       expect(response.statusCode).toBe(504);
@@ -5914,12 +6142,12 @@ let previousFreeClientDashboardDomain: string | undefined;
     try {
       const first = await app.inject({
         method: "GET",
-        url: "/v1/menu",
+        url: `/v1/menu?brandId=${publicTestBrandId}&locationId=${publicTestLocationId}`,
         headers: { "x-user-id": "forged-first-user" }
       });
       const second = await app.inject({
         method: "GET",
-        url: "/v1/menu",
+        url: `/v1/menu?brandId=${publicTestBrandId}&locationId=${publicTestLocationId}`,
         headers: { "x-user-id": "forged-second-user" }
       });
 
@@ -6074,7 +6302,7 @@ let previousFreeClientDashboardDomain: string | undefined;
     try {
       const firstRequest = await app.inject({
         method: "POST",
-        url: "/v1/orders/quote",
+        url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
         headers: authHeader,
         payload: {
           locationId: "flagship-01",
@@ -6086,7 +6314,7 @@ let previousFreeClientDashboardDomain: string | undefined;
 
       const secondRequest = await app.inject({
         method: "POST",
-        url: "/v1/orders/quote",
+        url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
         headers: authHeader,
         payload: {
           locationId: "flagship-01",

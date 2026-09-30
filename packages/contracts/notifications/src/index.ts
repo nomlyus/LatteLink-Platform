@@ -11,6 +11,8 @@ export const notificationOrderStatusSchema = z.enum([
 ]);
 
 export const pushTokenUpsertSchema = z.object({
+  /** Public branded-app selector; this is not an authentication credential. */
+  brandId: z.string().trim().min(1).max(160),
   deviceId: z.string().min(1),
   platform: z.enum(["ios", "android"]),
   expoPushToken: z.string().startsWith("ExponentPushToken[")

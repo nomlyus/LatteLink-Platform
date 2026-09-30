@@ -16,7 +16,9 @@ describeWithPostgres("cumulative refund reporting (PostgreSQL)", () => {
   const db = createPostgresDb(schemaUrl.toString());
   const repository = createPostgresReportingRepository(db);
   const orderId = randomUUID();
+  const otherOrderId = randomUUID();
   const quoteId = randomUUID();
+  const otherQuoteId = randomUUID();
   const firstRefundId = randomUUID();
   const secondRefundId = randomUUID();
   const bounds = {
@@ -35,7 +37,8 @@ describeWithPostgres("cumulative refund reporting (PostgreSQL)", () => {
       );
       CREATE TABLE orders_quotes (quote_id UUID PRIMARY KEY, quote_json JSONB NOT NULL);
       CREATE TABLE orders (
-        order_id UUID PRIMARY KEY, quote_id UUID NOT NULL, order_json JSONB NOT NULL,
+        order_id UUID PRIMARY KEY, quote_id UUID NOT NULL, location_id TEXT NOT NULL, order_json JSONB NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         successful_charge_json JSONB, successful_refund_json JSONB
       );
       CREATE TABLE payments_refunds (
@@ -48,11 +51,13 @@ describeWithPostgres("cumulative refund reporting (PostgreSQL)", () => {
     await addRefundProvenance(db as never);
     await sql`INSERT INTO orders_quotes (quote_id, quote_json) VALUES
       (${quoteId}::uuid, ${JSON.stringify({ subtotal: { amountCents: 500 }, discount: { amountCents: 0 }, tax: { amountCents: 0 }, total: { amountCents: 500 } })}::jsonb)`.execute(db);
-    await sql`INSERT INTO orders (order_id, quote_id, order_json, successful_refund_json) VALUES (
-      ${orderId}::uuid, ${quoteId}::uuid, ${JSON.stringify({ locationId: "loc-refund" })}::jsonb,
+    await sql`INSERT INTO orders (order_id, quote_id, location_id, order_json, successful_refund_json) VALUES (
+      ${orderId}::uuid, ${quoteId}::uuid, 'loc-refund', ${JSON.stringify({ locationId: "loc-refund" })}::jsonb,
       ${JSON.stringify({ refundId: secondRefundId, status: "REFUNDED", amountCents: 500,
         occurredAt: "2026-09-22T12:00:00.000Z", allocation: { merchandiseAmountCents: 400 } })}::jsonb
     )`.execute(db);
+    await sql`INSERT INTO payments_charges (order_id, payment_id, status, approved, amount_cents, occurred_at)
+      VALUES (${orderId}::uuid, ${randomUUID()}::uuid, 'SUCCEEDED', TRUE, 500, '2026-09-22T11:00:00Z')`.execute(db);
     for (const [refundId, amount, key] of [
       [firstRefundId, 200, "provider-1"], [secondRefundId, 300, "provider-2"]
     ] as const) {
@@ -65,6 +70,16 @@ describeWithPostgres("cumulative refund reporting (PostgreSQL)", () => {
         'STRIPE_VERIFIED', 'acct_test', ${key}
       )`.execute(db);
     }
+
+    await sql`INSERT INTO orders_quotes (quote_id, quote_json) VALUES (
+      ${otherQuoteId}::uuid,
+      ${JSON.stringify({ subtotal: { amountCents: 1000 }, discount: { amountCents: 100 }, tax: { amountCents: 80 }, total: { amountCents: 980 } })}::jsonb
+    )`.execute(db);
+    await sql`INSERT INTO orders (order_id, quote_id, location_id, order_json) VALUES (
+      ${otherOrderId}::uuid, ${otherQuoteId}::uuid, 'loc-other', ${JSON.stringify({ locationId: "loc-other" })}::jsonb
+    )`.execute(db);
+    await sql`INSERT INTO payments_charges (order_id, payment_id, status, approved, amount_cents, occurred_at)
+      VALUES (${otherOrderId}::uuid, ${randomUUID()}::uuid, 'SUCCEEDED', TRUE, 980, '2026-09-22T13:00:00Z')`.execute(db);
   });
 
   afterAll(async () => {
@@ -93,5 +108,38 @@ describeWithPostgres("cumulative refund reporting (PostgreSQL)", () => {
     expect(Number(rows[0]?.refunds)).toBe(500);
     expect(Number(rows[0]?.merchandise_refunds)).toBe(250);
     expect(Number(rows[0]?.unallocatable_refunds)).toBe(1);
+  });
+
+  it("attributes sales and refunds by relational order location and reconciles multi-location totals", async () => {
+    const locationA = await repository.aggregate({
+      locationIds: ["loc-refund"], bounds, timezone: "UTC", granularity: "day"
+    });
+    const locationB = await repository.aggregate({
+      locationIds: ["loc-other"], bounds, timezone: "UTC", granularity: "day"
+    });
+    const portfolio = await repository.aggregate({
+      locationIds: ["loc-refund", "loc-other"], bounds, timezone: "UTC", granularity: "day"
+    });
+
+    expect(locationA).toHaveLength(1);
+    expect(locationA[0]).toMatchObject({ location_id: "loc-refund" });
+    expect(Number(locationA[0]?.gross_sales)).toBe(500);
+    expect(Number(locationA[0]?.paid_orders)).toBe(1);
+    expect(Number(locationA[0]?.refunds)).toBe(500);
+    expect(locationB).toHaveLength(1);
+    expect(locationB[0]).toMatchObject({ location_id: "loc-other" });
+    expect(Number(locationB[0]?.gross_sales)).toBe(1000);
+    expect(Number(locationB[0]?.discounts)).toBe(100);
+    expect(Number(locationB[0]?.tax)).toBe(80);
+    expect(Number(locationB[0]?.collected)).toBe(980);
+    expect(Number(locationB[0]?.paid_orders)).toBe(1);
+    expect(Number(locationB[0]?.refunds)).toBe(0);
+    expect(portfolio.map((row) => row.location_id).sort()).toEqual(["loc-other", "loc-refund"]);
+    for (const key of ["gross_sales", "discounts", "tax", "collected", "refunds", "paid_orders"] as const) {
+      expect(Number(portfolio.reduce((sum, row) => sum + Number(row[key]), 0))).toBe(
+        Number(locationA.reduce((sum, row) => sum + Number(row[key]), 0)) +
+        Number(locationB.reduce((sum, row) => sum + Number(row[key]), 0))
+      );
+    }
   });
 });

@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { DEFAULT_APP_CONFIG_FULFILLMENT } from "@lattelink/contracts-catalog";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { appConfigSchema, DEFAULT_APP_CONFIG_FULFILLMENT } from "@lattelink/contracts-catalog";
 import { orderSchema } from "@lattelink/contracts-orders";
-import { reconcileOrderFulfillmentState } from "../src/fulfillment.js";
+import { createFulfillmentConfigCache, reconcileOrderFulfillmentState } from "../src/fulfillment.js";
 import { advanceOrderLifecycleToStatus, OrderTransitionError, transitionOrderStatus } from "../src/lifecycle.js";
 
 const paidAt = "2026-03-10T00:00:00.000Z";
@@ -275,5 +275,53 @@ describe("configured fulfillment reconciliation", () => {
     expect(result.changed).toBe(false);
     expect(result.order.status).toBe("PAID");
     expect(result.order.timeline).toHaveLength(order.timeline.length);
+  });
+});
+
+describe("fulfillment config cache", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("loads app config through the private location endpoint for trusted order processing", async () => {
+    const expected = appConfigSchema.parse({
+      brand: {
+        brandId: "test-brand",
+        brandName: "Test Brand",
+        locationId: "flagship-01",
+        locationName: "Flagship",
+        marketLabel: "Detroit, MI"
+      },
+      theme: Object.fromEntries([
+        "background", "backgroundAlt", "surface", "surfaceMuted", "foreground", "foregroundMuted",
+        "muted", "border", "primary", "accent"
+      ].map((key) => [key, "#000000"])),
+      enabledTabs: ["home", "menu", "orders", "account"],
+      featureFlags: {
+        loyalty: false,
+        pushNotifications: false,
+        refunds: false,
+        orderTracking: false,
+        staffDashboard: false,
+        menuEditing: false
+      },
+      loyaltyEnabled: false,
+      paymentCapabilities: { applePay: false, card: false, cash: false, refunds: false },
+      fulfillment: timeBasedFulfillment
+    });
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify(expected), { status: 200, headers: { "content-type": "application/json" } })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const cache = createFulfillmentConfigCache({
+      catalogBaseUrl: "http://catalog.internal",
+      catalogInternalToken: "gateway-test-token"
+    });
+    expect(await cache.get("flagship-01")).toEqual(timeBasedFulfillment);
+
+    const [input, init] = fetchMock.mock.calls[0]!;
+    expect(String(input)).toBe("http://catalog.internal/v1/catalog/internal/locations/flagship-01/app-config");
+    expect(new Headers(init?.headers).get("x-gateway-token")).toBe("gateway-test-token");
   });
 });

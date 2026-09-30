@@ -104,10 +104,13 @@ export async function withCriticalDataLoadSentry<T>(
   try {
     return await load();
   } catch (error) {
-    captureCriticalDataLoadFailure({
-      ...input,
-      error
-    });
+    const isAborted = error instanceof Error && (error.name === "AbortError" || error.message.toLowerCase().includes("aborted"));
+    if (!isAborted) {
+      captureCriticalDataLoadFailure({
+        ...input,
+        error
+      });
+    }
     throw error;
   }
 }

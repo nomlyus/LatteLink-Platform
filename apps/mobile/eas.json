@@ -14,7 +14,11 @@
       "autoIncrement": true,
       "distribution": "store",
       "environment": "preview",
-      "channel": "beta"
+      "channel": "beta",
+      "env": {
+        "APP_VARIANT": "beta",
+        "EXPO_PUBLIC_APP_VARIANT": "beta"
+      }
     },
     "production": {
       "extends": "base",
@@ -25,14 +29,16 @@
       "ios": {
         "resourceClass": "m-medium",
         "buildConfiguration": "ReleaseProduction"
+      },
+      "env": {
+        "APP_VARIANT": "production",
+        "EXPO_PUBLIC_APP_VARIANT": "production"
       }
     }
   },
   "submit": {
     "beta": {
-      "ios": {
-        "ascAppId": "6761780971"
-      }
+      "ios": {}
     },
     "production": {
       "ios": {}

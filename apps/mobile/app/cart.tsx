@@ -11,6 +11,7 @@ import { ClearCartSheet } from "../src/cart/ClearCartSheet";
 import { buildPricingSummary, describeCustomization } from "../src/cart/model";
 import { RemoveItemSheet } from "../src/cart/RemoveItemSheet";
 import { useCart } from "../src/cart/store";
+import { useLocationContext } from "../src/location/LocationProvider";
 import {
   formatUsd,
   resolveAppConfigData,
@@ -21,7 +22,7 @@ import {
   useMenuQuery,
   useStoreConfigQuery
 } from "../src/menu/catalog";
-import { quoteItemsEqual, toQuoteItems } from "../src/orders/checkout";
+import { isCheckoutLocationConsistent, isRetryableCheckoutForCart, toQuoteItems } from "../src/orders/checkout";
 import { useCheckoutFlow } from "../src/orders/flow";
 import { getTabBarBottomOffset, TAB_BAR_HEIGHT } from "../src/navigation/tabBarMetrics";
 import { uiPalette, uiTypography } from "../src/ui/system";
@@ -254,7 +255,8 @@ export default function CartModalScreen() {
   const stickyFooterBottom = getTabBarBottomOffset(insets.bottom > 0);
   const stickyFooterClearance = stickyFooterBottom + TAB_BAR_HEIGHT + 16;
   const { isAuthenticated, authRecoveryState } = useAuthSession();
-  const { items, itemCount, subtotalCents, discountCode, setDiscountCode, setQuantity, removeItem, clear } = useCart();
+  const { items, locationId: cartLocationId, itemCount, subtotalCents, discountCode, setDiscountCode, setQuantity, removeItem, clear } = useCart();
+  const location = useLocationContext();
   const { confirmation, failure, retryOrder, clearRetryOrder, clearFailure } = useCheckoutFlow();
   const appConfigQuery = useAppConfigQuery();
   const menuQuery = useMenuQuery();
@@ -280,7 +282,9 @@ export default function CartModalScreen() {
   const checkoutReady = checkoutUnavailableMessage === null;
   const showCheckoutRetry = Boolean(checkoutUnavailableMessage) && !checkoutContextLoading;
   const quoteItems = useMemo(() => toQuoteItems(items), [items]);
-  const retryableOrder = retryOrder && quoteItemsEqual(quoteItems, retryOrder.quoteItems) ? retryOrder : undefined;
+  const retryableOrder = isRetryableCheckoutForCart(retryOrder, quoteItems, cartLocationId, location.selectedLocationId)
+    ? retryOrder ?? undefined
+    : undefined;
   const menuItemsById = useMemo(
     () => new Map((menu?.categories ?? []).flatMap((category) => category.items).map((item) => [item.id, item])),
     [menu?.categories]
@@ -291,19 +295,22 @@ export default function CartModalScreen() {
     [items, pendingRemovalLineId]
   );
   const [clearSheetOpen, setClearSheetOpen] = useState(false);
-  const stickyActionDisabled = !checkoutReady;
+  const locationContextValid = isCheckoutLocationConsistent(cartLocationId, location.selectedLocationId);
+  const stickyActionDisabled = !checkoutReady || !locationContextValid || items.length === 0;
   const stickyActionLabel = !checkoutReady
     ? checkoutContextLoading
       ? "Loading checkout"
       : storeClosedMessage
       ? "Store closed"
       : "Checkout unavailable"
+    : !locationContextValid
+      ? "Bag location unavailable"
     : isAuthenticated
       ? retryableOrder
         ? "Retry payment"
         : "Continue to checkout"
       : getCheckoutRecoveryActionLabel(authRecoveryState);
-  const stickyActionIcon: keyof typeof Ionicons.glyphMap = !checkoutReady
+  const stickyActionIcon: keyof typeof Ionicons.glyphMap = !checkoutReady || !locationContextValid
     ? "alert-circle-outline"
     : isAuthenticated
       ? retryableOrder
@@ -313,10 +320,10 @@ export default function CartModalScreen() {
   const stickyActionValue = formatUsd(checkoutReady ? pricingSummary.totalCents : subtotalCents);
 
   useEffect(() => {
-    if (retryOrder && !quoteItemsEqual(quoteItems, retryOrder.quoteItems)) {
+    if (retryOrder && !isRetryableCheckoutForCart(retryOrder, quoteItems, cartLocationId, location.selectedLocationId)) {
       clearRetryOrder();
     }
-  }, [clearRetryOrder, quoteItems, retryOrder]);
+  }, [cartLocationId, clearRetryOrder, location.selectedLocationId, quoteItems, retryOrder]);
 
   useFocusEffect(
     useCallback(() => {
@@ -357,6 +364,20 @@ export default function CartModalScreen() {
         </View>
 
         <View style={styles.headerArea}>
+          {location.cartInvalidatedNotice ? (
+            <View style={styles.locationNotice}>
+              <Ionicons name="information-circle-outline" size={18} color={uiPalette.warning} />
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.locationNoticeText}>{location.cartInvalidatedNotice}</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss cart notice"
+                onPress={location.dismissCartInvalidatedNotice}
+                hitSlop={8}
+              >
+                <Ionicons name="close" size={17} color={uiPalette.textMuted} />
+              </Pressable>
+            </View>
+          ) : null}
           <View style={styles.headerRow}>
             <View style={styles.headerCopy}>
               <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.headerTitle}>Order Review</Text>
@@ -582,6 +603,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 28,
     paddingBottom: 4
+  },
+  locationNotice: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 13,
+    backgroundColor: "rgba(207, 148, 73, 0.12)"
+  },
+  locationNoticeText: {
+    flex: 1,
+    color: uiPalette.textSecondary,
+    fontSize: 12,
+    lineHeight: 17
   },
   headerRow: {
     flexDirection: "row",

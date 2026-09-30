@@ -28,6 +28,7 @@ const sampleQuotePayload = {
 };
 
 const defaultOrderUserId = "123e4567-e89b-12d3-a456-426614174000";
+const publicTestBrandId = "test-public-runtime-brand";
 const internalPaymentsToken = "orders-internal-token";
 const stripeWebhookSecret = "whsec_orders_payments_e2e";
 // Reuse the Stripe SDK dependency owned by payments without adding it to orders.
@@ -43,8 +44,8 @@ function stripeWebhookHeaders(payload: string) {
 }
 
 type LoyaltyBalance = {
+  brandId: string;
   userId: string;
-  locationId: string;
   availablePoints: number;
   pendingPoints: number;
   lifetimeEarned: number;
@@ -52,6 +53,8 @@ type LoyaltyBalance = {
 
 type LoyaltyLedgerEntry = {
   id: string;
+  brandId: string;
+  userId: string;
   type: "EARN" | "REDEEM" | "REFUND" | "ADJUSTMENT";
   points: number;
   orderId?: string;
@@ -76,20 +79,20 @@ function buildLoyaltyHarnessApp() {
     return typeof headerValue === "string" ? headerValue : defaultOrderUserId;
   }
 
-  function scopeKey(userId: string, locationId: string) {
-    return `${locationId}:${userId}`;
+  function scopeKey(brandId: string, userId: string) {
+    return `${brandId}:${userId}`;
   }
 
-  function ensureBalance(userId: string, locationId: string) {
-    const key = scopeKey(userId, locationId);
+  function ensureBalance(brandId: string, userId: string) {
+    const key = scopeKey(brandId, userId);
     const existing = balancesByScope.get(key);
     if (existing) {
       return existing;
     }
 
     const created: LoyaltyBalance = {
+      brandId,
       userId,
-      locationId,
       availablePoints: 0,
       pendingPoints: 0,
       lifetimeEarned: 0
@@ -98,8 +101,8 @@ function buildLoyaltyHarnessApp() {
     return created;
   }
 
-  function ensureLedger(userId: string, locationId: string) {
-    const key = scopeKey(userId, locationId);
+  function ensureLedger(brandId: string, userId: string) {
+    const key = scopeKey(brandId, userId);
     const existing = ledgerByScope.get(key);
     if (existing) {
       return existing;
@@ -110,8 +113,8 @@ function buildLoyaltyHarnessApp() {
     return created;
   }
 
-  function ensureIdempotencyStore(userId: string, locationId: string) {
-    const key = scopeKey(userId, locationId);
+  function ensureIdempotencyStore(brandId: string, userId: string) {
+    const key = scopeKey(brandId, userId);
     const existing = idempotencyByScope.get(key);
     if (existing) {
       return existing;
@@ -124,18 +127,41 @@ function buildLoyaltyHarnessApp() {
 
   app.get("/v1/loyalty/balance", async (request) => {
     const userId = resolveUserId(request.headers as Record<string, unknown>);
-    const locationId = String((request.query as Record<string, unknown>).locationId ?? sampleQuotePayload.locationId);
-    return ensureBalance(userId, locationId);
+    const brandId = String((request.query as Record<string, unknown>).brandId ?? publicTestBrandId);
+    return ensureBalance(brandId, userId);
   });
 
   app.get("/v1/loyalty/ledger", async (request) => {
     const userId = resolveUserId(request.headers as Record<string, unknown>);
-    const locationId = String((request.query as Record<string, unknown>).locationId ?? sampleQuotePayload.locationId);
-    return [...ensureLedger(userId, locationId)].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
+    const brandId = String((request.query as Record<string, unknown>).brandId ?? publicTestBrandId);
+    return [...ensureLedger(brandId, userId)].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
+  });
+
+  app.get("/v1/loyalty/internal/program-context", async (request) => {
+    const query = request.query as Record<string, unknown>;
+    const brandId = String(query.brandId ?? publicTestBrandId);
+    const locationId = String(query.locationId ?? sampleQuotePayload.locationId);
+    const userId = typeof query.userId === "string" ? query.userId : undefined;
+    return {
+      brandId, locationId, enabled: true, participating: true,
+      pointsPerDollar: 1, redemptionCentsPerPoint: 1, minimumRedemptionPoints: 1,
+      maximumRedemptionPercent: 100, excludedItemIds: [],
+      ...(userId ? { balance: ensureBalance(brandId, userId) } : {})
+    };
+  });
+
+  app.get("/v1/loyalty/internal/order-earn", async (request) => {
+    const query = request.query as Record<string, unknown>;
+    const brandId = String(query.brandId ?? publicTestBrandId);
+    const userId = String(query.userId ?? defaultOrderUserId);
+    const orderId = String(query.orderId ?? "");
+    const entry = ensureLedger(brandId, userId).find((candidate) => candidate.type === "EARN" && candidate.orderId === orderId);
+    return { entry: entry ?? null };
   });
 
   app.post("/v1/loyalty/internal/ledger/apply", async (request, reply) => {
     const body = (request.body ?? {}) as Record<string, unknown>;
+    const brandId = String(body.brandId ?? publicTestBrandId);
     const userId = String(body.userId ?? defaultOrderUserId);
     const locationId = String(body.locationId ?? sampleQuotePayload.locationId);
     const orderId = String(body.orderId ?? "");
@@ -146,9 +172,10 @@ function buildLoyaltyHarnessApp() {
       return reply.status(400).send({ code: "INVALID_LOYALTY_MUTATION" });
     }
 
-    const idempotencyStore = ensureIdempotencyStore(userId, locationId);
-    const idempotencyScope = `${userId}:${locationId}:${idempotencyKey}`;
+    const idempotencyStore = ensureIdempotencyStore(brandId, userId);
+    const idempotencyScope = `${brandId}:${userId}:${idempotencyKey}`;
     const fingerprint = JSON.stringify({
+      brandId,
       type: mutationType,
       locationId,
       orderId,
@@ -164,7 +191,7 @@ function buildLoyaltyHarnessApp() {
       return existingMutation.response;
     }
 
-    const balance = ensureBalance(userId, locationId);
+    const balance = ensureBalance(brandId, userId);
     let deltaPoints = 0;
     let lifetimeDelta = 0;
     if (mutationType === "EARN") {
@@ -172,9 +199,9 @@ function buildLoyaltyHarnessApp() {
       deltaPoints = Math.floor(amountCents / 100);
       lifetimeDelta = deltaPoints;
     } else if (mutationType === "REDEEM") {
-      deltaPoints = -Number(body.amountCents ?? 0);
+      deltaPoints = -Number(body.points ?? 0);
     } else if (mutationType === "REFUND") {
-      deltaPoints = Number(body.amountCents ?? 0);
+      deltaPoints = Number(body.points ?? 0);
     } else if (mutationType === "ADJUSTMENT") {
       deltaPoints = Number(body.points ?? 0);
     } else {
@@ -186,23 +213,25 @@ function buildLoyaltyHarnessApp() {
     }
 
     const nextBalance: LoyaltyBalance = {
+      brandId,
       userId,
-      locationId,
       availablePoints: balance.availablePoints + deltaPoints,
       pendingPoints: balance.pendingPoints,
       lifetimeEarned: balance.lifetimeEarned + lifetimeDelta
     };
-    balancesByScope.set(scopeKey(userId, locationId), nextBalance);
+    balancesByScope.set(scopeKey(brandId, userId), nextBalance);
 
     const entry: LoyaltyLedgerEntry = {
       id: randomUUID(),
+      brandId,
+      userId,
       type: mutationType as LoyaltyLedgerEntry["type"],
       points: deltaPoints,
       orderId,
       locationId,
       createdAt: new Date().toISOString()
     };
-    const ledger = ensureLedger(userId, locationId);
+    const ledger = ensureLedger(brandId, userId);
     ledger.push(entry);
 
     const response = {
@@ -254,7 +283,33 @@ function buildNotificationsHarnessApp() {
 function buildCatalogHarnessApp() {
   const app = Fastify();
 
-  app.get("/v1/store/config", async () => ({
+  app.get("/v1/catalog/internal/public-location-access", async (request, reply) => {
+    const query = request.query as Record<string, unknown>;
+    if (query.brandId !== publicTestBrandId || query.locationId !== sampleQuotePayload.locationId) {
+      return reply.status(404).send({ code: "PUBLIC_LOCATION_NOT_AVAILABLE", message: "Location not available." });
+    }
+    return reply.status(204).send();
+  });
+
+  app.get("/v1/store/config", async (request, reply) => {
+    const query = request.query as Record<string, unknown>;
+    // The retired test-only POST /v1/orders fixture loads store config after a
+    // branded quote but predates brand context; public quote reads still require it.
+    if ((query.brandId !== undefined && query.brandId !== publicTestBrandId) || query.locationId !== sampleQuotePayload.locationId) {
+      return reply.status(404).send({ code: "PUBLIC_LOCATION_NOT_AVAILABLE", message: "Location not available." });
+    }
+    return {
+      locationId: "flagship-01",
+      hoursText: "Daily · 7:00 AM - 6:00 PM",
+      isOpen: true,
+      nextOpenAt: null,
+      prepEtaMinutes: 12,
+      taxRateBasisPoints: 600,
+      pickupInstructions: "Pickup at the flagship order counter."
+    };
+  });
+
+  app.get("/v1/catalog/internal/locations/flagship-01/store-config", async () => ({
     locationId: "flagship-01",
     hoursText: "Daily · 7:00 AM - 6:00 PM",
     isOpen: true,
@@ -277,6 +332,7 @@ describe.sequential("orders + payments e2e", () => {
   let previousLoyaltyBaseUrl: string | undefined;
   let previousNotificationsBaseUrl: string | undefined;
   let previousCatalogBaseUrl: string | undefined;
+  let previousGatewayInternalToken: string | undefined;
   let previousOrdersInternalToken: string | undefined;
   let previousAllowUnauthenticatedGateway: string | undefined;
   let previousAllowUnauthenticatedInternal: string | undefined;
@@ -297,7 +353,7 @@ describe.sequential("orders + payments e2e", () => {
     const headers = { "x-user-id": userId };
     const quoteResponse = await ordersApp.inject({
       method: "POST",
-      url: "/v1/orders/quote",
+      url: `/v1/orders/quote?brandId=${publicTestBrandId}`,
       headers,
       payload: {
         ...sampleQuotePayload,
@@ -354,6 +410,7 @@ describe.sequential("orders + payments e2e", () => {
     previousLoyaltyBaseUrl = process.env.LOYALTY_SERVICE_BASE_URL;
     previousNotificationsBaseUrl = process.env.NOTIFICATIONS_SERVICE_BASE_URL;
     previousCatalogBaseUrl = process.env.CATALOG_SERVICE_BASE_URL;
+    previousGatewayInternalToken = process.env.GATEWAY_INTERNAL_API_TOKEN;
     previousOrdersInternalToken = process.env.ORDERS_INTERNAL_API_TOKEN;
     previousAllowUnauthenticatedGateway = process.env.ALLOW_UNAUTHENTICATED_ORDERS_GATEWAY;
     previousAllowUnauthenticatedInternal = process.env.ALLOW_UNAUTHENTICATED_ORDERS_INTERNAL;
@@ -365,6 +422,7 @@ describe.sequential("orders + payments e2e", () => {
     previousPaymentsProviderMode = process.env.PAYMENTS_PROVIDER_MODE;
 
     process.env.ORDERS_INTERNAL_API_TOKEN = internalPaymentsToken;
+    process.env.GATEWAY_INTERNAL_API_TOKEN = "orders-gateway-token";
     process.env.ALLOW_UNAUTHENTICATED_ORDERS_GATEWAY = "true";
     process.env.ALLOW_UNAUTHENTICATED_ORDERS_INTERNAL = "true";
     process.env.PAYMENTS_TEST_SIMULATE_STRIPE_REFUNDS = "true";
@@ -456,6 +514,12 @@ describe.sequential("orders + payments e2e", () => {
       delete process.env.CATALOG_SERVICE_BASE_URL;
     } else {
       process.env.CATALOG_SERVICE_BASE_URL = previousCatalogBaseUrl;
+    }
+
+    if (previousGatewayInternalToken === undefined) {
+      delete process.env.GATEWAY_INTERNAL_API_TOKEN;
+    } else {
+      process.env.GATEWAY_INTERNAL_API_TOKEN = previousGatewayInternalToken;
     }
 
     if (previousOrdersInternalToken === undefined) {
@@ -779,7 +843,7 @@ describe.sequential("orders + payments e2e", () => {
 
     const customerCancel = await ordersApp.inject({
       method: "POST",
-      url: `/v1/orders/${order.id}/cancel`,
+      url: `/v1/orders/${order.id}/cancel?brandId=${publicTestBrandId}`,
       headers: {
         "x-user-id": defaultOrderUserId
       },
@@ -853,7 +917,9 @@ describe.sequential("orders + payments e2e", () => {
       method: "POST",
       url: "/v1/loyalty/internal/ledger/apply",
       payload: {
+        brandId: publicTestBrandId,
         userId,
+        locationId: sampleQuotePayload.locationId,
         orderId: seedOrderId,
         type: "EARN",
         amountCents: 50_000,
@@ -870,7 +936,7 @@ describe.sequential("orders + payments e2e", () => {
     expect(payResponse.statusCode).toBe(200);
     const paidOrderResponse = await ordersApp.inject({
       method: "GET",
-      url: `/v1/orders/${order.id}`,
+      url: `/v1/orders/${order.id}?brandId=${publicTestBrandId}`,
       headers: {
         "x-user-id": userId
       }
@@ -895,7 +961,7 @@ describe.sequential("orders + payments e2e", () => {
 
     const balanceResponse = await loyaltyApp.inject({
       method: "GET",
-      url: `/v1/loyalty/balance?locationId=${sampleQuotePayload.locationId}`,
+      url: `/v1/loyalty/balance?brandId=${publicTestBrandId}&locationId=${sampleQuotePayload.locationId}`,
       headers: {
         "x-user-id": userId
       }
@@ -908,7 +974,7 @@ describe.sequential("orders + payments e2e", () => {
 
     const ledgerResponse = await loyaltyApp.inject({
       method: "GET",
-      url: `/v1/loyalty/ledger?locationId=${sampleQuotePayload.locationId}`,
+      url: `/v1/loyalty/ledger?brandId=${publicTestBrandId}&locationId=${sampleQuotePayload.locationId}`,
       headers: {
         "x-user-id": userId
       }

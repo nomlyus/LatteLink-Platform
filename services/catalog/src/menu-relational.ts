@@ -34,7 +34,7 @@ type LegacyCustomizationGroup = ReturnType<typeof menuItemCustomizationGroupSche
 
 export class CatalogMutationError extends Error {
   constructor(
-    readonly code: "CATALOG_EXTERNAL_SYNC_READ_ONLY" | "CATEGORY_HAS_ORPHANED_ITEMS" | "MODIFIER_GROUP_IN_USE" | "MODIFIER_GROUP_CONFLICT",
+    readonly code: "CATALOG_EXTERNAL_SYNC_READ_ONLY" | "CATALOG_LOCATION_BRAND_NOT_FOUND" | "CATEGORY_HAS_ORPHANED_ITEMS" | "MODIFIER_GROUP_IN_USE" | "MODIFIER_GROUP_CONFLICT",
     message: string,
     readonly statusCode = 409,
     readonly details?: Record<string, unknown>
@@ -330,8 +330,21 @@ export async function assertRelationalPlatformManaged(db: PersistenceDb, locatio
 }
 
 async function getBrandId(db: PersistenceDb, locationId: string) {
-  const row = await db.selectFrom("catalog_app_configs").select("brand_id").where("location_id", "=", locationId).executeTakeFirst();
-  return row?.brand_id ?? "rawaqcoffee";
+  const row = await db
+    .selectFrom("catalog_client_locations as memberships")
+    .innerJoin("catalog_clients as clients", "clients.tenant_id", "memberships.tenant_id")
+    .select("clients.brand_id")
+    .where("memberships.location_id", "=", locationId)
+    .whereRef("memberships.brand_id", "=", "clients.brand_id")
+    .executeTakeFirst();
+  if (!row?.brand_id) {
+    throw new CatalogMutationError(
+      "CATALOG_LOCATION_BRAND_NOT_FOUND",
+      "Location configuration is unavailable.",
+      404
+    );
+  }
+  return row.brand_id;
 }
 
 export async function createRelationalCategory(db: PersistenceDb, locationId: string, rawInput: AdminMenuCategoryCreate) {

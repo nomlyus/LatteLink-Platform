@@ -15,7 +15,8 @@ export type PreparedStripeCheckout = {
 };
 
 export type CheckoutInput = {
-  locationId: string;
+  cartLocationId: string | null;
+  selectedLocationId: string | null;
   items: CartItem[];
   pointsToRedeem?: number;
   discountCode?: string;
@@ -82,6 +83,35 @@ export function quoteItemsEqual(left: QuoteItem[], right: QuoteItem[]) {
   });
 }
 
+export function isCheckoutLocationConsistent(cartLocationId: string | null, selectedLocationId: string | null) {
+  return Boolean(cartLocationId?.trim()) && cartLocationId === selectedLocationId;
+}
+
+export function isRetryableCheckoutForCart(
+  checkout: CheckoutDraftSnapshot | null,
+  quoteItems: QuoteItem[],
+  cartLocationId: string | null,
+  selectedLocationId: string | null
+) {
+  return Boolean(
+    checkout &&
+    isCheckoutLocationConsistent(cartLocationId, selectedLocationId) &&
+    checkout.locationId === cartLocationId &&
+    quoteItemsEqual(quoteItems, checkout.quoteItems)
+  );
+}
+
+export function checkoutSnapshotMatchesCart(
+  checkout: CheckoutDraftSnapshot,
+  items: CartItem[],
+  cartLocationId: string | null,
+  selectedLocationId: string | null
+) {
+  return isCheckoutLocationConsistent(cartLocationId, selectedLocationId) &&
+    checkout.locationId === cartLocationId &&
+    quoteItemsEqual(toQuoteItems(items), checkout.quoteItems);
+}
+
 type ParsedCheckoutApiError = {
   code?: string;
   message?: string;
@@ -142,6 +172,10 @@ export async function prepareStripeCheckout(
   input: CheckoutInput,
   checkoutApi: StripeCheckoutApi = apiClient
 ): Promise<PreparedStripeCheckout> {
+  if (!isCheckoutLocationConsistent(input.cartLocationId, input.selectedLocationId)) {
+    throw new CheckoutSubmissionError("Your bag no longer matches the selected location. Return to your bag and try again.", "quote");
+  }
+
   if (input.items.length === 0) {
     throw new Error("Cart is empty.");
   }
@@ -149,7 +183,13 @@ export async function prepareStripeCheckout(
   const quoteItems = toQuoteItems(input.items);
 
   if (input.existingCheckout) {
-    const existingCheckout = toCheckoutDraftSnapshot(input.existingCheckout, quoteItems);
+    const existingCheckout = toCheckoutDraftSnapshot(input.existingCheckout, input.existingCheckout.quoteItems);
+    if (
+      existingCheckout.locationId !== input.cartLocationId ||
+      !quoteItemsEqual(existingCheckout.quoteItems, quoteItems)
+    ) {
+      throw new CheckoutSubmissionError("This checkout no longer matches your bag. Start checkout again.", "quote");
+    }
     if (existingCheckout.status !== "OPEN") {
       throw new CheckoutSubmissionError("Only open checkouts can be retried.", "pay");
     }
@@ -158,6 +198,9 @@ export async function prepareStripeCheckout(
       const paymentSession = await checkoutApi.createStripeMobilePaymentSession({
         checkoutId: existingCheckout.checkoutId
       });
+      if (!("checkoutId" in paymentSession) || paymentSession.checkoutId !== existingCheckout.checkoutId) {
+        throw new Error("Payment session did not match the selected checkout.");
+      }
 
       return {
         checkout: existingCheckout,
@@ -173,7 +216,7 @@ export async function prepareStripeCheckout(
   try {
     const discountCode = input.discountCode?.trim();
     quote = await checkoutApi.quoteOrder({
-      locationId: input.locationId,
+      locationId: input.cartLocationId!,
       items: quoteItems,
       pointsToRedeem: input.pointsToRedeem ?? 0,
       ...(discountCode ? { discountCode } : {})
@@ -181,6 +224,10 @@ export async function prepareStripeCheckout(
   } catch (error) {
     const message = resolveCheckoutErrorMessage(error, "Unable to prepare checkout.");
     throw new CheckoutSubmissionError(message, "quote");
+  }
+
+  if (quote.locationId !== input.cartLocationId) {
+    throw new CheckoutSubmissionError("The quote location did not match your bag. Please try checkout again.", "quote");
   }
 
   let checkout: Awaited<ReturnType<typeof apiClient.createCheckoutDraft>>;
@@ -195,11 +242,21 @@ export async function prepareStripeCheckout(
   }
 
   const checkoutSnapshot = toCheckoutDraftSnapshot(checkout, quoteItems);
+  if (
+    checkoutSnapshot.locationId !== input.cartLocationId ||
+    checkoutSnapshot.quoteId !== quote.quoteId ||
+    checkoutSnapshot.quoteHash !== quote.quoteHash
+  ) {
+    throw new CheckoutSubmissionError("The checkout could not be matched to your quote. Please try again.", "create");
+  }
 
   try {
     const paymentSession = await checkoutApi.createStripeMobilePaymentSession({
       checkoutId: checkoutSnapshot.checkoutId
     });
+    if (!("checkoutId" in paymentSession) || paymentSession.checkoutId !== checkoutSnapshot.checkoutId) {
+      throw new Error("Payment session did not match the selected checkout.");
+    }
 
     return {
       checkout: checkoutSnapshot,

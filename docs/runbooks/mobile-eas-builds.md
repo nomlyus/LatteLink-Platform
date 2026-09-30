@@ -48,33 +48,51 @@ The mobile app now uses `apps/mobile/eas.json` with two profiles:
 - `beta`
   - distribution: `store`
   - intended backend: `dev`
-  - default variant: `APP_VARIANT=beta`
-  - repo default API target: `https://api-dev.nomly.us/v1`
+  - required variant: `APP_VARIANT=beta`
+  - required API target: `https://api-dev.nomly.us/v1`
 - `production`
   - distribution: `store`
   - intended backend: production environment
-  - default variant: `APP_VARIANT=production`
-  - repo default API target: `https://api.nomly.us/v1`
+  - required variant: `APP_VARIANT=production`
+  - required API target: `https://api.nomly.us/v1`
 
 ## Required Environment Values
 
-Use [apps/mobile/.env.example](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/.env.example) as the canonical shape.
+`apps/mobile/.env.example` is a local development fixture, not a release environment. Beta and
+production config must provide every identity value explicitly; missing values stop Expo config and
+the release preflight rather than inheriting Rawaq or LatteLink identity.
 
 For release preparation and TestFlight handoff, continue with:
 
-- [mobile-testflight-pilot-release.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/mobile-testflight-pilot-release.md)
+- [mobile-testflight-pilot-release.md](./mobile-testflight-pilot-release.md)
 
 Required values for every build:
 
 - `APP_VARIANT`
+- `EXPO_PUBLIC_APP_VARIANT`
 - `APP_DISPLAY_NAME_BASE`
+- `APP_DISPLAY_NAME`
+- `EXPO_PUBLIC_APP_DISPLAY_NAME` (must match `APP_DISPLAY_NAME` for the native iOS bundle)
 - `APP_VERSION`
 - `EXPO_SLUG`
 - `EXPO_SCHEME`
+- `EXPO_PUBLIC_BRAND_ID`
 - `IOS_BUNDLE_IDENTIFIER`
+- `EXPO_PUBLIC_IOS_BUNDLE_IDENTIFIER` (must match the native bundle identifier)
+- `EXPO_PUBLIC_APP_ICON_PATH`
+- `EXPO_PUBLIC_APP_SPLASH_PATH`
 - `EXPO_PUBLIC_API_BASE_URL`
 - `EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID`
 - `EXPO_PUBLIC_BRAND_NAME`
+- `EAS_PROJECT_ID`
+- `EXPO_PUBLIC_SENTRY_DSN`, `SENTRY_ORG`, and `SENTRY_PROJECT`
+
+Native icon/splash paths must point to files inside `apps/mobile`. A non-Rawaq brand cannot reference
+the existing Rawaq local fixture images. EAS project IDs must be explicit per merchant identity;
+dedicated project ownership and asset provisioning remain part of #433/#356.
+The checked-in iOS project synchronizes these paths into its AppIcon and splash asset catalogs during
+the native build. The App Store icon must be a 1024x1024 PNG; missing or invalid release identity
+values stop that build phase.
 
 Optional values:
 
@@ -90,22 +108,8 @@ Optional values:
 
 ## Recommended Matrix
 
-### Beta
-
-- `APP_VARIANT=beta`
-- `APP_DISPLAY_NAME_BASE=Rawaq`
-- `IOS_BUNDLE_IDENTIFIER=com.lattelink.rawaq.beta`
-- `EXPO_PUBLIC_API_BASE_URL=https://api-dev.nomly.us/v1`
-- `EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID=merchant.com.lattelink.rawaq.beta`
-
-### Production
-
-- `APP_VARIANT=production`
-- `APP_DISPLAY_NAME_BASE=Rawaq`
-- `IOS_BUNDLE_IDENTIFIER=com.lattelink.rawaq`
-- `EXPO_PUBLIC_API_BASE_URL=https://api.nomly.us/v1`
-- `EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID=merchant.com.lattelink.rawaq`
-- App Store Connect app ID: `6764649231`
+Use the merchant's approved values for each profile. A beta bundle identifier must end in `.beta`;
+production identifiers cannot end in `.beta` or `.internal`. Do not copy values from another merchant.
 
 ## Build Commands
 
@@ -121,23 +125,32 @@ Create a merchant manifest with the approved identity and release values:
 
 ```json
 {
-  "locationId": "rawaqcoffee01",
-  "appName": "Rawaq",
-  "displayName": "Rawaq",
-  "bundleIdentifier": "com.lattelink.rawaq.beta",
-  "sku": "rawaq-ios-beta",
-  "applePayMerchantId": "merchant.com.lattelink.rawaq.beta",
-  "ascAppId": "6761780971",
+  "brandId": "<public-brand-id>",
+  "locationId": "<release-metadata-location-id>",
+  "appName": "<brand-name>",
+  "displayName": "<native-display-name>",
+  "iconPath": "./assets/brands/<brand-id>/icon.png",
+  "splashPath": "./assets/brands/<brand-id>/splash.png",
+  "expoSlug": "<brand-specific-expo-slug>",
+  "scheme": "<brand-specific-url-scheme>",
+  "easProjectId": "<merchant-eas-project-uuid>",
+  "bundleIdentifier": "<merchant.bundle.id.beta>",
+  "sku": "<merchant-ios-beta-sku>",
+  "applePayMerchantId": "merchant.<merchant.bundle.id.beta>",
+  "ascAppId": "<merchant-app-store-connect-app-id>",
   "apiBaseUrl": "https://api-dev.nomly.us/v1",
   "appVersion": "1.0.10",
   "runtimeVersion": "1.0.10",
   "sentryDsn": "https://<public-key>@<org>.ingest.sentry.io/<project>",
   "sentryOrg": "nomly",
   "sentryProject": "mobile",
-  "targetLocationIds": ["rawaqcoffee01"],
+  "targetLocationIds": ["<location-id>"],
   "releaseNotes": "Performance optimizations, security updates, and reliability improvements."
 }
 ```
+
+`locationId` and `targetLocationIds` are release metadata only. Runtime location authority continues
+to come from the public brand bootstrap and selected-location context.
 
 Prepare the build bundle from the exact source commit recorded in the internal admin release panel:
 

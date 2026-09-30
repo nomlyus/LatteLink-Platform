@@ -11,6 +11,11 @@ const describeWithPostgres = databaseUrl ? describe : describe.skip;
 
 const locationId = "orders-relational-location";
 const brandId = "orders-relational-brand";
+const tenantId = "orders-relational-tenant";
+const secondBrandId = "orders-other-relational-brand";
+const secondTenantId = "orders-other-relational-tenant";
+const secondLocationId = "orders-relational-location-2";
+const otherBrandLocationId = "orders-other-relational-location";
 const itemId = "relational-espresso";
 const hiddenItemId = "relational-hidden";
 const unavailableItemId = "relational-unavailable";
@@ -69,6 +74,16 @@ describeWithPostgres("Orders against the relational catalog (PostgreSQL)", () =>
       parameters: []
     } as never);
     await runMigrations(db!);
+
+    await db!.insertInto("catalog_clients").values([
+      { tenant_id: tenantId, brand_id: brandId, client_name: "Orders test brand", owner_email: null, status: "live" },
+      { tenant_id: secondTenantId, brand_id: secondBrandId, client_name: "Other orders test brand", owner_email: null, status: "live" }
+    ]).execute();
+    await db!.insertInto("catalog_client_locations").values([
+      { tenant_id: tenantId, brand_id: brandId, location_id: locationId, location_name: "Orders A1", market_label: "A1", primary_location: true },
+      { tenant_id: tenantId, brand_id: brandId, location_id: secondLocationId, location_name: "Orders A2", market_label: "A2", primary_location: false },
+      { tenant_id: secondTenantId, brand_id: secondBrandId, location_id: otherBrandLocationId, location_name: "Orders B1", market_label: "B1", primary_location: true }
+    ]).execute();
 
     await db.insertInto("catalog_menu_categories").values({
       brand_id: brandId,
@@ -226,6 +241,7 @@ describeWithPostgres("Orders against the relational catalog (PostgreSQL)", () =>
     deps = {
       repository,
       catalogBaseUrl: "http://catalog.test",
+      publicBrandId: brandId,
       paymentsBaseUrl: "http://payments.test",
       loyaltyBaseUrl: "http://loyalty.test",
       notificationsBaseUrl: "http://notifications.test",
@@ -308,6 +324,20 @@ describeWithPostgres("Orders against the relational catalog (PostgreSQL)", () =>
     expect("error" in created).toBe(false);
     if ("error" in created) throw new Error(created.error.code);
 
+    const persistedLocation = await db
+      .selectFrom("orders")
+      .select(["location_id", "order_json"])
+      .where("order_id", "=", created.order.id)
+      .executeTakeFirstOrThrow();
+    expect(persistedLocation.location_id).toBe(locationId);
+    expect(persistedLocation.order_json).toMatchObject({ locationId });
+    await expect(repository.listOrdersByLocation(locationId)).resolves.toEqual([created.order]);
+    await expect(repository.listOrdersByLocation("other-location")).resolves.toEqual([]);
+    await expect(repository.updateOrder(created.order.id, {
+      ...created.order,
+      locationId: "other-location"
+    })).rejects.toThrow("Order location is immutable");
+
     await db.updateTable("catalog_menu_items").set({ name: "Renamed Espresso", price_cents: 900 }).where("location_id", "=", locationId).where("item_id", "=", itemId).execute();
     await db.updateTable("catalog_modifier_options").set({ price_delta_cents: 125 }).where("location_id", "=", locationId).where("modifier_group_id", "=", "extras").where("option_id", "=", "light").execute();
 
@@ -341,5 +371,44 @@ describeWithPostgres("Orders against the relational catalog (PostgreSQL)", () =>
       deps
     });
     expect("error" in secondOrder).toBe(false);
+  });
+
+  it("lists a customer's orders by canonical brand membership across all brand locations", async () => {
+    const historyUserId = "123e4567-e89b-12d3-a456-426614174102";
+    const occurredAt = "2026-06-01T12:00:00.000Z";
+    const records = [
+      { orderId: randomUUID(), locationId },
+      { orderId: randomUUID(), locationId: secondLocationId },
+      { orderId: randomUUID(), locationId: otherBrandLocationId }
+    ];
+    for (const record of records) {
+      const quoteId = randomUUID();
+      await db!.insertInto("orders_quotes").values({
+        quote_id: quoteId,
+        quote_hash: `history-${record.orderId}`,
+        quote_json: { locationId: record.locationId }
+      }).execute();
+      await db!.insertInto("orders").values({
+        order_id: record.orderId,
+        user_id: historyUserId,
+        quote_id: quoteId,
+        location_id: record.locationId,
+        order_json: {
+          id: record.orderId,
+          locationId: record.locationId,
+          status: "PAID",
+          items: [],
+          total: { currency: "USD", amountCents: 100 },
+          pickupCode: "HISTORY",
+          timeline: [{ status: "PAID", occurredAt }]
+        }
+      }).execute();
+    }
+
+    const brandOrders = await repository.listOrdersByUserAndBrand(historyUserId, brandId);
+    expect(brandOrders.map((order) => order.id)).toEqual(expect.arrayContaining([records[0]!.orderId, records[1]!.orderId]));
+    expect(brandOrders).toHaveLength(2);
+    expect(brandOrders.some((order) => order.id === records[2]!.orderId)).toBe(false);
+    expect(await repository.getOrderBrandId(records[2]!.orderId)).toBe(secondBrandId);
   });
 });
