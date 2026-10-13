@@ -232,7 +232,19 @@ jobs:
           node scripts/check-heroku-pool-budget.mjs
           node scripts/heroku-sync-config.mjs
 
+      - name: Reuse current release only when exact provenance is verified
+        id: current_release
+        continue-on-error: true
+        env:
+          HEROKU_APP_NAME: ${{ vars.HEROKU_APP_NAME }}
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+          DEPLOY_ENV: dev
+          DEPLOY_SHA: ${{ needs.preflight.outputs.deploy_sha }}
+        run: node scripts/verify-heroku-release-provenance.mjs
+
       - name: Deploy source to Heroku
+        id: deploy_source
+        if: steps.current_release.outcome == 'failure'
         env:
           HEROKU_APP_NAME: ${{ vars.HEROKU_APP_NAME }}
           HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
@@ -243,15 +255,39 @@ jobs:
           git config --global credential.helper store
           printf 'https://heroku:%s@git.heroku.com\n' "${HEROKU_API_KEY}" > "$HOME/.git-credentials"
           chmod 600 "$HOME/.git-credentials"
+          remote_sha="$(git ls-remote "https://git.heroku.com/${HEROKU_APP_NAME}.git" refs/heads/main | cut -f1)"
+          if [ "${remote_sha}" = "${DEPLOY_SHA}" ]; then
+            echo "Heroku Git already points at the requested source SHA."
+            echo "source_ref_matches=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           git push --force "https://git.heroku.com/${HEROKU_APP_NAME}.git" "${DEPLOY_SHA}:refs/heads/main"
           remote_sha="$(git ls-remote "https://git.heroku.com/${HEROKU_APP_NAME}.git" refs/heads/main | cut -f1)"
           if [ "${remote_sha}" != "${DEPLOY_SHA}" ]; then
             echo "Heroku Git ref does not match the exact deployment SHA." >&2
             exit 1
           fi
+          echo "source_ref_matches=false" >> "$GITHUB_OUTPUT"
           echo "Heroku Git ref verified at ${remote_sha}."
 
-      - name: Wait for the dev API
+      - name: Create a fresh Heroku build for an already-present source SHA
+        if: steps.current_release.outcome == 'failure' && steps.deploy_source.outputs.source_ref_matches == 'true'
+        env:
+          HEROKU_APP_NAME: ${{ vars.HEROKU_APP_NAME }}
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+          DEPLOY_SHA: ${{ needs.preflight.outputs.deploy_sha }}
+        run: node scripts/deploy-heroku-source-build.mjs
+
+      - name: Verify release migration provenance
+        env:
+          HEROKU_APP_NAME: ${{ vars.HEROKU_APP_NAME }}
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+          DEPLOY_ENV: dev
+          DEPLOY_SHA: ${{ needs.preflight.outputs.deploy_sha }}
+        run: node scripts/wait-for-heroku-release-provenance.mjs
+
+      - name: Wait for the dev API after release verification
         env:
           API_DOMAIN: ${{ vars.API_DOMAIN }}
         run: |
@@ -264,14 +300,6 @@ jobs:
           done
           echo "Dev API did not become healthy." >&2
           exit 1
-
-      - name: Verify release migration provenance
-        env:
-          HEROKU_APP_NAME: ${{ vars.HEROKU_APP_NAME }}
-          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
-          DEPLOY_ENV: dev
-          DEPLOY_SHA: ${{ needs.preflight.outputs.deploy_sha }}
-        run: node scripts/verify-heroku-release-provenance.mjs
 
       - name: Smoke check deployed stack
         env:
