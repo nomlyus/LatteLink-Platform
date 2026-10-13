@@ -26,6 +26,7 @@ import { MenuCategoriesPanel } from "../src/features/menu/components/MenuCategor
 import { ModifierGroupsPanel } from "../src/features/menu/components/ModifierGroupsPanel";
 import type { useMenuMutations } from "../src/features/menu/use-menu-mutations";
 import { buildItemModifierGroupAssignments, buildModifierGroupPayload, getMenuApiErrorMessage } from "../src/features/menu/menu-domain";
+import { searchMenuItems, searchMenuCategories, searchModifierGroups } from "../src/features/menu/menu-search";
 
 function fixture() {
   const group = {
@@ -99,14 +100,48 @@ beforeEach(() => {
 });
 
 describe("React Menu presentation", () => {
-  it("makes Items the default tab and renders the independent item filters and states", () => {
+  it("searches item prices, categories, states, badges, and assigned modifier options", () => {
+    const { item, menu } = fixture();
+    for (const query of ["Latte", "$6.50", "Espresso", "Drinks", "Sold out", "Visible", "Featured", "popular", "Milk Oat", "-0.25"]) {
+      expect(searchMenuItems([item], menu.categories, menu.modifierGroups, query)).toHaveLength(1);
+    }
+    expect(searchMenuItems([item], menu.categories, menu.modifierGroups, "Latte 6.50 missing")).toHaveLength(0);
+    expect(searchMenuItems([item], menu.categories, menu.modifierGroups, "   ")).toHaveLength(1);
+    expect(searchMenuCategories(menu.categories, "Coffee tea")).toHaveLength(1);
+    expect(searchModifierGroups(menu.modifierGroups, "single required Oat -0.25")).toHaveLength(1);
+    expect(searchModifierGroups(menu.modifierGroups, "missing option")).toHaveLength(0);
+  });
+
+  it("shows a search-specific empty state in the item view", () => {
+    const { menu } = fixture();
+    const html = renderToStaticMarkup(<MenuPage menu={menu} query="not-in-the-menu" loadStatus="ready" loadError={null} selectedLocationId="location-a" scopeKey="owner:location-a" externalSync={false} mutations={mutationStub} onRetry={noop} />);
+    expect(html).toContain("No items match this search");
+    expect(html).not.toContain('class="dash-menu-table__item-name"');
+    expect(html).not.toContain('placeholder="Search items…"');
+    expect(html).not.toContain('placeholder="Search groups…"');
+  });
+
+  it("preserves full category ordering controls when search hides neighboring categories", () => {
+    const { category } = fixture();
+    const categories = ["Coffee", "Tea", "Pastries"].map((title, index) => ({
+      ...category, categoryId: `category-${index}`, title, description: "", items: []
+    }));
+    const html = renderToStaticMarkup(<MenuCategoriesPanel categories={categories} query="Tea" canWrite pending={false} onCreate={noop} onOpen={noop} onReorder={noop} onDelete={noop} />);
+    expect(html).toContain('aria-label="Move Tea up"');
+    expect(html).toContain('aria-label="Move Tea down"');
+    expect(html).not.toContain('aria-label="Edit Coffee"');
+    expect(html).not.toContain('aria-label="Edit Pastries"');
+    expect(html).not.toContain("disabled=");
+  });
+
+  it("makes Items the default tab and renders states without toolbar search or filters", () => {
     const { menu } = fixture();
     const html = renderToStaticMarkup(<MenuPage menu={menu} loadStatus="ready" loadError={null} selectedLocationId="location-a" scopeKey="owner:location-a" externalSync={false} mutations={mutationStub} onRetry={noop} />);
     expect(html).toContain('id="menu-tab-items" type="button" role="tab" aria-selected="true"');
-    expect(html).toContain("Search items");
-    expect(html).toContain('aria-label="Filter by category"');
-    expect(html).toContain('aria-label="Filter by availability"');
-    expect(html).toContain('aria-label="Filter by visibility"');
+    expect(html).not.toContain('placeholder="Search items…"');
+    expect(html).not.toContain('aria-label="Filter by category"');
+    expect(html).not.toContain('aria-label="Filter by availability"');
+    expect(html).not.toContain('aria-label="Filter by visibility"');
     expect(html).toContain("Latte");
     expect(html).toContain("Featured");
     expect(html).toContain("Sold out");
@@ -139,7 +174,7 @@ describe("React Menu presentation", () => {
   it("shows reusable modifier-group usage and selection behavior", () => {
     const { group, menu } = fixture();
     const html = renderToStaticMarkup(<>
-      <ModifierGroupsPanel groups={menu.modifierGroups} categories={menu.categories} query="" canWrite onQueryChange={noop} onCreate={noop} onOpen={noop} />
+      <ModifierGroupsPanel groups={menu.modifierGroups} categories={menu.categories} query="" canWrite onCreate={noop} onOpen={noop} />
       <ModifierGroupEditor group={group} canWrite={false} pending={false} usedBy={menu.categories[0]?.items ?? []} onClose={noop} onSave={async () => null} onDelete={noop} onOpenItem={noop} />
     </>);
     expect(html).toContain("1 item · Single selection · Required");
@@ -195,7 +230,7 @@ describe("React Menu presentation", () => {
 
   it("uses explicit empty and page-range states for items", () => {
     const { menu } = fixture();
-    const emptyHtml = renderToStaticMarkup(<MenuItemsPanel items={[]} categories={menu.categories} modifierGroups={menu.modifierGroups} query="nothing" categoryFilter="all" availabilityFilter="all" visibilityFilter="all" page={1} loading={false} canWrite={false} canToggleVisibility={false} pendingItemId={null} onQueryChange={noop} onCategoryFilterChange={noop} onAvailabilityFilterChange={noop} onVisibilityFilterChange={noop} onPageChange={noop} onAddItem={noop} onEdit={noop} onAvailabilityChange={noop} onVisibilityChange={noop} onDelete={noop} />);
-    expect(emptyHtml).toContain("No items match these filters");
+    const emptyHtml = renderToStaticMarkup(<MenuItemsPanel items={[]} categories={menu.categories} modifierGroups={menu.modifierGroups} page={1} loading={false} canWrite={false} canToggleVisibility={false} pendingItemId={null} onPageChange={noop} onAddItem={noop} onEdit={noop} onAvailabilityChange={noop} onVisibilityChange={noop} onDelete={noop} />);
+    expect(emptyHtml).toContain("No items found");
   });
 });

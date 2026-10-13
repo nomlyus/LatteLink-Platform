@@ -1,4 +1,5 @@
 import type { OperatorOrder, OperatorOrderStatus } from "../../model";
+import { matchesOrderSearch } from "./orders-search";
 
 export type OrdersViewFilter = "all" | "active" | "completed" | "canceled";
 export type StoreOrdersFilter = "all" | "needs_action" | "in_progress" | "ready" | "closed";
@@ -23,23 +24,14 @@ export function resolveOrderMutationLocationId(
   return operatorRole === "owner" ? null : orderLocationId;
 }
 
-export function filterOrders(orders: readonly OperatorOrder[], filter: OrdersViewFilter, query: string) {
-  const normalizedQuery = query.trim().toLocaleLowerCase();
+export function filterOrders(orders: readonly OperatorOrder[], filter: OrdersViewFilter, query: string, locationNames?: ReadonlyMap<string, string>) {
   return orders.filter((order) => {
     const matchesFilter = filter === "all"
       || (filter === "active" && !isTerminalStatus(order.status))
       || (filter === "canceled" && order.status === "CANCELED")
       || (filter === "completed" && ["COMPLETED", "REFUNDED", "PARTIALLY_REFUNDED"].includes(order.status));
     if (!matchesFilter) return false;
-    if (!normalizedQuery) return true;
-    const searchable = [
-      order.pickupCode,
-      order.customer?.name,
-      order.customer?.email,
-      order.customer?.phone,
-      ...order.items.flatMap((item) => [item.itemName, item.itemId, ...(item.customization?.selectedOptions ?? []).map((option) => option.optionLabel)])
-    ].filter(Boolean).join(" ").toLocaleLowerCase();
-    return searchable.includes(normalizedQuery);
+    return matchesOrderSearch(order, query, locationNames?.get(order.locationId));
   });
 }
 

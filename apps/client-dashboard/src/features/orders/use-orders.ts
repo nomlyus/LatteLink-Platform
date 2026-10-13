@@ -10,6 +10,7 @@ import { alertForNewOrders, disposeNewOrderAlertRuntime, enableNewOrderSound, is
 import { resolveAppConfigFulfillmentMode } from "@lattelink/contracts-catalog";
 import { createOrdersRequestEpoch, mountOrdersRealtime, registerOrdersBrowserLifecycle, startOrdersPolling } from "./orders-lifecycle";
 import { mergeUpdatedOrder, resolveOrderMutationLocationId } from "./orders-domain";
+import { useOrdersSearch } from "./orders-search-provider";
 
 type OrdersLoadStatus = "loading" | "ready" | "error";
 type OrdersViewFilter = "all" | "active" | "completed" | "canceled";
@@ -23,7 +24,6 @@ type OrdersUiState = {
   connectionState: AdminOrderStreamState;
   filter: OrdersViewFilter;
   storeFilter: StoreOrdersFilter;
-  query: string;
   page: number;
   selectedOrderId: string | null;
   detailsOpen: boolean;
@@ -40,13 +40,14 @@ type OrdersUiState = {
 
 const initialUiState: OrdersUiState = {
   status: "loading", orders: [], error: null, refreshError: null, lastRefreshedAt: null,
-  connectionState: "connecting", filter: "active", storeFilter: "all", query: "", page: 1, selectedOrderId: null,
+  connectionState: "connecting", filter: "active", storeFilter: "all", page: 1, selectedOrderId: null,
   detailsOpen: false, detailsOpening: false, detailsClosing: false, busyOrderId: null, cancelOrderId: null,
   refundOrderId: null, actionError: null, actionNotice: null, soundEnabled: false,
   online: typeof navigator === "undefined" || navigator.onLine
 };
 
 export function useOrders() {
+  const { query, setQuery } = useOrdersSearch();
   const { status: sessionStatus, session, refreshSession, logout } = useDashboardSession();
   const location = useDashboardLocation();
   const selectedLocationId = location.selectedLocationId;
@@ -54,6 +55,7 @@ export function useOrders() {
   selectedLocationIdRef.current = selectedLocationId;
   const locationIds = location.availableLocations.map((item) => item.locationId);
   const [ui, setUi] = useState<OrdersUiState>(initialUiState);
+  useEffect(() => { setUi((current) => ({ ...current, page: 1 })); }, [query]);
   const statusRef = useRef(ui.status);
   statusRef.current = ui.status;
   const requestEpoch = useRef(createOrdersRequestEpoch());
@@ -231,7 +233,6 @@ export function useOrders() {
   }, []);
 
   const setFilter = useCallback((filter: OrdersViewFilter) => setUi((current) => ({ ...current, filter, page: 1 })), []);
-  const setQuery = useCallback((query: string) => setUi((current) => ({ ...current, query, page: 1 })), []);
   const setPage = useCallback((page: number) => setUi((current) => ({ ...current, page })), []);
   const setStoreFilter = useCallback((storeFilter: StoreOrdersFilter) => setUi((current) => ({ ...current, storeFilter, page: 1 })), []);
   const beginCancel = useCallback((orderId: string) => setUi((current) => ({ ...current, cancelOrderId: orderId, refundOrderId: null, actionError: null })), []);
@@ -297,6 +298,7 @@ export function useOrders() {
   const controlsAllowed = Boolean(scopedLocationId);
   return {
     ...ui,
+    query,
     sessionStatus,
     session,
     selectedLocationId,
@@ -325,3 +327,5 @@ export function useOrders() {
     enableSound
   };
 }
+
+export type OrdersState = ReturnType<typeof useOrders>;

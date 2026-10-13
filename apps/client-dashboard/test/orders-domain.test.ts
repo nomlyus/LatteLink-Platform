@@ -37,6 +37,35 @@ describe("React Orders domain helpers", () => {
     expect(filterOrders(data, "canceled", "").map((item) => item.status)).toEqual(["CANCELED"]);
   });
 
+  it("searches identifiers, displayed prices, statuses, dates, and authorized location names", () => {
+    const locations = new Map([["loc-a", "Downtown"]]);
+    expect(filterOrders(data, "all", data[0]!.id)).toHaveLength(1);
+    expect(filterOrders(data, "all", "$7.25")).toHaveLength(4);
+    expect(filterOrders(data, "all", "6.50")).toHaveLength(4);
+    expect(filterOrders(data, "all", "0.75")).toHaveLength(4);
+    expect(filterOrders(data, "all", "canceled")).toHaveLength(1);
+    expect(filterOrders(data, "all", "cancelled")).toHaveLength(1);
+    expect(filterOrders(data, "all", "partially refunded")).toHaveLength(1);
+    expect(filterOrders(data, "all", "2026-09-28")).toHaveLength(4);
+    expect(filterOrders(data, "all", "Downtown Casey 7.25", locations)).toHaveLength(1);
+    expect(filterOrders(data, "all", "Downtown absent", locations)).toHaveLength(0);
+    expect(filterOrders(data, "all", "Airport", locations)).toHaveLength(0);
+    expect(filterOrders(data, "all", "   ")).toHaveLength(4);
+  });
+
+  it("searches notes, phone, quantities, modifier groups, and negative deltas", () => {
+    const customized = resolveOrder({
+      ...data[0],
+      customer: { name: "José Rivera", phone: "555-1234" },
+      items: [{ itemId: "latte", itemName: "Latte", quantity: 2, unitPriceCents: 625,
+        customization: { notes: "Extra hot", selectedOptions: [{ groupId: "milk", groupLabel: "Milk Choice", optionId: "none", optionLabel: "No milk", priceDeltaCents: -25 }] } }]
+    });
+    for (const query of ["Jose", "555-1234", "Extra hot", "2 items", "Milk Choice", "-0.25", "quantity 2"]) {
+      expect(filterOrders([customized], "all", query)).toHaveLength(1);
+    }
+    expect(filterOrders([customized], "all", "unknown item")).toHaveLength(0);
+  });
+
   it("filters and prioritizes store tickets in the existing queue order", () => {
     expect(filterStoreOrders(data, "all").map((item) => item.status)).toEqual(["PAID"]);
     expect(filterStoreOrders(data, "closed")).toHaveLength(3);

@@ -1,7 +1,8 @@
 "use client";
 
 import { isPlatformManagedMenu } from "@lattelink/contracts-catalog";
-import React, { type ReactNode } from "react";
+import React, { useEffect, useState, type ReactNode } from "react";
+import { DashboardSearch } from "../../../components/dashboard/DashboardSearch";
 import { SignInRoute } from "../../auth/components/SignInRoute";
 import { DashboardShell, DashboardShellLoading } from "../../../components/dashboard/DashboardShell";
 import { canAccessCapability } from "../../../model";
@@ -16,6 +17,8 @@ export function MenuRoute() {
   const location = useDashboardLocation();
   const catalog = useMenuCatalog();
   const mutations = useMenuMutations(catalog.menu, catalog.reload);
+  const [query, setQuery] = useState("");
+  useEffect(() => { setQuery(""); }, [catalog.scopeKey]);
 
   if (sessionStatus === "loading") return <DashboardShellLoading />;
   if (sessionStatus === "signed-out") return <SignInRoute />;
@@ -35,9 +38,11 @@ export function MenuRoute() {
 
   const externalSync = Boolean(location.selectedLocation && !isPlatformManagedMenu(location.selectedLocation.appConfig));
   return (
-    <DashboardShell activeSection="menu" locationSelectionDisabled={mutations.isMutating}>
+    <DashboardShell activeSection="menu" locationSelectionDisabled={mutations.isMutating}
+      search={<DashboardSearch label="Search menu" controls="menu-search-results" query={query} onQueryChange={setQuery} />}>
       <MenuPage
         menu={catalog.menu}
+        query={query}
         loadStatus={catalog.status}
         loadError={catalog.error}
         selectedLocationId={location.selectedLocationId}

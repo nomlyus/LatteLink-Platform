@@ -6,7 +6,8 @@ import { resolveOrder, type OperatorOrder } from "../src/model";
 const mockOrdersState = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 vi.mock("../src/features/orders/use-orders", () => ({ useOrders: () => mockOrdersState.value }));
 
-import { OrdersPage } from "../src/features/orders/components/OrdersPage";
+import { OrdersManagementPage } from "../src/features/orders/components/OrdersManagementPage";
+import { StoreOrdersPage } from "../src/features/orders/components/StoreOrdersPage";
 
 const appConfig = {
   storeCapabilities: { menu: { source: "platform_managed" }, operations: { fulfillmentMode: "staff", liveOrderTrackingEnabled: true, dashboardEnabled: true }, loyalty: { visible: true } }
@@ -43,9 +44,9 @@ function viewState(overrides: Record<string, unknown> = {}) {
 beforeEach(() => { mockOrdersState.value = viewState(); });
 
 describe("React Orders presentation", () => {
-  it("renders active status/search controls and the full order table", () => {
-    const html = renderToStaticMarkup(<OrdersPage />);
-    expect(html).toContain("Search pickup code, customer, email");
+  it("renders manager status controls and the full order table without a local search bar", () => {
+    const html = renderToStaticMarkup(<OrdersManagementPage />);
+    expect(html).not.toContain("Search pickup code, customer, email");
     expect(html).toContain('aria-label="Order status filter"');
     expect(html).toContain('aria-pressed="true" class="is-active">Active</button>');
     expect(html).toContain("Payment");
@@ -56,11 +57,34 @@ describe("React Orders presentation", () => {
     expect(html).toContain("View order details for 111111");
   });
 
+  it("shows every order status for owners without status tabs", () => {
+    const orders = ["PAID", "COMPLETED", "CANCELED", "REFUNDED", "PARTIALLY_REFUNDED"].map((status, index) =>
+      order(`${index + 1}23456aa-1111-4111-8111-111111111111`, status as OperatorOrder["status"])
+    );
+    mockOrdersState.value = viewState({
+      session: baseSession("owner", ["orders:read"]), orders, filter: "active"
+    });
+    const html = renderToStaticMarkup(<OrdersManagementPage />);
+    expect(html).not.toContain('aria-label="Order status filter"');
+    expect(html).not.toContain("Live orders connected");
+    for (const item of orders) expect(html).toContain(`View order details for ${item.pickupCode}`);
+
+    mockOrdersState.value = viewState({
+      session: baseSession("owner", ["orders:read"]), orders, filter: "active", query: "Canceled"
+    });
+    const searchedHtml = renderToStaticMarkup(<OrdersManagementPage />);
+    expect(searchedHtml).toContain(`View order details for ${orders[2]!.pickupCode}`);
+    expect(searchedHtml).not.toContain(`View order details for ${orders[0]!.pickupCode}`);
+
+    mockOrdersState.value = viewState({ session: baseSession("owner", ["orders:read"]), orders: [] });
+    expect(renderToStaticMarkup(<OrdersManagementPage />)).toContain("No orders yet.");
+  });
+
   it("uses explicit empty and filtered-empty states rather than a blank table", () => {
     mockOrdersState.value = viewState({ orders: [], status: "ready" });
-    expect(renderToStaticMarkup(<OrdersPage />)).toContain("No active orders.");
+    expect(renderToStaticMarkup(<OrdersManagementPage />)).toContain("No active orders.");
     mockOrdersState.value = viewState({ query: "missing" });
-    expect(renderToStaticMarkup(<OrdersPage />)).toContain("No orders match this search.");
+    expect(renderToStaticMarkup(<OrdersManagementPage />)).toContain("No orders match this search.");
   });
 
   it("shows a distinct read-only All Locations state while preserving owner refund eligibility", () => {
@@ -71,11 +95,25 @@ describe("React Orders presentation", () => {
       selectedOrder: completed, selectedOrderId: completed.id, detailsOpen: true,
       filter: "all", locationStatus: "ready"
     });
-    const html = renderToStaticMarkup(<OrdersPage />);
+    const html = renderToStaticMarkup(<OrdersManagementPage />);
     expect(html).toContain("This all-locations Orders view is read-only");
     expect(html).toContain("<span>Location</span>");
     expect(html).toContain(">Refund</button>");
     expect(html).toContain("Payment</span>");
+  });
+
+  it("hides refund information when the backend summary records no refunds", () => {
+    const completed = order("22222222-2222-4222-8222-222222222222", "COMPLETED");
+    completed.refundSummary = {
+      state: "NONE", settledAmountCents: 0, remainingPaidAmountCents: 725,
+      settledRefundCount: 0, allocationQuality: "NONE", unverifiedRefundCount: 0
+    };
+    mockOrdersState.value = viewState({ selectedOrder: completed, detailsOpen: true });
+    expect(renderToStaticMarkup(<OrdersManagementPage />)).not.toContain('aria-label="Refund information"');
+
+    const refunded = order("33333333-3333-4333-8333-333333333333", "REFUNDED");
+    mockOrdersState.value = viewState({ selectedOrder: refunded, detailsOpen: true });
+    expect(renderToStaticMarkup(<OrdersManagementPage />)).toContain('aria-label="Refund information"');
   });
 
   it("keeps manager refunds scoped to a selected location", () => {
@@ -86,7 +124,7 @@ describe("React Orders presentation", () => {
       selectedOrder: completed, selectedOrderId: completed.id, detailsOpen: true,
       filter: "all", locationStatus: "ready"
     });
-    const allLocationsHtml = renderToStaticMarkup(<OrdersPage />);
+    const allLocationsHtml = renderToStaticMarkup(<OrdersManagementPage />);
     expect(allLocationsHtml).toContain("Choose a specific location to manage this order.");
     expect(allLocationsHtml).not.toContain(">Refund</button>");
 
@@ -96,19 +134,44 @@ describe("React Orders presentation", () => {
       selectedOrder: completed, selectedOrderId: completed.id, detailsOpen: true,
       filter: "all", locationStatus: "ready"
     });
-    expect(renderToStaticMarkup(<OrdersPage />)).toContain(">Refund</button>");
+    expect(renderToStaticMarkup(<OrdersManagementPage />)).toContain(">Refund</button>");
   });
 
   it("renders the store ticket queue and keeps controls capability-aware", () => {
     mockOrdersState.value = viewState({ isStore: true, session: baseSession("store", ["orders:read", "orders:write"]), selectedLocationId: "loc-a" });
-    const html = renderToStaticMarkup(<OrdersPage />);
+    const html = renderToStaticMarkup(<StoreOrdersPage />);
     expect(html).toContain('aria-label="Store order queue"');
+    expect(html).not.toContain("orders-react-table");
+    expect(html).not.toContain('aria-label="Order status filter"');
     expect(html).toContain("Start prep");
     expect(html).toContain("Enable order sound");
   });
 
   it("shows an explicit permission state when the user lacks order-read capability", () => {
     mockOrdersState.value = viewState({ canReadOrders: false, session: baseSession("manager", ["menu:read"]) });
-    expect(renderToStaticMarkup(<OrdersPage />)).toContain("You don’t have permission to view orders");
+    expect(renderToStaticMarkup(<OrdersManagementPage />)).toContain("You don’t have permission to view orders");
+  });
+
+  it.each([
+    ["management", OrdersManagementPage],
+    ["store", StoreOrdersPage]
+  ] as const)("keeps loading, scope errors, and permission gates on the %s screen", (_name, Screen) => {
+    mockOrdersState.value = viewState({ status: "loading", orders: [] });
+    expect(renderToStaticMarkup(<Screen />)).toContain('aria-label="Loading orders"');
+
+    mockOrdersState.value = viewState({ locationStatus: "error" });
+    expect(renderToStaticMarkup(<Screen />)).toContain("Unable to load authorized locations.");
+
+    mockOrdersState.value = viewState({ status: "error", error: "Orders are unavailable" });
+    const errorHtml = renderToStaticMarkup(<Screen />);
+    expect(errorHtml).toContain("Orders are unavailable");
+    expect(errorHtml).not.toContain("orders-react-table");
+    expect(errorHtml).not.toContain('aria-label="Store order queue"');
+
+    mockOrdersState.value = viewState({ canReadOrders: false });
+    expect(renderToStaticMarkup(<Screen />)).toContain("You don’t have permission to view orders");
+
+    mockOrdersState.value = viewState({ sessionStatus: "signed-out" });
+    expect(renderToStaticMarkup(<Screen />)).toBe("");
   });
 });

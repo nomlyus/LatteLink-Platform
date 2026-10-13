@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 import type { DashboardLocation, OperatorSession } from "../src/api";
 import { DashboardShellView } from "../src/components/dashboard/DashboardShell";
 import { getAvailableDashboardSectionsFor } from "../src/lib/navigation/dashboard-sections";
+import { OrdersSearch } from "../src/features/orders/components/OrdersSearch";
+import { OrdersSearchProvider } from "../src/features/orders/orders-search-provider";
 
 function session(role: "owner" | "manager" | "store", capabilities: string[]): OperatorSession {
   return {
@@ -28,6 +30,22 @@ const locations = [
 ] as unknown as DashboardLocation[];
 
 describe("React Dashboard V3 shell", () => {
+  it("mounts the functional search only when the Orders route supplies it", () => {
+    const props = {
+      session: session("owner", ["orders:read"]), locations, selectedLocationId: "loc-a",
+      locationStatus: "ready" as const, onSelectLocation: () => undefined, onLogout: () => undefined
+    };
+    const orders = renderToStaticMarkup(<OrdersSearchProvider>
+      <DashboardShellView {...props} activeSection="orders" search={<OrdersSearch />}><div /></DashboardShellView>
+    </OrdersSearchProvider>);
+    expect(orders).toContain('type="search"');
+    expect(orders).toContain("Search orders");
+    expect(orders).toContain('aria-controls="orders-results"');
+
+    const home = renderToStaticMarkup(<DashboardShellView {...props}><div /></DashboardShellView>);
+    expect(home).not.toContain('type="search"');
+    expect(home).not.toContain("Search orders");
+  });
   it("renders React-owned Home, Orders, and Menu alongside unmigrated legacy sections", () => {
     const html = renderToStaticMarkup(
       <DashboardShellView

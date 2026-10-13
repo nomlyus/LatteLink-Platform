@@ -6,7 +6,8 @@ import type { AdminMenuItemCreate, AdminMenuItemUpdate, AdminModifierGroupCreate
 import type { AdminMenuCategoryCreate } from "@lattelink/contracts-catalog";
 import type { OperatorMenuItem, OperatorModifierGroup, OperatorMenuResponse } from "../../../model";
 import { canCreateMenuItems, canToggleMenuItemVisibility } from "../../../model";
-import { buildMenuItemUpdatePayload, filterMenuItems, getModifierGroupUsage, getUniqueMenuItems } from "../menu-domain";
+import { buildMenuItemUpdatePayload, getModifierGroupUsage, getUniqueMenuItems } from "../menu-domain";
+import { searchMenuItems } from "../menu-search";
 import type { useMenuMutations } from "../use-menu-mutations";
 import { useDashboardSession } from "../../auth/session-provider";
 import { useDashboardLocation } from "../../location/location-provider";
@@ -23,6 +24,7 @@ type MenuDialogState = { kind: "create-item" } | { kind: "item"; id: string } | 
 
 export function MenuPage({
   menu,
+  query = "",
   loadStatus,
   loadError,
   selectedLocationId,
@@ -32,6 +34,7 @@ export function MenuPage({
   onRetry
 }: {
   menu: OperatorMenuResponse | null;
+  query?: string;
   loadStatus: "loading" | "ready" | "error";
   loadError: string | null;
   selectedLocationId: string | "all" | null;
@@ -41,11 +44,6 @@ export function MenuPage({
   onRetry: () => void;
 }) {
   const [tab, setTab] = useState<MenuTab>("items");
-  const [search, setSearch] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("all");
-  const [availabilityFilter, setAvailabilityFilter] = useState<"all" | "available" | "sold-out">("all");
-  const [visibilityFilter, setVisibilityFilter] = useState<"all" | "visible" | "hidden">("all");
-  const [modifierGroupSearch, setModifierGroupSearch] = useState("");
   const [page, setPage] = useState(1);
   const [dialog, setDialog] = useState<MenuDialogState | null>(null);
   const { session } = useDashboardSession();
@@ -54,18 +52,13 @@ export function MenuPage({
   useEffect(() => {
     setDialog(null);
     setPage(1);
-    setCategoryFilter("all");
   }, [scopeKey]);
+  useEffect(() => { setPage(1); }, [query]);
 
   const categories = menu?.categories ?? [];
   const groups = menu?.modifierGroups ?? [];
   const items = useMemo(() => getUniqueMenuItems(categories), [categories]);
-  const filteredItems = useMemo(() => filterMenuItems(items, categories, groups, {
-    search,
-    categoryId: categoryFilter,
-    availability: availabilityFilter,
-    visibility: visibilityFilter
-  }), [availabilityFilter, categories, categoryFilter, groups, items, search, visibilityFilter]);
+  const matchingItems = useMemo(() => searchMenuItems(items, categories, groups, query), [items, categories, groups, query]);
 
   const selectedItem = dialog?.kind === "item" ? items.find((item) => item.itemId === dialog.id) ?? null : null;
   const selectedCategory = dialog?.kind === "category" ? categories.find((category) => category.categoryId === dialog.id) ?? null : null;
@@ -73,14 +66,6 @@ export function MenuPage({
   const canWrite = canCreateMenuItems(session?.operator, location.selectedLocation?.appConfig);
   const canVisibility = canToggleMenuItemVisibility(session?.operator, location.selectedLocation?.appConfig);
   const itemBusyId = mutations.pendingItemId;
-
-  function setItemFilter<K extends "search" | "category" | "availability" | "visibility">(key: K, value: string) {
-    setPage(1);
-    if (key === "search") setSearch(value);
-    if (key === "category") setCategoryFilter(value);
-    if (key === "availability" && (value === "all" || value === "available" || value === "sold-out")) setAvailabilityFilter(value);
-    if (key === "visibility" && (value === "all" || value === "visible" || value === "hidden")) setVisibilityFilter(value);
-  }
 
   function requestItemDelete(item: OperatorMenuItem) {
     if (!window.confirm(`Delete “${item.name}” from this menu? This removes the item and all of its category memberships.`)) return;
@@ -133,28 +118,39 @@ export function MenuPage({
 
   const itemDeleteHandler = selectedItem ? requestItemDelete : () => undefined;
   return (
-    <section className="dash-section dash-section--menu" aria-label="Menu management">
-      <div className="dash-menu-tabs" role="tablist" aria-label="Menu management" onKeyDown={(event) => {
-        const tabs: MenuTab[] = ["items", "categories", "modifier-groups"];
-        const index = tabs.indexOf(tab);
-        const next = event.key === "ArrowRight" ? (index + 1) % tabs.length : event.key === "ArrowLeft" ? (index + tabs.length - 1) % tabs.length : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : -1;
-        if (next >= 0) { event.preventDefault(); const nextTab = tabs[next]!; setTab(nextTab); document.getElementById(`menu-tab-${nextTab}`)?.focus(); }
-      }}>
-        {([ ["items", "Items"], ["categories", "Categories"], ["modifier-groups", "Modifier Groups"] ] as const).map(([id, label]) => <button key={id} className={`dash-menu-tab${tab === id ? " dash-menu-tab--active" : ""}`} id={`menu-tab-${id}`} type="button" role="tab" aria-selected={tab === id} aria-controls={`menu-panel-${id}`} tabIndex={tab === id ? 0 : -1} onClick={() => setTab(id)}>{label}</button>)}
+    <section className="dash-section dash-section--menu" aria-label="Menu management" id="menu-search-results">
+      <div className="dash-menu-navigation">
+        <div className="dash-menu-tabs" role="tablist" aria-label="Menu management" onKeyDown={(event) => {
+          const tabs: MenuTab[] = ["items", "categories", "modifier-groups"];
+          const index = tabs.indexOf(tab);
+          const next = event.key === "ArrowRight" ? (index + 1) % tabs.length : event.key === "ArrowLeft" ? (index + tabs.length - 1) % tabs.length : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : -1;
+          if (next >= 0) { event.preventDefault(); const nextTab = tabs[next]!; setTab(nextTab); document.getElementById(`menu-tab-${nextTab}`)?.focus(); }
+        }}>
+          {([ ["items", "Items"], ["categories", "Categories"], ["modifier-groups", "Modifier Groups"] ] as const).map(([id, label]) => <button key={id} className={`dash-menu-tab${tab === id ? " dash-menu-tab--active" : ""}`} id={`menu-tab-${id}`} type="button" role="tab" aria-selected={tab === id} aria-controls={`menu-panel-${id}`} tabIndex={tab === id ? 0 : -1} onClick={() => setTab(id)}>{label}</button>)}
+        </div>
+        {tab === "items" && canWrite && selectedLocationId && selectedLocationId !== "all" && loadStatus !== "error" ? (
+          <button className="button button--secondary dash-menu-create-button" type="button" onClick={() => setDialog({ kind: "create-item" })}>Add item</button>
+        ) : null}
+        {tab === "categories" && canWrite && selectedLocationId && selectedLocationId !== "all" && loadStatus !== "error" ? (
+          <button className="button button--secondary dash-menu-create-button" type="button" onClick={() => setDialog({ kind: "create-category" })}>Add category</button>
+        ) : null}
+        {tab === "modifier-groups" && canWrite && selectedLocationId && selectedLocationId !== "all" && loadStatus !== "error" ? (
+          <button className="button button--secondary dash-menu-create-button" type="button" onClick={() => setDialog({ kind: "create-group" })}>Add modifier group</button>
+        ) : null}
       </div>
       {externalSync ? <div className="dash-menu-readonly-note" role="status"><span>Managed by connected source</span><span>Menu changes are made in the connected system.</span></div> : selectedLocationId && selectedLocationId !== "all" && !canWrite && !canVisibility ? <div className="dash-menu-readonly-note" role="status">This menu is read only for your account.</div> : null}
       {selectedLocationId === "all" || !selectedLocationId ? <div className="dash-menu-empty" role="status"><strong>Choose one location</strong><span>Menu items, category membership, pricing, and modifier assignments are managed per location.</span></div> : loadStatus === "error" ? <div className="dash-menu-error" role="alert"><span>{loadError ?? "Unable to load this location’s menu."}</span><button className="button button--ghost" type="button" onClick={onRetry}>Try again</button></div> : null}
       {mutations.error ? <div className="dash-menu-error" role="alert">{mutations.error}<button className="button button--ghost" type="button" onClick={mutations.clearMessages}>Dismiss</button></div> : null}
       {mutations.notice ? <div className="dash-menu-readonly-note" role="status">{mutations.notice}<button className="button button--ghost" type="button" onClick={mutations.clearMessages}>Dismiss</button></div> : null}
 
-      <div id="menu-panel-items" className="dash-menu-panel" role="tabpanel" aria-labelledby="menu-tab-items" hidden={tab !== "items"}>
-        {selectedLocationId && selectedLocationId !== "all" && loadStatus !== "error" ? <MenuItemsPanel items={filteredItems} categories={categories} modifierGroups={groups} query={search} categoryFilter={categoryFilter} availabilityFilter={availabilityFilter} visibilityFilter={visibilityFilter} page={page} loading={loadStatus === "loading"} canWrite={canWrite} canToggleVisibility={canVisibility} pendingItemId={itemBusyId} onQueryChange={(value) => setItemFilter("search", value)} onCategoryFilterChange={(value) => setItemFilter("category", value)} onAvailabilityFilterChange={(value) => setItemFilter("availability", value)} onVisibilityFilterChange={(value) => setItemFilter("visibility", value)} onPageChange={setPage} onAddItem={() => setDialog({ kind: "create-item" })} onEdit={(item) => setDialog({ kind: "item", id: item.itemId })} onAvailabilityChange={(item, available) => void mutations.saveItem(item, buildMenuItemUpdatePayload(item, { available }))} onVisibilityChange={(item, visible) => void mutations.setItemVisibility(item.itemId, visible)} onDelete={requestItemDelete} /> : null}
+      <div id="menu-panel-items" className="dash-menu-panel dash-menu-panel--items" role="tabpanel" aria-labelledby="menu-tab-items" hidden={tab !== "items"}>
+        {selectedLocationId && selectedLocationId !== "all" && loadStatus !== "error" ? <MenuItemsPanel items={matchingItems} query={query} categories={categories} modifierGroups={groups} page={page} loading={loadStatus === "loading"} canWrite={canWrite} canToggleVisibility={canVisibility} pendingItemId={itemBusyId} onPageChange={setPage} onAddItem={() => setDialog({ kind: "create-item" })} onEdit={(item) => setDialog({ kind: "item", id: item.itemId })} onAvailabilityChange={(item, available) => void mutations.saveItem(item, buildMenuItemUpdatePayload(item, { available }))} onVisibilityChange={(item, visible) => void mutations.setItemVisibility(item.itemId, visible)} onDelete={requestItemDelete} /> : null}
       </div>
       <div id="menu-panel-categories" className="dash-menu-panel" role="tabpanel" aria-labelledby="menu-tab-categories" hidden={tab !== "categories"}>
-        {selectedLocationId && selectedLocationId !== "all" && loadStatus === "loading" ? <MenuListSkeleton /> : selectedLocationId && selectedLocationId !== "all" && loadStatus !== "error" ? <MenuCategoriesPanel categories={categories} canWrite={canWrite} pending={mutations.isMutating} onCreate={() => setDialog({ kind: "create-category" })} onOpen={(category) => setDialog({ kind: "category", id: category.categoryId })} onReorder={(categoryId, direction) => { const ids = categories.map((category) => category.categoryId); const index = ids.indexOf(categoryId); const nextIndex = index + (direction === "up" ? -1 : 1); if (index < 0 || nextIndex < 0 || nextIndex >= ids.length) return; [ids[index], ids[nextIndex]] = [ids[nextIndex]!, ids[index]!]; void mutations.reorderCategories(ids); }} onDelete={requestCategoryDelete} /> : null}
+        {selectedLocationId && selectedLocationId !== "all" && loadStatus === "loading" ? <MenuListSkeleton /> : selectedLocationId && selectedLocationId !== "all" && loadStatus !== "error" ? <MenuCategoriesPanel categories={categories} query={query} canWrite={canWrite} pending={mutations.isMutating} onCreate={() => setDialog({ kind: "create-category" })} onOpen={(category) => setDialog({ kind: "category", id: category.categoryId })} onReorder={(categoryId, direction) => { const ids = categories.map((category) => category.categoryId); const index = ids.indexOf(categoryId); const nextIndex = index + (direction === "up" ? -1 : 1); if (index < 0 || nextIndex < 0 || nextIndex >= ids.length) return; [ids[index], ids[nextIndex]] = [ids[nextIndex]!, ids[index]!]; void mutations.reorderCategories(ids); }} onDelete={requestCategoryDelete} /> : null}
       </div>
       <div id="menu-panel-modifier-groups" className="dash-menu-panel" role="tabpanel" aria-labelledby="menu-tab-modifier-groups" hidden={tab !== "modifier-groups"}>
-        {selectedLocationId && selectedLocationId !== "all" && loadStatus === "loading" ? <MenuListSkeleton /> : selectedLocationId && selectedLocationId !== "all" && loadStatus !== "error" ? <ModifierGroupsPanel groups={groups} categories={categories} query={modifierGroupSearch} canWrite={canWrite} onQueryChange={setModifierGroupSearch} onCreate={() => setDialog({ kind: "create-group" })} onOpen={(group) => setDialog({ kind: "group", id: group.id })} /> : null}
+        {selectedLocationId && selectedLocationId !== "all" && loadStatus === "loading" ? <MenuListSkeleton /> : selectedLocationId && selectedLocationId !== "all" && loadStatus !== "error" ? <ModifierGroupsPanel groups={groups} categories={categories} query={query} canWrite={canWrite} onCreate={() => setDialog({ kind: "create-group" })} onOpen={(group) => setDialog({ kind: "group", id: group.id })} /> : null}
       </div>
 
       {dialog?.kind === "create-item" ? <MenuItemCreateDialog categories={categories} canWrite={canWrite} canToggleVisibility={canVisibility} pending={mutations.isMutating} onClose={() => setDialog(null)} onCreate={createItem} /> : null}

@@ -99,6 +99,9 @@ export function OrderDetailDialog(props: OrderDetailDialogProps) {
   const placedAt = order.timeline[0]?.occurredAt ?? "";
   const itemCount = orderItemCount(order);
   const refund = order.refundSummary;
+  const hasRefundActivity = Boolean(refund && (
+    refund.state !== "NONE" || refund.settledRefundCount > 0 || refund.settledAmountCents > 0 || refund.unverifiedRefundCount > 0
+  ));
   const showReadOnly = !canRefund && !canAdvance && !canCancel && !cancelRequested && !refundRequested;
 
   return <div className={`dash-modal dash-order-detail-modal${opening ? " dash-order-detail-modal--opening" : ""}${closing ? " dash-order-detail-modal--closing" : ""}`} role="presentation">
@@ -122,7 +125,7 @@ export function OrderDetailDialog(props: OrderDetailDialogProps) {
           <div className="dash-detail-metric"><span>Payment</span><strong>{orderPaymentLabel(order)}</strong></div>
           <div className="dash-detail-metric"><span>Fulfillment</span><strong>Pickup</strong></div>
         </div>
-        {refund ? <section className="dash-order-detail__section" aria-label="Refund information"><div className="dash-order-detail__section-heading">Refund information</div><p className="muted-copy">{refund.settledRefundCount} settled refund{refund.settledRefundCount === 1 ? "" : "s"} · {formatMoney(refund.settledAmountCents)} refunded{refund.remainingPaidAmountCents > 0 ? ` · ${formatMoney(refund.remainingPaidAmountCents)} remaining` : ""}</p></section> : null}
+        {refund && hasRefundActivity ? <section className="dash-order-detail__section" aria-label="Refund information"><div className="dash-order-detail__section-heading">Refund information</div><p className="muted-copy">{refund.settledRefundCount} settled refund{refund.settledRefundCount === 1 ? "" : "s"} · {formatMoney(refund.settledAmountCents)} refunded{refund.remainingPaidAmountCents > 0 ? ` · ${formatMoney(refund.remainingPaidAmountCents)} remaining` : ""}</p></section> : null}
         <section className="dash-order-detail__section"><div className="dash-order-detail__section-heading"><span>Items</span><strong>{itemCount} {itemCount === 1 ? "item" : "items"}</strong></div><ItemLines order={order} /></section>
         <section className="dash-order-detail__totals" aria-label="Order totals"><div><span>Subtotal</span><strong>{formatMoney(orderSubtotalCents(order))}</strong></div><div><span>Tax</span><strong>{formatMoney(orderTaxCents(order))}</strong></div><div><span>Total</span><strong>{formatMoney(order.total.amountCents)}</strong></div></section>
         <section className="dash-order-detail__section dash-order-detail__activity"><div className="dash-order-detail__section-heading">Order Activity</div><div className="timeline-stack">{order.timeline.length ? order.timeline.map((entry, index) => <div className="dash-order-activity__row" key={`${entry.status}-${entry.occurredAt}-${index}`}><span className="dash-order-activity__dot" aria-hidden="true" /><div className="dash-order-activity__content"><div className="dash-order-activity__meta"><strong>{formatOrderStatus(entry.status).toLowerCase().replace(/\b\w/g, (character) => character.toUpperCase())}</strong><span>{activityTime(entry.occurredAt)}</span></div>{entry.note ? <p>{entry.note}</p> : null}</div></div>) : <p className="muted-copy">No timeline events recorded.</p>}</div></section>
