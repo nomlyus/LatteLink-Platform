@@ -309,5 +309,6 @@ jobs:
       - name: Run deployed checkout E2E
         env:
           API_BASE_URL: https://${{ vars.API_DOMAIN }}/v1
+          DEV_E2E_BRAND_ID: ${{ vars.DEV_E2E_BRAND_ID || vars.CATALOG_DEFAULT_BRAND_ID || 'rawaqcoffee' }}
           DEV_E2E_LOCATION_ID: ${{ vars.DEV_E2E_LOCATION_ID || 'rawaqcoffee01' }}
         run: node scripts/dev-checkout-e2e.mjs

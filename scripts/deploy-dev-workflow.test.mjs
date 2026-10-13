@@ -36,3 +36,10 @@ test("release provenance is checked before API health and smoke checks", async (
   assert.ok(healthIndex > provenanceIndex);
   assert.ok(smokeIndex > healthIndex);
 });
+
+test("deployed checkout E2E receives both brand and location scope", async () => {
+  const workflow = await readFile(workflowUrl, "utf8");
+  const checkoutE2E = workflow.slice(workflow.indexOf("- name: Run deployed checkout E2E"));
+  assert.match(checkoutE2E, /DEV_E2E_BRAND_ID:.*CATALOG_DEFAULT_BRAND_ID/);
+  assert.match(checkoutE2E, /DEV_E2E_LOCATION_ID:/);
+});

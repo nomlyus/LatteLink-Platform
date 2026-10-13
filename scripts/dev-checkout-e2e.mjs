@@ -2,6 +2,8 @@
 
 const apiBaseUrl = normalizeBaseUrl(process.env.API_BASE_URL ?? process.argv[2]);
 const locationId = process.env.DEV_E2E_LOCATION_ID?.trim();
+const brandId = process.env.DEV_E2E_BRAND_ID?.trim()
+  ?? (locationId === "rawaqcoffee01" ? "rawaqcoffee" : undefined);
 const timeoutMs = Number.parseInt(process.env.DEV_E2E_TIMEOUT_MS ?? "10000", 10);
 
 if (!apiBaseUrl) {
@@ -12,7 +14,12 @@ if (!locationId) {
   failPrerequisite("Set DEV_E2E_LOCATION_ID to the deployed dev location ID.");
 }
 
+if (!brandId) {
+  failPrerequisite("Set DEV_E2E_BRAND_ID for the deployed dev location.");
+}
+
 const apiRootUrl = apiBaseUrl.replace(/\/v1\/?$/, "");
+const publicLocationQuery = new URLSearchParams({ brandId, locationId });
 const testRunId = Date.now();
 const customerEmail = `dev-e2e-${testRunId}@rawaq.local`;
 const customerName = "Dev Checkout E2E";
@@ -47,11 +54,11 @@ async function run() {
   const authHeaders = { Authorization: `Bearer ${session.accessToken}` };
   console.log(`[dev-checkout-e2e] customer=${session.userId}`);
 
-  const appConfig = await requestApi(`/app-config?locationId=${encodeURIComponent(locationId)}`);
+  const appConfig = await requestApi(`/app-config?${publicLocationQuery}`);
   assert(appConfig.brand?.locationId === locationId, `App config returned location ${appConfig.brand?.locationId ?? "<missing>"}.`);
   console.log(`[dev-checkout-e2e] brand=${appConfig.brand.brandName} locationName=${appConfig.brand.locationName}`);
 
-  const menu = await requestApi(`/menu?locationId=${encodeURIComponent(locationId)}`);
+  const menu = await requestApi(`/menu?${publicLocationQuery}`);
   const item = firstOrderableMenuItem(menu);
   const selectedOptions = defaultRequiredSelections(item);
   console.log(`[dev-checkout-e2e] item=${item.id} selectedOptions=${JSON.stringify(selectedOptions)}`);
