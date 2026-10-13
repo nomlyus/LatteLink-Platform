@@ -4747,10 +4747,11 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
           image_url: nextImageUrl,
           price_cents: input.priceCents,
           badge_codes_json: JSON.stringify(input.badgeCodes ?? toBadgeCodes(existingRow.badge_codes_json)),
-          customization_groups_json:
-            input.customizationGroups === undefined
-              ? existingRow.customization_groups_json
-              : JSON.stringify(input.customizationGroups),
+          // Leave the legacy JSON snapshot untouched for relational-only edits.
+          // pg encodes JavaScript arrays as SQL arrays, not JSON parameters.
+          ...(input.customizationGroups === undefined
+            ? {}
+            : { customization_groups_json: JSON.stringify(input.customizationGroups) }),
           visible: input.visible,
           available: input.available ?? existingRow.available,
           featured: input.featured ?? existingRow.featured

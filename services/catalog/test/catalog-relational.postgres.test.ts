@@ -765,6 +765,39 @@ describeWithPostgres("relational catalog migration and integrity (PostgreSQL)", 
     }
   });
 
+  it("updates category memberships without rewriting decoded legacy JSON arrays", async () => {
+    const previousDatabaseUrl = process.env.DATABASE_URL;
+    process.env.DATABASE_URL = schemaDatabaseUrl.toString();
+    const logger = { info: () => undefined, warn: () => undefined, error: () => undefined, child: () => logger } as never;
+    const repository = await createCatalogRepository(logger);
+    const location = "category-json-location";
+    try {
+      await repository.bootstrapInternalLocation({ brandId: "category-json-brand", brandName: "Category JSON", locationId: location, locationName: "Category JSON", marketLabel: "Test" });
+      await db.insertInto("catalog_clients").values({ tenant_id: "category-json-tenant", brand_id: "category-json-brand", client_name: "Category JSON", status: "draft" }).execute();
+      await db.insertInto("catalog_client_locations").values({ tenant_id: "category-json-tenant", brand_id: "category-json-brand", location_id: location, location_name: "Category JSON", market_label: "Test", timezone: "America/Detroit", primary_location: true }).execute();
+      const additional = await createRelationalCategory(db, location, { title: "Additional", description: "", visible: true, sortOrder: 99 });
+      expect(additional).toBeDefined();
+      const before = await db.selectFrom("catalog_menu_items").selectAll().where("location_id", "=", location).where("item_id", "=", "latte").executeTakeFirstOrThrow();
+      const assignments = await db.selectFrom("catalog_item_modifier_groups").selectAll().where("location_id", "=", location).where("item_id", "=", "latte").execute();
+      for (const legacyGroups of [[sharedMilk], []]) {
+        await db.updateTable("catalog_menu_items").set({ customization_groups_json: JSON.stringify(legacyGroups) }).where("location_id", "=", location).where("item_id", "=", "latte").execute();
+        const updated = await repository.updateAdminMenuItem(location, {
+          itemId: "latte", name: before.name, priceCents: before.price_cents, visible: before.visible,
+          categoryIds: [before.category_id, additional!.categoryId]
+        });
+        expect(updated?.categoryIds).toEqual([before.category_id, additional!.categoryId]);
+        const stored = await db.selectFrom("catalog_menu_items").selectAll().where("location_id", "=", location).where("item_id", "=", "latte").executeTakeFirstOrThrow();
+        expect(stored.customization_groups_json).toEqual(legacyGroups);
+        expect(stored.badge_codes_json).toEqual(before.badge_codes_json);
+        expect(await db.selectFrom("catalog_item_modifier_groups").selectAll().where("location_id", "=", location).where("item_id", "=", "latte").execute()).toEqual(assignments);
+      }
+    } finally {
+      await repository.close();
+      if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = previousDatabaseUrl;
+    }
+  });
+
   it("rolls back item fields when embedded modifier reconciliation fails", async () => {
     const previousDatabaseUrl = process.env.DATABASE_URL;
     process.env.DATABASE_URL = schemaDatabaseUrl.toString();
