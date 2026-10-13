@@ -44,15 +44,15 @@ async function run() {
   assert(ready.status === "ready", "Gateway ready did not return ready.");
   console.log(`[dev-checkout-e2e] ready upstream=${ready.upstream?.map((target) => `${target.service}:${target.statusCode}`).join(",") ?? "unknown"}`);
 
-  const session = await requestApi("/auth/dev-access", {
-    method: "POST",
-    body: JSON.stringify({
-      email: customerEmail,
-      name: customerName
-    })
-  });
-  const authHeaders = { Authorization: `Bearer ${session.accessToken}` };
-  console.log(`[dev-checkout-e2e] customer=${session.userId}`);
+  const bootstrap = await requestApi(`/mobile/bootstrap?${new URLSearchParams({ brandId })}`);
+  if (bootstrap.status === "unavailable") {
+    await assertPublicLocationUnavailable(`/app-config?${publicLocationQuery}`);
+    await assertPublicLocationUnavailable(`/menu?${publicLocationQuery}`);
+    console.log("[dev-checkout-e2e] skipped checkout: dev brand has no launchable customer location; public endpoints deny access as expected");
+    return;
+  }
+  assert(bootstrap.status === "ready", `Mobile bootstrap status was ${bootstrap.status ?? "<missing>"}, expected ready or unavailable.`);
+  assert(bootstrap.locations?.some((location) => location.locationId === locationId), `Configured E2E location ${locationId} is not launchable for this brand.`);
 
   const appConfig = await requestApi(`/app-config?${publicLocationQuery}`);
   assert(appConfig.brand?.locationId === locationId, `App config returned location ${appConfig.brand?.locationId ?? "<missing>"}.`);
@@ -62,6 +62,16 @@ async function run() {
   const item = firstOrderableMenuItem(menu);
   const selectedOptions = defaultRequiredSelections(item);
   console.log(`[dev-checkout-e2e] item=${item.id} selectedOptions=${JSON.stringify(selectedOptions)}`);
+
+  const session = await requestApi("/auth/dev-access", {
+    method: "POST",
+    body: JSON.stringify({
+      email: customerEmail,
+      name: customerName
+    })
+  });
+  const authHeaders = { Authorization: `Bearer ${session.accessToken}` };
+  console.log(`[dev-checkout-e2e] customer=${session.userId}`);
 
   const quote = await requestApi("/orders/quote", {
     method: "POST",
@@ -126,6 +136,20 @@ async function requestApi(path, options) {
   return request(`${apiBaseUrl}${path}`, options);
 }
 
+async function assertPublicLocationUnavailable(path) {
+  try {
+    await requestApi(path);
+  } catch (error) {
+    assert(
+      error.status === 404 && error.body?.code === "PUBLIC_LOCATION_NOT_AVAILABLE",
+      `Expected PUBLIC_LOCATION_NOT_AVAILABLE for ${path}, received ${error.status ?? "an unknown status"}.`
+    );
+    return;
+  }
+
+  throw new Error(`Expected ${path} to reject an unlaunchable customer location.`);
+}
+
 async function request(url, options = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -146,6 +170,7 @@ async function request(url, options = {}) {
     if (!response.ok) {
       const error = new Error(`${options.method ?? "GET"} ${url} returned ${response.status}`);
       error.body = body;
+      error.status = response.status;
       throw error;
     }
 

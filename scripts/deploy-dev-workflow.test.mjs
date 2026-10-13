@@ -6,6 +6,7 @@ const workflowUrl = new URL(
   "../.github/workflows/deploy-dev.yml",
   import.meta.url,
 );
+const checkoutScriptUrl = new URL("./dev-checkout-e2e.mjs", import.meta.url);
 
 test("deploys reuse any current verified release and rebuild an already-present source SHA otherwise", async () => {
   const workflow = await readFile(workflowUrl, "utf8");
@@ -42,4 +43,14 @@ test("deployed checkout E2E receives both brand and location scope", async () =>
   const checkoutE2E = workflow.slice(workflow.indexOf("- name: Run deployed checkout E2E"));
   assert.match(checkoutE2E, /DEV_E2E_BRAND_ID:.*CATALOG_DEFAULT_BRAND_ID/);
   assert.match(checkoutE2E, /DEV_E2E_LOCATION_ID:/);
+});
+
+test("dev checkout smoke validates unavailable public locations before creating a test customer", async () => {
+  const script = await readFile(checkoutScriptUrl, "utf8");
+  const bootstrapIndex = script.indexOf('requestApi(`/mobile/bootstrap?');
+  const customerCreationIndex = script.indexOf('requestApi("/auth/dev-access"');
+  assert.ok(bootstrapIndex >= 0);
+  assert.ok(customerCreationIndex > bootstrapIndex);
+  assert.match(script, /bootstrap\.status === "unavailable"/);
+  assert.match(script, /PUBLIC_LOCATION_NOT_AVAILABLE/);
 });
