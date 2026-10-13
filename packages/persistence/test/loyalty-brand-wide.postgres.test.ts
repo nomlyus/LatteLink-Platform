@@ -192,11 +192,50 @@ describeWithPostgres("brand-wide loyalty migration (PostgreSQL)", () => {
     await migrateUp();
   });
 
-  it("fails closed rather than guessing when the old balance cannot reconcile with its ledger", async () => {
+  it("preserves the current balance without inventing ledger history when legacy counters do not reconcile", async () => {
     await addLegacyLocationBalance({ brandId: "brand-a", locationId: "a1", points: 80 });
-    await pool.query(`UPDATE loyalty_ledger_entries SET points = 79`);
+    await pool.query(`UPDATE loyalty_balances SET available_points = 15406, lifetime_earned = 7406`);
+    await pool.query(`UPDATE loyalty_ledger_entries SET points = 5406`);
 
-    await expect(migrateUp()).rejects.toThrow(/Cannot migrate brand-wide loyalty: 1 legacy record.*balance_invalid_or_unowned/);
+    await migrateUp();
+
+    const migrated = await pool.query<{
+      available_points: number;
+      pending_points: number;
+      lifetime_earned: number;
+    }>(`SELECT available_points, pending_points, lifetime_earned FROM loyalty_balances`);
+    expect(migrated.rows).toEqual([{ available_points: 15406, pending_points: 0, lifetime_earned: 7406 }]);
+    const ledger = await pool.query<{ points: number }>(`SELECT points FROM loyalty_ledger_entries`);
+    expect(ledger.rows).toEqual([{ points: 5406 }]);
+  });
+
+  it("restores omitted idempotency entry location from its ledger record", async () => {
+    await addLegacyLocationBalance({ brandId: "brand-a", locationId: "a1", points: 80 });
+    await pool.query(`
+      UPDATE loyalty_idempotency_keys
+      SET response_json = jsonb_set(
+        jsonb_set(response_json, ARRAY['entry']::text[], (response_json->'entry') - 'locationId'::text),
+        ARRAY['balance']::text[], (response_json->'balance') - 'locationId'::text
+      )
+    `);
+
+    await migrateUp();
+
+    const replay = await pool.query<{ response_json: { balance: Record<string, unknown>; entry: Record<string, unknown> } }>(`
+      SELECT response_json FROM loyalty_idempotency_keys WHERE brand_id = 'brand-a' AND location_id = 'a1'
+    `);
+    expect(replay.rows[0]?.response_json.entry).toMatchObject({ locationId: "a1" });
+    expect(replay.rows[0]?.response_json.balance).not.toHaveProperty("locationId");
+  });
+
+  it("fails closed when an idempotency response has no matching ledger entry", async () => {
+    await addLegacyLocationBalance({ brandId: "brand-a", locationId: "a1", points: 80 });
+    await pool.query(`
+      UPDATE loyalty_idempotency_keys
+      SET response_json = jsonb_set(response_json, ARRAY['entry', 'id']::text[], to_jsonb($1::text))
+    `, [randomUUID()]);
+
+    await expect(migrateUp()).rejects.toThrow(/idempotency_invalid_or_unowned/);
     const columns = await pool.query<{ column_name: string }>(`
       SELECT column_name FROM information_schema.columns
       WHERE table_schema = $1 AND table_name = 'loyalty_balances'

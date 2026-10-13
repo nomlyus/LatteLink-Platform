@@ -5,18 +5,12 @@ type MigrationDb = Kysely<Record<string, never>>;
 /**
  * Consolidate location-partitioned points into one brand/customer balance.
  * Location remains on immutable ledger/idempotency records as transaction
- * attribution. No location is guessed: inconsistent legacy data aborts up.
+ * attribution. Balance counters are preserved as the current account state;
+ * incomplete historical ledger data is not repaired by inventing transactions.
  */
 export async function up(db: MigrationDb): Promise<void> {
   const preflight = await sql<{ issue_count: string; examples: string[] | null }>`
-    WITH ledger_totals AS (
-      SELECT brand_id, location_id, user_id,
-        SUM(points)::BIGINT AS available_points,
-        SUM(CASE WHEN type = 'EARN' THEN points ELSE 0 END)::BIGINT AS lifetime_earned
-      FROM loyalty_ledger_entries
-      GROUP BY brand_id, location_id, user_id
-    ),
-    issues AS (
+    WITH issues AS (
       SELECT 'balance_invalid_or_unowned' AS reason,
         balances.brand_id || ':' || balances.user_id::text || ':' || balances.location_id AS record_id
       FROM loyalty_balances AS balances
@@ -29,12 +23,6 @@ export async function up(db: MigrationDb): Promise<void> {
           WHERE locations.brand_id = balances.brand_id AND locations.location_id = balances.location_id
         )
         OR balances.available_points < 0 OR balances.pending_points < 0 OR balances.lifetime_earned < 0
-        OR COALESCE((SELECT totals.available_points FROM ledger_totals totals
-          WHERE totals.brand_id = balances.brand_id AND totals.location_id = balances.location_id
-            AND totals.user_id = balances.user_id), 0) <> balances.available_points
-        OR COALESCE((SELECT totals.lifetime_earned FROM ledger_totals totals
-          WHERE totals.brand_id = balances.brand_id AND totals.location_id = balances.location_id
-            AND totals.user_id = balances.user_id), 0) <> balances.lifetime_earned
       UNION ALL
       SELECT 'ledger_invalid_or_unowned', entries.id::text
       FROM loyalty_ledger_entries AS entries
@@ -65,8 +53,13 @@ export async function up(db: MigrationDb): Promise<void> {
         OR jsonb_typeof(keys.response_json) IS DISTINCT FROM 'object'
         OR jsonb_typeof(keys.response_json->'entry') IS DISTINCT FROM 'object'
         OR jsonb_typeof(keys.response_json->'balance') IS DISTINCT FROM 'object'
-        OR keys.response_json->'entry'->>'locationId' IS DISTINCT FROM keys.location_id
-        OR keys.response_json->'balance'->>'locationId' IS DISTINCT FROM keys.location_id
+        OR NOT EXISTS (
+          SELECT 1 FROM loyalty_ledger_entries entries
+          WHERE entries.id::text = keys.response_json->'entry'->>'id'
+            AND entries.brand_id = keys.brand_id
+            AND entries.location_id = keys.location_id
+            AND entries.user_id = keys.user_id
+        )
       UNION ALL
       SELECT 'idempotency_key_collides_across_locations',
         keys.brand_id || ':' || keys.user_id::text || ':' || keys.idempotency_key
@@ -166,18 +159,30 @@ export async function up(db: MigrationDb): Promise<void> {
       ADD CONSTRAINT loyalty_idempotency_keys_pkey PRIMARY KEY (brand_id, user_id, idempotency_key)
   `.execute(db);
 
+  // Cached entry snapshots can predate location attribution. The immutable
+  // ledger row is the authority, and the preflight requires an exact row match.
   await sql`
-    UPDATE loyalty_idempotency_keys
+    UPDATE loyalty_idempotency_keys AS keys
     SET response_json = jsonb_set(
       jsonb_set(
-        response_json,
+        keys.response_json,
         '{entry}',
-        ((response_json->'entry') - 'brandId'::text - 'userId'::text) ||
-          jsonb_build_object('brandId', brand_id, 'userId', user_id::text)
+        ((keys.response_json->'entry') - 'brandId'::text - 'userId'::text - 'locationId'::text) ||
+          jsonb_build_object(
+            'brandId', keys.brand_id,
+            'userId', keys.user_id::text,
+            'locationId', entries.location_id
+          )
       ),
       '{balance}',
-        ((response_json->'balance') - 'locationId'::text - 'brandId'::text) || jsonb_build_object('brandId', brand_id)
+        ((keys.response_json->'balance') - 'locationId'::text - 'brandId'::text) ||
+          jsonb_build_object('brandId', keys.brand_id, 'userId', keys.user_id::text)
     )
+    FROM loyalty_ledger_entries entries
+    WHERE entries.id::text = keys.response_json->'entry'->>'id'
+      AND entries.brand_id = keys.brand_id
+      AND entries.location_id = keys.location_id
+      AND entries.user_id = keys.user_id
   `.execute(db);
 
   await sql`DROP INDEX IF EXISTS loyalty_balances_location_user_idx`.execute(db);
