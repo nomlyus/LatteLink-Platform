@@ -187,6 +187,20 @@ describe("React Menu presentation", () => {
     expect(html).toContain("Available");
   });
 
+  it("keeps saving feedback and API failures inside the item editor without a success alert", () => {
+    const { item, menu } = fixture();
+    const props = { item, categories: menu.categories, groups: menu.modifierGroups, canWrite: true, canToggleVisibility: true, onClose: noop, onSave: async () => null, onVisibilityChange: noop, onDelete: noop, onCreateModifierGroup: async () => null };
+    const saving = renderToStaticMarkup(<MenuItemEditor {...props} pending />);
+    expect(saving).toContain('role="dialog"');
+    expect(saving).toContain("Saving…");
+    expect(saving).not.toContain("Item saved");
+    const failure = renderToStaticMarkup(<MenuItemEditor {...props} pending={false} saveError="Unable to save item" />);
+    expect(failure).toContain('role="dialog"');
+    expect(failure).toContain('role="alert"');
+    expect(failure).toContain("Unable to save item");
+    expect(failure).toContain("Save changes");
+  });
+
   it("exposes item metadata, category membership, reusable assignment, and read-only fields", () => {
     const { item, menu } = fixture();
     const html = renderToStaticMarkup(<MenuItemEditor item={item} categories={menu.categories} groups={menu.modifierGroups} canWrite={false} canToggleVisibility pending={false} onClose={noop} onSave={async () => null} onVisibilityChange={noop} onDelete={noop} onCreateModifierGroup={async () => null} />);

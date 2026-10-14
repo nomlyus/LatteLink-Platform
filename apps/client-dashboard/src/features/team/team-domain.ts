@@ -4,6 +4,7 @@ import {
   resolveOperatorCapabilities,
 } from "@lattelink/contracts-auth";
 import { z } from "zod";
+import { matchesDashboardSearch } from "../../components/dashboard/search-text";
 import {
   canManageTeamMembers,
   canReadTeamMembers,
@@ -19,6 +20,13 @@ export type TeamCreateDraft = {
   password: string;
 };
 export type TeamCreateInput = z.output<typeof operatorUserCreateSchema>;
+
+export function searchTeamMembers(members: readonly OperatorUser[], locations: readonly { locationId: string; locationName: string }[], query: string) {
+  return members.filter((member) => matchesDashboardSearch(query, [
+    member.displayName, member.email, getTeamRoleLabel(member.role), member.active ? "Active" : "Inactive",
+    ...getTeamMemberLocationNames(member, locations)
+  ]));
+}
 
 export type TeamMemberDraft = {
   displayName: string;

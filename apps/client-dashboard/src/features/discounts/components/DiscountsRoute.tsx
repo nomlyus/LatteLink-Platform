@@ -1,7 +1,8 @@
 "use client";
 
 import React from "react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { DashboardSearch } from "../../../components/dashboard/DashboardSearch";
 import { useRouter } from "next/navigation";
 import { SignInRoute } from "../../auth/components/SignInRoute";
 import { DashboardShell, DashboardShellLoading } from "../../../components/dashboard/DashboardShell";
@@ -17,6 +18,8 @@ export function DiscountsRoute() {
   const location = useDashboardLocation();
   const discounts = useDiscounts();
   const mutations = useDiscountMutations(discounts);
+  const [query, setQuery] = useState("");
+  useEffect(() => { setQuery(""); }, [discounts.scopeKey]);
 
   if (sessionStatus === "loading") return <DashboardShellLoading />;
   if (sessionStatus === "signed-out") return <SignInRoute />;
@@ -36,9 +39,11 @@ export function DiscountsRoute() {
   }
 
   return (
-    <DashboardShell activeSection="discounts" locationSelectionDisabled={mutations.isMutating}>
+    <DashboardShell activeSection="discounts" locationSelectionDisabled={mutations.isMutating}
+      search={<DashboardSearch label="Search discounts" controls="discounts-results" query={query} onQueryChange={setQuery} />}>
       <DiscountsPage
         discountCodes={discounts.discountCodes}
+        query={query}
         loadStatus={discounts.status}
         loadError={discounts.error}
         selectedLocationId={location.selectedLocationId}

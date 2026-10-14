@@ -25,6 +25,14 @@ import {
 } from "../src";
 
 describe("contracts-auth", () => {
+  it("reserves store configuration capabilities for owners", () => {
+    expect(resolveOperatorCapabilities("owner")).toEqual(expect.arrayContaining(["store:read", "store:write"]));
+    for (const role of ["manager", "store"] as const) {
+      expect(resolveOperatorCapabilities(role)).not.toContain("store:read");
+      expect(resolveOperatorCapabilities(role)).not.toContain("store:write");
+      expect(resolveOperatorCapabilities(role)).toContain("orders:read");
+    }
+  });
   it("validates apple exchange payload", () => {
     const data = appleExchangeRequestSchema.parse({
       identityToken: "token",

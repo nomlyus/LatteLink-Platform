@@ -6,40 +6,38 @@ export function TeamMemberRow({
   member,
   availableLocations,
   canWrite,
+  pending = false,
   onOpen
 }: {
   member: OperatorUser;
   availableLocations: readonly { locationId: string; locationName: string }[];
   canWrite: boolean;
+  pending?: boolean;
   onOpen: () => void;
 }) {
   const locationNames = getTeamMemberLocationNames(member, availableLocations);
   const additionalLocationCount = getAdditionalTeamLocationCount(member, availableLocations);
-  const visibleLocations = locationNames.slice(0, 2);
+  const extraLocations = Math.max(0, locationNames.length - 1) + additionalLocationCount;
 
   return (
-    <tr>
+    <tr className="dash-order-table__row" tabIndex={pending ? -1 : 0} aria-label={`${canWrite ? "Edit" : "View"} ${member.displayName}`} aria-haspopup="dialog"
+      onClick={() => { if (!pending) onOpen(); }}
+      onKeyDown={(event) => { if (event.target === event.currentTarget && !pending && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onOpen(); } }}>
       <td>
-        <button className="dash-team-member-link" type="button" onClick={onOpen}>
-          <span className="dash-avatar">{member.displayName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("")}</span>
-          <span className="dash-team-member-link__copy">
-            <strong>{member.displayName}</strong>
-            <span>{member.email}</span>
-          </span>
-        </button>
+        <strong title={member.displayName}>{member.displayName}</strong>
       </td>
+      <td title={member.email}>{member.email}</td>
       <td><span className={`dash-team-role dash-team-role--${member.role}`}>{getTeamRoleLabel(member.role)}</span></td>
       <td>
-        <span className="dash-team-locations">
-          {visibleLocations.length ? visibleLocations.join(", ") : "Assigned location"}
-          {locationNames.length > 2 ? ` +${locationNames.length - 2}` : ""}
-          {additionalLocationCount > 0 ? ` +${additionalLocationCount}` : ""}
+        <span className="dash-team-locations" title={[...locationNames, ...(additionalLocationCount ? [`${additionalLocationCount} outside your available locations`] : [])].join(", ")}>
+          {locationNames[0] ?? "Assigned location"}
+          {extraLocations ? ` +${extraLocations}` : ""}
         </span>
       </td>
       <td><span className={`dash-team-status ${member.active ? "is-active" : "is-inactive"}`}>{member.active ? "Active" : "Inactive"}</span></td>
-      <td className="dash-team-table__actions">
-        <button className="button button--secondary" type="button" onClick={onOpen} aria-label={`${canWrite ? "Edit" : "View"} ${member.displayName}`}>
-          {canWrite ? "Edit" : "View"}
+      <td className="dash-management-table__actions" onClick={(event) => event.stopPropagation()}>
+        <button className="dash-order-table__details-button" type="button" disabled={pending} onClick={onOpen} aria-label={`${canWrite ? "Edit" : "View"} ${member.displayName}`}>
+          View
         </button>
       </td>
     </tr>

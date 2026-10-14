@@ -1,7 +1,7 @@
 import React from "react";
 import type { OperatorDiscountCode } from "../../../model";
 import { formatDateTime, formatMoney } from "../../../ui/format";
-import { getDiscountCodeStatus, getDiscountEligibilityLabel, type DiscountCodeStatus } from "../discounts-domain";
+import { getDiscountCodeStatus, getDiscountEligibilityLabel } from "../discounts-domain";
 import { DiscountStatusBadge } from "./DiscountStatusBadge";
 
 function formatDiscountValue(discountCode: OperatorDiscountCode) {
@@ -37,40 +37,36 @@ export function DiscountsList({
   onOpen: (discountCode: OperatorDiscountCode) => void;
 }) {
   return (
-    <div className="dash-discounts-list" role="list" aria-label="Discount codes">
+    <table className="dash-order-table dash-management-table dash-discounts-table" aria-label="Discount codes">
+      <thead><tr><th scope="col">Code</th><th scope="col">Name</th><th scope="col">Discount</th><th scope="col">Status</th><th scope="col">Usage</th><th scope="col"><span className="visually-hidden">Details</span></th></tr></thead>
+      <tbody>
       {discountCodes.map((discountCode) => {
-        const status: DiscountCodeStatus = getDiscountCodeStatus(discountCode, nowMs);
+        const status = getDiscountCodeStatus(discountCode, nowMs);
         return (
-          <article className="dash-discounts-row" role="listitem" key={discountCode.discountCodeId}>
-            <div className="dash-discounts-row__identity">
-              <div className="dash-discounts-row__title-line">
-                <strong>{discountCode.code}</strong>
-                <span>{formatDiscountValue(discountCode)}</span>
-              </div>
-              <p>{discountCode.name}</p>
-              <div className="dash-discounts-row__details">
-                <span>{getDiscountEligibilityLabel(discountCode.eligibility)}</span>
-                <span>{discountCode.oncePerCustomer ? "Once per customer" : "Multiple uses per customer"}</span>
-                <span>Minimum {formatMoney(discountCode.minSubtotalCents)}</span>
-              </div>
-            </div>
-            <div className="dash-discounts-row__usage">
-              <DiscountStatusBadge status={status} />
-              <span>{formatUsage(discountCode)}</span>
-              <span>{formatWindow(discountCode)}</span>
-            </div>
+          <tr className="dash-order-table__row" key={discountCode.discountCodeId} tabIndex={pending ? -1 : 0}
+            aria-label={`${canWrite ? "Edit" : "View"} ${discountCode.code}`} aria-haspopup="dialog"
+            onClick={() => { if (!pending) onOpen(discountCode); }}
+            onKeyDown={(event) => { if (event.target === event.currentTarget && !pending && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onOpen(discountCode); } }}>
+            <td><strong>{discountCode.code}</strong></td>
+            <td title={`${discountCode.name} · ${getDiscountEligibilityLabel(discountCode.eligibility)} · ${discountCode.oncePerCustomer ? "Once per customer" : "Multiple uses per customer"} · Minimum ${formatMoney(discountCode.minSubtotalCents)}`}>{discountCode.name}</td>
+            <td>{formatDiscountValue(discountCode)}</td>
+            <td><DiscountStatusBadge status={status} /></td>
+            <td title={`${formatUsage(discountCode)} · ${formatWindow(discountCode)}`}>{formatUsage(discountCode)}</td>
+            <td className="dash-management-table__actions" onClick={(event) => event.stopPropagation()}>
             <button
-              className="button button--secondary dash-discounts-row__action"
+              className="dash-order-table__details-button"
               type="button"
               disabled={pending}
               onClick={() => onOpen(discountCode)}
               aria-label={`${canWrite ? "Edit" : "View"} ${discountCode.code}`}
             >
-              {canWrite ? "Edit" : "View"}
+              View
             </button>
-          </article>
+            </td>
+          </tr>
         );
       })}
-    </div>
+      </tbody>
+    </table>
   );
 }

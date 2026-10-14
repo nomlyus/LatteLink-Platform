@@ -3,6 +3,11 @@ import {
   type HomeNewsCard
 } from "@lattelink/contracts-catalog";
 import type { OperatorNewsCard } from "../../model";
+import { matchesDashboardSearch } from "../../components/dashboard/search-text";
+
+export function searchNewsCards(cards: readonly OperatorNewsCard[], query: string) {
+  return cards.filter((card) => matchesDashboardSearch(query, [card.title, card.label, card.body, card.note, card.visible ? "Visible" : "Hidden"]));
+}
 
 export type NewsCardDraft = {
   label: string;

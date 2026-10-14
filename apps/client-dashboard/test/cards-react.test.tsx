@@ -29,14 +29,15 @@ const mutations = {
 describe("React Cards workspace", () => {
   it("renders the location-specific list, canonical fields, order and visibility actions without exposing IDs", () => {
     const html = renderToStaticMarkup(<CardsPage cards={cards} loadStatus="ready" loadError={null} selectedLocationId="loc-a" scopeKey="operator:loc-a" canWrite canChangeVisibility mutations={mutations} onRetry={noop} />);
-    expect(html).toContain("News cards");
+    expect(html).toContain('aria-label="Homepage cards"');
+    expect(html).not.toContain("Manage the rotating cards");
     expect(html).toContain("Spring menu");
     expect(html).toContain("Try our new seasonal drinks.");
     expect(html).toContain("While supplies last");
     expect(html).toContain("Move Spring menu up");
     expect(html).toContain("Hide Spring menu");
     expect(html).not.toContain("spring-1");
-    expect(html).toContain("+ Add card");
+    expect(html).toContain("Add card");
   });
 
   it("renders loading, empty, error, and all-locations states distinctly", () => {
@@ -44,6 +45,26 @@ describe("React Cards workspace", () => {
     expect(renderToStaticMarkup(<CardsPage cards={[]} loadStatus="ready" loadError={null} selectedLocationId="loc-a" scopeKey="a" canWrite={false} canChangeVisibility={false} mutations={mutations} onRetry={noop} />)).toContain("No homepage cards yet");
     expect(renderToStaticMarkup(<CardsPage cards={null} loadStatus="error" loadError="API unavailable" selectedLocationId="loc-a" scopeKey="a" canWrite canChangeVisibility mutations={mutations} onRetry={noop} />)).toContain("API unavailable");
     expect(renderToStaticMarkup(<CardsPage cards={[]} loadStatus="ready" loadError={null} selectedLocationId="all" scopeKey="a:all" canWrite canChangeVisibility mutations={mutations} onRetry={noop} />)).toContain("Choose one location");
+  });
+
+  it("uses 15-row pagination and searches before pagination", () => {
+    const manyCards = Array.from({ length: 20 }, (_, index) => ({ ...cards[0]!, cardId: `card-${index}`, title: `Card ${index}`, sortOrder: index }));
+    const props = { cards: manyCards, loadStatus: "ready" as const, loadError: null, selectedLocationId: "loc-a", scopeKey: "operator:loc-a", canWrite: true, canChangeVisibility: true, mutations, onRetry: noop };
+    const html = renderToStaticMarkup(<CardsPage {...props} />);
+    expect(html.match(/aria-haspopup="dialog"/g)).toHaveLength(15);
+    expect(html).toContain("1–15 of 20");
+    expect(html).toContain('aria-label="News cards pagination"');
+    const filtered = renderToStaticMarkup(<CardsPage {...props} query="Card 19" />);
+    expect(filtered.match(/aria-haspopup="dialog"/g)).toHaveLength(1);
+    expect(filtered).toContain("Card 19");
+    expect(renderToStaticMarkup(<CardsPage {...props} query="missing" />)).toContain("No cards match this search");
+  });
+
+  it("preserves full-list reorder boundaries when search hides neighboring cards", () => {
+    const html = renderToStaticMarkup(<CardsList cards={[cards[1]!]} orderedCards={cards} canWrite pending={false} canChangeVisibility={false} onOpen={noop} onVisibilityChange={noop} onMove={noop} />);
+    expect(html).toContain('aria-label="Move Holiday hours up"');
+    expect(html).not.toContain('aria-label="Move Holiday hours up" disabled');
+    expect(html).toContain('aria-label="Move Holiday hours down" disabled');
   });
 
   it("keeps visibility-only controls available while withholding content editing", () => {

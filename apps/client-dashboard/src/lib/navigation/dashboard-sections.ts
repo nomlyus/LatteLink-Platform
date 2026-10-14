@@ -52,7 +52,7 @@ export function getAvailableDashboardSectionsFor(
     sections.push("menu");
   }
   if (canAccessCapability(operator, "menu:read")) sections.push("cards", "discounts");
-  if (canAccessCapability(operator, "store:read")) sections.push("store");
+  if (operator?.role === "owner" && canAccessCapability(operator, "store:read")) sections.push("store");
   if (canAccessCapability(operator, "team:read")) sections.push("team");
   return sections;
 }

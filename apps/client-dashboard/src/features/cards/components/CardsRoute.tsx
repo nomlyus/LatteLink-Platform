@@ -1,7 +1,8 @@
 "use client";
 
 import React from "react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { DashboardSearch } from "../../../components/dashboard/DashboardSearch";
 import { useRouter } from "next/navigation";
 import { SignInRoute } from "../../auth/components/SignInRoute";
 import { DashboardShell, DashboardShellLoading } from "../../../components/dashboard/DashboardShell";
@@ -17,6 +18,8 @@ export function CardsRoute() {
   const location = useDashboardLocation();
   const cards = useCards();
   const mutations = useCardMutations(cards, cards.scopeKey);
+  const [query, setQuery] = useState("");
+  useEffect(() => { setQuery(""); }, [cards.scopeKey]);
 
   if (sessionStatus === "loading") return <DashboardShellLoading />;
   if (sessionStatus === "signed-out") return <SignInRoute />;
@@ -36,9 +39,11 @@ export function CardsRoute() {
   }
 
   return (
-    <DashboardShell activeSection="cards" locationSelectionDisabled={mutations.isMutating}>
+    <DashboardShell activeSection="cards" locationSelectionDisabled={mutations.isMutating}
+      search={<DashboardSearch label="Search news cards" controls="cards-results" query={query} onQueryChange={setQuery} />}>
       <CardsPage
         cards={cards.cards}
+        query={query}
         loadStatus={cards.status}
         loadError={cards.error}
         selectedLocationId={location.selectedLocationId}

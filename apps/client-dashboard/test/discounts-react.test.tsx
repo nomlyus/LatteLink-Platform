@@ -62,7 +62,7 @@ describe("React Discounts workspace", () => {
     expect(allLocations).not.toContain("+ Create code");
   });
 
-  it("renders authoritative code details, search/status filters, and location-scoped editing", () => {
+  it("renders a compact table with authoritative details and no page-local filters", () => {
     const html = renderToStaticMarkup(page());
     expect(html).toContain("Discount codes");
     expect(html).toContain("WELCOME10");
@@ -70,10 +70,22 @@ describe("React Discounts workspace", () => {
     expect(html).toContain("12 redeemed · 2 reserved · 100 total limit");
     expect(html).toContain("Created");
     expect(html).toContain('aria-label="Discount codes"');
-    expect(html).toContain('id="discount-code-search"');
-    expect(html).toContain('id="discount-code-status-filter"');
+    expect(html).not.toContain('id="discount-code-search"');
+    expect(html).not.toContain('id="discount-code-status-filter"');
+    expect(html).not.toContain("Create checkout codes with");
     expect(html).toContain('aria-label="Edit WELCOME10"');
     expect(html).not.toContain(code.discountCodeId);
+  });
+
+  it("paginates 15 rows and searches all loaded discount metadata", () => {
+    const discountCodes = Array.from({ length: 20 }, (_, index) => ({ ...code, discountCodeId: `test-${index}`, code: `OFFER${index}`, name: `Offer ${index}` }));
+    const html = renderToStaticMarkup(page({ discountCodes }));
+    expect(html.match(/aria-haspopup="dialog"/g)).toHaveLength(15);
+    expect(html).toContain("1–15 of 20");
+    expect(html).toContain('aria-label="Discounts pagination"');
+    expect(renderToStaticMarkup(page({ discountCodes, query: "OFFER19 10%" }))).toContain("OFFER19");
+    expect(renderToStaticMarkup(page({ query: "first order 12 redeemed" }))).toContain("WELCOME10");
+    expect(renderToStaticMarkup(page({ query: "not-found" }))).toContain("No codes match this search");
   });
 
   it("keeps review available while hiding mutations without write capability", () => {

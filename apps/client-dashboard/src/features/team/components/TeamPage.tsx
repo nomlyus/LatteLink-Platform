@@ -1,13 +1,15 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import type { OperatorUser } from "../../../model";
 import type { useTeam } from "../use-team";
 import type { useTeamMutations } from "../use-team-mutations";
 import { TeamCreateDialog } from "./TeamCreateDialog";
 import { TeamMemberDialog } from "./TeamMemberDialog";
 import { TeamMemberRow } from "./TeamMemberRow";
-import { canDeleteTeamMember } from "../team-domain";
+import { canDeleteTeamMember, searchTeamMembers } from "../team-domain";
+import { TablePagination } from "../../../components/dashboard/TablePagination";
+import { paginateTableRows } from "../../../components/dashboard/table-page";
 
 type TeamData = ReturnType<typeof useTeam>;
 type TeamMutations = ReturnType<typeof useTeamMutations>;
@@ -15,6 +17,7 @@ type TeamEditor = { scopeKey: string; operatorUserId: string } | null;
 
 export function TeamPage({
   members,
+  query = "",
   loadStatus,
   loadError,
   scopeKey,
@@ -27,6 +30,7 @@ export function TeamPage({
   onRetry
 }: {
   members: TeamData["members"];
+  query?: string;
   loadStatus: TeamData["status"];
   loadError: string | null;
   scopeKey: string;
@@ -40,11 +44,14 @@ export function TeamPage({
 }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [editor, setEditor] = useState<TeamEditor>(null);
+  const [page, setPage] = useState(1);
   const currentMembers = members ?? [];
+  const matchingMembers = useMemo(() => searchTeamMembers(currentMembers, locations, query), [currentMembers, locations, query]);
+  const paginated = paginateTableRows(matchingMembers, page);
+  useEffect(() => { setPage(1); }, [query, scopeKey]);
   const selectedMember = editor?.scopeKey === scopeKey
     ? currentMembers.find((candidate) => candidate.operatorUserId === editor.operatorUserId) ?? null
     : null;
-  const activeCount = currentMembers.filter((member) => member.active).length;
   const hasSpecificLocation = Boolean(selectedLocationId && selectedLocationId !== "all");
 
   function openMember(member: OperatorUser) {
@@ -59,10 +66,9 @@ export function TeamPage({
   }
 
   return (
-    <section className="dash-section dash-section--team" aria-label="Team management">
-      <div className="dash-team-heading">
-        <div><span className="dash-team-heading__eyebrow">Operations</span><h1>Team</h1><p>Manage operator accounts and access for each location.</p></div>
-        {canWrite && hasSpecificLocation ? <button className="button button--primary" type="button" onClick={() => { mutations.clearMessages(); setCreateOpen(true); }}>+ Add team member</button> : null}
+    <section className="dash-section dash-section--team dash-section--management-table" aria-label="Team management" id="team-results">
+      <div className="dash-management-toolbar">
+        {canWrite && hasSpecificLocation ? <button className="button button--secondary dash-menu-create-button" type="button" disabled={mutations.isMutating} onClick={() => { mutations.clearMessages(); setCreateOpen(true); }}>Add team member</button> : null}
       </div>
 
       {mutations.error ? <div className="dash-team-message dash-team-message--error" role="alert">{mutations.error}<button className="button button--ghost" type="button" onClick={mutations.clearMessages}>Dismiss</button></div> : null}
@@ -79,17 +85,18 @@ export function TeamPage({
       ) : loadStatus === "error" ? (
         <div className="dash-team-state dash-team-state--error" role="alert"><span>{loadError ?? "Unable to load team members for this location."}</span><button className="button button--ghost" type="button" onClick={onRetry}>Try again</button></div>
       ) : (
-        <article className="dash-team-list-surface">
-          <header className="dash-team-list-header"><div><h2>{activeCount} active {activeCount === 1 ? "account" : "accounts"}</h2><p>Showing accounts with access to {selectedLocationName}.</p></div><button className="button button--secondary" type="button" disabled={mutations.isMutating} onClick={onRetry}>Refresh</button></header>
-          <p className="dash-team-scope-note">New accounts are assigned to this location. Profile, role, password, and active-state changes apply to the account wherever it has access; location access itself cannot be changed here.</p>
-          {currentMembers.length ? (
-            <div className="dash-team-table-wrap"><table className="dash-team-table"><thead><tr><th scope="col">OPERATOR</th><th scope="col">ROLE</th><th scope="col">LOCATION ACCESS</th><th scope="col">STATUS</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead><tbody>
-              {currentMembers.map((member) => <TeamMemberRow key={member.operatorUserId} member={member} availableLocations={locations} canWrite={canWrite} onOpen={() => openMember(member)} />)}
-            </tbody></table></div>
+        <>
+        <article className="dash-team-list-surface dash-management-table-surface">
+          {matchingMembers.length ? (
+            <table className="dash-order-table dash-management-table dash-team-compact-table" aria-label="Team members"><thead><tr><th scope="col">Operator</th><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Location access</th><th scope="col">Status</th><th scope="col"><span className="visually-hidden">Details</span></th></tr></thead><tbody>
+              {paginated.items.map((member) => <TeamMemberRow key={member.operatorUserId} member={member} availableLocations={locations} canWrite={canWrite} pending={mutations.isMutating} onOpen={() => openMember(member)} />)}
+            </tbody></table>
           ) : (
-            <div className="dash-team-empty" role="status"><strong>No operator accounts yet</strong><span>Add an operator account to give someone access to this location.</span>{canWrite ? <button className="button button--secondary" type="button" onClick={() => setCreateOpen(true)}>Add first team member</button> : null}</div>
+            <div className="dash-team-empty" role="status"><strong>{query.trim() ? "No team members match this search" : "No operator accounts yet"}</strong><span>{query.trim() ? "Try another search." : "Add an operator account to give someone access to this location."}</span>{canWrite && !query.trim() ? <button className="button button--secondary" type="button" onClick={() => setCreateOpen(true)}>Add first team member</button> : null}</div>
           )}
         </article>
+        <TablePagination label="Team pagination" {...paginated} onPage={setPage} />
+        </>
       )}
 
       {createOpen && canWrite && hasSpecificLocation ? <TeamCreateDialog key={scopeKey} locationName={selectedLocationName} pending={mutations.isMutating} error={mutations.error} onClose={closeDialogs} onCreate={mutations.createMember} /> : null}

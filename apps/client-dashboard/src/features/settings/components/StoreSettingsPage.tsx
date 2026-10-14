@@ -1,16 +1,16 @@
 "use client";
 
 import React from "react";
-import Link from "next/link";
 import type { OperatorDashboardSnapshot } from "../../../api";
-import { onboardingPath } from "../../../lib/navigation/dashboard-navigation";
 import type { StoreSettingsFormInput } from "../store-settings-domain";
 import { StoreSettingsForm } from "./StoreSettingsForm";
+import { ownerSettingsTabs, type OwnerSettingsTab } from "../owner-settings-tabs";
 
 type StoreConfig = NonNullable<OperatorDashboardSnapshot["storeConfig"]>;
 
 export function StoreSettingsPage({
   config,
+  query = "",
   status,
   error,
   notice,
@@ -22,9 +22,14 @@ export function StoreSettingsPage({
   pending,
   onRetry,
   onSave,
-  isOwner
+  isOwner,
+  activeTab = "store",
+  onTabChange,
+  tabContent,
+  storeDetails
 }: {
   config: StoreConfig | null;
+  query?: string;
   status: "loading" | "ready" | "error";
   error: string | null;
   notice: string | null;
@@ -37,19 +42,26 @@ export function StoreSettingsPage({
   onRetry: () => void;
   onSave: (input: StoreSettingsFormInput) => Promise<boolean>;
   isOwner: boolean;
+  activeTab?: OwnerSettingsTab;
+  onTabChange?: (tab: OwnerSettingsTab) => void;
+  tabContent?: React.ReactNode;
+  storeDetails?: React.ReactNode;
 }) {
   const isAllLocations = selectedLocationId === "all";
   const hasLocation = Boolean(selectedLocationId && !isAllLocations);
+  if (!isOwner) return <section className="dash-section dash-section--settings" role="alert">Settings are only available to the store owner.</section>;
 
   return (
-    <section className="dash-section dash-section--settings" aria-label="Store settings">
-      <div className="dash-section-heading">
-        <div>
-          <span className="dash-panel-title">Workspace</span>
-          <h1 className="dash-section-title">Settings</h1>
-          <p className="muted-copy">Manage storefront details for one location at a time.</p>
+    <section className="dash-section dash-section--settings dash-section--management-table" aria-label="Store settings" id="settings-results">
+      <div className="dash-menu-navigation">
+        <div className="dash-menu-tabs" role="tablist" aria-label="Settings sections" onKeyDown={(event) => {
+          const index = ownerSettingsTabs.findIndex(([id]) => id === activeTab);
+          const next = event.key === "ArrowRight" ? (index + 1) % ownerSettingsTabs.length : event.key === "ArrowLeft" ? (index + ownerSettingsTabs.length - 1) % ownerSettingsTabs.length : event.key === "Home" ? 0 : event.key === "End" ? ownerSettingsTabs.length - 1 : -1;
+          if (next >= 0) { event.preventDefault(); const id = ownerSettingsTabs[next]![0]; onTabChange?.(id); document.getElementById(`settings-tab-${id}`)?.focus(); }
+        }}>
+          {ownerSettingsTabs.map(([id, label]) => <button type="button" role="tab" id={`settings-tab-${id}`} key={id} className={`dash-menu-tab${activeTab === id ? " dash-menu-tab--active" : ""}`} aria-selected={activeTab === id} aria-controls="settings-panel" tabIndex={activeTab === id ? 0 : -1} disabled={pending} onClick={() => onTabChange?.(id)}>{label}</button>)}
         </div>
-        {isOwner ? <Link className="button button--secondary" href={onboardingPath}>Launch setup</Link> : null}
+        {hasLocation && config ? <span className="dash-inline-note">{selectedLocationName ?? config.locationName}</span> : null}
       </div>
 
       {mutationError ? <div className="banner banner--error" role="alert">{mutationError}</div> : null}
@@ -64,16 +76,8 @@ export function StoreSettingsPage({
       ) : status === "error" ? (
         <SettingsMessage title="Unable to load settings" error>{error ?? "The store configuration could not be loaded."}<button className="button button--secondary" type="button" onClick={onRetry}>Try again</button></SettingsMessage>
       ) : config ? (
-        <article className="dash-surface">
-          <header className="dash-surface-head">
-            <div>
-              <div className="dash-panel-title">Location settings</div>
-              <h2 className="dash-surface-title">{config.locationName}</h2>
-              <p className="muted-copy">These values apply to {selectedLocationName ?? "the selected location"}.</p>
-            </div>
-          </header>
-          {!canWrite ? <p className="muted-copy">You have view access. Contact an owner with store-write permission to make changes.</p> : null}
-          {status === "ready" ? <StoreSettingsForm config={config} scopeKey={scopeKey} canWrite={canWrite} pending={pending} onSave={onSave} /> : null}
+        <article className="dash-settings-surface" id="settings-panel" role="tabpanel" aria-labelledby={`settings-tab-${activeTab}`} aria-label={`Location settings for ${selectedLocationName ?? config.locationName}`}>
+          {activeTab === "store" ? <>{storeDetails}<StoreSettingsForm config={config} query={query} scopeKey={scopeKey} canWrite={canWrite} pending={pending} onSave={onSave} fields={storeDetails ? ["pickupInstructions"] : undefined} /></> : tabContent}
         </article>
       ) : (
         <SettingsMessage title="Store configuration unavailable">No store configuration was returned for this location.</SettingsMessage>

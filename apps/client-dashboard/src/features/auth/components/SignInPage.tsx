@@ -1,15 +1,12 @@
 "use client";
 
-import React, { useState, type FormEvent } from "react";
+import React, { useState, useId } from "react";
+import Image from "next/image";
 import { AuthFrame, AuthMessage } from "./AuthFrame";
-
-export type LaunchWorkspaceValues = {
-  businessName: string;
-  locationName: string;
-  marketLabel: string;
-  ownerName: string;
-  ownerEmail: string;
-};
+import { AuthPasswordForm } from "./AuthPasswordForm";
+import { LaunchWorkspaceForm, type LaunchWorkspaceValues } from "./LaunchWorkspaceForm";
+import styles from "./auth-v3.module.css";
+export type { LaunchWorkspaceValues } from "./LaunchWorkspaceForm";
 
 export type SignInPageProps = {
   email: string;
@@ -31,85 +28,40 @@ export type SignInPageProps = {
 };
 
 export function SignInPage({
-  email,
-  onEmailChange,
-  error,
-  notice,
-  pending,
-  googleConfigured,
-  googleLoading,
-  localApiBaseUrl = "",
-  onApiBaseUrlChange,
-  showApiBaseUrl = false,
-  launchEntry,
-  launchPending,
-  launchResultEmail,
-  onSignIn,
-  onGoogleSignIn,
-  onLaunchWorkspace
+  email, onEmailChange, error, notice, pending, googleConfigured, googleLoading,
+  localApiBaseUrl = "", onApiBaseUrlChange, showApiBaseUrl = false,
+  launchEntry, launchPending, launchResultEmail, onSignIn, onGoogleSignIn, onLaunchWorkspace
 }: SignInPageProps) {
-  const [launchValues, setLaunchValues] = useState<LaunchWorkspaceValues>({
-    businessName: "", locationName: "", marketLabel: "", ownerName: "", ownerEmail: ""
-  });
-
-  function submitSignIn(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    onSignIn(String(form.get("email") ?? ""), String(form.get("password") ?? ""), localApiBaseUrl);
-  }
-
-  function submitLaunch(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    onLaunchWorkspace(launchValues, localApiBaseUrl);
-  }
-
-  return (
-    <AuthFrame>
-      <div className="auth-card__header">
-        <p className="eyebrow">{launchEntry ? "App launch" : "Store access"}</p>
-        <h1>{launchEntry ? "Start your branded app setup." : "Sign in to your dashboard."}</h1>
-        <p className="muted-copy">{launchEntry
-          ? "Use your owner account to configure store details, payments, and menu in one guided flow."
-          : "Use the email and password assigned to your store account."}</p>
-      </div>
-      {notice ? <AuthMessage tone="notice">{notice}</AuthMessage> : null}
-      {error ? <AuthMessage>{error}</AuthMessage> : null}
-
-      {launchEntry ? (
-        <form className="auth-stack launch-request" onSubmit={submitLaunch}>
-          <div className="auth-subsection">
-            <span>New merchant</span>
-            <strong>{launchResultEmail ? "Check your email." : "Create your app workspace"}</strong>
-            <small>{launchResultEmail
-              ? `We sent the owner setup link to ${launchResultEmail}.`
-              : "Nomly will create your draft workspace and send the owner setup link."}</small>
-          </div>
-          {!launchResultEmail ? <>
-            <label className="field"><span>Business name</span><input name="businessName" value={launchValues.businessName} onChange={(event) => setLaunchValues((current) => ({ ...current, businessName: event.target.value }))} autoComplete="organization" required /></label>
-            <label className="field"><span>Location name</span><input name="locationName" value={launchValues.locationName} onChange={(event) => setLaunchValues((current) => ({ ...current, locationName: event.target.value }))} required /></label>
-            <label className="field"><span>Market</span><input name="marketLabel" value={launchValues.marketLabel} onChange={(event) => setLaunchValues((current) => ({ ...current, marketLabel: event.target.value }))} placeholder="Detroit, MI" required /></label>
-            <label className="field"><span>Owner name</span><input name="ownerName" value={launchValues.ownerName} onChange={(event) => setLaunchValues((current) => ({ ...current, ownerName: event.target.value }))} autoComplete="name" required /></label>
-            <label className="field"><span>Owner email</span><input name="ownerEmail" type="email" value={launchValues.ownerEmail} onChange={(event) => setLaunchValues((current) => ({ ...current, ownerEmail: event.target.value }))} autoComplete="email" required /></label>
-            {showApiBaseUrl ? <label className="field field--compact"><span>Gateway API</span><input type="url" value={localApiBaseUrl} onChange={(event) => onApiBaseUrlChange(event.target.value)} required /></label> : null}
-            <button className="button button--primary" type="submit" disabled={launchPending}>{launchPending ? <><span className="spinner" />Creating workspace</> : "Create workspace"}</button>
-          </> : null}
-        </form>
-      ) : null}
-
-      {launchEntry ? <div className="auth-divider"><span>or sign in</span></div> : null}
-      <form className="auth-stack" onSubmit={submitSignIn}>
-        <label className="field"><span>Work email</span><input name="email" type="email" value={email} onChange={(event) => onEmailChange(event.target.value)} autoComplete="username" placeholder="owner@store.com" required /></label>
-        <label className="field"><span>Password</span><input name="password" type="password" autoComplete="current-password" placeholder="Enter your password" required /></label>
-        {showApiBaseUrl ? <label className="field field--compact"><span>Gateway API</span><input type="url" value={localApiBaseUrl} onChange={(event) => onApiBaseUrlChange(event.target.value)} required /></label> : null}
-        <button className="button button--primary" type="submit" disabled={pending}>{pending ? <><span className="spinner" />Signing in</> : "Sign in"}</button>
-      </form>
-      <div className="auth-divider"><span>or continue with SSO</span></div>
-      <div className="sso-stack">
-        <button className="sso-button" type="button" onClick={onGoogleSignIn} disabled={pending || googleLoading || !googleConfigured}>
-          <span className="sso-button__icon" aria-hidden="true">G</span>
-          <span className="sso-button__meta"><strong>Sign in with Google</strong><small>{googleLoading ? "Checking availability" : googleConfigured ? "Use your store Google account" : "Unavailable for this environment"}</small></span>
+  const [passwordStep, setPasswordStep] = useState(false);
+  const appleUnavailableId = useId();
+  return <AuthFrame variant={passwordStep ? "detail" : "entry"}>
+    <h1 className={styles.heading}>{launchEntry ? "Start your branded app setup." : passwordStep ? "Welcome back." : "Welcome."}</h1>
+    {notice ? <AuthMessage tone="notice">{notice}</AuthMessage> : null}
+    {error ? <AuthMessage>{error}</AuthMessage> : null}
+    {launchEntry ? <>
+      <LaunchWorkspaceForm pending={launchPending} resultEmail={launchResultEmail} onSubmit={(values) => onLaunchWorkspace(values, localApiBaseUrl)} />
+      <p className={styles.utility}>Already have an account? Continue below.</p>
+    </> : null}
+    {passwordStep ? <AuthPasswordForm email={email} pending={pending} onChangeEmail={() => setPasswordStep(false)} onSignIn={(password) => onSignIn(email, password, localApiBaseUrl)} /> : <>
+      <div className={styles.providers}>
+        <button className={styles.provider} type="button" disabled aria-describedby={appleUnavailableId} title="Apple sign-in is not available for operator accounts yet.">
+          <span className={styles.providerIcon} aria-hidden="true"></span>Sign in with Apple
+        </button>
+        <span id={appleUnavailableId} className={styles.visuallyHidden}>Apple sign-in is not available for operator accounts yet.</span>
+        <button className={`${styles.provider} ${styles.providerGoogle}`} type="button" disabled={pending || googleLoading || !googleConfigured} onClick={onGoogleSignIn} title={googleConfigured ? "Sign in with Google" : "Unavailable for this environment"}>
+          <span className={styles.providerIcon}><Image src="/icons/auth-v3/google.svg" width={20} height={20} alt="" unoptimized /></span>
+          {googleLoading ? "Checking Google availability…" : "Sign in with Google"}
         </button>
       </div>
-    </AuthFrame>
-  );
+      <div className={styles.divider} aria-hidden="true">
+        {[0, 1].map((side) => <span key={side} className={styles.dividerLine}><Image className={styles.desktopDivider} src="/icons/auth-v3/divider-desktop.svg" width={188} height={1} alt="" unoptimized /><Image className={styles.mobileDivider} src="/icons/auth-v3/divider-mobile.svg" width={171} height={1} alt="" unoptimized /></span>)}
+        <span className={styles.dividerLabel}>or</span>
+      </div>
+      <form className={styles.stack} onSubmit={(event) => { event.preventDefault(); if (!pending && email.trim()) setPasswordStep(true); }}>
+        <label className={styles.field}><span className={styles.visuallyHidden}>Work email</span><input className={styles.input} name="email" type="email" autoComplete="username" placeholder="you@business.com" value={email} onChange={(event) => onEmailChange(event.target.value)} disabled={pending} required /></label>
+        <button className={styles.action} type="submit" disabled={pending}>Continue with email</button>
+      </form>
+    </>}
+    {showApiBaseUrl ? <details className={styles.development}><summary>Development connection</summary><label className={styles.field}><span className={styles.label}>Gateway API</span><input className={styles.input} type="url" value={localApiBaseUrl} disabled={pending || launchPending} onChange={(event) => onApiBaseUrlChange(event.target.value)} required /></label></details> : null}
+  </AuthFrame>;
 }

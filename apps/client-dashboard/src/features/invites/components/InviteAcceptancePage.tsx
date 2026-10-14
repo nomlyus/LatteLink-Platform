@@ -4,6 +4,7 @@ import React, { useState, type FormEvent } from "react";
 import Link from "next/link";
 import type { OperatorInviteLookup } from "../invite-api";
 import { AuthFrame, AuthMessage } from "../../auth/components/AuthFrame";
+import styles from "../../auth/components/auth-v3.module.css";
 
 export function InviteAcceptancePage({
   status,
@@ -22,15 +23,15 @@ export function InviteAcceptancePage({
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (status !== "ready" || !lookup) return;
     onAccept(password, confirmation);
   }
 
   return (
-    <AuthFrame>
-      <div className="auth-card__header">
-        <p className="eyebrow">{lookup?.operator.role === "owner" ? "Owner invite" : "Team invite"}</p>
-        <h1>{ready ? "Set up your account." : status === "loading" ? "Checking your invite." : "Invite unavailable."}</h1>
-        <p className="muted-copy">{status === "loading"
+    <AuthFrame variant="detail">
+      <div>
+        <h1 className={styles.heading}>{ready ? "Join your team." : status === "loading" ? "Checking your invite." : "Invite unavailable."}</h1>
+        <p className={ready ? styles.visuallyHidden : styles.utility}>{status === "loading"
           ? "Checking this one-time invite link."
           : ready
             ? `Create a password for ${lookup.operator.email}.`
@@ -41,20 +42,17 @@ export function InviteAcceptancePage({
       {error ? <AuthMessage>{error}</AuthMessage> : null}
       {status === "loading" ? <div className="auth-loading" role="status"><span className="spinner" /><span>Validating invite</span></div> : null}
       {ready ? <>
-        <div className="invite-summary">
-          <span>{lookup.operator.role === "owner" ? "Owner" : "Team member"}</span>
-          <strong>{lookup.operator.displayName}</strong>
-          <small>{lookup.operator.email}</small>
-        </div>
-        <form className="auth-stack" onSubmit={submit}>
-          <label className="field"><span>Password</span><input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Choose a password" required /></label>
-          <label className="field"><span>Confirm password</span><input type="password" autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder="Repeat your password" required /></label>
-          <button className="button button--primary" type="submit" disabled={status === "accepting"}>
-            {status === "accepting" ? <><span className="spinner" />Activating account</> : "Activate account"}
+        <form className={`${styles.stack} ${styles.passwordForm} ${styles.invitationForm}`} onSubmit={submit}>
+          <label className={styles.field}><span className={styles.label}>Name</span><input className={styles.input} autoComplete="name" value={lookup.operator.displayName} readOnly aria-describedby="invite-name-context" /></label>
+          <span id="invite-name-context" className={styles.visuallyHidden}>Your account was provisioned by Nomly.</span>
+          <label className={styles.field}><span className={styles.label}>Password</span><input className={styles.input} type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Choose a password" disabled={status === "accepting"} required /></label>
+          <label className={styles.field}><span className={styles.label}>Confirm password</span><input className={styles.input} type="password" autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder="Repeat your password" disabled={status === "accepting"} required /></label>
+          <button className={`${styles.action} ${styles.actionLight}`} type="submit" disabled={status === "accepting"}>
+            {status === "accepting" ? "Activating account…" : "Accept invitation"}
           </button>
         </form>
       </> : null}
-      {status === "missing" || status === "invalid" ? <Link className="button button--primary" href="/">Go to sign in</Link> : null}
+      {status === "missing" || status === "invalid" ? <Link className={styles.action} href="/">Go to sign in</Link> : null}
     </AuthFrame>
   );
 }

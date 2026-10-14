@@ -1,4 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { assertOwnerSetupComplete, OwnerSetupIncompleteError } from "./owner-setup.js";
+import { saveOwnerInputPostgres } from "./owner-input-postgres.js";
+import { assertOwnerSubmissionReady, assertOwnerSubmissionLocationSet } from "./owner-submission.js";
+import { submitOwnerSetupPostgres } from "./owner-submission-postgres.js";
+import { assignNomlyAppIdentifiers } from "./app-identity-assignment.js";
 import type { FastifyBaseLogger } from "fastify";
 import {
   adminClientCreateRequestSchema,
@@ -36,6 +41,8 @@ import {
   mobileReleaseProfileSchema,
   mobileReleaseProfileUpdateSchema,
   onboardingSummarySchema,
+  ownerOnboardingProfileSchema,
+  ownerOnboardingLocationDetailsSchema,
   operatorAppIdentityProfileUpdateSchema,
   operatorOnboardingUpdateSchema,
   paymentReadinessSchema,
@@ -885,16 +892,20 @@ function buildPaymentReadiness(profile: ClientPaymentProfile | undefined) {
 }
 
 type ClientRecord = {
+  ownerProfile?: OnboardingSummary["ownerProfile"];
   tenantId: string;
   brandId: string;
   clientName: string;
   ownerEmail?: string;
+  ownerSetupCompletedAt?: string;
   status: OnboardingStatus;
   createdAt?: string;
   updatedAt?: string;
 };
 
 type ClientLocationRecord = {
+  ownerAddress?: string;
+  ownerDetailsConfirmedAt?: string;
   tenantId: string;
   brandId: string;
   locationId: string;
@@ -1114,6 +1125,7 @@ function deriveOnboardingStatus(progress: OnboardingProgressRecord, readyForRevi
 }
 
 function buildOnboardingSummary(input: {
+  storeConfig?: AdminStoreConfig;
   client: ClientRecord;
   location: ClientLocationRecord;
   locationSummary: InternalLocationSummary;
@@ -1132,6 +1144,14 @@ function buildOnboardingSummary(input: {
     tenantId: input.client.tenantId,
     brandId: input.client.brandId,
     brandName: input.locationSummary.brandName,
+    ownerSetupCompletedAt: input.client.ownerSetupCompletedAt,
+    ownerSetupRequired: !input.client.ownerSetupCompletedAt,
+    ownerProfile: input.client.ownerProfile,
+    ownerDetailsConfirmedAt: input.location.ownerDetailsConfirmedAt,
+    ownerLocationDetails: input.location.ownerDetailsConfirmedAt && input.storeConfig ? ownerOnboardingLocationDetailsSchema.parse({
+      locationName: input.location.locationName, address: input.location.ownerAddress,
+      timezone: input.location.timezone, hours: input.storeConfig.hours, taxRateBasisPoints: input.storeConfig.taxRateBasisPoints
+    }) : undefined,
     locationId: input.location.locationId,
     locationName: input.location.locationName,
     marketLabel: input.location.marketLabel,
@@ -1289,6 +1309,7 @@ function createInMemoryRepository(): CatalogRepository {
       brandId: testCustomerBrandId,
       clientName: "Public Runtime Test Brand",
       status: "live",
+      ownerSetupCompletedAt: now,
       createdAt: now,
       updatedAt: now
     });
@@ -1378,6 +1399,7 @@ function createInMemoryRepository(): CatalogRepository {
     return buildOnboardingSummary({
       client,
       location,
+      storeConfig: adminStoreConfigsByLocation.get(locationId),
       locationSummary,
       progress,
       paymentProfile: paymentProfilesByLocation.get(locationId),
@@ -1552,7 +1574,7 @@ function createInMemoryRepository(): CatalogRepository {
       const brand: MobileBrandRecord = {
         tenantId: client.tenantId,
         brandId: client.brandId,
-        displayName: client.clientName
+        displayName: client.ownerProfile?.customerFacingName ?? client.clientName
       };
       const memberships: MobileBrandLocationMembership[] = Array.from(clientLocationsByLocation.values())
         .filter((location) => location.tenantId === client.tenantId)
@@ -1597,7 +1619,7 @@ function createInMemoryRepository(): CatalogRepository {
       const brand: MobileBrandRecord = {
         tenantId: client.tenantId,
         brandId: client.brandId,
-        displayName: client.clientName
+        displayName: client.ownerProfile?.customerFacingName ?? client.clientName
       };
       const membership: MobileBrandLocationMembership = {
         tenantId: membershipRecord.tenantId,
@@ -1798,6 +1820,63 @@ function createInMemoryRepository(): CatalogRepository {
         return undefined;
       }
       const now = new Date().toISOString();
+      const currentClient = clientsByTenant.get(existing.tenantId);
+      if (input.ownerProfile && currentClient) {
+        const profile = input.ownerProfile;
+        const locations = [...clientLocationsByLocation.values()].filter((location) => location.tenantId === existing.tenantId);
+        const configs = locations.map((location) => ({ id: location.locationId, config: appConfigSchema.parse(appConfigsByLocation.get(location.locationId)) }));
+        if (locations.some((location) => !adminStoreConfigsByLocation.has(location.locationId))) throw new OwnerSetupIncompleteError(["provisioned store configuration"]);
+        clientsByTenant.set(existing.tenantId, { ...currentClient, clientName: profile.brandName, ownerProfile: profile, updatedAt: now });
+        for (const { id, config } of configs) {
+          appConfigsByLocation.set(id, { ...config, brand: { ...config.brand, brandName: profile.customerFacingName } });
+          const store = adminStoreConfigsByLocation.get(id);
+          if (store) adminStoreConfigsByLocation.set(id, { ...store, storeName: profile.customerFacingName });
+        }
+        return buildMemoryOnboarding(locationId);
+      }
+      if (input.ownerLocationDetails) {
+        if (!currentClient?.ownerProfile) throw new OwnerSetupIncompleteError(["your name and brand details"]);
+        const details = input.ownerLocationDetails;
+        const location = clientLocationsByLocation.get(locationId)!;
+        const config = appConfigsByLocation.get(locationId)!;
+        const store = await memoryRepository.getAdminStoreConfig(locationId);
+        adminStoreConfigsByLocation.set(locationId, { ...store, storeName: currentClient.ownerProfile.customerFacingName, locationName: details.locationName, timezone: details.timezone, hours: details.hours, taxRateBasisPoints: details.taxRateBasisPoints });
+        storeConfigsByLocation.set(locationId, { ...(storeConfigsByLocation.get(locationId) ?? defaultStoreConfigRecord), hoursText: details.hours, taxRateBasisPoints: details.taxRateBasisPoints });
+        appConfigsByLocation.set(locationId, { ...config, brand: { ...config.brand, brandName: currentClient.ownerProfile.customerFacingName, locationName: details.locationName } });
+        clientLocationsByLocation.set(locationId, { ...location, locationName: details.locationName, timezone: details.timezone, ownerAddress: details.address, ownerDetailsConfirmedAt: now, updatedAt: now });
+        return buildMemoryOnboarding(locationId);
+      }
+      if (input.submitOwnerSetup) {
+        const locations = [...clientLocationsByLocation.values()].filter((location) => location.tenantId === existing.tenantId);
+        assertOwnerSubmissionLocationSet(locations.map((location) => location.locationId), input.locationIds!);
+        const progress = locations.map((location) => onboardingProgressByLocation.get(location.locationId));
+        if (currentClient?.ownerSetupCompletedAt && progress.every((row) => row?.submittedForReviewAt)) return buildMemoryOnboarding(locationId);
+        const records = await Promise.all(locations.map(async (location) => ({
+          ...(await memoryRepository.getAdminStoreConfig(location.locationId)),
+          locationId: location.locationId, locationName: location.locationName,
+          ownerDetailsConfirmedAt: location.ownerDetailsConfirmedAt, address: location.ownerAddress, timezone: location.timezone,
+          teamConfiguredOrSkipped: onboardingProgressByLocation.get(location.locationId)?.teamConfiguredOrSkipped ?? false,
+          paymentProfile: paymentProfilesByLocation.get(location.locationId)
+        })));
+        assertOwnerSubmissionReady(records, input.locationIds!, currentClient?.ownerProfile);
+        if (!currentClient || progress.some((row) => !row)) throw new Error("A provisioned location is missing its onboarding record. Contact Nomly.");
+        for (const row of progress) {
+          if (!row) continue;
+          onboardingProgressByLocation.set(row.locationId, { ...row, businessProfileComplete: true, storeOperationsComplete: true,
+            submittedForReviewAt: row.submittedForReviewAt ?? now,
+            status: row.status === "live" || row.status === "approved" ? row.status : "ready_for_review", updatedAt: now });
+        }
+        clientsByTenant.set(existing.tenantId, { ...currentClient, ownerSetupCompletedAt: currentClient.ownerSetupCompletedAt ?? now,
+          status: currentClient.status === "live" || currentClient.status === "approved" ? currentClient.status : "ready_for_review", updatedAt: now });
+        return buildMemoryOnboarding(locationId);
+      }
+      if (input.completeOwnerSetup && !currentClient?.ownerSetupCompletedAt) {
+        const store = await memoryRepository.getAdminStoreConfig(locationId);
+        const identity = appIdentityProfilesByLocation.get(locationId);
+        assertOwnerSetupComplete({ ...existing, ...store, appName: identity?.appName, displayName: identity?.displayName });
+        const locations = [...clientLocationsByLocation.values()].filter((row) => row.tenantId === existing.tenantId);
+        if (!currentClient?.ownerProfile || locations.some((row) => !row.ownerDetailsConfirmedAt)) throw new OwnerSetupIncompleteError(["owner-entered business and location details"]);
+      }
       const next: OnboardingProgressRecord = {
         ...existing,
         businessProfileComplete: input.businessProfileComplete ?? existing.businessProfileComplete,
@@ -1816,6 +1895,7 @@ function createInMemoryRepository(): CatalogRepository {
       if (client) {
         clientsByTenant.set(next.tenantId, {
           ...client,
+          ownerSetupCompletedAt: input.completeOwnerSetup ? client.ownerSetupCompletedAt ?? now : client.ownerSetupCompletedAt,
           status: deriveOnboardingStatus(next, input.readyForReview ?? false),
           updatedAt: now
         });
@@ -1856,6 +1936,7 @@ function createInMemoryRepository(): CatalogRepository {
       const next = buildAppIdentityProfile({
         ...existing,
         ...input,
+        ...assignNomlyAppIdentifiers(locationId, existing),
         locationId,
         updatedAt: new Date().toISOString()
       });
@@ -2866,10 +2947,12 @@ async function getBrandIdForLocation(db: PersistenceDb, locationId: string): Pro
 }
 
 function toClientRecord(row: {
+  owner_profile_json?: unknown;
   tenant_id: string;
   brand_id: string;
   client_name: string;
   owner_email?: string | null;
+  owner_setup_completed_at?: CatalogTimestamp | null;
   status: OnboardingStatus;
   created_at?: CatalogTimestamp;
   updated_at?: CatalogTimestamp;
@@ -2878,7 +2961,9 @@ function toClientRecord(row: {
     tenantId: row.tenant_id,
     brandId: row.brand_id,
     clientName: row.client_name,
+    ownerProfile: row.owner_profile_json ? ownerOnboardingProfileSchema.parse(row.owner_profile_json) : undefined,
     ownerEmail: row.owner_email ?? undefined,
+    ownerSetupCompletedAt: serializeCatalogTimestamp(row.owner_setup_completed_at),
     status: row.status,
     createdAt: serializeCatalogTimestamp(row.created_at),
     updatedAt: serializeCatalogTimestamp(row.updated_at)
@@ -2886,6 +2971,8 @@ function toClientRecord(row: {
 }
 
 function toClientLocationRecord(row: {
+  owner_address_text?: string | null;
+  owner_details_confirmed_at?: CatalogTimestamp | null;
   tenant_id: string;
   brand_id: string;
   location_id: string;
@@ -2901,6 +2988,8 @@ function toClientLocationRecord(row: {
     brandId: row.brand_id,
     locationId: row.location_id,
     locationName: row.location_name,
+    ownerAddress: row.owner_address_text ?? undefined,
+    ownerDetailsConfirmedAt: serializeCatalogTimestamp(row.owner_details_confirmed_at),
     marketLabel: row.market_label,
     timezone: row.timezone,
     primaryLocation: row.primary_location,
@@ -3124,6 +3213,7 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
 
     return buildOnboardingSummary({
       client: toClientRecord(clientRow),
+      storeConfig: await postgresRepository.getAdminStoreConfig(locationId),
       location: toClientLocationRecord(locationRow),
       locationSummary,
       progress: toOnboardingProgressRecord(progressRow),
@@ -3374,7 +3464,7 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
       const brand: MobileBrandRecord = {
         tenantId: client.tenantId,
         brandId: client.brandId,
-        displayName: client.clientName
+        displayName: client.ownerProfile?.customerFacingName ?? client.clientName
       };
       const locationRows = await db
         .selectFrom("catalog_client_locations")
@@ -3438,6 +3528,7 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
           "clients.tenant_id as client_tenant_id",
           "clients.brand_id as client_brand_id",
           "clients.client_name as client_name",
+          "clients.owner_profile_json as owner_profile_json",
           "clients.status as client_status",
           "clients.created_at as client_created_at",
           "clients.updated_at as client_updated_at"
@@ -3452,6 +3543,7 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
         tenant_id: row.client_tenant_id,
         brand_id: row.client_brand_id,
         client_name: row.client_name,
+        owner_profile_json: row.owner_profile_json,
         status: row.client_status,
         created_at: row.client_created_at,
         updated_at: row.client_updated_at
@@ -3460,7 +3552,7 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
       const brand: MobileBrandRecord = {
         tenantId: client.tenantId,
         brandId: client.brandId,
-        displayName: client.clientName
+        displayName: client.ownerProfile?.customerFacingName ?? client.clientName
       };
       const membership: MobileBrandLocationMembership = {
         tenantId: location.tenantId,
@@ -3835,6 +3927,36 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
     },
     async updateInternalLocationOnboarding(locationId, rawInput) {
       const input = operatorOnboardingUpdateSchema.parse(rawInput);
+      if (input.ownerProfile || input.ownerLocationDetails) {
+        await saveOwnerInputPostgres(db, locationId, input);
+        return buildPostgresOnboarding(locationId);
+      }
+      if (input.submitOwnerSetup) {
+        await submitOwnerSetupPostgres(db, locationId, input.locationIds!);
+        return buildPostgresOnboarding(locationId);
+      }
+      if (input.completeOwnerSetup) {
+        await db.transaction().execute(async (transaction) => {
+          const membership = await transaction.selectFrom("catalog_client_locations").selectAll().where("location_id", "=", locationId).executeTakeFirst();
+          if (!membership) return;
+          const client = await transaction.selectFrom("catalog_clients").selectAll().where("tenant_id", "=", membership.tenant_id).forUpdate().executeTakeFirstOrThrow();
+          const progress = await transaction.selectFrom("catalog_onboarding_progress").selectAll().where("location_id", "=", locationId).forUpdate().executeTakeFirst();
+          if (!progress) return;
+          if (client.owner_setup_completed_at) return;
+          const store = await transaction.selectFrom("catalog_store_configs").selectAll().where("location_id", "=", locationId).forUpdate().executeTakeFirst();
+          const identity = await transaction.selectFrom("catalog_app_identity_profiles").selectAll().where("location_id", "=", locationId).forUpdate().executeTakeFirst();
+          assertOwnerSetupComplete({
+            businessProfileComplete: progress.business_profile_complete,
+            storeOperationsComplete: progress.store_operations_complete,
+            storeName: store?.store_name, hours: store?.hours_text, pickupInstructions: store?.pickup_instructions,
+            appName: identity?.app_name ?? undefined, displayName: identity?.display_name ?? undefined
+          });
+          const locations = await transaction.selectFrom("catalog_client_locations").select("owner_details_confirmed_at").where("tenant_id", "=", client.tenant_id).execute();
+          if (!ownerOnboardingProfileSchema.safeParse(client.owner_profile_json).success || locations.some((row) => !row.owner_details_confirmed_at)) throw new OwnerSetupIncompleteError(["owner-entered business and location details"]);
+          await transaction.updateTable("catalog_clients").set({ owner_setup_completed_at: new Date().toISOString() }).where("tenant_id", "=", progress.tenant_id).execute();
+        });
+        return buildPostgresOnboarding(locationId);
+      }
       const existing = await db
         .selectFrom("catalog_onboarding_progress")
         .selectAll()
@@ -3940,6 +4062,7 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
       const next = buildAppIdentityProfile({
         ...base,
         ...input,
+        ...assignNomlyAppIdentifiers(locationId, base),
         locationId,
         updatedAt: now
       });

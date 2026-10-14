@@ -937,7 +937,7 @@ describe("client dashboard api helpers", () => {
         locationId: "flagship-01",
         locationIds: ["flagship-01", "northside-01"],
         active: true,
-        capabilities: ["orders:read"],
+        capabilities: ["orders:read", "store:read"],
         createdAt: "2026-04-23T20:00:00.000Z",
         updatedAt: "2026-04-23T20:00:00.000Z"
       }
@@ -1043,7 +1043,7 @@ describe("client dashboard api helpers", () => {
           locationId: "flagship-01",
           locationIds: ["flagship-01"],
           active: true,
-          capabilities: ["orders:read", "orders:write"],
+          capabilities: ["orders:read", "orders:write", "store:read"],
           createdAt: "2026-04-23T20:00:00.000Z",
           updatedAt: "2026-04-23T20:00:00.000Z"
         }

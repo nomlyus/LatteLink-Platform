@@ -4,6 +4,8 @@ import {
 } from "@lattelink/contracts-orders";
 import { z } from "zod";
 import type { OperatorDiscountCode } from "../../model";
+import { matchesDashboardSearch } from "../../components/dashboard/search-text";
+import { formatMoney, formatDateTime } from "../../ui/format";
 
 const createDiscountFormSchema = createDiscountCodeRequestSchema.transform(({ locationId, ...input }) => {
   void locationId;
@@ -38,9 +40,18 @@ export function filterDiscountCodes(
   status: DiscountCodeStatusFilter,
   nowMs = Date.now()
 ) {
-  const query = search.trim().toLocaleLowerCase();
   return discountCodes.filter((code) => {
-    const matchesSearch = !query || code.code.toLocaleLowerCase().includes(query) || code.name.toLocaleLowerCase().includes(query);
+    const currentStatus = getDiscountCodeStatus(code, nowMs);
+    const matchesSearch = matchesDashboardSearch(search, [
+      code.code, code.name, code.type, String(code.value),
+      code.type === "percent" ? `${code.value}% off` : `${formatMoney(code.value)} off`,
+      currentStatus, currentStatus === "exhausted" ? "Limit reached" : "",
+      getDiscountEligibilityLabel(code.eligibility),
+      code.oncePerCustomer ? "Once per customer" : "Multiple uses per customer",
+      `Minimum ${formatMoney(code.minSubtotalCents)}`, `${code.redeemedCount} redeemed`, `${code.reservedCount} reserved`,
+      code.maxTotalRedemptions === undefined ? "Unlimited" : `${code.maxTotalRedemptions} total limit`,
+      formatDateTime(code.createdAt), code.startsAt ? formatDateTime(code.startsAt) : "", code.expiresAt ? formatDateTime(code.expiresAt) : "No scheduled end"
+    ]);
     return matchesSearch && (status === "all" || getDiscountCodeStatus(code, nowMs) === status);
   });
 }

@@ -346,6 +346,27 @@ describe("operator auth", () => {
     await app.close();
   });
 
+  it("updates only the authenticated operator's name without permitting access changes", async () => {
+    const repository = createInMemoryIdentityRepository();
+    await provisionOwner(repository); await provisionStore(repository);
+    const app = await buildApp({ repository });
+    try {
+      const session = await signInOperator(app, ownerEmail, ownerPassword);
+      const headers = { authorization: `Bearer ${session.accessToken}` };
+      expect((await app.inject({ method: "PATCH", url: "/v1/operator/profile", payload: { displayName: "Owner Name" } })).statusCode).toBe(401);
+      for (const input of [{ displayName: "" }, { displayName: "Owner", role: "owner" }, { displayName: "Owner", active: false }, { displayName: "Owner", email: "other@example.test" }]) {
+        expect((await app.inject({ method: "PATCH", url: "/v1/operator/profile", headers, payload: input })).statusCode).toBe(400);
+      }
+      const result = await app.inject({ method: "PATCH", url: "/v1/operator/profile", headers, payload: { displayName: "Owner Name" } });
+      expect(result.statusCode).toBe(200);
+      expect(result.json()).toMatchObject({ displayName: "Owner Name", operatorUserId: session.operator.operatorUserId, role: "owner" });
+      const me = await app.inject({ method: "GET", url: "/v1/operator/auth/me", headers });
+      expect(me.json().displayName).toBe("Owner Name");
+      const store = await signInOperator(app, storeEmail, storePassword);
+      expect(store.operator.displayName).toBe("Store Screen");
+    } finally { await app.close(); }
+  });
+
   it("enforces owner-only team management boundaries", async () => {
     const repository = createInMemoryIdentityRepository();
     await provisionOwner(repository);

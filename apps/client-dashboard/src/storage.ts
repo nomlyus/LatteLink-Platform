@@ -7,7 +7,6 @@ const API_BASE_URL_STORAGE_KEY = "lattelink.operator.api-base-url.v2";
 const OPERATOR_SESSION_STORAGE_KEY = "lattelink.operator.session.v2";
 const DASHBOARD_SECTION_STORAGE_KEY = "lattelink.operator.section.v2";
 const DASHBOARD_LOCATION_STORAGE_PREFIX = "lattelink.operator.location.v1";
-const ONBOARDING_WIZARD_SHOWN_STORAGE_PREFIX = "lattelink.operator.onboarding-wizard-shown.v1";
 
 const storedSessionListeners = new Set<() => void>();
 let crossTabStorageListenerAttached = false;
@@ -161,18 +160,4 @@ export function loadStoredLocationSelection(operatorUserId: string): string | "a
 
 export function persistLocationSelection(operatorUserId: string, locationId: string | "all") {
   getStorage()?.setItem(dashboardLocationStorageKey(operatorUserId), locationId);
-}
-
-function onboardingWizardShownStorageKey(operatorUserId: string, locationId: string) {
-  return `${ONBOARDING_WIZARD_SHOWN_STORAGE_PREFIX}.${operatorUserId}.${locationId}`;
-}
-
-export function hasSeenOnboardingWizard(operatorUserId: string, locationId: string) {
-  const storage = getStorage();
-  return storage?.getItem(onboardingWizardShownStorageKey(operatorUserId, locationId)) === "1";
-}
-
-export function markOnboardingWizardSeen(operatorUserId: string, locationId: string) {
-  const storage = getStorage();
-  storage?.setItem(onboardingWizardShownStorageKey(operatorUserId, locationId), "1");
 }

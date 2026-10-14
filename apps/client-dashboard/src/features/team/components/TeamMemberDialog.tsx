@@ -78,6 +78,7 @@ export function TeamMemberDialog({
   return (
     <DashboardDialog title={canWrite ? "Edit operator access" : "Operator account"} subtitle={`${member.displayName} · ${member.email}`} onClose={onClose} panelClassName="dash-menu-modal__panel--compact dash-team-dialog">
       <form className="dash-team-form" noValidate onSubmit={(event) => { void submit(event); }}>
+        <p className="dash-team-readonly">Profile, role, password, and active-state changes apply to the account wherever it has access; location access itself cannot be changed here.</p>
         {!canWrite ? <p className="dash-team-readonly" role="status">You can review team members, but editing is read-only for your role.</p> : null}
         <div className="dash-team-form__grid">
           <label className="field"><span>Name</span><input autoComplete="name" required disabled={!editable} value={draft.displayName} onChange={(event) => setDraft((current) => ({ ...current, displayName: event.target.value }))} /></label>

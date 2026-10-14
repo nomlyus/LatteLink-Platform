@@ -49,6 +49,7 @@ export function MenuItemEditor({
   canWrite,
   canToggleVisibility,
   pending,
+  saveError,
   onClose,
   onSave,
   onVisibilityChange,
@@ -61,6 +62,7 @@ export function MenuItemEditor({
   canWrite: boolean;
   canToggleVisibility: boolean;
   pending: boolean;
+  saveError?: string | null;
   onClose: () => void;
   onSave: (item: OperatorMenuItem, payload: ReturnType<typeof buildMenuItemUpdatePayload>, imageChange: { file?: File | null; remove?: boolean }) => Promise<unknown>;
   onVisibilityChange: (itemId: string, visible: boolean) => void;
@@ -159,7 +161,7 @@ export function MenuItemEditor({
   return <>
     <MenuDialog title={item.name} subtitle={item.categoryTitle} onClose={onClose}>
       <div className="dash-menu-modal__body dash-menu-editor-body">
-        {error ? <div className="dash-menu-error" role="alert">{error}</div> : null}
+        {error || saveError ? <div className="dash-menu-error" role="alert">{error ?? saveError}</div> : null}
         <form className="dash-menu-editor-form" onSubmit={(event) => { void save(event); }}>
           <section className="dash-menu-editor-section">
             <h4>General</h4>

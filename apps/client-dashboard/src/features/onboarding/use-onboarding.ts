@@ -29,6 +29,8 @@ import {
   type OperatorOnboardingBuildJobs
 } from "./onboarding-api";
 import { getOnboardingScopeKey } from "./onboarding-domain";
+import { updateOwnerName } from "./owner-input-api";
+import type { OwnerProfileInput, OwnerLocationInput } from "./owner-input-domain";
 
 type OnboardingLoadStatus = "loading" | "ready" | "not-found" | "error" | "scope-required";
 type OnboardingAuxiliaryData = {
@@ -50,6 +52,7 @@ type OnboardingContext = {
   session: OperatorSession | null;
   operatorUserId: string | null;
   locationId: string | "all" | null;
+  selectedLocationId: string | "all" | null;
   locationStatus: "idle" | "loading" | "ready" | "error";
   locationError: string | null;
   authorizedLocationIds: ReadonlySet<string>;
@@ -83,20 +86,23 @@ function resultError(result: PromiseSettledResult<unknown>, fallback: string) {
   return result.status === "rejected" ? errorMessage(result.reason, fallback) : null;
 }
 
-export function useOnboarding() {
+export function useOnboarding(options: { fallbackLocationId?: string } = {}) {
   const { status: sessionStatus, session, refreshSession, logout } = useDashboardSession();
   const location = useDashboardLocation();
+  const selectedLocationId = (!location.selectedLocationId || location.selectedLocationId === "all")
+    ? options.fallbackLocationId ?? location.selectedLocationId : location.selectedLocationId;
   const operatorUserId = session?.operator.operatorUserId ?? null;
   const capabilities = session?.operator.capabilities ?? [];
   const sessionIdentity = useRef({ status: sessionStatus, operatorUserId, generation: 0 });
   if (sessionIdentity.current.status !== sessionStatus || sessionIdentity.current.operatorUserId !== operatorUserId) {
     sessionIdentity.current = { status: sessionStatus, operatorUserId, generation: sessionIdentity.current.generation + 1 };
   }
-  const scopeKey = getOnboardingScopeKey(operatorUserId, location.selectedLocationId, capabilities, sessionIdentity.current.generation);
+  const scopeKey = `${getOnboardingScopeKey(operatorUserId, selectedLocationId, capabilities, sessionIdentity.current.generation)}:${location.selectedLocationId ?? "unselected"}`;
   const contextRef = useRef<OnboardingContext>({
     session,
     operatorUserId,
-    locationId: location.selectedLocationId,
+    locationId: selectedLocationId,
+    selectedLocationId: location.selectedLocationId,
     locationStatus: location.status,
     locationError: location.error,
     authorizedLocationIds: new Set(location.availableLocations.map((entry) => entry.locationId)),
@@ -115,7 +121,8 @@ export function useOnboarding() {
   contextRef.current = {
     session,
     operatorUserId,
-    locationId: location.selectedLocationId,
+    locationId: selectedLocationId,
+    selectedLocationId: location.selectedLocationId,
     locationStatus: location.status,
     locationError: location.error,
     authorizedLocationIds: new Set(location.availableLocations.map((entry) => entry.locationId)),
@@ -140,7 +147,7 @@ export function useOnboarding() {
     setMutationState(emptyMutationState);
   }, [scopeKey]);
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (preserveData = false) => {
     if (!mounted.current) return false;
     const context = contextRef.current;
     const expectedScope = context.scopeKey;
@@ -182,7 +189,10 @@ export function useOnboarding() {
       return false;
     }
 
-    setScopedState({ ...emptyDataState, status: "loading", error: null });
+    const previous = dataRef.current;
+    setScopedState(preserveData && previous.scopeKey === expectedScope && previous.summary
+      ? { ...previous, status: "ready", error: null }
+      : { ...emptyDataState, status: "loading", error: null });
     try {
       const currentSession = await context.refreshSession();
       if (!currentSession || !requests.current.isCurrent(request)) return false;
@@ -280,6 +290,7 @@ export function useOnboarding() {
       !initial.session ||
       !expectedLocation ||
       expectedLocation === "all" ||
+      initial.selectedLocationId !== expectedLocation ||
       initial.locationStatus !== "ready" ||
       !initial.authorizedLocationIds.has(expectedLocation) ||
       (args.ownerOnly && !isOwnerOperator(initial.session.operator)) ||
@@ -301,7 +312,7 @@ export function useOnboarding() {
       const result = await args.operation(currentSession, expectedLocation);
       if (!stillInScope()) return false;
       if (args.refreshData !== false) {
-        const reloaded = await reload();
+        const reloaded = await reload(true);
         if (!reloaded || !stillInScope()) return false;
       }
       args.onSuccess?.(result);
@@ -311,16 +322,34 @@ export function useOnboarding() {
       if (isSessionAuthFailure(error)) void initial.logout();
       // Store details save and readiness update are separate existing API mutations.
       // Reload to show server truth if the first one succeeded and the second failed.
-      if (stillInScope()) await reload();
+      if (stillInScope()) await reload(true);
       if (stillInScope()) setMutationState({ pendingOperation: null, error: errorMessage(error, args.fallback), notice: null });
       return false;
     } finally {
       mutations.current.release();
+      // Scope changes defer their reload while a sensitive write is in flight.
+      // Once it settles, load the new scope rather than leaving it suspended.
+      if (mounted.current && contextRef.current.scopeKey !== expectedScope) void reload();
       if (mounted.current && stillInScope()) {
         setMutationState((current) => ({ ...current, pendingOperation: null }));
       }
     }
   }, [reload]);
+
+  const saveOwnerProfile = useCallback((input: OwnerProfileInput) => runMutation({
+    label: "Saving business details…", success: "Business details saved.", fallback: "Unable to save business details.",
+    capability: "store:write", ownerOnly: true,
+    operation: async (session, locationId) => {
+      await updateOwnerName(session, input.ownerName);
+      if (contextRef.current.scopeKey !== scopeKey || contextRef.current.locationId !== locationId) throw new Error("Your selected location changed. Reload before saving.");
+      return updateOperatorOnboarding(session, locationId, { ownerProfile: input });
+    }
+  }), [runMutation, scopeKey]);
+  const saveOwnerLocation = useCallback((input: OwnerLocationInput) => runMutation({
+    label: "Saving location details…", success: "Location details saved.", fallback: "Unable to save location details.",
+    capability: "store:write", ownerOnly: true,
+    operation: (session, locationId) => updateOperatorOnboarding(session, locationId, { ownerLocationDetails: input })
+  }), [runMutation]);
 
   const saveStoreDetails = useCallback((input: StoreSettingsFormInput) => runMutation({
     label: "Saving store details…",
@@ -335,7 +364,7 @@ export function useOnboarding() {
         locationName: input.locationName,
         hours: input.hours,
         pickupInstructions: input.pickupInstructions,
-        taxRateBasisPoints: config.taxRateBasisPoints
+        taxRateBasisPoints: input.taxRateBasisPoints ?? config.taxRateBasisPoints
       });
       if (contextRef.current.scopeKey !== scopeKey || contextRef.current.locationId !== locationId) {
         throw new Error("The selected location changed. Reload setup before continuing.");
@@ -364,6 +393,19 @@ export function useOnboarding() {
     fallback: "Unable to submit setup for review.",
     capability: "store:write",
     operation: submitOperatorOnboardingReview
+  }), [runMutation]);
+
+  const completeOwnerSetup = useCallback(() => runMutation({
+    label: "Finishing brand setup…",
+    success: "Brand setup complete.",
+    fallback: "Unable to finish brand setup.",
+    capability: "store:write",
+    ownerOnly: true,
+    operation: async (currentSession, locationId) => {
+      const summary = await updateOperatorOnboarding(currentSession, locationId, { completeOwnerSetup: true });
+      if (!summary.ownerSetupCompletedAt) throw new Error("Brand setup could not be confirmed. The server may need the onboarding update; your saved details are safe.");
+      return summary;
+    }
   }), [runMutation]);
 
   const startStripeSetup = useCallback(() => runMutation({
@@ -420,7 +462,10 @@ export function useOnboarding() {
     reload,
     clearMessages,
     saveStoreDetails,
+    saveOwnerProfile,
+    saveOwnerLocation,
     saveAppIdentity,
+    completeOwnerSetup,
     submitForReview,
     startStripeSetup,
     openStripeDashboard,

@@ -311,7 +311,7 @@ async function uploadMenuItemImageVariants(file: File, variantUploads: MenuImage
 
 export async function fetchDashboardLocations(session: OperatorSession): Promise<DashboardLocation[]> {
   const locationIds = normalizeOperatorLocationIds(session.operator.locationId, session.operator.locationIds ?? []);
-  const canReadStoreConfig = new Set(session.operator.capabilities).has("store:read");
+  const canReadStoreConfig = session.operator.role === "owner" && new Set(session.operator.capabilities).has("store:read");
   const locations = await Promise.all(
     locationIds.map(async (locationId) => {
       const [appConfig, storeConfig] = await Promise.all([
@@ -406,7 +406,7 @@ export async function fetchOperatorSnapshot(
           schema: appConfigSchema
         })
       : Promise.resolve(null),
-    capabilitySet.has("store:read")
+    session.operator.role === "owner" && capabilitySet.has("store:read")
       ? locationId
         ? requestJson({
             apiBaseUrl: session.apiBaseUrl,

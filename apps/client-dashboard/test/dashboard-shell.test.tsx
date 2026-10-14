@@ -84,7 +84,7 @@ describe("React Dashboard V3 shell", () => {
   it("applies the existing capability and role visibility policy to navigation", () => {
     const limitedManager = session("manager", ["store:read"]).operator;
     const visible = getAvailableDashboardSectionsFor(limitedManager, locations);
-    expect(visible).toEqual(["overview", "store"]);
+    expect(visible).toEqual(["overview"]);
 
     const storeOperator = session("store", ["orders:read"]).operator;
     expect(getAvailableDashboardSectionsFor(storeOperator, locations)).toEqual(["orders"]);
@@ -102,7 +102,7 @@ describe("React Dashboard V3 shell", () => {
     expect(html).not.toContain('href="/orders"');
     expect(html).not.toContain('href="/menu"');
     expect(html).not.toContain("App builder");
-    expect(html).toContain('href="/settings"');
+    expect(html).not.toContain('href="/settings"');
   });
 
   it("marks the React-owned Team destination active within Operations", () => {

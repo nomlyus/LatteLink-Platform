@@ -4,7 +4,9 @@ import React from "react";
 import { useEffect, useMemo, useState } from "react";
 import type { OperatorNewsCard } from "../../../model";
 import type { useCardMutations } from "../use-card-mutations";
-import { getNextNewsCardSortOrder } from "../cards-domain";
+import { getNextNewsCardSortOrder, searchNewsCards } from "../cards-domain";
+import { paginateTableRows } from "../../../components/dashboard/table-page";
+import { TablePagination } from "../../../components/dashboard/TablePagination";
 import { CardEditorDialog } from "./CardEditorDialog";
 import { CardsList } from "./CardsList";
 
@@ -12,6 +14,7 @@ type CardsMutations = ReturnType<typeof useCardMutations>;
 
 export function CardsPage({
   cards,
+  query = "",
   loadStatus,
   loadError,
   selectedLocationId,
@@ -22,6 +25,7 @@ export function CardsPage({
   onRetry
 }: {
   cards: OperatorNewsCard[] | null;
+  query?: string;
   loadStatus: "loading" | "ready" | "error";
   loadError: string | null;
   selectedLocationId: string | "all" | null;
@@ -32,10 +36,14 @@ export function CardsPage({
   onRetry: () => void;
 }) {
   const [editor, setEditor] = useState<"create" | string | null>(null);
+  const [page, setPage] = useState(1);
   const orderedCards = useMemo(() => cards ?? [], [cards]);
+  const matchingCards = useMemo(() => searchNewsCards(orderedCards, query), [orderedCards, query]);
+  const paginated = paginateTableRows(matchingCards, page);
   const editingCard = typeof editor === "string" ? orderedCards.find((card) => card.cardId === editor) ?? null : null;
 
-  useEffect(() => setEditor(null), [scopeKey]);
+  useEffect(() => { setEditor(null); setPage(1); }, [scopeKey]);
+  useEffect(() => { setPage(1); }, [query]);
 
   async function saveCard(cardDraft: Parameters<CardsMutations["saveCard"]>[1]) {
     if (editor === "create") return mutations.createCard(cardDraft);
@@ -48,15 +56,10 @@ export function CardsPage({
   }
 
   return (
-    <section className="dash-section dash-section--cards" aria-label="Cards management">
-      <div className="dash-cards-heading">
-        <div>
-          <span className="dash-cards-heading__eyebrow">Mobile app</span>
-          <h1>News cards</h1>
-          <p>Manage the rotating cards shown on the mobile home page.</p>
-        </div>
+    <section className="dash-section dash-section--cards dash-section--management-table" aria-label="Cards management" id="cards-results">
+      <div className="dash-management-toolbar">
         {canWrite && selectedLocationId !== "all" && selectedLocationId ? (
-          <button className="button button--primary" type="button" onClick={() => setEditor("create")}>+ Add card</button>
+          <button className="button button--secondary dash-menu-create-button" type="button" disabled={mutations.isMutating} onClick={() => setEditor("create")}>Add card</button>
         ) : null}
       </div>
 
@@ -74,10 +77,11 @@ export function CardsPage({
       ) : (
         <>
           {!canWrite ? <div className="dash-cards-readonly" role="status">You can review homepage cards, but editing is disabled for this role.</div> : null}
-          <div className="dash-cards-list-surface">
-            {orderedCards.length ? (
+          <div className="dash-cards-list-surface dash-management-table-surface">
+            {matchingCards.length ? (
               <CardsList
-                cards={orderedCards}
+                cards={paginated.items}
+                orderedCards={orderedCards}
                 canWrite={canWrite}
                 canChangeVisibility={canChangeVisibility}
                 pending={mutations.isMutating}
@@ -87,12 +91,13 @@ export function CardsPage({
               />
             ) : (
               <div className="dash-cards-empty">
-                <strong>No homepage cards yet</strong>
-                <span>Add a card to share a short update with customers in the mobile app.</span>
-                {canWrite ? <button className="button button--secondary" type="button" onClick={() => setEditor("create")}>Add first card</button> : null}
+                <strong>{query.trim() ? "No cards match this search" : "No homepage cards yet"}</strong>
+                <span>{query.trim() ? "Try another search." : "Add a card to share a short update with customers in the mobile app."}</span>
+                {canWrite && !query.trim() ? <button className="button button--secondary" type="button" onClick={() => setEditor("create")}>Add first card</button> : null}
               </div>
             )}
           </div>
+          <TablePagination label="News cards pagination" {...paginated} onPage={setPage} />
         </>
       )}
 

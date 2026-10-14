@@ -716,7 +716,7 @@ let previousFreeClientDashboardDomain: string | undefined;
         });
       }
 
-      if ((url.endsWith("/v1/operator/auth/me") || url.endsWith("/v1/internal/gateway/operator/auth/verify")) && method === "GET") {
+      if (((url.endsWith("/v1/operator/auth/me") || url.endsWith("/v1/internal/gateway/operator/auth/verify")) && method === "GET") || (url.endsWith("/v1/operator/profile") && method === "PATCH")) {
         if (!authHeader) {
           return new Response(
             JSON.stringify({
@@ -813,7 +813,8 @@ let previousFreeClientDashboardDomain: string | undefined;
           );
         }
 
-        return new Response(JSON.stringify(operator), {
+        const responseOperator = url.endsWith("/v1/operator/profile") ? { ...operator, displayName: JSON.parse(String(init?.body ?? "{}")).displayName } : operator;
+        return new Response(JSON.stringify(responseOperator), {
           status: 200,
           headers: { "content-type": "application/json" }
         });
@@ -4287,6 +4288,20 @@ let previousFreeClientDashboardDomain: string | undefined;
     await app.close();
   });
 
+  it("blocks managers with legacy store-read capability and store users from configuration data", async () => {
+    const app = await buildApp();
+    for (const headers of [managerOperatorHeaders, storeOperatorHeaders]) {
+      for (const url of ["/v1/admin/store/config", "/v1/admin/onboarding", "/v1/admin/mobile-release/build-jobs", "/v1/admin/mobile-experience"]) {
+        const response = await app.inject({ method: "GET", url, headers });
+        expect(response.statusCode).toBe(403);
+        expect(response.json()).toMatchObject({ code: "FORBIDDEN" });
+      }
+    }
+    const requestedUrls = fetchMock.mock.calls.map(([input]) => typeof input === "string" ? input : input.url);
+    expect(requestedUrls.some((url) => url.startsWith("http://catalog.internal"))).toBe(false);
+    await app.close();
+  });
+
   it("blocks store accounts from owner-only admin routes", async () => {
     const app = await buildApp();
 
@@ -5441,6 +5456,32 @@ let previousFreeClientDashboardDomain: string | undefined;
 
   it("forwards operator onboarding routes only for authorized locations", async () => {
     const app = await buildApp();
+    const updatedName = await app.inject({ method: "PATCH", url: "/v1/admin/operator-profile", headers: ownerOperatorHeaders, payload: { displayName: "Owner Name" } });
+    expect(updatedName.statusCode).toBe(200);
+    expect(updatedName.json()).toMatchObject({ displayName: "Owner Name", role: "owner" });
+    expect((await app.inject({ method: "PATCH", url: "/v1/admin/operator-profile", headers: ownerOperatorHeaders, payload: { displayName: "Owner Name", role: "owner" } })).statusCode).toBe(400);
+    const profile = { ownerName: "Owner", brandName: "Company", customerFacingName: "Coffee" };
+    const details = { locationName: "Downtown", address: "123 Test Street", timezone: "America/Detroit", hours: "Daily 8–5", taxRateBasisPoints: 625 };
+    for (const payload of [{ ownerProfile: profile }, { ownerLocationDetails: details }]) {
+      expect((await app.inject({ method: "PATCH", url: "/v1/admin/onboarding?locationId=northside-01", headers: multiLocationOperatorHeaders, payload })).statusCode).toBe(200);
+      for (const headers of [managerOperatorHeaders, storeOperatorHeaders]) expect((await app.inject({ method: "PATCH", url: "/v1/admin/onboarding", headers, payload })).statusCode).toBe(403);
+    }
+    for (const headers of [managerOperatorHeaders, storeOperatorHeaders]) {
+      expect((await app.inject({ method: "PATCH", url: "/v1/admin/operator-profile", headers, payload: { displayName: "Owner" } })).statusCode).toBe(403);
+    }
+
+    const completion = await app.inject({ method: "PATCH", url: "/v1/admin/onboarding?locationId=northside-01", headers: multiLocationOperatorHeaders, payload: { completeOwnerSetup: true } });
+    expect(completion.statusCode, completion.body).toBe(200);
+    const completionCall = fetchMock.mock.calls.find(([input, init]) => String(input).includes("/locations/northside-01/onboarding") && JSON.parse(String(init?.body ?? "{}")).completeOwnerSetup === true);
+    expect(completionCall).toBeDefined();
+    expect(JSON.parse(String(completionCall?.[1]?.body))).toEqual({ completeOwnerSetup: true });
+    const submission = await app.inject({ method: "PATCH", url: "/v1/admin/onboarding?locationId=northside-01", headers: multiLocationOperatorHeaders, payload: { submitOwnerSetup: true, locationIds: ["northside-01"] } });
+    expect(submission.statusCode, submission.body).toBe(200);
+    expect((await app.inject({ method: "PATCH", url: "/v1/admin/onboarding?locationId=northside-01", headers: multiLocationOperatorHeaders, payload: { submitOwnerSetup: true, locationIds: ["northside-01", "unauthorized"] } })).statusCode).toBe(403);
+    for (const headers of [managerOperatorHeaders, storeOperatorHeaders]) {
+      expect((await app.inject({ method: "PATCH", url: "/v1/admin/onboarding", headers, payload: { completeOwnerSetup: true } })).statusCode).toBe(403);
+      expect((await app.inject({ method: "PATCH", url: "/v1/admin/onboarding", headers, payload: { submitOwnerSetup: true, locationIds: ["flagship-01"] } })).statusCode).toBe(403);
+    }
 
     const readResponse = await app.inject({
       method: "GET",

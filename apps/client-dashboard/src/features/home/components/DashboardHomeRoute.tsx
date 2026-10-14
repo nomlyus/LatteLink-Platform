@@ -8,7 +8,6 @@ import { useDashboardSession } from "../../auth/session-provider";
 import { SignInRoute } from "../../auth/components/SignInRoute";
 import { OwnerHomePage } from "./OwnerHomePage";
 import { OperatorOverviewPage } from "./OperatorOverviewPage";
-import { OwnerHomeWizardPrompt } from "../../onboarding/components/OwnerHomeWizardPrompt";
 import { stripLaunchEntryParams, resolveDashboardEntryPlan } from "../../../lib/navigation/dashboard-entry";
 
 export function DashboardHomeRoute() {
@@ -46,7 +45,7 @@ export function DashboardHomeRoute() {
 
   return (
     <DashboardShell notice={launchNotice}>
-      {session.operator.role === "owner" ? <><OwnerHomePage /><OwnerHomeWizardPrompt /></> : <OperatorOverviewPage search={search} />}
+      {session.operator.role === "owner" ? <OwnerHomePage /> : <OperatorOverviewPage search={search} />}
     </DashboardShell>
   );
 }

@@ -1,7 +1,8 @@
 "use client";
 
 import React from "react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { DashboardSearch } from "../../../components/dashboard/DashboardSearch";
 import { useRouter } from "next/navigation";
 import { SignInRoute } from "../../auth/components/SignInRoute";
 import { DashboardShell, DashboardShellLoading } from "../../../components/dashboard/DashboardShell";
@@ -17,6 +18,8 @@ export function TeamRoute() {
   const location = useDashboardLocation();
   const team = useTeam();
   const mutations = useTeamMutations(team);
+  const [query, setQuery] = useState("");
+  useEffect(() => { setQuery(""); }, [team.scopeKey]);
 
   if (sessionStatus === "loading") return <DashboardShellLoading />;
   if (sessionStatus === "signed-out") return <SignInRoute />;
@@ -35,9 +38,11 @@ export function TeamRoute() {
   }
 
   return (
-    <DashboardShell activeSection="team" locationSelectionDisabled={mutations.isMutating}>
+    <DashboardShell activeSection="team" locationSelectionDisabled={mutations.isMutating}
+      search={<DashboardSearch label="Search team" controls="team-results" query={query} onQueryChange={setQuery} />}>
       <TeamPage
         members={team.members}
+        query={query}
         loadStatus={team.status}
         loadError={team.error}
         scopeKey={team.scopeKey}

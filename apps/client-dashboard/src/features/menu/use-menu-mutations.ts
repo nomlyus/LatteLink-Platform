@@ -69,7 +69,7 @@ export function useMenuMutations(menu: OperatorMenuResponse | null, reload: () =
 
   const run = useCallback(async <T,>(
     operationLabel: string,
-    successMessage: string,
+    successMessage: string | null,
     fallbackMessage: string,
     permission: "write" | "visibility",
     operation: (currentSession: OperatorSession, locationId: string) => Promise<T>,
@@ -110,7 +110,8 @@ export function useMenuMutations(menu: OperatorMenuResponse | null, reload: () =
       if (isSameScope()) {
         const reloaded = await reload();
         if (isSameScope()) {
-          setNotice(reloaded ? successMessage : `${successMessage} The latest menu could not be reloaded.`);
+          if (successMessage) setNotice(reloaded ? successMessage : `${successMessage} The latest menu could not be reloaded.`);
+          else if (!reloaded) setError("The item was saved, but the latest menu could not be reloaded. Try again before making further changes.");
         }
       }
       return result;
@@ -136,7 +137,7 @@ export function useMenuMutations(menu: OperatorMenuResponse | null, reload: () =
   ), [run]);
 
   const saveItem = useCallback((item: OperatorMenuItem, input: AdminMenuItemUpdate, imageChange: ItemImageChange = {}) => run(
-    "Saving item…", "Item saved.", "Unable to save item.", "write",
+    "Saving item…", null, "Unable to save item.", "write",
     async (currentSession, locationId) => {
       const imageUrl = imageChange.file && imageChange.file.size > 0
         ? await uploadOperatorMenuItemImage(currentSession, locationId, item.itemId, imageChange.file)

@@ -1165,10 +1165,29 @@ export const adminClientCreateRequestSchema = z.object({
   capabilities: appConfigStoreCapabilitiesSchema.optional()
 }).strict();
 
+export const ownerOnboardingProfileSchema = z.object({
+  ownerName: z.string().trim().min(1).max(120),
+  brandName: z.string().trim().min(1).max(120),
+  customerFacingName: z.string().trim().min(1).max(120)
+}).strict();
+
+export const ownerOnboardingLocationDetailsSchema = z.object({
+  locationName: z.string().trim().min(1).max(120),
+  address: z.string().trim().min(1).max(500),
+  timezone: ianaTimezoneSchema,
+  hours: z.string().trim().min(1).max(1000),
+  taxRateBasisPoints: z.number().int().min(0).max(10000)
+}).strict();
+
 export const onboardingSummarySchema = z.object({
   tenantId: z.string().trim().min(1),
   brandId: z.string().trim().min(1),
   brandName: z.string().trim().min(1),
+  ownerSetupCompletedAt: z.string().datetime().optional(),
+  ownerSetupRequired: z.boolean().optional(),
+  ownerProfile: ownerOnboardingProfileSchema.optional(),
+  ownerLocationDetails: ownerOnboardingLocationDetailsSchema.optional(),
+  ownerDetailsConfirmedAt: z.string().datetime().optional(),
   locationId: z.string().trim().min(1),
   locationName: z.string().trim().min(1),
   marketLabel: z.string().trim().min(1),
@@ -1224,6 +1243,11 @@ export const internalClientListResponseSchema = z.object({
 });
 
 export const operatorOnboardingUpdateSchema = z.object({
+  ownerProfile: ownerOnboardingProfileSchema.optional(),
+  ownerLocationDetails: ownerOnboardingLocationDetailsSchema.optional(),
+  submitOwnerSetup: z.literal(true).optional(),
+  locationIds: z.array(z.string().trim().min(1)).min(1).optional(),
+  completeOwnerSetup: z.literal(true).optional(),
   businessProfileComplete: z.boolean().optional(),
   storeOperationsComplete: z.boolean().optional(),
   menuReady: z.boolean().optional(),
@@ -1232,6 +1256,14 @@ export const operatorOnboardingUpdateSchema = z.object({
   readyForReview: z.boolean().optional(),
   blockedReason: z.string().trim().min(1).nullable().optional(),
   notes: z.string().trim().min(1).optional()
+}).strict().refine((input) => !(input.ownerProfile || input.ownerLocationDetails) || Object.keys(input).length === 1, {
+  message: "Save owner profile or location details separately"
+}).refine((input) => !input.completeOwnerSetup || Object.keys(input).length === 1, {
+  message: "Finish owner setup separately from configuration updates"
+}).refine((input) => input.submitOwnerSetup
+  ? Object.keys(input).length === 2 && Boolean(input.locationIds) && new Set(input.locationIds).size === input.locationIds?.length
+  : input.locationIds === undefined, {
+  message: "Submit owner setup with the distinct provisioned location IDs only"
 });
 
 export const internalOwnerOnboardingUpdateSchema = z
@@ -1280,6 +1312,8 @@ export const mobileReleaseProfileUpdateSchema = mobileReleaseProfileSchema
 
 export const operatorAppIdentityProfileUpdateSchema = appIdentityProfileSchema
   .omit({
+    bundleIdentifier: true,
+    sku: true,
     locationId: true,
     readiness: true,
     adminOverrideReady: true,

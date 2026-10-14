@@ -203,6 +203,26 @@ The runner must execute the generated merchant build preparation script with the
 commit and pass the phase through to the generated `commands.sh`. Keep EAS and App Store Connect
 credentials in the deployment secret store; never put them in a job payload or repository file.
 
+### Profile and existing-build reconciliation
+
+`catalog_app_identity_profiles` is the source for onboarding app readiness and
+the release worker's app metadata. The worker reads the current profile for each
+job; do not maintain a separate editable copy of those fields in a runner.
+Build preparation records an `appIdentity` snapshot in `build-manifest.json`,
+including description and keywords, and includes those values in `configHash`.
+The snapshot describes that build only; editing Settings does not change an
+already-installed binary or submit new App Store metadata.
+
+For an app built before this control plane was populated, reconcile the matching
+brand/location once from verified EAS build inputs and its App Store Connect
+record. Confirm the beta API target before writing dev data. Preserve the
+registered bundle identifier and SKU; do not generate replacements for an
+existing app. App Store subtitle, description, support URL, and SKU are not
+necessarily present in EAS environment variables. Missing values must be read
+from the actual App Store Connect record or explicitly supplied, never inferred
+from test fixtures or invented to pass readiness. A running beta build does not
+by itself prove that all App Store submission requirements are satisfied.
+
 Use `--execute preflight`, `--execute build`, `--execute submit`, or `--execute all` only after checking
 the generated manifest. The default mode only writes the bundle and does not call EAS.
 

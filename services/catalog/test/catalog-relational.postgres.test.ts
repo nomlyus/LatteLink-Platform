@@ -5,6 +5,7 @@ import {
   menuResponseSchema,
   normalizeCustomizationGroups,
   priceMenuItemCustomization,
+  operatorAppIdentityProfileUpdateSchema,
   type MenuItemCustomizationGroup,
   type MenuResponse
 } from "@lattelink/contracts-catalog";
@@ -21,6 +22,7 @@ import {
   replaceRelationalMenuFromExternal
 } from "../src/menu-relational.js";
 import { createCatalogRepository } from "../src/repository.js";
+import { registerOwnerSetupPostgresCases } from "./owner-setup-postgres-cases.js";
 
 const databaseUrl = process.env.PERSISTENCE_TEST_DATABASE_URL;
 const describeWithPostgres = databaseUrl ? describe : describe.skip;
@@ -765,6 +767,34 @@ describeWithPostgres("relational catalog migration and integrity (PostgreSQL)", 
     }
   });
 
+  it("persists Nomly-assigned app identifiers and preserves them through operator edits", async () => {
+    const previousDatabaseUrl = process.env.DATABASE_URL;
+    process.env.DATABASE_URL = schemaDatabaseUrl.toString();
+    const logger = { info: () => undefined, warn: () => undefined, error: () => undefined, child: () => logger } as never;
+    const repository = await createCatalogRepository(logger);
+    try {
+      const created = await repository.createInternalClient({ clientName: "Assigned Coffee", locationName: "Assigned Location", marketLabel: "Test", ownerEmail: "assigned@example.test" });
+      const first = await repository.updateOperatorLocationAppIdentity(created.locationId,
+        operatorAppIdentityProfileUpdateSchema.parse({ appName: "Assigned Coffee", bundleIdentifier: "us.user.chosen", sku: "user-chosen" }));
+      const assigned = first?.appIdentity;
+      expect(assigned?.bundleIdentifier).toMatch(/^us\.nomly\.app[a-f0-9]{24}$/);
+      expect(assigned?.sku).toMatch(/^nomly-[a-f0-9]{24}$/);
+      const stored = await db.selectFrom("catalog_app_identity_profiles").selectAll().where("location_id", "=", created.locationId).executeTakeFirstOrThrow();
+      expect(stored.bundle_identifier).toBe(assigned?.bundleIdentifier);
+      expect(stored.sku).toBe(assigned?.sku);
+      const renamed = await repository.updateOperatorLocationAppIdentity(created.locationId, { appName: "Renamed Coffee" });
+      expect(renamed?.appIdentity).toMatchObject({ bundleIdentifier: assigned?.bundleIdentifier, sku: assigned?.sku });
+      await repository.updateInternalLocationAppIdentity(created.locationId, { bundleIdentifier: "us.nomly.existing", sku: "existing-ios" });
+      const preserved = await repository.updateOperatorLocationAppIdentity(created.locationId,
+        operatorAppIdentityProfileUpdateSchema.parse({ appName: "Another Name", bundleIdentifier: "us.user.replacement", sku: "replacement" }));
+      expect(preserved?.appIdentity).toMatchObject({ bundleIdentifier: "us.nomly.existing", sku: "existing-ios" });
+    } finally {
+      await repository.close();
+      if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = previousDatabaseUrl;
+    }
+  });
+
   it("updates category memberships without rewriting decoded legacy JSON arrays", async () => {
     const previousDatabaseUrl = process.env.DATABASE_URL;
     process.env.DATABASE_URL = schemaDatabaseUrl.toString();
@@ -950,6 +980,8 @@ describeWithPostgres("relational catalog migration and integrity (PostgreSQL)", 
     }).execute();
     await expect(deleteRelationalCategory(db, "external-location", "missing")).rejects.toMatchObject({ code: "CATALOG_EXTERNAL_SYNC_READ_ONLY" });
   });
+
+  registerOwnerSetupPostgresCases(db, schemaDatabaseUrl);
 
   it("rolls back 0053 partial work and succeeds on retry after the bad legacy row is corrected", async () => {
     const danglingLegacyCategories = await sql<{ item_id: string; category_id: string }>`

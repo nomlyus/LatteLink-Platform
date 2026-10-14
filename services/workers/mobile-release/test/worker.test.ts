@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFile } from "node:fs/promises";
 import {
   buildMobileReleaseWorkerConfig,
   processMobileReleaseJob,
@@ -107,7 +108,20 @@ describe("mobile release worker", () => {
   });
 
   it("passes a validated merchant build manifest to the provider command", async () => {
-    const result = await processMobileReleaseJob(config(), runtime(), job);
+    const runCommand = vi.fn(async (_command, env) => {
+      const input = JSON.parse(await readFile(env.MOBILE_RELEASE_JOB_JSON!, "utf8"));
+      expect(input).toMatchObject({
+        appName: onboarding.appIdentity.appName,
+        displayName: onboarding.appIdentity.displayName,
+        bundleIdentifier: onboarding.appIdentity.bundleIdentifier,
+        subtitle: onboarding.appIdentity.subtitle,
+        description: onboarding.appIdentity.description,
+        keywords: onboarding.appIdentity.keywords,
+        privacyPolicyUrl: onboarding.appIdentity.privacyPolicyUrl
+      });
+      return '{"buildId":"eas-build-1","submissionId":"eas-submission-1"}';
+    });
+    const result = await processMobileReleaseJob(config(), runtime({ runCommand }), job);
     expect(result).toEqual({
       providerIds: { easBuildId: "eas-build-1", easSubmissionId: "eas-submission-1" },
       awaitingApproval: true

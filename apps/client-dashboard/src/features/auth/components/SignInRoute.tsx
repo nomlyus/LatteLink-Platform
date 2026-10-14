@@ -9,6 +9,7 @@ import { getPostSignInPath, isLaunchEntry, safeAuthError, validateSignIn } from 
 import { useDashboardSession } from "../session-provider";
 import { DashboardShellLoading } from "../../../components/dashboard/DashboardShell";
 import { SignInPage, type LaunchWorkspaceValues } from "./SignInPage";
+import { resolveOwnerSetupSignInDestination } from "../../onboarding/owner-setup-entry";
 
 function localApiOverrideAllowed() {
   return process.env.NODE_ENV === "development" && typeof window !== "undefined" &&
@@ -129,8 +130,9 @@ export function SignInRoute({ initialEmail = "", initialMessage = null, destinat
         signal: controller.signal
       });
       if (controller.signal.aborted) return;
+      const destination = await resolveOwnerSetupSignInDestination(nextSession, destinationOverride ?? getPostSignInPath(pathname, nextSession), controller.signal);
+      if (controller.signal.aborted) return;
       establishSession(nextSession);
-      const destination = destinationOverride ?? getPostSignInPath(pathname, nextSession);
       if (destination) router.replace(withCurrentSearchAndHash(destination), { scroll: false });
     } catch (signInError) {
       if (!controller.signal.aborted) setError(safeAuthError(signInError, "Unable to sign in.", [password]));

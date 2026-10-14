@@ -9,7 +9,8 @@ const harness = vi.hoisted(() => ({
     selectedLocationId: null as string | "all" | null,
     selectedLocation: null as { locationName: string } | null,
     status: "idle" as "idle" | "loading" | "ready" | "error",
-    hasCapability: () => false
+    hasCapability: () => false,
+    availableLocations: [] as { locationId: string }[]
   },
   onboarding: {
     status: "loading" as "loading" | "ready" | "not-found" | "error" | "scope-required",
@@ -47,7 +48,7 @@ import { OnboardingRoute } from "../src/features/onboarding/components/Onboardin
 beforeEach(() => {
   harness.sessionStatus = "signed-out";
   harness.session = null;
-  harness.location = { selectedLocationId: null, selectedLocation: null, status: "idle", hasCapability: () => false };
+  harness.location = { selectedLocationId: null, selectedLocation: null, status: "idle", hasCapability: () => false, availableLocations: [] };
   harness.onboarding.status = "loading";
   harness.onboarding.summary = null;
   harness.search = "";
@@ -66,7 +67,7 @@ describe("React Onboarding route ownership", () => {
     harness.session = { operator: { operatorUserId: "manager-a", role: "manager", capabilities: ["store:read"] } };
     harness.location.status = "ready";
     harness.location.selectedLocationId = "location-a";
-    expect(renderToStaticMarkup(<OnboardingRoute />)).toContain("Owner access required");
+    expect(renderToStaticMarkup(<OnboardingRoute />)).toContain("Dashboard loading");
   });
 
   it("renders the location-specific scope requirement for All Locations", () => {
@@ -76,8 +77,8 @@ describe("React Onboarding route ownership", () => {
     harness.location.selectedLocationId = "all";
     harness.onboarding.status = "scope-required";
     const html = renderToStaticMarkup(<OnboardingRoute />);
-    expect(html).toContain("Choose one location");
-    expect(html).toContain("Launch readiness is managed one location at a time");
+    expect(html).toContain("Dashboard loading");
+    expect(html).not.toContain('role="dialog"');
   });
 
   it("keeps store operators on the React Orders destination", () => {

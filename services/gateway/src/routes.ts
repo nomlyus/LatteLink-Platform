@@ -38,6 +38,7 @@ import {
   operatorUserListResponseSchema,
   operatorUserParamsSchema,
   operatorUserUpdateSchema,
+  operatorSelfProfileUpdateSchema,
   passkeyChallengeRequestSchema,
   passkeyChallengeResponseSchema,
   passkeyVerifyRequestSchema,
@@ -527,7 +528,8 @@ async function resolveOperatorAccess(params: {
   }
 
   if (request.authenticatedOperator) {
-    if (!request.authenticatedOperator.capabilities.includes(requiredCapability)) {
+    if (!request.authenticatedOperator.capabilities.includes(requiredCapability) ||
+      (requiredCapability.startsWith("store:") && request.authenticatedOperator.role !== "owner")) {
       reply.status(403).send(forbidden(request.id, requiredCapability));
       return undefined;
     }
@@ -588,7 +590,8 @@ async function resolveOperatorAccess(params: {
     }
 
     request.authenticatedOperator = operator.data;
-    if (!operator.data.capabilities.includes(requiredCapability)) {
+    if (!operator.data.capabilities.includes(requiredCapability) ||
+      (requiredCapability.startsWith("store:") && operator.data.role !== "owner")) {
       reply.status(403).send(forbidden(request.id, requiredCapability));
       return undefined;
     }
@@ -5255,6 +5258,12 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
 
       const input = operatorOnboardingUpdateSchema.parse(request.body);
 
+      if ((input.ownerProfile || input.ownerLocationDetails) && request.authenticatedOperator?.role !== "owner") return reply.status(403).send(forbidden(request.id));
+
+      if (input.submitOwnerSetup && (!request.authenticatedOperator || input.locationIds?.some((id) => !request.authenticatedOperator?.locationIds.includes(id)))) {
+        return reply.status(403).send(forbidden(request.id));
+      }
+
       return proxyUpstream({
         request,
         reply,
@@ -5404,6 +5413,15 @@ export async function registerRoutes(app: FastifyInstance, options: { allowDefer
       });
     }
   );
+
+  app.patch("/v1/admin/operator-profile", {
+    preHandler: [enforceProtectedPreAuthRateLimit, requireOperatorCapability("store:write"), app.rateLimit(staffWriteRateLimit)]
+  }, async (request, reply) => {
+    if (request.authenticatedOperator?.role !== "owner") return reply.status(403).send(forbidden(request.id));
+    const input = operatorSelfProfileUpdateSchema.safeParse(request.body);
+    if (!input.success) return reply.status(400).send(invalidRequest(request.id, "Enter a valid display name only"));
+    return proxyUpstream({ request, reply, baseUrl: identityBaseUrl, serviceLabel: "Identity", method: "PATCH", path: "/v1/operator/profile", body: input.data, responseSchema: operatorMeResponseSchema });
+  });
 
   app.patch(
     "/v1/admin/staff/:operatorUserId",

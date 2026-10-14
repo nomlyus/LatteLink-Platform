@@ -203,7 +203,7 @@ export function DashboardShellView({
     <div className="dash-shell">
       <DashboardSidebar session={session} sections={sections} loading={loading} storeLabel={storeLabel} activeSection={activeSection} onLogout={onLogout} />
       <div className="dash-main">
-        <DashboardTopbar session={session} title={getDashboardSectionLabel(activeSection)} locations={locations} selectedLocationId={selectedLocationId} locationStatus={locationStatus} locationSelectionDisabled={locationSelectionDisabled} onLocationChange={onSelectLocation} search={search} showDate={activeSection !== "orders" && activeSection !== "menu"} />
+        <DashboardTopbar session={session} title={getDashboardSectionLabel(activeSection)} locations={locations} selectedLocationId={selectedLocationId} locationStatus={locationStatus} locationSelectionDisabled={locationSelectionDisabled} onLocationChange={onSelectLocation} search={search} showDate={!["orders", "menu", "cards", "discounts", "team", "store"].includes(activeSection)} />
         <div className={`dash-content dash-content--${activeSection === "overview" ? "home" : activeSection}`}>
           {notice ? <div className="banner banner--notice" role="status">{notice}</div> : null}
           {children}

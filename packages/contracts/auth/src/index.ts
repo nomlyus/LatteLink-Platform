@@ -177,7 +177,6 @@ export const operatorCapabilitiesByRole = {
     "menu:read",
     "menu:write",
     "menu:visibility",
-    "store:read",
     "team:read"
   ],
   store: ["orders:read", "orders:write"]
@@ -272,6 +271,9 @@ export const operatorUserListResponseSchema = z.object({
 });
 
 export const operatorPasswordSchema = z.string().min(8).max(128);
+export const operatorSelfProfileUpdateSchema = z.object({
+  displayName: z.string().trim().min(1).max(120)
+}).strict();
 
 export const operatorUserCreateSchema = z.object({
   displayName: z.string().trim().min(1),

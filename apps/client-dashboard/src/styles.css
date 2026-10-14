@@ -1678,7 +1678,11 @@ label.field > span {
 }
 
 .dash-content--orders,
-.dash-content--menu {
+.dash-content--menu,
+.dash-content--cards,
+.dash-content--discounts,
+.dash-content--team,
+.dash-content--store {
   display: flex;
   flex-direction: column;
   padding: 0 40px 28px;
@@ -1936,7 +1940,11 @@ label.field > span {
 
 @media (max-width: 960px) {
   .dash-content--orders,
-  .dash-content--menu {
+  .dash-content--menu,
+  .dash-content--cards,
+  .dash-content--discounts,
+  .dash-content--team,
+  .dash-content--store {
     padding-right: 24px;
     padding-left: 24px;
   }
@@ -1944,7 +1952,11 @@ label.field > span {
 
 @media (max-width: 680px) {
   .dash-content--orders,
-  .dash-content--menu {
+  .dash-content--menu,
+  .dash-content--cards,
+  .dash-content--discounts,
+  .dash-content--team,
+  .dash-content--store {
     padding: 0 16px 18px;
     overflow-y: auto;
   }
@@ -5021,6 +5033,67 @@ label.field > span {
     grid-template-columns: 1fr;
   }
 }
+
+/* Compact management tables share the Orders/Menu viewport and row treatment. */
+.dash-content.dash-content--cards,
+.dash-content.dash-content--discounts,
+.dash-content.dash-content--team,
+.dash-content.dash-content--store { overflow: hidden; }
+.dash-content > .dash-section--management-table { display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; gap: 12px; }
+.dash-management-toolbar { display: flex; min-height: 32px; flex: 0 0 auto; align-items: center; justify-content: flex-end; }
+.dash-management-table-surface {
+  --management-row-height: clamp(20px, calc((100cqh - 46px) / 15), 37px);
+  --management-row-padding: clamp(1px, calc((var(--management-row-height) - 25px) / 2), 4px);
+  flex: 1 1 auto;
+  min-height: 0;
+  container-type: size;
+}
+.dash-order-table.dash-management-table { width: 100%; min-width: 0; table-layout: fixed; }
+.dash-management-table th { height: 45px; }
+.dash-management-table th,
+.dash-management-table td { overflow: hidden; padding-right: clamp(6px, 1vw, 16px); padding-left: clamp(6px, 1vw, 16px); text-overflow: ellipsis; white-space: nowrap; }
+.dash-management-table td { height: var(--management-row-height); padding-top: var(--management-row-padding); padding-bottom: var(--management-row-padding); font-size: 12px; }
+.dash-management-table strong { color: var(--color-text); font-weight: 500; }
+.dash-management-table__actions { text-align: right; }
+.dash-management-table td.dash-management-table__actions { overflow: visible; }
+.dash-cards-table th:nth-child(1) { width: 28%; }
+.dash-cards-table th:nth-child(2) { width: 15%; }
+.dash-cards-table th:nth-child(4) { width: 12%; }
+.dash-cards-table th:last-child { width: 80px; }
+.dash-discounts-table th:nth-child(1) { width: 18%; }
+.dash-discounts-table th:nth-child(2) { width: 21%; }
+.dash-discounts-table th:nth-child(3) { width: 12%; }
+.dash-discounts-table th:nth-child(4) { width: 13%; }
+.dash-discounts-table th:last-child { width: 80px; }
+.dash-management-table tbody tr:nth-child(n+8) .dash-menu-row-actions__popover { top: auto; bottom: calc(100% + 5px); }
+.dash-management-table .dash-discounts-status { padding: 0; border: 0; background: none; color: var(--color-text-2); font-weight: 400; }
+.dash-management-table .dash-discounts-status__dot { display: none; }
+.dash-management-table-surface > .dash-cards-empty,
+.dash-management-table-surface > .dash-discounts-empty,
+.dash-management-table-surface > .dash-team-empty { height: 100%; min-height: 0; }
+.dash-team-compact-table th:nth-child(1) { width: 22%; }
+.dash-team-compact-table th:nth-child(2) { width: 25%; }
+.dash-team-compact-table th:nth-child(3) { width: 12%; }
+.dash-team-compact-table th:nth-child(5) { width: 11%; }
+.dash-team-compact-table th:last-child { width: 80px; }
+.dash-management-table .dash-team-status::before { display: none; }
+.dash-management-table .dash-team-status,
+.dash-management-table .dash-team-role { font-size: 12px; }
+.dash-settings-toolbar { justify-content: space-between; }
+.dash-settings-surface { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 18px; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-surface); }
+.dash-settings-form { gap: 16px; }
+.dash-settings-form .field { margin: 0; }
+.dash-settings-form input { min-height: 34px; font-size: 12px; }
+.dash-settings-form textarea { min-height: 74px; font-size: 12px; }
+.dash-settings-form .dash-form-actions { justify-content: flex-end; }
+.dash-settings-surface [hidden] { display: none; }
+.dash-settings-search-empty { display: grid; gap: 8px; justify-items: center; padding: 32px 12px; color: var(--color-text-3); font-size: 12px; }
+.dash-settings-search-empty strong { color: var(--color-text); font-weight: 500; }
+.dash-owner-settings-panel { display: grid; gap: 16px; font-size: 12px; }
+.dash-owner-settings-panel h3 { color: var(--color-text); font-family: var(--font-display); font-size: 16px; font-weight: 500; }
+.dash-owner-settings-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.dash-owner-settings-checklist { display: grid; gap: 12px; padding: 0; list-style: none; }
+.dash-owner-settings-checklist li { display: flex; justify-content: space-between; gap: 16px; color: var(--color-text-2); }
 
 /* Cards management stays within the dashboard's existing compact dark system. */
 .dash-section--cards { display: grid; gap: 14px; }

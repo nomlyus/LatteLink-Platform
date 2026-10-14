@@ -520,12 +520,16 @@ export interface CatalogClientTable {
   brand_id: string;
   client_name: string;
   owner_email: string | null;
+  owner_setup_completed_at: Generated<string | null>;
+  owner_profile_json: Generated<unknown | null>;
   status: "draft" | "invited" | "in_progress" | "ready_for_review" | "approved" | "live" | "blocked";
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }
 
 export interface CatalogClientLocationTable {
+  owner_address_text: Generated<string | null>;
+  owner_details_confirmed_at: Generated<string | null>;
   tenant_id: string;
   location_id: string;
   brand_id: string;

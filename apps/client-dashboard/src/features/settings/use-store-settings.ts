@@ -6,7 +6,7 @@ import {
   fetchOperatorLocationStoreConfig,
   type OperatorSession
 } from "../../api";
-import { canAccessCapability } from "../../model";
+import { canAccessCapability, isOwnerOperator } from "../../model";
 import { isSessionAuthFailure } from "../auth/session-compat";
 import { useDashboardSession } from "../auth/session-provider";
 import { useDashboardLocation } from "../location/location-provider";
@@ -130,7 +130,7 @@ export function useStoreSettings() {
       }
     };
 
-    if (!context.session || !canAccessCapability(context.session.operator, "store:read")) {
+    if (!context.session || !isOwnerOperator(context.session.operator) || !canAccessCapability(context.session.operator, "store:read")) {
       setScopedState({ status: "error", config: null, loadError: "You don’t have permission to view store settings." });
       requests.current.finish(request);
       return false;
@@ -201,7 +201,7 @@ export function useStoreSettings() {
       && Boolean(contextRef.current.session && acceptedAccessTokens.has(contextRef.current.session.accessToken));
 
     if (
-      !initial.session ||
+      !initial.session || !isOwnerOperator(initial.session.operator) ||
       !expectedLocation ||
       expectedLocation === "all" ||
       initial.locationStatus !== "ready" ||
@@ -220,7 +220,7 @@ export function useStoreSettings() {
       const currentSession = await initial.refreshSession();
       if (currentSession) acceptedAccessTokens.add(currentSession.accessToken);
       if (!currentSession || !stillInScope()) return false;
-      if (!canAccessCapability(currentSession.operator, "store:write")) {
+      if (!isOwnerOperator(currentSession.operator) || !canAccessCapability(currentSession.operator, "store:write")) {
         throw new Error("Store settings are read-only for your current role.");
       }
 

@@ -60,6 +60,7 @@ import {
 import { getPersistenceReadinessMetadata } from "@lattelink/persistence";
 import { z } from "zod";
 import { CatalogMutationError, createCatalogRepository, MobileReleaseBuildJobError } from "./repository.js";
+import { OwnerSetupIncompleteError } from "./owner-setup.js";
 import { MobileBrandBootstrapConfigurationError } from "./mobile-brand-bootstrap.js";
 import { isPublicCustomerLocationAccessible } from "./public-location-access.js";
 import { resolveOperatorFallbackLocationId } from "./tenant.js";
@@ -1405,7 +1406,16 @@ export async function registerRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const { locationId } = internalLocationParamsSchema.parse(request.params);
       const input = operatorOnboardingUpdateSchema.parse(request.body);
-      const onboarding = await repository.updateInternalLocationOnboarding(locationId, input);
+      let onboarding;
+      try {
+        onboarding = await repository.updateInternalLocationOnboarding(locationId, input);
+      } catch (error) {
+        if (error instanceof OwnerSetupIncompleteError) return sendError(reply, {
+          statusCode: error.statusCode, code: error.code, message: error.message,
+          requestId: request.id, details: { missingFields: error.missingFields }
+        });
+        throw error;
+      }
       if (!onboarding) {
         return reply.status(404).send(
           serviceErrorSchema.parse({

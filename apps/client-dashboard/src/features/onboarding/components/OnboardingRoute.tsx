@@ -1,139 +1,72 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { DashboardShellLoading } from "../../../components/dashboard/DashboardShell";
 import { SignInRoute } from "../../auth/components/SignInRoute";
-import { DashboardShell, DashboardShellLoading } from "../../../components/dashboard/DashboardShell";
-import { hasSeenOnboardingWizard, markOnboardingWizardSeen } from "../../../storage";
-import { readStripeReturnParams, stripStripeReturnParams } from "../../../lib/navigation/route-callbacks";
 import { useDashboardSession } from "../../auth/session-provider";
 import { useDashboardLocation } from "../../location/location-provider";
-import { isOwnerOperator, isStoreOperator } from "../../../model";
-import { completeLaunchIntent, isOnboardingIncomplete, readLaunchIntent, stripOnboardingEntryParams } from "../onboarding-domain";
-import { OnboardingPage } from "./OnboardingPage";
+import { readStripeReturnParams } from "../../../lib/navigation/route-callbacks";
+import { isOwnerOperator } from "../../../model";
 import { useOnboarding } from "../use-onboarding";
+import { resolveOnboardingCompatibilityDestination } from "../onboarding-domain";
+import { requiresFirstTimeOwnerSetup } from "../owner-setup-domain";
 
-type WizardStep = 1 | 2 | 3 | 4 | 5;
-
+// Compatibility entry for existing invite/Stripe links, never a second setup UI.
 export function OnboardingRoute() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const search = searchParams.toString();
-  const { status: sessionStatus, session } = useDashboardSession();
+  const search = useSearchParams().toString();
+  const { status, session } = useDashboardSession();
   const location = useDashboardLocation();
-  const onboarding = useOnboarding();
-  const { status: onboardingStatus, summary: onboardingSummary } = onboarding;
-  const refreshStripeStatus = onboarding.refreshStripeStatus;
-  const startStripeSetup = onboarding.startStripeSetup;
-  const [wizardOpen, setWizardOpen] = useState(false);
-  const [wizardStep, setWizardStep] = useState<WizardStep>(1);
-  const [callbackNotice, setCallbackNotice] = useState<string | null>(null);
-  const processedStripeCallback = useRef<string | null>(null);
-  const processedLaunchIntent = useRef<string | null>(null);
-  const locationId = location.selectedLocationId;
-  const isOwner = isOwnerOperator(session?.operator);
-  const canWrite = location.hasCapability("store:write");
-  const canManagePayments = isOwner && canWrite;
-  const stripeCallback = readStripeReturnParams(search);
-  const hasGoogleCallback = new URLSearchParams(search).get("google_auth_callback") === "1";
-
-  const closeWizard = useCallback(() => setWizardOpen(false), []);
-  const openWizard = useCallback((step: WizardStep = 1) => {
-    onboarding.clearMessages();
-    setWizardStep(step);
-    setWizardOpen(true);
-  }, [onboarding.clearMessages]);
-  const changeWizardStep = useCallback((step: WizardStep) => setWizardStep(step), []);
+  const fallbackLocationId = location.availableLocations[0]?.locationId;
+  const setup = useOnboarding({ fallbackLocationId });
+  const operation = useRef<{ key: string; promise: Promise<boolean> } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const stripe = readStripeReturnParams(search);
+  const callbackLocationId = new URLSearchParams(search).get("locationId");
+  const operatorId = session?.operator.operatorUserId;
+  const owner = isOwnerOperator(session?.operator);
 
   useEffect(() => {
-    setWizardOpen(false);
-  }, [onboarding.scopeKey]);
-
-  useEffect(() => {
-    if (
-      sessionStatus !== "authenticated" || !session || !isOwner ||
-      location.status !== "ready" || !locationId || locationId === "all" ||
-      (!stripeCallback.returned && !stripeCallback.refreshRequested)
-    ) return;
-
-    const key = `${session.operator.operatorUserId}:${locationId}:${search}`;
-    if (processedStripeCallback.current === key) return;
-    processedStripeCallback.current = key;
-    setCallbackNotice(stripeCallback.refreshRequested
-      ? "Stripe requested a refreshed onboarding link."
-      : "Returned from Stripe. Payment readiness will refresh from the latest account status.");
-    const cleanUrl = stripStripeReturnParams(window.location.pathname, window.location.search, window.location.hash);
-    router.replace(cleanUrl, { scroll: false });
-
-    if (stripeCallback.refreshRequested) {
-      void startStripeSetup();
-    } else {
-      void refreshStripeStatus();
+    if (status !== "authenticated" || !operatorId || new URLSearchParams(search).get("google_auth_callback") === "1") return;
+    if (!owner) { router.replace("/orders"); return; }
+    if (location.status !== "ready" || setup.status === "loading") return;
+    if ((stripe.returned || stripe.refreshRequested) && callbackLocationId) {
+      if (!location.availableLocations.some((entry) => entry.locationId === callbackLocationId)) {
+        setError("The Stripe return location is not authorized for this session.");
+        return;
+      }
+      if (location.selectedLocationId !== callbackLocationId) {
+        location.selectLocation(callbackLocationId);
+        return;
+      }
     }
-  }, [isOwner, location.status, locationId, refreshStripeStatus, router, search, session, sessionStatus, startStripeSetup, stripeCallback.refreshRequested, stripeCallback.returned]);
-
-  useEffect(() => {
-    if (
-      sessionStatus !== "authenticated" || !session || !isOwner ||
-      location.status !== "ready" || !locationId || locationId === "all" ||
-      stripeCallback.returned || stripeCallback.refreshRequested ||
-      !readLaunchIntent(search) || onboardingStatus === "loading"
-    ) return;
-
-    const key = `${session.operator.operatorUserId}:${locationId}:${search}`;
-    if (processedLaunchIntent.current === key) return;
-    processedLaunchIntent.current = key;
-
-    if (onboardingStatus === "ready" && onboardingSummary && isOnboardingIncomplete(onboardingSummary.status)) {
-      markOnboardingWizardSeen(session.operator.operatorUserId, locationId);
-      openWizard(1);
-      router.replace(stripOnboardingEntryParams(window.location.pathname, window.location.search, window.location.hash), { scroll: false });
-    } else if (onboardingStatus === "ready" && onboardingSummary) {
-      router.replace(completeLaunchIntent(window.location.search, window.location.hash), { scroll: false });
-    } else if (onboardingStatus === "scope-required" || onboardingStatus === "not-found") {
-      router.replace(stripOnboardingEntryParams(window.location.pathname, window.location.search, window.location.hash), { scroll: false });
+    if ((stripe.returned || stripe.refreshRequested) && (!location.selectedLocationId || location.selectedLocationId === "all") && fallbackLocationId) {
+      location.selectLocation(fallbackLocationId);
+      return;
     }
-  }, [isOwner, location.status, locationId, onboardingStatus, onboardingSummary, openWizard, router, search, session, sessionStatus, stripeCallback.refreshRequested, stripeCallback.returned]);
+    const key = `${setup.scopeKey}:${search}:${attempt}`;
+    let disposed = false;
+    if (operation.current?.key !== key) {
+      operation.current = { key, promise: stripe.refreshRequested ? setup.startStripeSetup() : stripe.returned ? setup.refreshStripeStatus() : Promise.resolve(true) };
+    }
+    const promise = operation.current.promise;
+    async function proceed() {
+      if (stripe.returned || stripe.refreshRequested) {
+        const succeeded = await promise;
+        if (disposed) return;
+        if (!succeeded) { setError("Payment status could not be refreshed. Your saved configuration is unchanged."); return; }
+        if (stripe.refreshRequested) return;
+      }
+      if (disposed) return;
+      router.replace(resolveOnboardingCompatibilityDestination(search, window.location.hash, Boolean(setup.summary && requiresFirstTimeOwnerSetup(setup.summary))), { scroll: false });
+    }
+    void proceed();
+    return () => { disposed = true; };
+  }, [status, operatorId, owner, location.status, location.selectedLocationId, location.selectLocation, location.availableLocations, callbackLocationId, fallbackLocationId, setup.scopeKey, setup.status, setup.summary, setup.startStripeSetup, setup.refreshStripeStatus, stripe.returned, stripe.refreshRequested, search, router, attempt]);
 
-  useEffect(() => {
-    if (
-      sessionStatus !== "authenticated" || !session || !isOwner ||
-      location.status !== "ready" || !locationId || locationId === "all" ||
-      readLaunchIntent(search) || stripeCallback.returned || stripeCallback.refreshRequested ||
-      onboardingStatus !== "ready" || !onboardingSummary || !isOnboardingIncomplete(onboardingSummary.status)
-    ) return;
-    if (hasSeenOnboardingWizard(session.operator.operatorUserId, locationId)) return;
-    markOnboardingWizardSeen(session.operator.operatorUserId, locationId);
-    openWizard(1);
-  }, [isOwner, location.status, locationId, onboardingStatus, onboardingSummary, openWizard, search, session, sessionStatus, stripeCallback.refreshRequested, stripeCallback.returned]);
-
-  if (sessionStatus === "loading") return <DashboardShellLoading />;
-  if (sessionStatus === "signed-out" || hasGoogleCallback) return <SignInRoute />;
-  if (!session) return <DashboardShellLoading />;
-  if (isStoreOperator(session.operator)) return <StoreOperatorRedirect />;
-  if (!isOwner) {
-    return <DashboardShell><section className="dash-section dash-section--onboarding"><div className="dash-section-heading"><div><span className="dash-panel-title">Launch setup</span><h1 className="dash-section-title">Owner access required</h1><p>Only an owner can review branded-app launch readiness.</p></div></div></section></DashboardShell>;
-  }
-
-  return <DashboardShell activeSection="store" locationSelectionDisabled={onboarding.isMutating}>
-    <OnboardingPage
-      state={onboarding}
-      callbackNotice={callbackNotice}
-      selectedLocationName={location.selectedLocation?.locationName ?? null}
-      selectedLocationId={locationId}
-      canWrite={canWrite}
-      canManagePayments={canManagePayments}
-      wizardOpen={wizardOpen}
-      wizardStep={wizardStep}
-      onOpenWizard={openWizard}
-      onCloseWizard={closeWizard}
-      onWizardStepChange={changeWizardStep}
-    />
-  </DashboardShell>;
-}
-
-function StoreOperatorRedirect() {
-  const router = useRouter();
-  useEffect(() => { router.replace(`/orders${window.location.search}${window.location.hash}`); }, [router]);
+  if (status === "signed-out" || new URLSearchParams(search).get("google_auth_callback") === "1") return <SignInRoute />;
+  if (error) return <section role="alert" className="dash-section"><p>{error}</p><button className="button button--secondary" onClick={() => { setError(null); setAttempt((value) => value + 1); }}>Try again</button></section>;
   return <DashboardShellLoading />;
 }

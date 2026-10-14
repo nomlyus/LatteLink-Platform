@@ -3,7 +3,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import type { OperatorDiscountCode } from "../../../model";
 import type { useDiscountMutations } from "../use-discount-mutations";
-import { filterDiscountCodes, type DiscountCodeStatusFilter } from "../discounts-domain";
+import { filterDiscountCodes } from "../discounts-domain";
+import { paginateTableRows } from "../../../components/dashboard/table-page";
+import { TablePagination } from "../../../components/dashboard/TablePagination";
 import type { CreateDiscountCodeInput, UpdateDiscountCodeInput } from "../discounts-domain";
 import { DiscountEditorDialog } from "./DiscountEditorDialog";
 import { DiscountsList } from "./DiscountsList";
@@ -11,17 +13,9 @@ import { DiscountsList } from "./DiscountsList";
 type DiscountsMutations = ReturnType<typeof useDiscountMutations>;
 type EditorSelection = { scopeKey: string; discountCodeId: string | null };
 
-const statusOptions: Array<{ value: DiscountCodeStatusFilter; label: string }> = [
-  { value: "all", label: "All statuses" },
-  { value: "active", label: "Active" },
-  { value: "inactive", label: "Inactive" },
-  { value: "upcoming", label: "Upcoming" },
-  { value: "expired", label: "Expired" },
-  { value: "exhausted", label: "Limit reached" }
-];
-
 export function DiscountsPage({
   discountCodes,
+  query = "",
   loadStatus,
   loadError,
   selectedLocationId,
@@ -31,6 +25,7 @@ export function DiscountsPage({
   onRetry
 }: {
   discountCodes: OperatorDiscountCode[] | null;
+  query?: string;
   loadStatus: "loading" | "ready" | "error";
   loadError: string | null;
   selectedLocationId: string | "all" | null;
@@ -39,15 +34,16 @@ export function DiscountsPage({
   mutations: DiscountsMutations;
   onRetry: () => void;
 }) {
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<DiscountCodeStatusFilter>("all");
+  const [page, setPage] = useState(1);
   const [editor, setEditor] = useState<EditorSelection | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const allDiscountCodes = discountCodes ?? [];
   const visibleCodes = useMemo(
-    () => filterDiscountCodes(allDiscountCodes, search, statusFilter, nowMs),
-    [allDiscountCodes, nowMs, search, statusFilter]
+    () => filterDiscountCodes(allDiscountCodes, query, "all", nowMs),
+    [allDiscountCodes, nowMs, query]
   );
+  const paginated = paginateTableRows(visibleCodes, page);
+  useEffect(() => { setPage(1); }, [query, scopeKey]);
   const editorCodeId = editor?.scopeKey === scopeKey ? editor.discountCodeId : undefined;
   const editingCode = typeof editorCodeId === "string"
     ? allDiscountCodes.find((discountCode) => discountCode.discountCodeId === editorCodeId) ?? null
@@ -78,23 +74,13 @@ export function DiscountsPage({
     return mutations.updateDiscountCode(inputDiscountCodeId, input);
   }
 
-  function updateStatusFilter(value: string) {
-    const option = statusOptions.find((candidate) => candidate.value === value);
-    if (option) setStatusFilter(option.value);
-  }
-
   const hasSpecificLocation = Boolean(selectedLocationId && selectedLocationId !== "all");
 
   return (
-    <section className="dash-section dash-section--discounts" aria-label="Discount code management">
-      <div className="dash-discounts-heading">
-        <div>
-          <span className="dash-discounts-heading__eyebrow">Promotions</span>
-          <h1>Discount codes</h1>
-          <p>Create checkout codes with redemption caps, customer eligibility, and active windows.</p>
-        </div>
+    <section className="dash-section dash-section--discounts dash-section--management-table" aria-label="Discount code management" id="discounts-results">
+      <div className="dash-management-toolbar">
         {canWrite && hasSpecificLocation ? (
-          <button className="button button--primary" type="button" onClick={() => openEditor(null)}>+ Create code</button>
+          <button className="button button--secondary dash-menu-create-button" type="button" disabled={mutations.isMutating} onClick={() => openEditor(null)}>Create code</button>
         ) : null}
       </div>
 
@@ -112,27 +98,10 @@ export function DiscountsPage({
       ) : (
         <>
           {!canWrite ? <div className="dash-discounts-readonly" role="status">You can review discount codes, but editing is disabled for your role.</div> : null}
-          <article className="dash-discounts-list-surface">
-            <div className="dash-discounts-toolbar">
-              <label className="field dash-discounts-search" htmlFor="discount-code-search">
-                <span>Search codes</span>
-                <input id="discount-code-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Code or name" />
-              </label>
-              <label className="field dash-discounts-status-filter" htmlFor="discount-code-status-filter">
-                <span>Status</span>
-                <select id="discount-code-status-filter" value={statusFilter} onChange={(event) => updateStatusFilter(event.target.value)}>
-                  {statusOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
-                </select>
-              </label>
-              <button className="button button--secondary" type="button" disabled={mutations.isMutating} onClick={onRetry}>Refresh</button>
-            </div>
-            <div className="dash-discounts-list-header">
-              <h2>{search || statusFilter !== "all" ? `${visibleCodes.length} of ${allDiscountCodes.length} codes` : `${allDiscountCodes.length} configured codes`}</h2>
-              <p>Reserved codes are held by unpaid checkout attempts and released if payment fails or the order is canceled.</p>
-            </div>
+          <article className="dash-discounts-list-surface dash-management-table-surface">
             {visibleCodes.length ? (
               <DiscountsList
-                discountCodes={visibleCodes}
+                discountCodes={paginated.items}
                 canWrite={canWrite}
                 pending={mutations.isMutating}
                 nowMs={nowMs}
@@ -140,12 +109,13 @@ export function DiscountsPage({
               />
             ) : (
               <div className="dash-discounts-empty" role="status">
-                <strong>{allDiscountCodes.length ? "No codes match these filters" : "No discount codes yet"}</strong>
-                <span>{allDiscountCodes.length ? "Try a different search or status." : "Create a code to offer customers a checkout discount."}</span>
-                {!allDiscountCodes.length && canWrite ? <button className="button button--secondary" type="button" onClick={() => openEditor(null)}>Create first code</button> : null}
+                <strong>{query.trim() ? "No codes match this search" : "No discount codes yet"}</strong>
+                <span>{query.trim() ? "Try another search." : "Create a code to offer customers a checkout discount."}</span>
+                {!allDiscountCodes.length && canWrite && !query.trim() ? <button className="button button--secondary" type="button" onClick={() => openEditor(null)}>Create first code</button> : null}
               </div>
             )}
           </article>
+          <TablePagination label="Discounts pagination" {...paginated} onPage={setPage} />
         </>
       )}
 

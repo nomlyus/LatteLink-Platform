@@ -44,6 +44,7 @@ import {
   operatorUserListResponseSchema,
   operatorUserParamsSchema,
   operatorUserUpdateSchema,
+  operatorSelfProfileUpdateSchema,
   passkeyChallengeRequestSchema,
   passkeyChallengeResponseSchema,
   passkeyVerifyRequestSchema,
@@ -2440,6 +2441,20 @@ export async function registerRoutes(app: FastifyInstance, options: RegisterRout
       return created;
     }
   );
+
+  app.patch("/v1/operator/profile", { preHandler: app.rateLimit(authWriteRateLimit) }, async (request, reply) => {
+    const headers = authHeaderSchema.safeParse(request.headers);
+    const operator = await resolveOperatorFromBearer({ repository, authorizationHeader: headers.success ? headers.data.authorization : undefined });
+    if (!operator) return reply.status(401).send(buildApiError(request.id, "UNAUTHORIZED", "Missing or invalid auth token"));
+    const parsedInput = operatorSelfProfileUpdateSchema.safeParse(request.body);
+    if (!parsedInput.success) return reply.status(400).send(buildApiError(request.id, "INVALID_OPERATOR_PROFILE", "Enter a valid display name only"));
+    const input = parsedInput.data;
+    // A profile update is strictly self-scoped; it cannot change role, access,
+    // email or credentials, and does not depend on team-management permission.
+    const updated = await repository.updateOperatorUser(operator.operatorUserId, input);
+    if (!updated) return reply.status(404).send(buildApiError(request.id, "OPERATOR_NOT_FOUND", "Operator user was not found"));
+    return updated;
+  });
 
   app.patch(
     "/v1/operator/users/:operatorUserId",

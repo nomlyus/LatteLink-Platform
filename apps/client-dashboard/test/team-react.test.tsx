@@ -70,15 +70,28 @@ describe("React Team surface", () => {
 
   it("shows role, active state, account-wide location context, and owner controls", () => {
     const html = renderToStaticMarkup(<TeamPage {...pageProps([owner, manager])} />);
-    expect(html).toContain("2 active accounts");
+    expect(html).toContain('aria-label="Team members"');
+    expect(html).not.toContain("2 active accounts");
     expect(html).toContain("Store Owner");
     expect(html).toContain("Avery Quinn");
     expect(html).toContain("Owner");
     expect(html).toContain("Manager");
     expect(html).toContain("Main Street");
     expect(html).toContain("Downtown");
-    expect(html).toContain("apply to the account wherever it has access");
+    expect(html).not.toContain("Manage operator accounts and access");
     expect(html).toContain("Add team member");
+  });
+
+  it("searches all authorized members before 15-row pagination", () => {
+    const members = Array.from({ length: 20 }, (_, index) => ({ ...manager, operatorUserId: `member-${index}`, displayName: `Operator ${index}`, email: `operator${index}@example.com` }));
+    const html = renderToStaticMarkup(<TeamPage {...pageProps(members)} />);
+    expect(html.match(/aria-haspopup="dialog"/g)).toHaveLength(15);
+    expect(html).toContain("1–15 of 20");
+    expect(html).toContain('aria-label="Team pagination"');
+    const filtered = renderToStaticMarkup(<TeamPage {...pageProps(members)} query="operator19 manager Main Street" />);
+    expect(filtered.match(/aria-haspopup="dialog"/g)).toHaveLength(1);
+    expect(filtered).toContain("Operator 19");
+    expect(renderToStaticMarkup(<TeamPage {...pageProps(members)} query="not-found" />)).toContain("No team members match this search");
   });
 
   it("keeps manager views read-only and removes create controls", () => {
@@ -101,6 +114,7 @@ describe("React Team surface", () => {
     const memberWithAdditionalLocation = { ...manager, locationIds: ["location-a", "location-b", "location-c"] };
     const html = renderToStaticMarkup(<TeamMemberDialog member={memberWithAdditionalLocation} currentOperatorUserId={owner.operatorUserId} locations={locations} canWrite canDelete pending={false} error={null} onClose={noop} onSave={async () => true} onRemove={async () => true} />);
     expect(html).toContain("Location access cannot be changed from this screen");
+    expect(html).toContain("apply to the account wherever it has access");
     expect(html).toContain("Main Street");
     expect(html).toContain("+1 outside your available locations");
     expect(html).toContain("Remove account");

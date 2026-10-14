@@ -1499,6 +1499,15 @@
         }
       }
     },
+    "/admin/operator-profile": {
+      "patch": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/admin/staff/{operatorUserId}": {
       "patch": {
         "parameters": [

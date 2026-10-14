@@ -5,6 +5,7 @@ import type { OperatorNewsCard } from "../../../model";
 
 export function CardsList({
   cards,
+  orderedCards = cards,
   canWrite,
   canChangeVisibility,
   pending,
@@ -13,6 +14,7 @@ export function CardsList({
   onMove
 }: {
   cards: readonly OperatorNewsCard[];
+  orderedCards?: readonly OperatorNewsCard[];
   canWrite: boolean;
   canChangeVisibility: boolean;
   pending: boolean;
@@ -20,44 +22,31 @@ export function CardsList({
   onVisibilityChange: (cardId: string, visible: boolean) => void;
   onMove: (cardId: string, direction: "up" | "down") => void;
 }) {
-  return (
-    <div className="dash-cards-list" aria-label="Homepage cards">
-      {cards.map((card, index) => (
-        <article className="dash-cards-row" key={card.cardId}>
-          <div className="dash-cards-row__copy">
-            <div className="dash-cards-row__meta">
-              <span className="dash-cards-row__position">{index + 1}</span>
-              <span className="dash-cards-row__label">{card.label}</span>
-              <span className={`dash-cards-row__visibility${card.visible ? " dash-cards-row__visibility--visible" : ""}`}>
-                {card.visible ? "Visible" : "Hidden"}
-              </span>
-            </div>
-            <h3>{card.title}</h3>
-            <p>{card.body}</p>
-            {card.note ? <span className="dash-cards-row__note">{card.note}</span> : null}
+  // Reordering follows the authoritative list, not a filtered/paginated subset.
+  const positions = new Map(orderedCards.map((card, index) => [card.cardId, index]));
+  return <table className="dash-order-table dash-management-table dash-cards-table" aria-label="Homepage cards">
+    <thead><tr><th scope="col">Card</th><th scope="col">Label</th><th scope="col">Message</th><th scope="col">Visibility</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
+    <tbody>{cards.map((card) => <tr key={card.cardId} className="dash-order-table__row" tabIndex={pending ? -1 : 0}
+      aria-label={`${canWrite ? "Edit" : "View"} ${card.title}`} aria-haspopup="dialog"
+      onClick={() => { if (!pending) onOpen(card); }}
+      onKeyDown={(event) => { if (event.target === event.currentTarget && !pending && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onOpen(card); } }}>
+      <td><strong title={card.title}>{card.title}</strong></td>
+      <td title={card.label}>{card.label}</td>
+      <td title={[card.body, card.note].filter(Boolean).join(" · ")}>{card.body}</td>
+      <td><span className="dash-menu-state">{card.visible ? "Visible" : "Hidden"}</span></td>
+      <td className="dash-management-table__actions" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+        <details className="dash-menu-row-actions">
+          <summary aria-label={`Actions for ${card.title}`}>⋯</summary>
+          <div className="dash-menu-row-actions__popover" role="group" aria-label={`${card.title} actions`}>
+            <button type="button" disabled={pending} onClick={() => onOpen(card)}>{canWrite ? "Edit" : "View"}</button>
+            {canWrite ? <>
+              <button type="button" aria-label={`Move ${card.title} up`} disabled={pending || positions.get(card.cardId) === 0} onClick={() => onMove(card.cardId, "up")}>Move up</button>
+              <button type="button" aria-label={`Move ${card.title} down`} disabled={pending || positions.get(card.cardId) === orderedCards.length - 1} onClick={() => onMove(card.cardId, "down")}>Move down</button>
+            </> : null}
+            {canChangeVisibility ? <button type="button" disabled={pending} aria-label={`${card.visible ? "Hide" : "Show"} ${card.title}`} onClick={() => onVisibilityChange(card.cardId, !card.visible)}>{card.visible ? "Hide" : "Show"}</button> : null}
           </div>
-          <div className="dash-cards-row__actions">
-            {canWrite ? (
-              <div className="dash-cards-order" aria-label={`Order for ${card.title}`}>
-                <button type="button" className="dash-cards-order__button" aria-label={`Move ${card.title} up`} disabled={pending || index === 0} onClick={() => onMove(card.cardId, "up")}>↑</button>
-                <button type="button" className="dash-cards-order__button" aria-label={`Move ${card.title} down`} disabled={pending || index === cards.length - 1} onClick={() => onMove(card.cardId, "down")}>↓</button>
-              </div>
-            ) : null}
-            <button className="button button--ghost" type="button" disabled={pending} onClick={() => onOpen(card)}>{canWrite ? "Edit" : "View"}</button>
-            {canChangeVisibility ? (
-              <button
-                className="button button--secondary"
-                type="button"
-                disabled={pending}
-                aria-label={`${card.visible ? "Hide" : "Show"} ${card.title}`}
-                onClick={() => onVisibilityChange(card.cardId, !card.visible)}
-              >
-                {card.visible ? "Hide" : "Show"}
-              </button>
-            ) : null}
-          </div>
-        </article>
-      ))}
-    </div>
-  );
+        </details>
+      </td>
+    </tr>)}</tbody>
+  </table>;
 }

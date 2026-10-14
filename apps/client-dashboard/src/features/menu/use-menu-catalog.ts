@@ -2,18 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchOperatorMenu, type OperatorSession } from "../../api";
-import type { OperatorMenuResponse } from "../../model";
 import { canAccessCapability } from "../../model";
 import { isSessionAuthFailure } from "../auth/session-compat";
 import { useDashboardSession } from "../auth/session-provider";
 import { useDashboardLocation } from "../location/location-provider";
-
-type MenuCatalogState = {
-  scopeKey: string;
-  status: "loading" | "ready" | "error";
-  menu: OperatorMenuResponse | null;
-  error: string | null;
-};
+import { startMenuLoad, failMenuLoad, type MenuCatalogState } from "./menu-catalog-state";
 
 type MenuLoadContext = {
   session: OperatorSession | null;
@@ -64,7 +57,7 @@ export function useMenuCatalog() {
     if (session) void location.loadAvailableLocations();
   }, [location.loadAvailableLocations, session]);
 
-  const loadMenu = useCallback(async () => {
+  const loadMenu = useCallback(async (preserveMenu = false) => {
     const context = contextRef.current;
     const requestScope = getScopeKey(context.session?.operator.operatorUserId ?? null, context.locationId);
     const requestSequence = ++sequence.current;
@@ -90,7 +83,7 @@ export function useMenuCatalog() {
 
     const requestController = new AbortController();
     controller.current = requestController;
-    setCatalogState({ scopeKey: requestScope, status: "loading", menu: null, error: null });
+    setCatalogState((previous) => startMenuLoad(previous, requestScope, preserveMenu));
     try {
       const currentSession = await context.refreshSession();
       if (!currentSession || requestController.signal.aborted || requestSequence !== sequence.current) return false;
@@ -105,18 +98,16 @@ export function useMenuCatalog() {
       if (isSessionAuthFailure(error)) void context.logout();
       const currentContext = contextRef.current;
       if (getScopeKey(currentContext.session?.operator.operatorUserId ?? null, currentContext.locationId) === requestScope) {
-        setCatalogState({
-          scopeKey: requestScope,
-          status: "error",
-          menu: null,
-          error: error instanceof Error ? error.message : "Unable to load this location’s menu."
-        });
+        setCatalogState((previous) => failMenuLoad(previous, requestScope, preserveMenu,
+          error instanceof Error ? error.message : "Unable to load this location’s menu."));
       }
       return false;
     } finally {
       if (controller.current === requestController) controller.current = null;
     }
   }, []);
+
+  const reload = useCallback(() => loadMenu(true), [loadMenu]);
 
   useEffect(() => {
     void loadMenu();
@@ -136,6 +127,6 @@ export function useMenuCatalog() {
     menu: currentState.menu,
     error: currentState.error,
     scopeKey,
-    reload: loadMenu
+    reload
   };
 }

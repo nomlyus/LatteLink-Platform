@@ -170,14 +170,4 @@ describe("client dashboard storage", () => {
     expect(loadStoredLocationSelection("22222222-2222-4222-8222-222222222222")).toBeNull();
   });
 
-  it("tracks whether the first onboarding wizard has already been shown for an operator location", async () => {
-    mockLocalStorage();
-
-    const { hasSeenOnboardingWizard, markOnboardingWizardSeen } = await import("../src/storage");
-
-    expect(hasSeenOnboardingWizard("operator-1", "northside-01")).toBe(false);
-    markOnboardingWizardSeen("operator-1", "northside-01");
-    expect(hasSeenOnboardingWizard("operator-1", "northside-01")).toBe(true);
-    expect(hasSeenOnboardingWizard("operator-1", "downtown-01")).toBe(false);
-  });
 });

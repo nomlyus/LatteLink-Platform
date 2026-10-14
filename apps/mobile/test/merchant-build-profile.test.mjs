@@ -35,6 +35,11 @@ describe("merchant mobile build preparation", () => {
           easProjectId: "a3e51f78-120f-4d9a-a001-81b040a3d600",
           bundleIdentifier: "com.lattelink.rawaq.beta",
           sku: "rawaq-ios-beta",
+          subtitle: "Order ahead",
+          description: "Coffee, ready for pickup.",
+          keywords: ["coffee", "pickup"],
+          supportUrl: "https://example.test/support",
+          privacyPolicyUrl: "https://example.test/privacy",
           applePayMerchantId: "merchant.com.lattelink.rawaq.beta",
           ascAppId: "6761780971",
           apiBaseUrl: "https://api-dev.nomly.us/v1",
@@ -86,6 +91,28 @@ describe("merchant mobile build preparation", () => {
         appVersion: "1.0.10",
         runtimeVersion: "1.0.10"
       });
+      expect(manifest.appIdentity).toMatchObject({
+        appName: "Rawaq",
+        displayName: "Rawaq",
+        bundleIdentifier: "com.lattelink.rawaq.beta",
+        sku: "rawaq-ios-beta",
+        subtitle: "Order ahead",
+        description: "Coffee, ready for pickup.",
+        keywords: ["coffee", "pickup"],
+        supportUrl: "https://example.test/support",
+        privacyPolicyUrl: "https://example.test/privacy",
+        targetLocationIds: ["rawaqcoffee01"]
+      });
+      expect(env).toContain("EXPO_PUBLIC_PRIVACY_POLICY_URL='https://example.test/privacy'");
+      const input = JSON.parse(await readFile(inputPath, "utf8"));
+      await writeFile(inputPath, JSON.stringify({ ...input, description: "Updated coffee description." }), "utf8");
+      const updated = await prepareMerchantBuild([
+        "--input", inputPath, "--profile", "beta", "--source-commit", SOURCE_COMMIT,
+        "--output-dir", resolve(workspace, "out")
+      ]);
+      const updatedManifest = JSON.parse(await readFile(updated.paths.manifestFile, "utf8"));
+      expect(updatedManifest.configHash).not.toBe(manifest.configHash);
+      expect(updatedManifest.appIdentity.description).toBe("Updated coffee description.");
       expect(manifest.configHash).toMatch(/^[a-f0-9]{64}$/);
       expect(commands).toContain("eas integrations:asc:connect");
       expect(commands).toContain("MOBILE_RELEASE_EXECUTE");
