@@ -54,6 +54,7 @@ describe("SDK 57 upgrade boundaries", () => {
     const properties = JSON.parse(read("ios/Podfile.properties.json"));
     expect(properties["ios.deploymentTarget"]).toBe("16.4");
     expect(properties["ios.useFrameworks"]).toBe("dynamic");
+    expect(properties.EXPO_USE_PRECOMPILED_MODULES).toBe("false");
     const project = read("ios/LatteLinkBeta.xcodeproj/project.pbxproj");
     const targets = project.match(/IPHONEOS_DEPLOYMENT_TARGET = [\d.]+;/g);
     expect(targets).toHaveLength(6);
@@ -64,5 +65,30 @@ describe("SDK 57 upgrade boundaries", () => {
     expect(read("ios/LatteLinkBeta/AppDelegate.swift")).not.toContain("bindReactNativeFactory");
     expect(properties["expo.useHermesV1"]).toBeUndefined();
     expect(properties.newArchEnabled).toBeUndefined();
+  });
+
+  it("keeps native and config-plugin module linkage compatible with Stripe SwiftPM", async () => {
+    const { default: config } = await import("../app.config");
+    expect(config.plugins).toContainEqual([
+      "expo-build-properties",
+      { ios: { deploymentTarget: "16.4", useFrameworks: "dynamic", usePrecompiledModules: false } }
+    ]);
+  });
+
+  it("retains the resolved SDK 57 native graph and Stripe framework embedding", () => {
+    const project = read("ios/LatteLinkBeta.xcodeproj/project.pbxproj");
+    expect(project).toContain("[stripe-react-native] Embed SPM Frameworks");
+    expect(project).toContain("Pods-LatteLinkBeta.releaseproduction.xcconfig");
+    expect(project).not.toContain("react-native@0.81.");
+    const pods = read("ios/Podfile.lock");
+    expect(pods).toContain("React-Core (0.86.3)");
+    expect(pods).toContain("RNReanimated (4.5.1)");
+    expect(pods).toContain("RNWorklets (0.10.1)");
+    expect(pods).toContain("stripe-react-native/Core (0.82.0)");
+    const resolved = JSON.parse(read("ios/LatteLinkBeta.xcworkspace/xcshareddata/swiftpm/Package.resolved"));
+    expect(resolved.pins).toContainEqual(expect.objectContaining({
+      identity: "stripe-ios-spm",
+      state: expect.objectContaining({ version: "26.14.0" })
+    }));
   });
 });

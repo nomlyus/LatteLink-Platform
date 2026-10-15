@@ -126,7 +126,9 @@ const config: ExpoConfig = {
     [
       "expo-build-properties",
       {
-        ios: { deploymentTarget: "16.4", useFrameworks: "dynamic" }
+        // Expo's precompiled-module mode forces React-dependent pods static,
+        // which is incompatible with Stripe's dynamic SwiftPM bridge.
+        ios: { deploymentTarget: "16.4", useFrameworks: "dynamic", usePrecompiledModules: false }
       }
     ],
     stripePlugin,
