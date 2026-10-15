@@ -174,6 +174,16 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
         sessionRef.current = storedSession;
         setSession(storedSession);
         setAuthRecoveryState("idle");
+      } catch {
+        // SecureStore can reject on locked, restored, or restricted devices.
+        // Fail closed without leaving an unhandled promise rejection or a
+        // stale in-memory access token.
+        if (isMounted) {
+          apiClient.setAccessToken(undefined);
+          sessionRef.current = null;
+          setSession(null);
+          setAuthRecoveryState("expired");
+        }
       } finally {
         if (isMounted) {
           setIsHydrating(false);

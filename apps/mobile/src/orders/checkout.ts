@@ -55,6 +55,8 @@ export function toQuoteItems(items: CartItem[]): QuoteItem[] {
   }));
 }
 
+// Kept as small pure helpers for consumers and tests that need a client-side
+// correlation value. The server remains responsible for payment idempotency.
 export function createCheckoutIdempotencyKey() {
   return `mobile-checkout-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
 }

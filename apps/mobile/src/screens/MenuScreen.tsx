@@ -166,15 +166,15 @@ function LoadingMenuState({
         <View style={styles.header}>
           <View style={styles.headerCopy}>
             <View style={[styles.pickupMetaWrap, styles.loadingPickupMetaWrap]}>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.pickupMeta}>Loading pickup estimate</Text>
+              <Text style={styles.pickupMeta}>Loading pickup estimate</Text>
             </View>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.locationText}>Loading location</Text>
+            <Text style={styles.locationText}>Loading location</Text>
           </View>
         </View>
 
         <View style={[styles.tabsWrap, styles.loadingTabsWrap]}>
           <View style={styles.tabRow}>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.activeTab}>Menu</Text>
+            <Text style={styles.activeTab}>Menu</Text>
           </View>
         </View>
       </View>
@@ -218,7 +218,7 @@ function CollapsibleSectionHeader({
   }));
 
   return (
-    <Pressable onPress={onPress} style={styles.sectionStickyHeader}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`Toggle ${label}`} onPress={onPress} style={styles.sectionStickyHeader}>
       <View style={styles.sectionHeader}>
         <SectionHeader
           label={label}
@@ -399,8 +399,8 @@ export function MenuScreen() {
         <ScreenBackdrop />
         <View style={[styles.errorShell, { paddingTop: insets.top + 88, paddingBottom: contentBottomInset }]}>
           <SectionHeader label="Menu" />
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.errorTitle}>Menu temporarily unavailable.</Text>
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.errorBody}>{menuErrorMessage}</Text>
+          <Text style={styles.errorTitle}>Menu temporarily unavailable.</Text>
+          <Text style={styles.errorBody}>{menuErrorMessage}</Text>
           <Button label="Retry" variant="secondary" onPress={handleRefresh} style={styles.errorAction} />
         </View>
         <TabBarDepthBackdrop />
@@ -457,7 +457,7 @@ export function MenuScreen() {
                       onPress={(selectedItem) => router.push({ pathname: "/menu-customize", params: { itemId: selectedItem.id } })}
                     />
                   ))}
-                  {section.items.length === 0 ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emptyText}>Nothing matches that search right now.</Text> : null}
+                  {section.items.length === 0 ? <Text style={styles.emptyText}>Nothing matches that search right now.</Text> : null}
                 </View>
               </View>
             )
@@ -471,12 +471,12 @@ export function MenuScreen() {
         <View style={styles.header}>
           <View style={styles.headerCopy}>
             <Animated.View style={[styles.pickupMetaWrap, pickupMetaStyle]}>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.pickupMeta, { color: headerForegroundColor }]}>
+              <Text style={[styles.pickupMeta, { color: headerForegroundColor }]}>
                 {storeConfig ? `Estimated pick-up is ${storeConfig.prepEtaMinutes} min` : "Estimated pick-up unavailable"}
               </Text>
             </Animated.View>
             <LocationPicker color={headerForegroundColor}>
-              <Animated.Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.locationText, locationStyle, { color: headerForegroundColor }]}>
+              <Animated.Text style={[styles.locationText, locationStyle, { color: headerForegroundColor }]}>
                 {location.selectedLocation?.displayName ?? appConfig?.brand.locationName ?? "Store info unavailable"}
               </Animated.Text>
             </LocationPicker>
@@ -485,7 +485,7 @@ export function MenuScreen() {
 
         <Animated.View style={[styles.tabsWrap, tabsStyle]}>
           <View style={styles.tabRow}>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.activeTab, { color: headerForegroundColor }]}>Menu</Text>
+            <Text style={[styles.activeTab, { color: headerForegroundColor }]}>Menu</Text>
           </View>
         </Animated.View>
       </Animated.View>

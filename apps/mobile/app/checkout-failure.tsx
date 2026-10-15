@@ -20,8 +20,8 @@ function DetailRow({
 }) {
   return (
     <View style={styles.detailRow}>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.detailLabel}>{label}</Text>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.detailValue, strong ? styles.detailValueStrong : null, mono ? styles.detailValueMono : null]}>
+      <Text style={styles.detailLabel}>{label}</Text>
+      <Text style={[styles.detailValue, strong ? styles.detailValueStrong : null, mono ? styles.detailValueMono : null]}>
         {value}
       </Text>
     </View>
@@ -80,12 +80,12 @@ export default function CheckoutFailureScreen() {
 
           <View style={styles.heroBlock}>
             <View style={styles.heroTopRow}>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>{title}</Text>
+              <Text style={styles.title}>{title}</Text>
               <View style={styles.heroIconWrap}>
                 <Ionicons name="alert-circle-outline" size={22} color={uiPalette.danger} />
               </View>
             </View>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>{body}</Text>
+            <Text style={styles.body}>{body}</Text>
           </View>
 
           <View style={styles.detailsSection}>
@@ -95,8 +95,8 @@ export default function CheckoutFailureScreen() {
 
             {failure?.message ? (
               <View style={styles.messageBlock}>
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.messageLabel}>What happened</Text>
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.messageText}>{failure.message}</Text>
+                <Text style={styles.messageLabel}>What happened</Text>
+                <Text style={styles.messageText}>{failure.message}</Text>
               </View>
             ) : null}
 

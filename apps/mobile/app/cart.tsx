@@ -38,8 +38,8 @@ function SummaryRow({
 }) {
   return (
     <View style={styles.summaryRow}>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.summaryText, emphasized ? styles.summaryStrong : null]}>{label}</Text>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.summaryText, emphasized ? styles.summaryStrong : null]}>{value}</Text>
+      <Text style={[styles.summaryText, emphasized ? styles.summaryStrong : null]}>{label}</Text>
+      <Text style={[styles.summaryText, emphasized ? styles.summaryStrong : null]}>{value}</Text>
     </View>
   );
 }
@@ -73,14 +73,14 @@ function StickyActionPill({
     <View style={[styles.stickyPillInner, disabled ? styles.stickyPillInnerDisabled : null]}>
       <View style={styles.stickyPillLead}>
         <Ionicons name={icon} size={16} color={disabled ? uiPalette.textMuted : uiPalette.text} />
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.stickyPillLabel, disabled ? styles.stickyPillLabelDisabled : null]}>{label}</Text>
+        <Text style={[styles.stickyPillLabel, disabled ? styles.stickyPillLabelDisabled : null]}>{label}</Text>
       </View>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.stickyPillValue, disabled ? styles.stickyPillValueDisabled : null]}>{value}</Text>
+      <Text style={[styles.stickyPillValue, disabled ? styles.stickyPillValueDisabled : null]}>{value}</Text>
     </View>
   );
 
   return (
-    <Pressable disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.stickyPillShell, pressed && !disabled ? styles.stickyPillPressed : null]}>
+    <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.stickyPillShell, pressed && !disabled ? styles.stickyPillPressed : null]}>
       {useLiquidGlass ? (
         <GlassView glassEffectStyle="regular" colorScheme="auto" isInteractive style={styles.stickyPillFrame}>
           {content}
@@ -108,12 +108,12 @@ function HeaderActionChip({
   const content = (
     <View style={[styles.headerActionChipInner, useLiquidGlass ? styles.headerActionChipInnerGlass : styles.headerActionChipInnerFallback]}>
       <Ionicons name={icon} size={13} color={uiPalette.textSecondary} />
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.headerActionChipText}>{label}</Text>
+      <Text style={styles.headerActionChipText}>{label}</Text>
     </View>
   );
 
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.headerActionChipShell, pressed ? styles.headerActionChipPressed : null]}>
+    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.headerActionChipShell, pressed ? styles.headerActionChipPressed : null]}>
       {useLiquidGlass ? (
         <GlassView glassEffectStyle="regular" colorScheme="auto" isInteractive style={styles.headerActionChipFrame}>
           {content}
@@ -144,15 +144,15 @@ function RowQuantityControl({
 
   const content = (
     <View style={[styles.stepperInner, useLiquidGlass ? styles.stepperInnerGlass : styles.stepperInnerFallback]}>
-      <Pressable style={[styles.stepperButton, useLiquidGlass ? styles.stepperButtonGlass : null]} onPress={onIncrease}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Increase quantity" style={[styles.stepperButton, useLiquidGlass ? styles.stepperButtonGlass : null]} onPress={onIncrease}>
         <Ionicons name="add" size={16} color={uiPalette.text} />
       </Pressable>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.stepperValue}>{quantity}</Text>
-      <Pressable style={[styles.stepperButton, useLiquidGlass ? styles.stepperButtonGlass : null, !canDecrease ? styles.stepperButtonDisabled : null]} onPress={onDecrease}>
+      <Text style={styles.stepperValue}>{quantity}</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel="Decrease quantity" accessibilityState={{ disabled: !canDecrease }} disabled={!canDecrease} style={[styles.stepperButton, useLiquidGlass ? styles.stepperButtonGlass : null, !canDecrease ? styles.stepperButtonDisabled : null]} onPress={onDecrease}>
         <Ionicons name="remove" size={16} color={uiPalette.text} />
       </Pressable>
       <View style={[styles.stepperDivider, useLiquidGlass ? styles.stepperDividerGlass : null]} />
-      <Pressable style={[styles.stepperButton, useLiquidGlass ? styles.stepperButtonGlass : null]} onPress={onRemove}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Remove item" style={[styles.stepperButton, useLiquidGlass ? styles.stepperButtonGlass : null]} onPress={onRemove}>
         <Ionicons name="trash-outline" size={16} color={uiPalette.textSecondary} />
       </Pressable>
     </View>
@@ -181,8 +181,8 @@ function SectionHeading({
   return (
     <View style={styles.sectionHeader}>
       <View style={styles.sectionCopy}>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionEyebrow}>{eyebrow}</Text>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionTitle}>{title}</Text>
+        <Text style={styles.sectionEyebrow}>{eyebrow}</Text>
+        <Text style={styles.sectionTitle}>{title}</Text>
       </View>
       {action ? <View>{action}</View> : null}
     </View>
@@ -367,7 +367,7 @@ export default function CartModalScreen() {
           {location.cartInvalidatedNotice ? (
             <View style={styles.locationNotice}>
               <Ionicons name="information-circle-outline" size={18} color={uiPalette.warning} />
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.locationNoticeText}>{location.cartInvalidatedNotice}</Text>
+              <Text style={styles.locationNoticeText}>{location.cartInvalidatedNotice}</Text>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Dismiss cart notice"
@@ -380,8 +380,8 @@ export default function CartModalScreen() {
           ) : null}
           <View style={styles.headerRow}>
             <View style={styles.headerCopy}>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.headerTitle}>Order Review</Text>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.headerSubtitle}>
+              <Text style={styles.headerTitle}>Order Review</Text>
+              <Text style={styles.headerSubtitle}>
                 {storeConfig
                   ? storeConfig.isOpen
                     ? `Estimated wait is ${storeConfig.prepEtaMinutes} min`
@@ -412,9 +412,9 @@ export default function CartModalScreen() {
         >
           {items.length === 0 ? (
             <View style={styles.emptyPage}>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emptyEyebrow}>Bag</Text>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emptyTitle}>Your cart is empty.</Text>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emptyBody}>Add drinks or pastries from the menu, then come back here to review and pay.</Text>
+              <Text style={styles.emptyEyebrow}>Bag</Text>
+              <Text style={styles.emptyTitle}>Your cart is empty.</Text>
+              <Text style={styles.emptyBody}>Add drinks or pastries from the menu, then come back here to review and pay.</Text>
             </View>
           ) : (
             <>
@@ -444,13 +444,13 @@ export default function CartModalScreen() {
                                 <View style={styles.lineDetailColumn}>
                                   <View style={styles.lineHeaderRow}>
                                     <View style={styles.lineCopy}>
-                                      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.itemTitle}>{item.itemName}</Text>
-                                      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.itemBody}>{`${customizationSummary} • ${formatUsd(item.unitPriceCents)} each`}</Text>
-                                      {notes ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.itemNoteText}>{notes}</Text> : null}
+                                      <Text style={styles.itemTitle}>{item.itemName}</Text>
+                                      <Text style={styles.itemBody}>{`${customizationSummary} • ${formatUsd(item.unitPriceCents)} each`}</Text>
+                                      {notes ? <Text style={styles.itemNoteText}>{notes}</Text> : null}
                                     </View>
 
                                     <View style={styles.linePriceBlock}>
-                                      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.linePriceValue}>{formatUsd(item.lineTotalCents)}</Text>
+                                      <Text style={styles.linePriceValue}>{formatUsd(item.lineTotalCents)}</Text>
                                     </View>
                                   </View>
 
@@ -484,7 +484,7 @@ export default function CartModalScreen() {
                   <View style={styles.pickupMethodBlock}>
                     <View style={styles.pickupMethodRow}>
                       <Ionicons name="location-outline" size={13} color={uiPalette.textMuted} />
-                      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.pickupMethodText}>{`Counter Pickup · ${storeConfig.prepEtaMinutes} min`}</Text>
+                      <Text style={styles.pickupMethodText}>{`Counter Pickup · ${storeConfig.prepEtaMinutes} min`}</Text>
                     </View>
                   </View>
                 ) : null}
@@ -493,8 +493,8 @@ export default function CartModalScreen() {
                 <View style={styles.checkoutContent}>
                   <View style={styles.deckDivider} />
                   <View style={styles.discountCodeBlock}>
-                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.discountCodeLabel}>Discount code</Text>
-                    <TextInput allowFontScaling={false} maxFontSizeMultiplier={1}
+                    <Text style={styles.discountCodeLabel}>Discount code</Text>
+                    <TextInput
                       value={discountCode}
                       onChangeText={setDiscountCode}
                       autoCapitalize="characters"
@@ -503,7 +503,7 @@ export default function CartModalScreen() {
                       placeholderTextColor={uiPalette.textMuted}
                       style={styles.discountCodeInput}
                     />
-                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryNote}>Discounts are validated against live store rules when you pay.</Text>
+                    <Text style={styles.summaryNote}>Discounts are validated against live store rules when you pay.</Text>
                   </View>
 
                   <View style={styles.summaryWrap}>
@@ -518,7 +518,7 @@ export default function CartModalScreen() {
                         <SummaryRow label="Total due today" value={formatUsd(pricingSummary.totalCents)} emphasized />
                       </>
                     ) : (
-                      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryNote}>Reconnect store details to load live tax, pickup timing, and checkout totals.</Text>
+                      <Text style={styles.summaryNote}>Reconnect store details to load live tax, pickup timing, and checkout totals.</Text>
                     )}
                   </View>
                 </View>

@@ -22,7 +22,7 @@ function getTagName(node: ts.JsxOpeningLikeElement) {
 }
 
 describe("font scaling defaults", () => {
-  it("explicitly locks every rendered text component", () => {
+  it("does not disable system text scaling", () => {
     const violations: string[] = [];
 
     for (const filePath of sourceRoots.flatMap(listTsxFiles)) {
@@ -44,7 +44,7 @@ describe("font scaling defaults", () => {
                 .map((attribute) => attribute.name.getText())
             );
 
-            if (!attributes.has("allowFontScaling") || !attributes.has("maxFontSizeMultiplier")) {
+            if (attributes.has("allowFontScaling") || attributes.has("maxFontSizeMultiplier")) {
               const position = source.getLineAndCharacterOfPosition(node.getStart(source));
               violations.push(`${filePath}:${position.line + 1} ${tagName}`);
             }

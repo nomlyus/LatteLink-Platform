@@ -57,7 +57,11 @@ function resolveApiEnvironmentError(baseUrl: string, label: string) {
 
   const runtimeVariant = resolveRuntimeVariant();
   const hostname = parsed.hostname;
-  const allowLocalDevelopment = process.env.NODE_ENV !== "production";
+  // Local endpoints are only valid for explicit local/dev builds. Do not use
+  // NODE_ENV alone: release tooling may omit it, which would otherwise make a
+  // beta/production binary accept localhost endpoints.
+  const allowLocalDevelopment =
+    process.env.EXPO_PUBLIC_APP_VARIANT === "local" || process.env.NODE_ENV === "development";
 
   if (allowLocalDevelopment && isLocalDevelopmentHostname(hostname)) {
     return null;

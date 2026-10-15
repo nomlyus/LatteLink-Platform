@@ -134,7 +134,7 @@ export function ClassicPillTabBar({ state, descriptors, navigation }: PillTabBar
                   color={useActiveIcons ? "rgba(18, 18, 18, 0.96)" : "rgba(60, 60, 67, 0.72)"}
                 />
               </View>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} numberOfLines={1} style={[styles.tabLabel, useActiveIcons ? styles.tabLabelActive : null]}>
+              <Text numberOfLines={1} style={[styles.tabLabel, useActiveIcons ? styles.tabLabelActive : null]}>
                 {label}
               </Text>
             </View>
@@ -250,11 +250,11 @@ export function ClassicPillTabBar({ state, descriptors, navigation }: PillTabBar
                         hitSlop={{ top: 2, bottom: 2, left: 14, right: 14 }}
                         accessibilityRole="tab"
                         accessibilityState={isFocused ? { selected: true } : {}}
-                        accessibilityLabel={descriptor.options.tabBarAccessibilityLabel}
+                        accessibilityLabel={descriptor.options.tabBarAccessibilityLabel ?? label}
                       >
                         <View style={styles.tabContent}>
                           <View style={styles.tabIconBox} />
-                          <Text allowFontScaling={false} maxFontSizeMultiplier={1} numberOfLines={1} style={[styles.tabLabel, styles.tabLabelPlaceholder]}>
+                          <Text numberOfLines={1} style={[styles.tabLabel, styles.tabLabelPlaceholder]}>
                             {label}
                           </Text>
                         </View>
@@ -273,7 +273,7 @@ export function ClassicPillTabBar({ state, descriptors, navigation }: PillTabBar
               <View style={styles.cartPillInner}>
                 <Ionicons name="bag-handle-outline" size={21} color={uiPalette.text} />
                 <View style={styles.cartCountBadge}>
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.cartCountLabel}>{itemCount > 99 ? "99+" : String(itemCount)}</Text>
+                  <Text style={styles.cartCountLabel}>{itemCount > 99 ? "99+" : String(itemCount)}</Text>
                 </View>
               </View>
             </BlurView>

@@ -103,6 +103,19 @@ describe("mobile API environment guard", () => {
     expect(MOBILE_API_ENVIRONMENT.apiConfigurationError).toBeNull();
   });
 
+  it("rejects local API URLs for release variants even when NODE_ENV is unset or non-production", async () => {
+    const { API_BASE_URL, MOBILE_API_ENVIRONMENT } = await loadApiClientEnvironment({
+      nodeEnv: "test",
+      appVariant: "beta",
+      bundleIdentifier: "com.lattelink.rawaq.beta",
+      apiBaseUrl: "http://127.0.0.1:8080/v1",
+      brandId: "northside-coffee"
+    });
+
+    expect(API_BASE_URL).toBe("");
+    expect(MOBILE_API_ENVIRONMENT.apiConfigurationError).toContain("Beta mobile builds must use api-dev.nomly.us");
+  });
+
   it("ignores a legacy compiled location and routes only to the explicit runtime selection", async () => {
     const { MOBILE_API_ENVIRONMENT, apiClient } = await loadApiClientEnvironment({
       appVariant: "beta",

@@ -53,12 +53,12 @@ function ActivityRow({
     <View style={[styles.activityRow, showDivider ? styles.activityRowDivider : null]}>
       <View style={styles.activityLeft}>
         <Chip label={formatLedgerType(entry.type)} active={entry.points >= 0} />
-        {entry.orderId ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.activityOrder}>{`Order ${entry.orderId.slice(0, 8).toUpperCase()}`}</Text> : null}
+        {entry.orderId ? <Text style={styles.activityOrder}>{`Order ${entry.orderId.slice(0, 8).toUpperCase()}`}</Text> : null}
       </View>
 
       <View style={styles.activityRight}>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.activityPoints, entry.points < 0 ? styles.activityPointsNegative : null]}>{formatLedgerPoints(entry.points)}</Text>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.activityMeta}>{formatDateTime(entry.createdAt)}</Text>
+        <Text style={[styles.activityPoints, entry.points < 0 ? styles.activityPointsNegative : null]}>{formatLedgerPoints(entry.points)}</Text>
+        <Text style={styles.activityMeta}>{formatDateTime(entry.createdAt)}</Text>
       </View>
     </View>
   );
@@ -95,8 +95,8 @@ export default function RewardsPage() {
         <ScreenScroll bottomInset={48} contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}>
           <GlassCard style={styles.heroCard}>
             <SectionLabel label="Rewards" />
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>Sign in to view rewards.</Text>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroBody}>Rewards activity and balances are attached to your account.</Text>
+            <Text style={styles.heroTitle}>Sign in to view rewards.</Text>
+            <Text style={styles.heroBody}>Rewards activity and balances are attached to your account.</Text>
             <Button
               label="Sign In"
               variant="secondary"
@@ -116,10 +116,10 @@ export default function RewardsPage() {
       <ScreenScroll bottomInset={48} contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}>
         <GlassCard style={styles.heroCard}>
           <SectionLabel label="Balance" />
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>
+          <Text style={styles.heroTitle}>
             {loyaltyEnabled ? (loyaltyBalance ? `${loyaltyBalance.availablePoints} pts` : loyaltyError ? "Unavailable" : "Loading") : "Off"}
           </Text>
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroBody}>
+          <Text style={styles.heroBody}>
             {loyaltyEnabled
               ? loyaltyError
                 ? getLoyaltyQueryErrorMessage(loyaltyError)
@@ -128,8 +128,8 @@ export default function RewardsPage() {
           </Text>
           {loyaltyEnabled ? (
             <View style={styles.balanceMetaWrap}>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.balanceMeta}>{`Pending ${loyaltyBalance ? loyaltyBalance.pendingPoints : "--"} pts`}</Text>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.balanceMeta}>{`Lifetime ${loyaltyBalance ? loyaltyBalance.lifetimeEarned : "--"} pts`}</Text>
+              <Text style={styles.balanceMeta}>{`Pending ${loyaltyBalance ? loyaltyBalance.pendingPoints : "--"} pts`}</Text>
+              <Text style={styles.balanceMeta}>{`Lifetime ${loyaltyBalance ? loyaltyBalance.lifetimeEarned : "--"} pts`}</Text>
             </View>
           ) : null}
           {loyaltyEnabled && loyaltyError ? (
@@ -147,9 +147,9 @@ export default function RewardsPage() {
         <Card style={styles.sectionCard}>
           <SectionLabel label="Activity" />
           {!loyaltyEnabled ? (
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.bodyText}>Loyalty is disabled for this client.</Text>
+            <Text style={styles.bodyText}>Loyalty is disabled for this client.</Text>
           ) : loyaltyLedger.length === 0 ? (
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.bodyText}>Your next paid order will show up here once points post.</Text>
+            <Text style={styles.bodyText}>Your next paid order will show up here once points post.</Text>
           ) : (
             <View style={styles.activityList}>
               {loyaltyLedger.map((entry, index) => (

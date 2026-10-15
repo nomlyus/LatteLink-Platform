@@ -175,7 +175,7 @@ export function LiquidGlassPillTabBar({ state, descriptors, navigation }: PillTa
                   color={useActiveIcons ? "rgba(18, 18, 18, 0.94)" : "rgba(38, 38, 44, 0.58)"}
                 />
               </View>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1}
+              <Text
                 numberOfLines={1}
                 style={[styles.tabLabel, styles.tabLabelGlass, useActiveIcons ? styles.tabLabelActive : null]}
               >
@@ -362,11 +362,11 @@ export function LiquidGlassPillTabBar({ state, descriptors, navigation }: PillTa
                       hitSlop={{ top: 2, bottom: 2, left: 14, right: 14 }}
                       accessibilityRole="tab"
                       accessibilityState={isFocused ? { selected: true } : {}}
-                      accessibilityLabel={descriptor.options.tabBarAccessibilityLabel}
+                      accessibilityLabel={descriptor.options.tabBarAccessibilityLabel ?? label}
                     >
                       <View style={styles.tabContent}>
                         <View style={styles.tabIconBox} />
-                        <Text allowFontScaling={false} maxFontSizeMultiplier={1} numberOfLines={1} style={[styles.tabLabel, styles.tabLabelPlaceholder]}>
+                        <Text numberOfLines={1} style={[styles.tabLabel, styles.tabLabelPlaceholder]}>
                           {label}
                         </Text>
                       </View>
@@ -384,7 +384,7 @@ export function LiquidGlassPillTabBar({ state, descriptors, navigation }: PillTa
               <View style={styles.cartGlassInner}>
                 <Ionicons name="bag-handle-outline" size={21} color={uiPalette.text} />
                 <View style={styles.cartCountBadge}>
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.cartCountLabel}>{itemCount > 99 ? "99+" : String(itemCount)}</Text>
+                  <Text style={styles.cartCountLabel}>{itemCount > 99 ? "99+" : String(itemCount)}</Text>
                 </View>
               </View>
             </GlassView>

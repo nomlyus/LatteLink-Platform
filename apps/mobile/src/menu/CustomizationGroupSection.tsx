@@ -55,16 +55,21 @@ function compareOptions(left: MenuItemCustomizationOption, right: MenuItemCustom
 
 type OptionRowProps = {
   option: MenuItemCustomizationOption;
+  selectionType: MenuItemCustomizationGroup["selectionType"];
   active: boolean;
   onPress: () => void;
 };
 
-function OptionRow({ option, active, onPress }: OptionRowProps) {
+function OptionRow({ option, selectionType, active, onPress }: OptionRowProps) {
   const meta = getOptionMeta(option);
 
   return (
     <Pressable
       onPress={onPress}
+      accessibilityRole={selectionType === "single" ? "radio" : "checkbox"}
+      accessibilityLabel={option.label}
+      accessibilityState={{ selected: active, disabled: !option.available }}
+      disabled={!option.available}
       style={({ pressed }) => [
         styles.optionRow,
         active ? styles.optionRowActive : null,
@@ -77,13 +82,13 @@ function OptionRow({ option, active, onPress }: OptionRowProps) {
         </View>
 
         <View style={styles.optionTitleRow}>
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.optionLabel, active ? styles.optionLabelActive : null]} numberOfLines={1}>
+          <Text style={[styles.optionLabel, active ? styles.optionLabelActive : null]} numberOfLines={1}>
             {option.label}
           </Text>
-          {meta ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.optionMetaInline, active ? styles.optionMetaActive : null]}>{meta}</Text> : null}
+          {meta ? <Text style={[styles.optionMetaInline, active ? styles.optionMetaActive : null]}>{meta}</Text> : null}
           {option.default ? (
             <View style={[styles.optionBadge, active ? styles.optionBadgeActive : null]}>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.optionBadgeText, active ? styles.optionBadgeTextActive : null]}>Default</Text>
+              <Text style={[styles.optionBadgeText, active ? styles.optionBadgeTextActive : null]}>Default</Text>
             </View>
           ) : null}
         </View>
@@ -123,17 +128,17 @@ export function CustomizationGroupSection({
       <View style={styles.sectionContent}>
         <View style={styles.headerPillsRow}>
           <View style={styles.headerPrimaryPill}>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.headerPrimaryPillText}>{getSelectionHint(group)}</Text>
+            <Text style={styles.headerPrimaryPillText}>{getSelectionHint(group)}</Text>
           </View>
           <View style={styles.headerSecondaryPill}>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.headerSecondaryPillText}>
+            <Text style={styles.headerSecondaryPillText}>
               {group.required ? "Required" : "Optional"}{group.maxSelections > 1 ? ` • ${selectedCount}/${group.maxSelections}` : ""}
             </Text>
           </View>
         </View>
 
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionTitle}>{group.label}</Text>
-        {group.description ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionBody}>{group.description}</Text> : null}
+        <Text style={styles.sectionTitle}>{group.label}</Text>
+        {group.description ? <Text style={styles.sectionBody}>{group.description}</Text> : null}
 
         <View style={styles.optionsStack}>
           {group.options
@@ -143,13 +148,14 @@ export function CustomizationGroupSection({
               <OptionRow
                 key={option.id}
                 option={option}
+                selectionType={group.selectionType}
                 active={isCustomizationOptionSelected(customization, group.id, option.id)}
                 onPress={() => onSelectOption(option)}
               />
             ))}
         </View>
 
-        {validationMessage ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionError}>{validationMessage}</Text> : null}
+        {validationMessage ? <Text style={styles.sectionError}>{validationMessage}</Text> : null}
       </View>
     </View>
   );

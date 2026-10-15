@@ -61,40 +61,45 @@ export function usePushNotificationRegistration(isAuthenticated: boolean) {
       return;
     }
 
+    let isCurrent = true;
+
     async function register() {
-      const { status: existingStatus } = await Notifications.getPermissionsAsync();
-      let finalStatus = existingStatus;
-
-      if (existingStatus !== "granted") {
-        const { status } = await Notifications.requestPermissionsAsync();
-        finalStatus = status;
-      }
-
-      if (finalStatus !== "granted") {
-        return;
-      }
-
-      let tokenData: Notifications.ExpoPushToken;
       try {
+        const { status: existingStatus } = await Notifications.getPermissionsAsync();
+        let finalStatus = existingStatus;
+
+        if (existingStatus !== "granted") {
+          const { status } = await Notifications.requestPermissionsAsync();
+          finalStatus = status;
+        }
+
+        if (!isCurrent || finalStatus !== "granted") {
+          return;
+        }
+
         const projectId = resolveExpoProjectId();
-        tokenData = projectId
+        const tokenData = projectId
           ? await Notifications.getExpoPushTokenAsync({ projectId })
           : await Notifications.getExpoPushTokenAsync();
+        if (!isCurrent) return;
+
+        const platform = Platform.OS === "ios" ? "ios" : "android";
+        const deviceId = await getOrCreateDeviceId();
+        if (!isCurrent) return;
+
+        await mutation.mutateAsync({ brandId, deviceId, platform, expoPushToken: tokenData.data });
       } catch {
+        // Permission denial, native token failures, and secure-storage errors
+        // are expected on simulators and restricted devices. Registration is
+        // best effort and must never create an unhandled promise rejection.
         return;
       }
-
-      const platform = Platform.OS === "ios" ? "ios" : "android";
-      const deviceId = await getOrCreateDeviceId();
-
-      try {
-        await mutation.mutateAsync({ brandId, deviceId, platform, expoPushToken: tokenData.data });
-        registeredBrandRef.current = brandId;
-      } catch {
-        registeredBrandRef.current = null;
-      }
+      if (isCurrent) registeredBrandRef.current = brandId;
     }
 
     void register();
+    return () => {
+      isCurrent = false;
+    };
   }, [brandId, isAuthenticated, isReady, mutation]);
 }
