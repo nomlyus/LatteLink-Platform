@@ -8,7 +8,7 @@ import { OrderItemThumbnail, OrderStatusPill } from "../components";
 import { formatUsd } from "../menu/catalog";
 import type { MenuItem } from "../menu/catalog";
 import type { OrderHistoryEntry } from "../account/data";
-import { buildOrderItemsSummary, countOrderUnits } from "./presentation";
+import { buildOrderItemsSummary, countOrderUnits, resolveHistoryItemIcon } from "./presentation";
 import { findLatestOrderTime, formatOrderDateTime, formatOrderReference } from "./history";
 import { uiPalette, uiTypography } from "../ui/system";
 
@@ -28,6 +28,7 @@ function OrderHistoryItemThumbnail({
       label={label}
       imageUrl={menuItem?.imageUrl}
       size="small"
+      fallbackIcon={resolveHistoryItemIcon(label)}
       style={[styles.orderThumb, stacked ? styles.orderThumbStacked : null]}
     />
   );

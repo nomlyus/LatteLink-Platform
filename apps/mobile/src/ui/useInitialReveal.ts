@@ -47,7 +47,7 @@ export function useInitialReveal(
       setFinished(true);
     });
     return () => animation.stop();
-  }, [finished, loadingOpacity, pending, showLoadingOverlay, skipAnimation]);
+  }, [finished, loadingOpacity, pending, resetKey, showLoadingOverlay, skipAnimation]);
 
   return { loadingOpacity, showLoadingOverlay };
 }

@@ -1,6 +1,19 @@
 import type { LoyaltyLedgerEntry, OrderHistoryEntry } from "../account/data";
 import type { MenuItem } from "../menu/catalog";
 
+// History's generic Cortado fallback intentionally differs from receipt artwork.
+export function resolveHistoryItemIcon(name: string) {
+  const haystack = name.toLowerCase();
+  if (haystack.includes("tea") || haystack.includes("matcha")) return "leaf-outline" as const;
+  if (["croissant", "cookie", "muffin", "pastry"].some((word) => haystack.includes(word))) {
+    return "nutrition-outline" as const;
+  }
+  if (["latte", "espresso", "coffee", "cappuccino"].some((word) => haystack.includes(word))) {
+    return "cafe-outline" as const;
+  }
+  return "sparkles-outline" as const;
+}
+
 export function sumReturnedPoints(entries: LoyaltyLedgerEntry[]) {
   return entries.reduce((sum, entry) => sum + entry.points, 0);
 }
