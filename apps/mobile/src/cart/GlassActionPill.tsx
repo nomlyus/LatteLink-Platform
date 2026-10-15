@@ -1,17 +1,8 @@
+import { canUseLiquidGlass } from "../ui/glass";
 import { BlurView } from "expo-blur";
-import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
+import { GlassView } from "expo-glass-effect";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { uiPalette } from "../ui/system";
-
-function canUseLiquidGlass() {
-  if (Platform.OS !== "ios") return false;
-
-  try {
-    return isLiquidGlassAvailable();
-  } catch {
-    return false;
-  }
-}
 
 type GlassActionPillProps = {
   label: string;
@@ -39,7 +30,9 @@ export function GlassActionPill({ label, onPress, tone = "default", disabled = f
         tone === "danger" ? styles.actionPillInnerDanger : null
       ]}
     >
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1}
+      <Text
+        allowFontScaling={false}
+        maxFontSizeMultiplier={1}
         style={[
           styles.actionPillText,
           tone === "danger" ? styles.actionPillTextDanger : null,
@@ -52,7 +45,18 @@ export function GlassActionPill({ label, onPress, tone = "default", disabled = f
   );
 
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.actionPillShell, pressed && !disabled ? styles.actionPillPressed : null, disabled ? styles.actionPillDisabled : null]}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.actionPillShell,
+        pressed && !disabled ? styles.actionPillPressed : null,
+        disabled ? styles.actionPillDisabled : null
+      ]}
+    >
       {useLiquidGlass ? (
         <GlassView
           glassEffectStyle="regular"
@@ -64,7 +68,11 @@ export function GlassActionPill({ label, onPress, tone = "default", disabled = f
           {content}
         </GlassView>
       ) : (
-        <BlurView tint={useDarkTone ? "dark" : "light"} intensity={Platform.OS === "ios" ? 24 : 20} style={styles.actionPillFrame}>
+        <BlurView
+          tint={useDarkTone ? "dark" : "light"}
+          intensity={Platform.OS === "ios" ? 24 : 20}
+          style={styles.actionPillFrame}
+        >
           {content}
         </BlurView>
       )}

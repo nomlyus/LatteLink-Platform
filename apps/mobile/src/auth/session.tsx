@@ -117,6 +117,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     const refreshPromise = (async (): Promise<AuthSession | null> => {
       try {
         const nextSession = await apiClient.refreshSession({ refreshToken: currentSession.refreshToken });
+        if (sessionRef.current !== currentSession) return null;
         await signIn(nextSession);
         return nextSession;
       } catch {

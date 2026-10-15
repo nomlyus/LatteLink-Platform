@@ -1,6 +1,7 @@
-import DateTimePicker from "@react-native-community/datetimepicker";
-import BottomSheet, { BottomSheetBackdrop, BottomSheetView } from "@gorhom/bottom-sheet";
+import BottomSheet from "@gorhom/bottom-sheet";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { DateSheet } from "../src/account/ProfileSheets";
+import { resolveReturnToPath } from "../src/auth/presentation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -12,73 +13,6 @@ import { GlassActionPill } from "../src/cart/GlassActionPill";
 import { runAfterKeyboardDismiss } from "../src/ui/keyboard";
 import { uiPalette, uiTypography } from "../src/ui/system";
 
-type ReturnToPath = "cart" | "/(tabs)/home" | "/(tabs)/orders" | "/(tabs)/account";
-
-function resolveReturnToPath(input: string | string[] | undefined): ReturnToPath | null {
-  if (Array.isArray(input)) return resolveReturnToPath(input[0]);
-  if (input === "cart" || input === "/(tabs)/home" || input === "/(tabs)/orders" || input === "/(tabs)/account") {
-    return input;
-  }
-  return null;
-}
-
-function DateSheet({
-  sheetRef,
-  value,
-  onChange
-}: {
-  sheetRef: React.RefObject<ComponentRef<typeof BottomSheet>>;
-  value: Date | null;
-  onChange: (d: Date) => void;
-}) {
-  const snapPoints = useMemo(() => [300], []);
-  const renderBackdrop = useCallback(
-    (props: React.ComponentProps<typeof BottomSheetBackdrop>) => (
-      <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} opacity={0.36} pressBehavior="close" />
-    ),
-    []
-  );
-  const maxDate = new Date();
-  const defaultDate = value ?? new Date(new Date().getFullYear() - 25, 0, 1);
-
-  return (
-    <BottomSheet
-      ref={sheetRef}
-      index={-1}
-      snapPoints={snapPoints}
-      enablePanDownToClose
-      animateOnMount={false}
-      backdropComponent={renderBackdrop}
-      backgroundStyle={styles.sheetBg}
-      handleIndicatorStyle={styles.sheetHandle}
-    >
-      <BottomSheetView>
-        <View style={styles.sheetHeader}>
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sheetTitle}>Birthday</Text>
-          <TouchableOpacity onPress={() => sheetRef.current?.close()} style={styles.sheetDone}>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sheetDoneText}>Done</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={styles.datePickerWrap}>
-          <DateTimePicker
-            value={defaultDate}
-            mode="date"
-            display="spinner"
-            maximumDate={maxDate}
-            onChange={(_, date) => {
-              if (date) {
-                onChange(date);
-              }
-            }}
-            style={styles.datePicker}
-            textColor={uiPalette.text}
-          />
-        </View>
-      </BottomSheetView>
-    </BottomSheet>
-  );
-}
-
 export default function ProfileSetupScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -87,7 +21,7 @@ export default function ProfileSetupScreen() {
   const { isAuthenticated, isHydrating, completeProfileSetup, deferProfileSetup } = useAuthSession();
   const returnTo = useMemo(() => resolveReturnToPath(params.returnTo), [params.returnTo]);
   const continueIntoApp = useCallback(() => {
-    const destination = returnTo === "cart" ? "/cart" : returnTo ?? "/(tabs)/menu";
+    const destination = returnTo === "cart" ? "/cart" : (returnTo ?? "/(tabs)/menu");
     router.replace(destination);
   }, [returnTo, router]);
 
@@ -97,7 +31,7 @@ export default function ProfileSetupScreen() {
   const [name, setName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [birthday, setBirthday] = useState<Date | null>(null);
-  const dateSheetRef = useRef<ComponentRef<typeof BottomSheet>>(null) as React.RefObject<ComponentRef<typeof BottomSheet>>;
+  const dateSheetRef = useRef<ComponentRef<typeof BottomSheet>>(null);
 
   const saveProfileMutation = useMutation({
     mutationFn: async (input: { name: string; phoneNumber?: string; birthday?: string }) =>
@@ -128,7 +62,7 @@ export default function ProfileSetupScreen() {
     }
 
     setBirthday(null);
-  }, [profile]);
+  }, [isAuthenticated, isHydrating, profile, router]);
 
   useEffect(() => {
     if (!isAuthenticated || isHydrating || profileQuery.isLoading || !profileQuery.isSuccess) {
@@ -173,10 +107,14 @@ export default function ProfileSetupScreen() {
           <View style={styles.handle} />
         </View>
         <View style={[styles.centerContent, { paddingTop: insets.top + 52 }]}>
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>Preparing profile setup…</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>
+            Preparing profile setup…
+          </Text>
           <View style={styles.loadingRow}>
             <ActivityIndicator color={uiPalette.primary} />
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>Loading your account details.</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>
+              Loading your account details.
+            </Text>
           </View>
         </View>
       </View>
@@ -190,13 +128,21 @@ export default function ProfileSetupScreen() {
       </View>
 
       <View style={[styles.centerContent, { paddingTop: insets.top + 52 }]}>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>Finish your profile.</Text>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>Add a name now. Phone and birthday are optional, and you can skip for now.</Text>
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>
+          Finish your profile.
+        </Text>
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>
+          Add a name now. Phone and birthday are optional, and you can skip for now.
+        </Text>
 
         <View style={styles.form}>
           <View style={styles.fieldGroup}>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.fieldLabel}>Full name</Text>
-            <TextInput allowFontScaling={false} maxFontSizeMultiplier={1}
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.fieldLabel}>
+              Full name
+            </Text>
+            <TextInput
+              allowFontScaling={false}
+              maxFontSizeMultiplier={1}
               autoCapitalize="words"
               autoComplete="name"
               autoCorrect={false}
@@ -209,8 +155,12 @@ export default function ProfileSetupScreen() {
           </View>
 
           <View style={styles.fieldGroup}>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.fieldLabel}>Phone number</Text>
-            <TextInput allowFontScaling={false} maxFontSizeMultiplier={1}
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.fieldLabel}>
+              Phone number
+            </Text>
+            <TextInput
+              allowFontScaling={false}
+              maxFontSizeMultiplier={1}
               autoComplete="tel"
               autoCorrect={false}
               keyboardType="phone-pad"
@@ -223,10 +173,18 @@ export default function ProfileSetupScreen() {
           </View>
 
           <View style={styles.fieldGroup}>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.fieldLabel}>Birthday</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.fieldLabel}>
+              Birthday
+            </Text>
             <TouchableOpacity style={styles.textInputButton} onPress={openDateSheet}>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={birthday ? styles.textInput : styles.textInputPlaceholder}>
-                {birthday ? birthday.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "Not set"}
+              <Text
+                allowFontScaling={false}
+                maxFontSizeMultiplier={1}
+                style={birthday ? styles.textInput : styles.textInputPlaceholder}
+              >
+                {birthday
+                  ? birthday.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+                  : "Not set"}
               </Text>
             </TouchableOpacity>
           </View>
@@ -234,12 +192,19 @@ export default function ProfileSetupScreen() {
       </View>
 
       <View style={[styles.bottomDock, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-          {profileQuery.isError ? (
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.errorText}>Profile lookup failed. You can still continue or skip.</Text>
-          ) : null}
-          <GlassActionPill label={saveProfileMutation.isPending ? "Saving…" : "Continue"} onPress={handleContinue} tone="dark" disabled={saveProfileMutation.isPending || name.trim().length === 0} />
-          <GlassActionPill label="Skip for now" onPress={handleSkip} />
-        </View>
+        {profileQuery.isError ? (
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.errorText}>
+            Profile lookup failed. You can still continue or skip.
+          </Text>
+        ) : null}
+        <GlassActionPill
+          label={saveProfileMutation.isPending ? "Saving…" : "Continue"}
+          onPress={handleContinue}
+          tone="dark"
+          disabled={saveProfileMutation.isPending || name.trim().length === 0}
+        />
+        <GlassActionPill label="Skip for now" onPress={handleSkip} />
+      </View>
 
       <DateSheet sheetRef={dateSheetRef} value={birthday} onChange={setBirthday} />
     </View>
@@ -350,48 +315,5 @@ const styles = StyleSheet.create({
     color: "#8A2B0D",
     textAlign: "center",
     fontSize: 13
-  },
-  sheetBg: {
-    backgroundColor: uiPalette.surfaceStrong,
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    borderWidth: 1,
-    borderColor: uiPalette.borderStrong
-  },
-  sheetHandle: {
-    backgroundColor: "rgba(151,160,154,0.52)"
-  },
-  sheetHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingTop: 4,
-    paddingBottom: 2
-  },
-  sheetTitle: {
-    fontSize: 13,
-    lineHeight: 18,
-    letterSpacing: 0.3,
-    textTransform: "uppercase",
-    color: uiPalette.textMuted
-  },
-  sheetDone: {
-    paddingVertical: 6,
-    paddingLeft: 16
-  },
-  sheetDoneText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: uiPalette.primary
-  },
-  datePickerWrap: {
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  datePicker: {
-    width: "100%",
-    height: 200,
-    alignSelf: "center"
   }
 });

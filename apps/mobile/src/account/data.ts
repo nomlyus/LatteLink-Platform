@@ -47,14 +47,16 @@ const orderSchema = z.object({
     currency: z.literal("USD"),
     amountCents: z.number().int().nonnegative()
   }),
-  refundSummary: z.object({
-    state: z.enum(["NONE", "PARTIAL", "FULL"]),
-    settledAmountCents: z.number().int().nonnegative(),
-    remainingPaidAmountCents: z.number().int().nonnegative(),
-    settledRefundCount: z.number().int().nonnegative(),
-    allocationQuality: z.enum(["NONE", "COMPLETE", "UNALLOCATED"]),
-    unverifiedRefundCount: z.number().int().nonnegative()
-  }).optional(),
+  refundSummary: z
+    .object({
+      state: z.enum(["NONE", "PARTIAL", "FULL"]),
+      settledAmountCents: z.number().int().nonnegative(),
+      remainingPaidAmountCents: z.number().int().nonnegative(),
+      settledRefundCount: z.number().int().nonnegative(),
+      allocationQuality: z.enum(["NONE", "COMPLETE", "UNALLOCATED"]),
+      unverifiedRefundCount: z.number().int().nonnegative()
+    })
+    .optional(),
   timeline: z.array(
     z.object({
       status: orderStatusSchema,
@@ -87,7 +89,6 @@ export const orderHistoryQueryKey = (brandId: string) => ["account", "orders", b
 export type OrderHistoryEntry = z.output<typeof orderSchema>;
 export type LoyaltyBalance = z.output<typeof loyaltyBalanceSchema>;
 export type LoyaltyLedgerEntry = z.output<typeof loyaltyLedgerEntrySchema>;
-export type ActiveOrderStatus = z.output<typeof activeOrderStatusSchema>;
 
 type CancelOrderInput = {
   orderId: string;
@@ -109,10 +110,7 @@ export function isAbortedCheckoutOrder(order: OrderHistoryEntry) {
 
   return !order.timeline.some(
     (entry) =>
-      entry.status === "PAID" ||
-      entry.status === "IN_PREP" ||
-      entry.status === "READY" ||
-      entry.status === "COMPLETED"
+      entry.status === "PAID" || entry.status === "IN_PREP" || entry.status === "READY" || entry.status === "COMPLETED"
   );
 }
 
@@ -124,10 +122,7 @@ export function normalizeOrderHistory(orders: OrderHistoryEntry[]) {
   return sortOrdersByLatestActivity(filterVisibleOrderHistory(orders));
 }
 
-export function mergeOrderIntoHistory(
-  currentOrders: OrderHistoryEntry[] | undefined,
-  order: OrderHistoryEntry
-) {
+export function mergeOrderIntoHistory(currentOrders: OrderHistoryEntry[] | undefined, order: OrderHistoryEntry) {
   const baseOrders = currentOrders ?? [];
   const hasExistingOrder = baseOrders.some((entry) => entry.id === order.id);
   const nextOrders = hasExistingOrder
@@ -192,7 +187,12 @@ export function useLoyaltyBalanceQuery(enabled = true) {
           }
 
           return loyaltyBalanceSchema.parse(
-            await apiClient.forLocation(selectedLocationId).get(`/loyalty/balance?brandId=${encodeURIComponent(brandId)}&locationId=${encodeURIComponent(selectedLocationId)}`, { signal })
+            await apiClient
+              .forLocation(selectedLocationId)
+              .get(
+                `/loyalty/balance?brandId=${encodeURIComponent(brandId)}&locationId=${encodeURIComponent(selectedLocationId)}`,
+                { signal }
+              )
           );
         }
       )
@@ -219,7 +219,12 @@ export function useLoyaltyLedgerQuery(enabled = true) {
           }
 
           return loyaltyLedgerSchema.parse(
-            await apiClient.forLocation(selectedLocationId).get(`/loyalty/ledger?brandId=${encodeURIComponent(brandId)}&locationId=${encodeURIComponent(selectedLocationId)}`, { signal })
+            await apiClient
+              .forLocation(selectedLocationId)
+              .get(
+                `/loyalty/ledger?brandId=${encodeURIComponent(brandId)}&locationId=${encodeURIComponent(selectedLocationId)}`,
+                { signal }
+              )
           );
         }
       )

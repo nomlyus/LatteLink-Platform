@@ -1,7 +1,7 @@
 import * as AppleAuthentication from "expo-apple-authentication";
 import Constants, { AppOwnership } from "expo-constants";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getAuthScreenRecoveryCopy } from "../src/auth/recovery";
@@ -11,111 +11,16 @@ import { generateAuthNonce } from "../src/auth/nonce";
 import { useAuthSession } from "../src/auth/session";
 import { MOBILE_API_ENVIRONMENT } from "../src/api/client";
 import { Button, uiPalette, uiTypography } from "../src/ui/system";
+import {
+  resolveReturnToPath,
+  formatExpiresAt,
+  getReturnLabel,
+  resolveAppleSignInErrorMessage,
+  resolveDevAccessErrorMessage
+} from "../src/auth/presentation";
 
-type ReturnToPath = "cart" | "/(tabs)/home" | "/(tabs)/orders" | "/(tabs)/account";
 const DEFAULT_DEV_ACCESS_EMAIL = "dev@nomly.local";
 const DEFAULT_DEV_ACCESS_NAME = "Dev Tester";
-
-function resolveReturnToPath(input: string | string[] | undefined): ReturnToPath | null {
-  if (Array.isArray(input)) return resolveReturnToPath(input[0]);
-  if (input === "cart" || input === "/(tabs)/home" || input === "/(tabs)/orders" || input === "/(tabs)/account") {
-    return input;
-  }
-  return null;
-}
-
-function formatExpiresAt(expiresAt: string): string {
-  const date = new Date(expiresAt);
-  return Number.isNaN(date.getTime()) ? expiresAt : date.toLocaleString();
-}
-
-function getReturnLabel(returnTo: ReturnToPath | null) {
-  switch (returnTo) {
-    case "cart":
-      return "Return to Checkout";
-    case "/(tabs)/orders":
-      return "Return to Orders";
-    case "/(tabs)/account":
-      return "Return to Account";
-    case "/(tabs)/home":
-      return "Return Home";
-    default:
-      return "Continue";
-  }
-}
-
-function extractApiErrorDetails(error: unknown) {
-  const rawMessage = error instanceof Error ? error.message : "";
-  if (!rawMessage) {
-    return null;
-  }
-
-  const jsonStart = rawMessage.indexOf("{");
-  if (jsonStart < 0) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(rawMessage.slice(jsonStart)) as {
-      code?: string;
-      message?: string;
-      requestId?: string;
-    };
-    if (!parsed.code && !parsed.message) {
-      return null;
-    }
-
-    return {
-      code: parsed.code?.trim(),
-      message: parsed.message?.trim(),
-      requestId: parsed.requestId?.trim()
-    };
-  } catch {
-    return null;
-  }
-}
-
-function resolveAppleSignInErrorMessage(error: unknown) {
-  const apiError = extractApiErrorDetails(error);
-  const message = error instanceof Error ? error.message : "";
-
-  if (message.includes("APPLE_SIGN_IN_NOT_CONFIGURED")) {
-    return "Apple Sign In is not configured on the backend for this environment.";
-  }
-
-  if (message.includes("INVALID_APPLE_IDENTITY")) {
-    return "Apple could not verify this sign-in response. Try again.";
-  }
-
-  if (message.includes("APPLE_TOKEN_EXCHANGE_FAILED")) {
-    return "Apple Sign In could not finish exchanging credentials. Use a development build or TestFlight instead of Expo Go.";
-  }
-
-  if (apiError?.code || apiError?.message) {
-    const segments = [apiError.code, apiError.message].filter(Boolean);
-    const details = segments.join(": ");
-    return apiError.requestId ? `${details} (request ${apiError.requestId})` : details;
-  }
-
-  return "Apple Sign In could not complete right now. Try again in a moment.";
-}
-
-function resolveDevAccessErrorMessage(error: unknown) {
-  const apiError = extractApiErrorDetails(error);
-  const message = error instanceof Error ? error.message : "";
-
-  if (message.includes("DEV_CUSTOMER_ACCESS_DISABLED")) {
-    return "Dev sign in is disabled on the backend for this environment.";
-  }
-
-  if (apiError?.code || apiError?.message) {
-    const segments = [apiError.code, apiError.message].filter(Boolean);
-    const details = segments.join(": ");
-    return apiError.requestId ? `${details} (request ${apiError.requestId})` : details;
-  }
-
-  return "Dev sign in could not complete right now. Try again in a moment.";
-}
 
 export default function AuthScreen() {
   const insets = useSafeAreaInsets();
@@ -127,6 +32,10 @@ export default function AuthScreen() {
   const appleExchange = useAppleExchangeMutation();
   const devAccess = useDevAccessMutation();
   const returnTo = useMemo(() => resolveReturnToPath(params.returnTo), [params.returnTo]);
+  const continueIntoApp = useCallback(() => {
+    const destination = returnTo === "cart" ? "/cart" : (returnTo ?? "/(tabs)/menu");
+    router.dismissTo(destination);
+  }, [returnTo, router]);
   const topContentInset = insets.top + 52;
   const recoveryCopy = useMemo(() => getAuthScreenRecoveryCopy(authRecoveryState), [authRecoveryState]);
   const profileQuery = useCustomerProfileQuery(isAuthenticated && !isHydrating);
@@ -158,7 +67,15 @@ export default function AuthScreen() {
       }
       router.replace("/profile-setup");
     }
-  }, [isAuthenticated, isHydrating, profileNeedsSetup, profileQuery.isLoading, profileQuery.isSuccess, returnTo, router]);
+  }, [
+    isAuthenticated,
+    isHydrating,
+    profileNeedsSetup,
+    profileQuery.isLoading,
+    profileQuery.isSuccess,
+    returnTo,
+    router
+  ]);
 
   useEffect(() => {
     if (!isAuthenticated || isHydrating || profileQuery.isLoading || !profileQuery.isSuccess || !profileComplete) {
@@ -171,7 +88,7 @@ export default function AuthScreen() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const available = await AppleAuthentication.isAvailableAsync();
+      const available = await AppleAuthentication.isAvailableAsync().catch(() => false);
       if (cancelled) return;
       setAppleAvailable(available);
     })();
@@ -227,11 +144,6 @@ export default function AuthScreen() {
     });
   }
 
-  function continueIntoApp() {
-    const destination = returnTo === "cart" ? "/cart" : returnTo ?? "/(tabs)/menu";
-    router.dismissTo(destination);
-  }
-
   if (isHydrating) {
     return (
       <View style={styles.screen}>
@@ -239,10 +151,14 @@ export default function AuthScreen() {
           <View style={styles.handle} />
         </View>
         <View style={[styles.centerContent, { paddingTop: topContentInset }]}>
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>Restoring your session…</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>
+            Restoring your session…
+          </Text>
           <View style={styles.loadingRow}>
             <ActivityIndicator color={uiPalette.primary} />
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>Hydrating local credentials.</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>
+              Hydrating local credentials.
+            </Text>
           </View>
         </View>
       </View>
@@ -258,42 +174,66 @@ export default function AuthScreen() {
         {isAuthenticated ? (
           profileQuery.isLoading ? (
             <>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>Checking your profile…</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>
+                Checking your profile…
+              </Text>
               <View style={styles.loadingRow}>
                 <ActivityIndicator color={uiPalette.primary} />
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>Preparing your account details.</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>
+                  Preparing your account details.
+                </Text>
               </View>
             </>
           ) : profileQuery.isError ? (
             <>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>We could not load your profile.</Text>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>We’ll open profile setup so you can continue.</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>
+                We could not load your profile.
+              </Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>
+                We’ll open profile setup so you can continue.
+              </Text>
             </>
           ) : profileNeedsSetup ? (
             <>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>Finish your signup.</Text>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>We need a profile setup step before you can enter the app.</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>
+                Finish your signup.
+              </Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>
+                We need a profile setup step before you can enter the app.
+              </Text>
             </>
           ) : profileComplete ? (
             <>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>Returning…</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>
+                Returning…
+              </Text>
               <View style={styles.loadingRow}>
                 <ActivityIndicator color={uiPalette.primary} />
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>Closing this sheet.</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>
+                  Closing this sheet.
+                </Text>
               </View>
             </>
           ) : (
             <>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>You’re signed in.</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>
+                You’re signed in.
+              </Text>
               <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>
-                {session ? `Your session is active until ${formatExpiresAt(session.expiresAt)}.` : "Your account is ready to go."}
+                {session
+                  ? `Your session is active until ${formatExpiresAt(session.expiresAt)}.`
+                  : "Your account is ready to go."}
               </Text>
             </>
           )
         ) : (
           <>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>{recoveryCopy.title}</Text>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>{recoveryCopy.body}</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>
+              {recoveryCopy.title}
+            </Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>
+              {recoveryCopy.body}
+            </Text>
           </>
         )}
       </View>
@@ -331,8 +271,16 @@ export default function AuthScreen() {
                 disabled={devAccess.isPending || appleExchange.isPending}
               />
             ) : null}
-            {appleSignInMessage ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.notice}>{appleSignInMessage}</Text> : null}
-            {devAccessMessage ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.notice}>{devAccessMessage}</Text> : null}
+            {appleSignInMessage ? (
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.notice}>
+                {appleSignInMessage}
+              </Text>
+            ) : null}
+            {devAccessMessage ? (
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.notice}>
+                {devAccessMessage}
+              </Text>
+            ) : null}
           </>
         ) : (
           <>
@@ -353,8 +301,16 @@ export default function AuthScreen() {
                 disabled={devAccess.isPending || appleExchange.isPending}
               />
             ) : null}
-            {appleSignInMessage ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.notice}>{appleSignInMessage}</Text> : null}
-            {devAccessMessage ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.notice}>{devAccessMessage}</Text> : null}
+            {appleSignInMessage ? (
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.notice}>
+                {appleSignInMessage}
+              </Text>
+            ) : null}
+            {devAccessMessage ? (
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.notice}>
+                {devAccessMessage}
+              </Text>
+            ) : null}
           </>
         )}
       </View>

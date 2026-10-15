@@ -1,21 +1,18 @@
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
-import { BlurView } from "expo-blur";
-import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
-import { Image, Platform, StyleSheet, Text, View } from "react-native";
+import { useMemo } from "react";
+import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { OrderItemThumbnail } from "../../src/components/OrderItemThumbnail";
 import type { LoyaltyLedgerEntry, OrderHistoryEntry } from "../../src/account/data";
 import { useLoyaltyLedgerQuery, useOrderHistoryQuery } from "../../src/account/data";
 import { useAuthSession } from "../../src/auth/session";
 import { GlassActionPill } from "../../src/cart/GlassActionPill";
-import { formatUsd, resolveMenuData, resolveMenuImageUrl, useMenuQuery, type MenuItem } from "../../src/menu/catalog";
-import { findLoyaltyReversalEntriesForOrder, formatOrderStatus } from "../../src/orders/history";
+import { formatUsd, resolveMenuData, useMenuQuery, type MenuItem } from "../../src/menu/catalog";
+import { findLoyaltyReversalEntriesForOrder } from "../../src/orders/history";
+import { formatOrderItemDescription, sumReturnedPoints } from "../../src/orders/presentation";
 import { Button, ScreenScroll, uiPalette, uiTypography } from "../../src/ui/system";
-
-function sumReturnedPoints(entries: LoyaltyLedgerEntry[]) {
-  return entries.reduce((sum, entry) => sum + entry.points, 0);
-}
+import { SummaryStatusPill, SummaryRow } from "../../src/orders/RefundPrimitives";
 
 function buildHeadline(order: OrderHistoryEntry, loyaltyReversalEntries: LoyaltyLedgerEntry[]) {
   if (order.status === "CANCELED") {
@@ -35,138 +32,13 @@ function buildHeadline(order: OrderHistoryEntry, loyaltyReversalEntries: Loyalty
   };
 }
 
-function resolveOrderItemIcon(name: string) {
-  const haystack = name.toLowerCase();
-  if (haystack.includes("tea") || haystack.includes("matcha")) return "leaf-outline" as const;
-  if (
-    haystack.includes("croissant") ||
-    haystack.includes("cookie") ||
-    haystack.includes("muffin") ||
-    haystack.includes("pastry")
-  ) {
-    return "nutrition-outline" as const;
-  }
-  if (
-    haystack.includes("latte") ||
-    haystack.includes("espresso") ||
-    haystack.includes("coffee") ||
-    haystack.includes("cappuccino") ||
-    haystack.includes("cortado")
-  ) {
-    return "cafe-outline" as const;
-  }
-
-  return "sparkles-outline" as const;
-}
-
-function OrderItemThumbnail({
-  label,
-  imageUrl
-}: {
-  label: string;
-  imageUrl?: string;
-}) {
-  const [imageFailed, setImageFailed] = useState(false);
-  const optimizedImageUrl = resolveMenuImageUrl(imageUrl, "list");
-  const [activeImageUrl, setActiveImageUrl] = useState(optimizedImageUrl);
-
-  useEffect(() => {
-    setImageFailed(false);
-    setActiveImageUrl(optimizedImageUrl);
-  }, [optimizedImageUrl]);
-
-  return (
-    <View style={styles.menuLikeImage}>
-      {activeImageUrl && !imageFailed ? (
-        <Image
-          source={{ uri: activeImageUrl }}
-          style={styles.menuLikeImagePhoto}
-          resizeMode="cover"
-          onError={() => {
-            if (imageUrl && activeImageUrl !== imageUrl) {
-              setActiveImageUrl(imageUrl);
-              return;
-            }
-            setImageFailed(true);
-          }}
-        />
-      ) : (
-        <Ionicons name={resolveOrderItemIcon(label)} size={22} color={uiPalette.accent} />
-      )}
-    </View>
-  );
-}
-
-function formatOrderItemDescription(item: OrderHistoryEntry["items"][number], menuItem?: MenuItem) {
-  const selectedOptions = item.customization?.selectedOptions?.map((selection) => selection.optionLabel).filter(Boolean) ?? [];
-  const notes = item.customization?.notes?.trim();
-  const details = [...selectedOptions, ...(notes ? [notes] : [])];
-  const suffix = details.length > 0 ? details.join(" • ") : menuItem?.description?.trim() ?? "";
-  return suffix.length > 0 ? `${item.quantity}x • ${suffix}` : `${item.quantity}x`;
-}
-
-function canUseLiquidGlassStatusPill() {
-  if (Platform.OS !== "ios") return false;
-
-  try {
-    return isLiquidGlassAvailable();
-  } catch {
-    return false;
-  }
-}
-
-function SummaryStatusPill({
-  status
-}: {
-  status: OrderHistoryEntry["status"];
-}) {
-  const label = formatOrderStatus(status);
-  const useLiquidGlass = canUseLiquidGlassStatusPill();
-
-  return (
-    <View style={styles.statusPillShell}>
-      {useLiquidGlass ? (
-        <GlassView glassEffectStyle="regular" colorScheme="auto" isInteractive style={styles.statusPillFrame} />
-      ) : (
-        <BlurView tint="light" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.statusPillFrame} />
-      )}
-      <View pointerEvents="none" style={styles.statusPillContent}>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.statusPillText}>{label}</Text>
-      </View>
-    </View>
-  );
-}
-
-function SummaryRow({
-  label,
-  value,
-  emphasized = false
-}: {
-  label: string;
-  value: ReactNode;
-  emphasized?: boolean;
-}) {
-  return (
-    <View style={styles.summaryRow}>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryLabel}>{label}</Text>
-      {typeof value === "string" ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.summaryValue, emphasized ? styles.summaryValueStrong : null]}>{value}</Text> : value}
-    </View>
-  );
-}
-
-function EmptyState({
-  title,
-  actionLabel,
-  onAction
-}: {
-  title: string;
-  actionLabel: string;
-  onAction: () => void;
-}) {
+function EmptyState({ title, actionLabel, onAction }: { title: string; actionLabel: string; onAction: () => void }) {
   return (
     <ScreenScroll bottomInset={48}>
       <View style={styles.emptyWrap}>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emptyTitle}>{title}</Text>
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emptyTitle}>
+          {title}
+        </Text>
         <Button
           label={actionLabel}
           onPress={onAction}
@@ -190,12 +62,15 @@ export default function RefundDetailScreen() {
   const menuQuery = useMenuQuery();
   const menu = resolveMenuData(menuQuery.data);
   const menuItemsById = useMemo(
-    () => new Map((menu?.categories ?? []).flatMap((category) => category.items).map((item) => [item.id, item] as const)),
+    () =>
+      new Map((menu?.categories ?? []).flatMap((category) => category.items).map((item) => [item.id, item] as const)),
     [menu?.categories]
   );
 
   const order = (ordersQuery.data ?? []).find((entry) => entry.id === orderId);
-  const loyaltyReversalEntries = orderId ? findLoyaltyReversalEntriesForOrder(orderId, loyaltyLedgerQuery.data ?? []) : [];
+  const loyaltyReversalEntries = orderId
+    ? findLoyaltyReversalEntriesForOrder(orderId, loyaltyLedgerQuery.data ?? [])
+    : [];
 
   const headline = order ? buildHeadline(order, loyaltyReversalEntries) : null;
   const returnedPoints = useMemo(() => sumReturnedPoints(loyaltyReversalEntries), [loyaltyReversalEntries]);
@@ -228,12 +103,16 @@ export default function RefundDetailScreen() {
       <View style={styles.content}>
         <View style={styles.mainContent}>
           <View style={styles.heroBlock}>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>{headline?.title}</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>
+              {headline?.title}
+            </Text>
           </View>
 
           <View style={styles.orderItemsStage}>
             <View style={styles.orderItemsBlock}>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.orderItemsLabel}>Items</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.orderItemsLabel}>
+                Items
+              </Text>
               {order.items.map((item, index) => {
                 const menuItem = menuItemsById.get(item.itemId) as MenuItem | undefined;
                 const label = item.itemName ?? menuItem?.name ?? item.itemId;
@@ -243,15 +122,29 @@ export default function RefundDetailScreen() {
                 return (
                   <View key={`${item.itemId}-${index}`} style={styles.menuLikeRow}>
                     <View style={styles.menuLikeRowMain}>
-                      <OrderItemThumbnail label={label} imageUrl={menuItem?.imageUrl} />
-                      <View style={[styles.menuLikeBodyWrap, index < order.items.length - 1 ? styles.menuLikeBodyWrapWithDivider : null]}>
+                      <OrderItemThumbnail label={label} imageUrl={menuItem?.imageUrl} style={styles.menuLikeImage} />
+                      <View
+                        style={[
+                          styles.menuLikeBodyWrap,
+                          index < order.items.length - 1 ? styles.menuLikeBodyWrapWithDivider : null
+                        ]}
+                      >
                         <View style={styles.menuLikeBodyContent}>
                           <View style={styles.menuLikeCopy}>
                             <View style={styles.menuLikeTitleRow}>
-                              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.menuLikeTitle}>{label}</Text>
-                              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.menuLikeMeta}>{formatUsd(lineTotal)}</Text>
+                              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.menuLikeTitle}>
+                                {label}
+                              </Text>
+                              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.menuLikeMeta}>
+                                {formatUsd(lineTotal)}
+                              </Text>
                             </View>
-                            <Text allowFontScaling={false} maxFontSizeMultiplier={1} numberOfLines={3} style={styles.menuLikeDescription}>
+                            <Text
+                              allowFontScaling={false}
+                              maxFontSizeMultiplier={1}
+                              numberOfLines={3}
+                              style={styles.menuLikeDescription}
+                            >
                               {description}
                             </Text>
                           </View>
@@ -267,13 +160,21 @@ export default function RefundDetailScreen() {
           <View style={styles.summarySection}>
             <SummaryRow label="Status" value={<SummaryStatusPill status={order.status} />} />
             <SummaryRow label="Total" value={formatUsd(order.total.amountCents)} emphasized />
-            <SummaryRow label="Loyalty points returned" value={returnedPoints > 0 ? `${returnedPoints} pts` : "--"} emphasized />
+            <SummaryRow
+              label="Loyalty points returned"
+              value={returnedPoints > 0 ? `${returnedPoints} pts` : "--"}
+              emphasized
+            />
           </View>
 
           {order.status === "CANCELED" ? (
             <View style={styles.paymentSupportSection}>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.paymentSupportLabel}>Payment support</Text>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.paymentSupportCopy}>If you were charged, contact the shop for help with your payment.</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.paymentSupportLabel}>
+                Payment support
+              </Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.paymentSupportCopy}>
+                If you were charged, contact the shop for help with your payment.
+              </Text>
             </View>
           ) : null}
         </View>
@@ -348,14 +249,11 @@ const styles = StyleSheet.create({
   menuLikeImage: {
     width: 108,
     height: 132,
+    borderRadius: 0,
     backgroundColor: "#D5D4CE",
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden"
-  },
-  menuLikeImagePhoto: {
-    width: "100%",
-    height: "100%"
   },
   menuLikeBodyWrap: {
     flex: 1,
@@ -409,20 +307,6 @@ const styles = StyleSheet.create({
   summarySection: {
     paddingTop: 2
   },
-  summaryRow: {
-    paddingVertical: 13,
-    borderBottomWidth: 1,
-    borderBottomColor: uiPalette.border,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 16
-  },
-  summaryLabel: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: uiPalette.textSecondary
-  },
   paymentSupportSection: {
     marginTop: 20,
     paddingTop: 18,
@@ -442,43 +326,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     color: uiPalette.textSecondary
-  },
-  statusPillShell: {
-    position: "relative",
-    alignSelf: "flex-start",
-    borderRadius: 999,
-    overflow: "hidden"
-  },
-  statusPillFrame: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 999,
-    overflow: "hidden"
-  },
-  statusPillContent: {
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-    borderRadius: 999
-  },
-  statusPillText: {
-    fontSize: 11,
-    lineHeight: 14,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-    fontWeight: "700",
-    color: uiPalette.text
-  },
-  summaryValue: {
-    flexShrink: 1,
-    fontSize: 14,
-    lineHeight: 20,
-    color: uiPalette.text,
-    textAlign: "right"
-  },
-  summaryValueStrong: {
-    fontFamily: uiTypography.displayFamily,
-    fontWeight: "600",
-    letterSpacing: 1,
-    textTransform: "uppercase"
   },
   footerContent: {
     marginTop: "auto",

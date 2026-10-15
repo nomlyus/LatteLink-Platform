@@ -1,7 +1,8 @@
+import { useMenuImage } from "../menu/useMenuImage";
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
-import { formatUsd, resolveMenuImageUrl, type MenuItem } from "../menu/catalog";
+import { formatUsd, type MenuItem } from "../menu/catalog";
 import { uiPalette, uiTypography } from "../ui/system";
 
 export type MenuItemRowProps = {
@@ -11,21 +12,8 @@ export type MenuItemRowProps = {
   onImageReady?: () => void;
 };
 
-function MenuItemArtwork({
-  imageUrl,
-  onReady
-}: {
-  imageUrl?: string;
-  onReady?: () => void;
-}) {
-  const [imageFailed, setImageFailed] = useState(false);
-  const optimizedImageUrl = resolveMenuImageUrl(imageUrl, "list");
-  const [activeImageUrl, setActiveImageUrl] = useState(optimizedImageUrl);
-
-  useEffect(() => {
-    setImageFailed(false);
-    setActiveImageUrl(optimizedImageUrl);
-  }, [optimizedImageUrl]);
+function MenuItemArtwork({ imageUrl, onReady }: { imageUrl?: string; onReady?: () => void }) {
+  const { activeImageUrl, imageFailed, onImageError } = useMenuImage(imageUrl, "list", onReady);
 
   useEffect(() => {
     if (!activeImageUrl) {
@@ -41,14 +29,7 @@ function MenuItemArtwork({
           style={styles.menuImagePhoto}
           resizeMode="cover"
           onLoadEnd={onReady}
-          onError={() => {
-            if (imageUrl && activeImageUrl !== imageUrl) {
-              setActiveImageUrl(imageUrl);
-              return;
-            }
-            setImageFailed(true);
-            onReady?.();
-          }}
+          onError={onImageError}
         />
       ) : (
         <Ionicons name="cafe-outline" size={22} color={uiPalette.accent} />
@@ -65,7 +46,11 @@ export function MenuItemRow({ item, isLast, onPress, onImageReady }: MenuItemRow
       accessibilityRole="button"
       accessibilityLabel={item.available ? `Customize ${item.name}` : `${item.name}, unavailable`}
       accessibilityState={{ disabled: !item.available }}
-      style={({ pressed }) => [styles.menuRow, !item.available ? styles.unavailable : null, pressed ? styles.pressed : null]}
+      style={({ pressed }) => [
+        styles.menuRow,
+        !item.available ? styles.unavailable : null,
+        pressed ? styles.pressed : null
+      ]}
     >
       <View style={styles.menuRowMain}>
         <MenuItemArtwork imageUrl={item.imageUrl} onReady={onImageReady} />
@@ -73,8 +58,12 @@ export function MenuItemRow({ item, isLast, onPress, onImageReady }: MenuItemRow
           <View style={styles.menuBodyContent}>
             <View style={styles.menuCopy}>
               <View style={styles.menuTitleRow}>
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.menuTitle}>{item.name}</Text>
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.menuMeta}>{formatUsd(item.priceCents)}</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.menuTitle}>
+                  {item.name}
+                </Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.menuMeta}>
+                  {formatUsd(item.priceCents)}
+                </Text>
               </View>
               <Text allowFontScaling={false} maxFontSizeMultiplier={1} numberOfLines={3} style={styles.menuDescription}>
                 {item.available ? item.description : "Currently unavailable"}

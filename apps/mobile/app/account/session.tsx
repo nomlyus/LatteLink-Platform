@@ -1,35 +1,31 @@
 import { useRouter } from "expo-router";
+import { formatDateTime } from "../../src/account/presentation";
 import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getSessionRecoveryCopy } from "../../src/auth/recovery";
 import { useAuthSession } from "../../src/auth/session";
 import { AccountFloatingHeader, ACCOUNT_HEADER_HEIGHT } from "../../src/account/AccountFloatingHeader";
 import { resolveAppConfigData, useAppConfigQuery } from "../../src/menu/catalog";
-import { Button, Card, Chip, GlassCard, ScreenScroll, SectionLabel, uiPalette, uiTypography } from "../../src/ui/system";
+import {
+  Button,
+  Card,
+  Chip,
+  GlassCard,
+  ScreenScroll,
+  SectionLabel,
+  uiPalette,
+  uiTypography
+} from "../../src/ui/system";
 
-function formatDateTime(value: string) {
-  const parsed = Date.parse(value);
-  if (!Number.isFinite(parsed)) return value;
-
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit"
-  }).format(parsed);
-}
-
-function DetailRow({
-  label,
-  value
-}: {
-  label: string;
-  value: string;
-}) {
+function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.detailRow}>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.detailLabel}>{label}</Text>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.detailValue}>{value}</Text>
+      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.detailLabel}>
+        {label}
+      </Text>
+      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.detailValue}>
+        {value}
+      </Text>
     </View>
   );
 }
@@ -55,11 +51,18 @@ export default function SessionPage() {
   if (!isAuthenticated) {
     return (
       <View style={styles.screenShell}>
-        <ScreenScroll bottomInset={48} contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}>
+        <ScreenScroll
+          bottomInset={48}
+          contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}
+        >
           <GlassCard style={styles.heroCard}>
             <SectionLabel label="Session" />
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>{recoveryCopy.title}</Text>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroBody}>{recoveryCopy.body}</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>
+              {recoveryCopy.title}
+            </Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroBody}>
+              {recoveryCopy.body}
+            </Text>
             <Button
               label={recoveryCopy.actionLabel}
               variant="secondary"
@@ -76,13 +79,22 @@ export default function SessionPage() {
 
   return (
     <View style={styles.screenShell}>
-      <ScreenScroll bottomInset={48} contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}>
+      <ScreenScroll
+        bottomInset={48}
+        contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}
+      >
         <GlassCard style={styles.heroCard}>
           <View style={styles.heroTopRow}>
             <View style={styles.heroCopy}>
               <SectionLabel label="Secure session" />
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>{`Member ${session?.userId.slice(0, 8).toUpperCase()}`}</Text>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroBody}>{locationName}</Text>
+              <Text
+                allowFontScaling={false}
+                maxFontSizeMultiplier={1}
+                style={styles.heroTitle}
+              >{`Member ${session?.userId.slice(0, 8).toUpperCase()}`}</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroBody}>
+                {locationName}
+              </Text>
             </View>
             <Chip label="Secure" active />
           </View>

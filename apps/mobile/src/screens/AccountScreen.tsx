@@ -1,11 +1,9 @@
-import { Ionicons } from "@expo/vector-icons";
+import { useRefresh } from "../ui/useRefresh";
 import * as Sentry from "@sentry/react-native";
-import { BlurView } from "expo-blur";
-import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getLoyaltyQueryErrorMessage, useLoyaltyBalanceQuery, useLoyaltyLedgerQuery } from "../account/data";
 import { AccountFloatingHeader, ACCOUNT_HEADER_HEIGHT } from "../account/AccountFloatingHeader";
@@ -17,75 +15,12 @@ import { useLocationContext } from "../location/LocationProvider";
 import { isMobileLoyaltyVisible, resolveAppConfigData, useAppConfigQuery } from "../menu/catalog";
 import { TAB_BAR_HEIGHT, getTabBarBottomOffset } from "../navigation/tabBarMetrics";
 import { Chip, GlassCard, ScreenScroll, ScreenStatic, SectionLabel, uiPalette, uiTypography } from "../ui/system";
+import { AccountPageRow, GuestSignInPill } from "../account/AccountPrimitives";
 
 type AccountIdentity = Awaited<ReturnType<typeof apiClient.me>> & {
   name?: string;
   displayName?: string;
 };
-
-function AccountPageRow({
-  label,
-  isLast = false,
-  onPress
-}: {
-  label: string;
-  isLast?: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.pageRow, pressed ? styles.pageRowPressed : null]}>
-      <View style={styles.pageRowInner}>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} numberOfLines={1} style={styles.pageRowLabel}>
-          {label}
-        </Text>
-        <Ionicons name="arrow-forward" size={16} color={uiPalette.text} style={styles.pageRowChevron} />
-      </View>
-      {isLast ? null : <View style={styles.pageRowDivider} />}
-    </Pressable>
-  );
-}
-
-function canUseLiquidGlassPill() {
-  if (Platform.OS !== "ios") return false;
-
-  try {
-    return isLiquidGlassAvailable();
-  } catch {
-    return false;
-  }
-}
-
-function GuestSignInPill({
-  label,
-  onPress
-}: {
-  label: string;
-  onPress: () => void;
-}) {
-  const useLiquidGlass = canUseLiquidGlassPill();
-  const content = (
-      <View style={[styles.loggedOutStaticCtaContent, useLiquidGlass ? null : styles.loggedOutStaticCtaContentFallback]}>
-        <Ionicons name="log-in-outline" size={16} color={uiPalette.text} />
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.loggedOutStaticCtaLabel}>{label}</Text>
-      </View>
-  );
-
-  return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.loggedOutStaticCtaPressable, pressed ? styles.glassPillPressed : null]}>
-      <View style={styles.loggedOutStaticCtaShell}>
-        {useLiquidGlass ? (
-          <GlassView glassEffectStyle="regular" colorScheme="auto" isInteractive style={styles.loggedOutStaticCtaFrame}>
-            {content}
-          </GlassView>
-        ) : (
-          <BlurView tint="light" intensity={Platform.OS === "ios" ? 28 : 24} style={styles.loggedOutStaticCtaFrame}>
-            {content}
-          </BlurView>
-        )}
-      </View>
-    </Pressable>
-  );
-}
 
 export function AccountScreen() {
   const router = useRouter();
@@ -102,37 +37,28 @@ export function AccountScreen() {
   });
   const loyaltyBalanceQuery = useLoyaltyBalanceQuery(isAuthenticated && loyaltyEnabled);
   const loyaltyLedgerQuery = useLoyaltyLedgerQuery(isAuthenticated && loyaltyEnabled);
-  const [isManualRefresh, setIsManualRefresh] = useState(false);
+  const { refreshing: isManualRefresh, refresh: handleRefresh } = useRefresh([
+    appConfigQuery.refetch,
+    identityQuery.refetch,
+    loyaltyBalanceQuery.refetch,
+    loyaltyLedgerQuery.refetch
+  ]);
   const [sentryDiagnosticState, setSentryDiagnosticState] = useState<"idle" | "sending" | "sent" | "failed">("idle");
 
   const loyaltyBalance = loyaltyBalanceQuery.data;
   const loyaltyError = loyaltyBalanceQuery.error ?? loyaltyLedgerQuery.error;
   const identity = identityQuery.data;
-  const accountGreeting =
-    identity?.name?.trim() ||
-    identity?.displayName?.trim() ||
-    "Welcome back";
+  const accountGreeting = identity?.name?.trim() || identity?.displayName?.trim() || "Welcome back";
   const headerOffset = insets.top + ACCOUNT_HEADER_HEIGHT;
-  const contentBottomInset = Math.max(getTabBarBottomOffset(insets.bottom > 0) + TAB_BAR_HEIGHT + 24 - insets.bottom, 24);
+  const contentBottomInset = Math.max(
+    getTabBarBottomOffset(insets.bottom > 0) + TAB_BAR_HEIGHT + 24 - insets.bottom,
+    24
+  );
   const staticBottomInset = getTabBarBottomOffset(insets.bottom > 0) + TAB_BAR_HEIGHT + 12;
   const locationName = appConfig?.brand.locationName ?? "this store";
   const headerBackgroundColor = appConfig?.header.background ?? uiPalette.background;
   const headerForegroundColor = appConfig?.header.foreground ?? uiPalette.text;
   const recoveryCopy = getAccountRecoveryCopy(authRecoveryState, locationName);
-
-  function handleRefresh() {
-    if (isManualRefresh) return;
-
-    setIsManualRefresh(true);
-    void Promise.allSettled([
-      appConfigQuery.refetch(),
-      identityQuery.refetch(),
-      loyaltyBalanceQuery.refetch(),
-      loyaltyLedgerQuery.refetch()
-    ]).finally(() => {
-      setIsManualRefresh(false);
-    });
-  }
 
   function openAccountRoute(pathname: "/account/rewards" | "/account/alerts" | "/account/settings") {
     if (!isAuthenticated) {
@@ -167,10 +93,16 @@ export function AccountScreen() {
   if (!isAuthenticated) {
     return (
       <View style={styles.screenShell}>
-        <ScreenStatic style={[styles.loggedOutStaticPage, { paddingTop: headerOffset, paddingBottom: staticBottomInset }]}>
+        <ScreenStatic
+          style={[styles.loggedOutStaticPage, { paddingTop: headerOffset, paddingBottom: staticBottomInset }]}
+        >
           <View style={styles.loggedOutStaticBody}>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.loggedOutStaticTitle}>{recoveryCopy.title}</Text>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.loggedOutStaticText}>{recoveryCopy.body}</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.loggedOutStaticTitle}>
+              {recoveryCopy.title}
+            </Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.loggedOutStaticText}>
+              {recoveryCopy.body}
+            </Text>
           </View>
 
           <GuestSignInPill
@@ -179,7 +111,12 @@ export function AccountScreen() {
           />
         </ScreenStatic>
 
-        <AccountFloatingHeader title="Account" insetTop={insets.top} backgroundColor={headerBackgroundColor} foregroundColor={headerForegroundColor} />
+        <AccountFloatingHeader
+          title="Account"
+          insetTop={insets.top}
+          backgroundColor={headerBackgroundColor}
+          foregroundColor={headerForegroundColor}
+        />
       </View>
     );
   }
@@ -196,22 +133,38 @@ export function AccountScreen() {
           <View style={styles.heroTopRow}>
             <View style={styles.heroCopy}>
               <SectionLabel label="Account" />
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>{accountGreeting}</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>
+                {accountGreeting}
+              </Text>
             </View>
             <Chip label={loyaltyEnabled ? "Loyalty On" : "Loyalty Off"} active={loyaltyEnabled} />
           </View>
 
           <View style={styles.pointsWrap}>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.pointsLabel}>Available points</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.pointsLabel}>
+              Available points
+            </Text>
             <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.pointsValue}>
-              {loyaltyEnabled ? (loyaltyBalance ? `${loyaltyBalance.availablePoints}` : loyaltyError ? "--" : "…") : "Off"}
+              {loyaltyEnabled
+                ? loyaltyBalance
+                  ? `${loyaltyBalance.availablePoints}`
+                  : loyaltyError
+                    ? "--"
+                    : "…"
+                : "Off"}
             </Text>
             <View style={styles.pointsMetaRow}>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.pointsMeta}>{loyaltyEnabled ? `Lifetime ${loyaltyBalance ? loyaltyBalance.lifetimeEarned : "--"} pts` : "Loyalty unavailable"}</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.pointsMeta}>
+                {loyaltyEnabled
+                  ? `Lifetime ${loyaltyBalance ? loyaltyBalance.lifetimeEarned : "--"} pts`
+                  : "Loyalty unavailable"}
+              </Text>
             </View>
             {loyaltyEnabled && loyaltyError ? (
               <View style={styles.pointsErrorWrap}>
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.pointsError}>{getLoyaltyQueryErrorMessage(loyaltyError)}</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.pointsError}>
+                  {getLoyaltyQueryErrorMessage(loyaltyError)}
+                </Text>
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="Retry rewards"
@@ -220,7 +173,9 @@ export function AccountScreen() {
                   }}
                   style={({ pressed }) => [styles.pointsRetry, pressed ? styles.pointsRetryPressed : null]}
                 >
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.pointsRetryLabel}>Retry rewards</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.pointsRetryLabel}>
+                    Retry rewards
+                  </Text>
                 </Pressable>
               </View>
             ) : null}
@@ -258,7 +213,12 @@ export function AccountScreen() {
         </View>
       </ScreenScroll>
 
-      <AccountFloatingHeader title="Account" insetTop={insets.top} backgroundColor={headerBackgroundColor} foregroundColor={headerForegroundColor} />
+      <AccountFloatingHeader
+        title="Account"
+        insetTop={insets.top}
+        backgroundColor={headerBackgroundColor}
+        foregroundColor={headerForegroundColor}
+      />
     </View>
   );
 }
@@ -299,43 +259,6 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     color: uiPalette.textSecondary
   },
-  loggedOutStaticCtaPressable: {
-    alignSelf: "stretch"
-  },
-  loggedOutStaticCtaShell: {
-    borderRadius: 999,
-    overflow: "hidden"
-  },
-  loggedOutStaticCtaFrame: {
-    borderRadius: 999,
-    overflow: "hidden"
-  },
-  loggedOutStaticCtaContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingHorizontal: 18,
-    paddingVertical: 18,
-    borderRadius: 999,
-    backgroundColor: "rgba(255, 252, 246, 0.10)"
-  },
-  loggedOutStaticCtaContentFallback: {
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.34)"
-  },
-  loggedOutStaticCtaLabel: {
-    fontSize: 15,
-    lineHeight: 20,
-    fontWeight: "600",
-    letterSpacing: 0.05,
-    color: uiPalette.text,
-    fontFamily: uiTypography.bodyFamily
-  },
-  glassPillPressed: {
-    opacity: 0.92,
-    transform: [{ scale: 0.992 }]
-  },
   heroTopRow: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -353,33 +276,6 @@ const styles = StyleSheet.create({
     color: uiPalette.text,
     fontFamily: uiTypography.displayFamily,
     fontWeight: "700"
-  },
-  loggedOutPreviewBand: {
-    marginTop: 20,
-    paddingTop: 18,
-    borderTopWidth: 1,
-    borderTopColor: uiPalette.border,
-    gap: 14
-  },
-  loggedOutPreviewItem: {
-    gap: 6
-  },
-  loggedOutPreviewLabel: {
-    fontSize: 11,
-    lineHeight: 14,
-    letterSpacing: 1.1,
-    textTransform: "uppercase",
-    color: uiPalette.textMuted,
-    fontWeight: "700"
-  },
-  loggedOutPreviewValue: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: uiPalette.text
-  },
-  loggedOutPreviewDivider: {
-    height: 1,
-    backgroundColor: uiPalette.border
   },
   pointsWrap: {
     marginTop: 22,
@@ -466,37 +362,5 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.7,
     textTransform: "uppercase"
-  },
-  pageRow: {
-    minHeight: 68
-  },
-  pageRowPressed: {
-    opacity: 0.72
-  },
-  pageRowInner: {
-    minHeight: 68,
-    paddingHorizontal: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 16
-  },
-  pageRowLabel: {
-    flex: 1,
-    fontSize: 15,
-    lineHeight: 20,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-    color: uiPalette.text,
-    fontFamily: uiTypography.displayFamily,
-    fontWeight: "600"
-  },
-  pageRowChevron: {
-    flexShrink: 0
-  },
-  pageRowDivider: {
-    marginHorizontal: 12,
-    height: 1,
-    backgroundColor: uiPalette.border
   }
 });

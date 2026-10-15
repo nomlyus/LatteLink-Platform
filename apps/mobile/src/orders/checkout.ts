@@ -55,16 +55,6 @@ export function toQuoteItems(items: CartItem[]): QuoteItem[] {
   }));
 }
 
-// Kept as small pure helpers for consumers and tests that need a client-side
-// correlation value. The server remains responsible for payment idempotency.
-export function createCheckoutIdempotencyKey() {
-  return `mobile-checkout-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
-}
-
-export function createDemoApplePayToken() {
-  return `apple-pay-token-${Date.now()}`;
-}
-
 export function quoteItemsEqual(left: QuoteItem[], right: QuoteItem[]) {
   if (left.length !== right.length) {
     return false;
@@ -109,9 +99,11 @@ export function checkoutSnapshotMatchesCart(
   cartLocationId: string | null,
   selectedLocationId: string | null
 ) {
-  return isCheckoutLocationConsistent(cartLocationId, selectedLocationId) &&
+  return (
+    isCheckoutLocationConsistent(cartLocationId, selectedLocationId) &&
     checkout.locationId === cartLocationId &&
-    quoteItemsEqual(toQuoteItems(items), checkout.quoteItems);
+    quoteItemsEqual(toQuoteItems(items), checkout.quoteItems)
+  );
 }
 
 type ParsedCheckoutApiError = {
@@ -168,14 +160,20 @@ function toCheckoutDraftSnapshot(
   };
 }
 
-type StripeCheckoutApi = Pick<typeof apiClient, "quoteOrder" | "createCheckoutDraft" | "createStripeMobilePaymentSession">;
+type StripeCheckoutApi = Pick<
+  typeof apiClient,
+  "quoteOrder" | "createCheckoutDraft" | "createStripeMobilePaymentSession"
+>;
 
 export async function prepareStripeCheckout(
   input: CheckoutInput,
   checkoutApi: StripeCheckoutApi = apiClient
 ): Promise<PreparedStripeCheckout> {
   if (!isCheckoutLocationConsistent(input.cartLocationId, input.selectedLocationId)) {
-    throw new CheckoutSubmissionError("Your bag no longer matches the selected location. Return to your bag and try again.", "quote");
+    throw new CheckoutSubmissionError(
+      "Your bag no longer matches the selected location. Return to your bag and try again.",
+      "quote"
+    );
   }
 
   if (input.items.length === 0) {

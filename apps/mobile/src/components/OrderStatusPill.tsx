@@ -1,5 +1,6 @@
+import { canUseLiquidGlass } from "../ui/glass";
 import { BlurView } from "expo-blur";
-import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
+import { GlassView } from "expo-glass-effect";
 import { Platform, StyleSheet, Text, View } from "react-native";
 import { formatOrderStatus } from "../orders/history";
 import { uiPalette } from "../ui/system";
@@ -8,16 +9,6 @@ type OrderStatusPillProps = {
   status: string;
   glassStyle?: "regular" | "clear";
 };
-
-function canUseLiquidGlassStatusPill() {
-  if (Platform.OS !== "ios") return false;
-
-  try {
-    return isLiquidGlassAvailable();
-  } catch {
-    return false;
-  }
-}
 
 function getStatusTone(status: string) {
   switch (status) {
@@ -56,21 +47,14 @@ function getStatusTone(status: string) {
   }
 }
 
-export function OrderStatusPill({
-  status,
-  glassStyle = "regular"
-}: OrderStatusPillProps) {
+export function OrderStatusPill({ status, glassStyle = "regular" }: OrderStatusPillProps) {
   const tone = getStatusTone(status);
   const label = formatOrderStatus(status);
   const shouldUseGlassPill =
-    status === "PAID" ||
-    status === "IN_PREP" ||
-    status === "READY" ||
-    status === "COMPLETED" ||
-    status === "CANCELED";
+    status === "PAID" || status === "IN_PREP" || status === "READY" || status === "COMPLETED" || status === "CANCELED";
 
   if (shouldUseGlassPill) {
-    const useLiquidGlass = canUseLiquidGlassStatusPill();
+    const useLiquidGlass = canUseLiquidGlass();
 
     return (
       <View style={styles.statusPillShell}>
@@ -80,7 +64,13 @@ export function OrderStatusPill({
           <BlurView tint="light" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.statusPillFrame} />
         )}
         <View pointerEvents="none" style={styles.statusPillContent}>
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.statusPillText, styles.statusPillTextGlass]}>{label}</Text>
+          <Text
+            allowFontScaling={false}
+            maxFontSizeMultiplier={1}
+            style={[styles.statusPillText, styles.statusPillTextGlass]}
+          >
+            {label}
+          </Text>
         </View>
       </View>
     );
@@ -96,7 +86,13 @@ export function OrderStatusPill({
         }
       ]}
     >
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.statusPillText, { color: tone.textColor }]}>{label}</Text>
+      <Text
+        allowFontScaling={false}
+        maxFontSizeMultiplier={1}
+        style={[styles.statusPillText, { color: tone.textColor }]}
+      >
+        {label}
+      </Text>
     </View>
   );
 }

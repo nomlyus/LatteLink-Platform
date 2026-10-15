@@ -47,7 +47,7 @@ async function getOrCreateDeviceId(): Promise<string> {
 }
 
 export function usePushNotificationRegistration(isAuthenticated: boolean) {
-  const mutation = usePushTokenRegistrationMutation();
+  const { mutateAsync } = usePushTokenRegistrationMutation();
   const { brandId, isReady } = useLocationContext();
   const registeredBrandRef = useRef<string | null>(null);
 
@@ -87,7 +87,7 @@ export function usePushNotificationRegistration(isAuthenticated: boolean) {
         const deviceId = await getOrCreateDeviceId();
         if (!isCurrent) return;
 
-        await mutation.mutateAsync({ brandId, deviceId, platform, expoPushToken: tokenData.data });
+        await mutateAsync({ brandId, deviceId, platform, expoPushToken: tokenData.data });
       } catch {
         // Permission denial, native token failures, and secure-storage errors
         // are expected on simulators and restricted devices. Registration is
@@ -101,5 +101,5 @@ export function usePushNotificationRegistration(isAuthenticated: boolean) {
     return () => {
       isCurrent = false;
     };
-  }, [brandId, isAuthenticated, isReady, mutation]);
+  }, [brandId, isAuthenticated, isReady, mutateAsync]);
 }

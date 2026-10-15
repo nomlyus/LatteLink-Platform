@@ -1,14 +1,14 @@
+import { usePillTabSelection } from "./usePillTabSelection";
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useRouter } from "expo-router";
-import { Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { useEffect, type ReactNode } from "react";
+
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useCart } from "../cart/store";
+import Animated, { runOnJS, useAnimatedStyle, withSpring } from "react-native-reanimated";
+
 import { uiPalette, uiTypography } from "../ui/system";
-import { getTabBarBottomOffset, TAB_BAR_HEIGHT } from "./tabBarMetrics";
+import { TAB_BAR_HEIGHT } from "./tabBarMetrics";
 import { iconMap, iconSizeMap, labelMap, type PillTabBarProps } from "./pillTabBarShared";
 
 function renderDockSurface(children: ReactNode) {
@@ -22,77 +22,28 @@ function renderDockSurface(children: ReactNode) {
 }
 
 export function ClassicPillTabBar({ state, descriptors, navigation }: PillTabBarProps) {
-  const dragSpringConfig = {
-    damping: 22,
-    stiffness: 280,
-    mass: 0.88
-  } as const;
-  const pressSpringConfig = {
-    damping: 24,
-    stiffness: 220,
-    mass: 0.94
-  } as const;
-  const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
-  const { itemCount } = useCart();
-  const [tabRowWidth, setTabRowWidth] = useState(0);
-  const [dragTargetIndex, setDragTargetIndex] = useState<number | null>(null);
-  const indicatorTranslateX = useSharedValue(0);
-  const dragStartX = useSharedValue(0);
-  const previewIndex = useSharedValue(state.index);
-
-  const routeCount = Math.max(state.routes.length, 1);
-  const selectorInset = 3;
-  const innerWidth = Math.max(tabRowWidth - selectorInset * 2, 0);
-  const slotWidth = innerWidth / routeCount;
-  const indicatorWidth = Math.max(slotWidth, 0);
-  const dockWidth = Math.min(width - 36, 492);
-  const dockLeft = Math.max((width - dockWidth) / 2, 18);
-  const dockBottom = getTabBarBottomOffset(insets.bottom > 0);
-  const activeIndex = dragTargetIndex ?? state.index;
-
-  const getTranslateXForIndex = (index: number) => {
-    "worklet";
-    return selectorInset + index * slotWidth;
-  };
-  const maxTranslateX = getTranslateXForIndex(Math.max(routeCount - 1, 0));
-  const clampTranslateX = (value: number) => {
-    "worklet";
-    return Math.min(maxTranslateX, Math.max(selectorInset, value));
-  };
-  const getIndexForTranslateX = (value: number) => {
-    "worklet";
-    if (slotWidth <= 0) return state.index;
-
-    return Math.min(routeCount - 1, Math.max(0, Math.round((value - selectorInset) / slotWidth)));
-  };
-  const setPreviewIndex = (nextIndex: number | null) => {
-    setDragTargetIndex((current) => (current === nextIndex ? current : nextIndex));
-  };
-  const syncIndicatorToIndex = (index: number, config = pressSpringConfig) => {
-    if (slotWidth <= 0) return;
-
-    previewIndex.value = index;
-    indicatorTranslateX.value = withSpring(getTranslateXForIndex(index), config);
-  };
-  const navigateToIndex = (nextIndex: number) => {
-    const route = state.routes[nextIndex];
-    if (!route || nextIndex === state.index) return;
-
-    const event = navigation.emit({
-      type: "tabPress",
-      target: route.key,
-      canPreventDefault: true
-    });
-
-    if (!event.defaultPrevented) {
-      navigation.navigate(route.name, route.params);
-    } else {
-      setPreviewIndex(null);
-      syncIndicatorToIndex(state.index);
-    }
-  };
+  const {
+    router,
+    itemCount,
+    tabRowWidth,
+    setTabRowWidth,
+    indicatorTranslateX,
+    dragStartX,
+    previewIndex,
+    slotWidth,
+    indicatorWidth,
+    dockWidth,
+    dockLeft,
+    dockBottom,
+    activeIndex,
+    getTranslateXForIndex,
+    clampTranslateX,
+    getIndexForTranslateX,
+    setPreviewIndex,
+    syncIndicatorToIndex,
+    navigateToIndex,
+    dragSpringConfig
+  } = usePillTabSelection({ state, navigation });
   const indicatorStyle = useAnimatedStyle(
     () => ({
       width: indicatorWidth,
@@ -119,7 +70,7 @@ export function ClassicPillTabBar({ state, descriptors, navigation }: PillTabBar
     state.routes.map((route) => {
       const descriptor = descriptors[route.key];
       const label =
-        typeof descriptor.options.title === "string" ? descriptor.options.title : labelMap[route.name] ?? route.name;
+        typeof descriptor.options.title === "string" ? descriptor.options.title : (labelMap[route.name] ?? route.name);
       const iconNames = iconMap[route.name] ?? { default: "ellipse-outline", active: "ellipse" };
       const iconSize = iconSizeMap[route.name] ?? 24;
 
@@ -134,7 +85,12 @@ export function ClassicPillTabBar({ state, descriptors, navigation }: PillTabBar
                   color={useActiveIcons ? "rgba(18, 18, 18, 0.96)" : "rgba(60, 60, 67, 0.72)"}
                 />
               </View>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} numberOfLines={1} style={[styles.tabLabel, useActiveIcons ? styles.tabLabelActive : null]}>
+              <Text
+                allowFontScaling={false}
+                maxFontSizeMultiplier={1}
+                numberOfLines={1}
+                style={[styles.tabLabel, useActiveIcons ? styles.tabLabelActive : null]}
+              >
                 {label}
               </Text>
             </View>
@@ -148,52 +104,48 @@ export function ClassicPillTabBar({ state, descriptors, navigation }: PillTabBar
 
     setPreviewIndex(null);
     syncIndicatorToIndex(state.index);
-  }, [slotWidth, state.index]);
+  }, [setPreviewIndex, slotWidth, state.index, syncIndicatorToIndex]);
 
-  const selectorGesture = useMemo(
-    () =>
-      Gesture.Pan()
-        .enabled(slotWidth > 0)
-        .maxPointers(1)
-        .activeOffsetX([-4, 4])
-        .failOffsetY([-12, 12])
-        .onBegin(() => {
-          dragStartX.value = indicatorTranslateX.value;
-          previewIndex.value = state.index;
-        })
-        .onUpdate((event) => {
-          const nextX = clampTranslateX(dragStartX.value + event.translationX);
-          const nextIndex = getIndexForTranslateX(nextX);
+  const selectorGesture = Gesture.Pan()
+    .enabled(slotWidth > 0)
+    .maxPointers(1)
+    .activeOffsetX([-4, 4])
+    .failOffsetY([-12, 12])
+    .onBegin(() => {
+      dragStartX.value = indicatorTranslateX.value;
+      previewIndex.value = state.index;
+    })
+    .onUpdate((event) => {
+      const nextX = clampTranslateX(dragStartX.value + event.translationX);
+      const nextIndex = getIndexForTranslateX(nextX);
 
-          indicatorTranslateX.value = nextX;
-          if (previewIndex.value !== nextIndex) {
-            previewIndex.value = nextIndex;
-            runOnJS(setPreviewIndex)(nextIndex);
-          }
-        })
-        .onEnd((event) => {
-          const projectedX = clampTranslateX(indicatorTranslateX.value + event.velocityX * 0.06);
-          const nextIndex = getIndexForTranslateX(projectedX);
-          const nextX = getTranslateXForIndex(nextIndex);
+      indicatorTranslateX.value = nextX;
+      if (previewIndex.value !== nextIndex) {
+        previewIndex.value = nextIndex;
+        runOnJS(setPreviewIndex)(nextIndex);
+      }
+    })
+    .onEnd((event) => {
+      const projectedX = clampTranslateX(indicatorTranslateX.value + event.velocityX * 0.06);
+      const nextIndex = getIndexForTranslateX(projectedX);
+      const nextX = getTranslateXForIndex(nextIndex);
 
-          previewIndex.value = nextIndex;
-          indicatorTranslateX.value = withSpring(nextX, dragSpringConfig);
-          runOnJS(setPreviewIndex)(nextIndex);
-          if (nextIndex !== state.index) {
-            runOnJS(navigateToIndex)(nextIndex);
-          } else {
-            runOnJS(setPreviewIndex)(null);
-          }
-        })
-        .onFinalize((_event, success) => {
-          if (!success) {
-            previewIndex.value = state.index;
-            indicatorTranslateX.value = withSpring(getTranslateXForIndex(state.index), dragSpringConfig);
-            runOnJS(setPreviewIndex)(null);
-          }
-        }),
-    [slotWidth, state.index]
-  );
+      previewIndex.value = nextIndex;
+      indicatorTranslateX.value = withSpring(nextX, dragSpringConfig);
+      runOnJS(setPreviewIndex)(nextIndex);
+      if (nextIndex !== state.index) {
+        runOnJS(navigateToIndex)(nextIndex);
+      } else {
+        runOnJS(setPreviewIndex)(null);
+      }
+    })
+    .onFinalize((_event, success) => {
+      if (!success) {
+        previewIndex.value = state.index;
+        indicatorTranslateX.value = withSpring(getTranslateXForIndex(state.index), dragSpringConfig);
+        runOnJS(setPreviewIndex)(null);
+      }
+    });
 
   return (
     <View pointerEvents="box-none" style={[styles.shell, { left: dockLeft, bottom: dockBottom, width: dockWidth }]}>
@@ -210,10 +162,14 @@ export function ClassicPillTabBar({ state, descriptors, navigation }: PillTabBar
                 <View pointerEvents="none" style={styles.baseIconRow}>
                   {renderIconSlots(false)}
                 </View>
-                {indicatorWidth > 0 ? <Animated.View pointerEvents="none" style={[styles.activeIndicator, indicatorStyle]} /> : null}
+                {indicatorWidth > 0 ? (
+                  <Animated.View pointerEvents="none" style={[styles.activeIndicator, indicatorStyle]} />
+                ) : null}
                 {indicatorWidth > 0 ? (
                   <Animated.View pointerEvents="none" style={[styles.activeIconWindow, indicatorStyle]}>
-                    <Animated.View style={[styles.activeIconTrack, activeIconTrackStyle]}>{renderIconSlots(true)}</Animated.View>
+                    <Animated.View style={[styles.activeIconTrack, activeIconTrackStyle]}>
+                      {renderIconSlots(true)}
+                    </Animated.View>
                   </Animated.View>
                 ) : null}
                 {indicatorWidth > 0 ? (
@@ -228,7 +184,7 @@ export function ClassicPillTabBar({ state, descriptors, navigation }: PillTabBar
                   const label =
                     typeof descriptor.options.title === "string"
                       ? descriptor.options.title
-                      : labelMap[route.name] ?? route.name;
+                      : (labelMap[route.name] ?? route.name);
 
                   const onPress = () => {
                     const event = navigation.emit({
@@ -254,7 +210,12 @@ export function ClassicPillTabBar({ state, descriptors, navigation }: PillTabBar
                       >
                         <View style={styles.tabContent}>
                           <View style={styles.tabIconBox} />
-                          <Text allowFontScaling={false} maxFontSizeMultiplier={1} numberOfLines={1} style={[styles.tabLabel, styles.tabLabelPlaceholder]}>
+                          <Text
+                            allowFontScaling={false}
+                            maxFontSizeMultiplier={1}
+                            numberOfLines={1}
+                            style={[styles.tabLabel, styles.tabLabelPlaceholder]}
+                          >
                             {label}
                           </Text>
                         </View>
@@ -268,12 +229,18 @@ export function ClassicPillTabBar({ state, descriptors, navigation }: PillTabBar
         </View>
 
         {itemCount > 0 ? (
-          <Pressable accessibilityLabel="Open cart" style={styles.cartPillPressable} onPress={() => router.push("/cart")}>
+          <Pressable
+            accessibilityLabel="Open cart"
+            style={styles.cartPillPressable}
+            onPress={() => router.push("/cart")}
+          >
             <BlurView tint="light" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.cartBlurShell}>
               <View style={styles.cartPillInner}>
                 <Ionicons name="bag-handle-outline" size={21} color={uiPalette.text} />
                 <View style={styles.cartCountBadge}>
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.cartCountLabel}>{itemCount > 99 ? "99+" : String(itemCount)}</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.cartCountLabel}>
+                    {itemCount > 99 ? "99+" : String(itemCount)}
+                  </Text>
                 </View>
               </View>
             </BlurView>

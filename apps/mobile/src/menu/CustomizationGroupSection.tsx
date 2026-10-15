@@ -1,21 +1,12 @@
+import { canUseLiquidGlass } from "../ui/glass";
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
-import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
+import { GlassView } from "expo-glass-effect";
 import type { MenuItemCustomizationGroup, MenuItemCustomizationOption } from "@lattelink/contracts-catalog";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { type CartCustomization, isCustomizationOptionSelected } from "../cart/model";
 import { uiPalette, uiTypography } from "../ui/system";
 import { formatUsd } from "./catalog";
-
-function canUseLiquidGlassCustomization() {
-  if (Platform.OS !== "ios") return false;
-
-  try {
-    return isLiquidGlassAvailable();
-  } catch {
-    return false;
-  }
-}
 
 function getSelectionHint(group: MenuItemCustomizationGroup) {
   if (group.selectionType === "single") {
@@ -82,13 +73,32 @@ function OptionRow({ option, selectionType, active, onPress }: OptionRowProps) {
         </View>
 
         <View style={styles.optionTitleRow}>
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.optionLabel, active ? styles.optionLabelActive : null]} numberOfLines={1}>
+          <Text
+            allowFontScaling={false}
+            maxFontSizeMultiplier={1}
+            style={[styles.optionLabel, active ? styles.optionLabelActive : null]}
+            numberOfLines={1}
+          >
             {option.label}
           </Text>
-          {meta ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.optionMetaInline, active ? styles.optionMetaActive : null]}>{meta}</Text> : null}
+          {meta ? (
+            <Text
+              allowFontScaling={false}
+              maxFontSizeMultiplier={1}
+              style={[styles.optionMetaInline, active ? styles.optionMetaActive : null]}
+            >
+              {meta}
+            </Text>
+          ) : null}
           {option.default ? (
             <View style={[styles.optionBadge, active ? styles.optionBadgeActive : null]}>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.optionBadgeText, active ? styles.optionBadgeTextActive : null]}>Default</Text>
+              <Text
+                allowFontScaling={false}
+                maxFontSizeMultiplier={1}
+                style={[styles.optionBadgeText, active ? styles.optionBadgeTextActive : null]}
+              >
+                Default
+              </Text>
             </View>
           ) : null}
         </View>
@@ -110,7 +120,7 @@ export function CustomizationGroupSection({
   validationMessage,
   onSelectOption
 }: CustomizationGroupSectionProps) {
-  const useLiquidGlass = canUseLiquidGlassCustomization();
+  const useLiquidGlass = canUseLiquidGlass();
   const selectedCount = customization.selectedOptions.filter((selection) => selection.groupId === group.id).length;
 
   return (
@@ -128,17 +138,26 @@ export function CustomizationGroupSection({
       <View style={styles.sectionContent}>
         <View style={styles.headerPillsRow}>
           <View style={styles.headerPrimaryPill}>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.headerPrimaryPillText}>{getSelectionHint(group)}</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.headerPrimaryPillText}>
+              {getSelectionHint(group)}
+            </Text>
           </View>
           <View style={styles.headerSecondaryPill}>
             <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.headerSecondaryPillText}>
-              {group.required ? "Required" : "Optional"}{group.maxSelections > 1 ? ` • ${selectedCount}/${group.maxSelections}` : ""}
+              {group.required ? "Required" : "Optional"}
+              {group.maxSelections > 1 ? ` • ${selectedCount}/${group.maxSelections}` : ""}
             </Text>
           </View>
         </View>
 
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionTitle}>{group.label}</Text>
-        {group.description ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionBody}>{group.description}</Text> : null}
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionTitle}>
+          {group.label}
+        </Text>
+        {group.description ? (
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionBody}>
+            {group.description}
+          </Text>
+        ) : null}
 
         <View style={styles.optionsStack}>
           {group.options
@@ -155,7 +174,11 @@ export function CustomizationGroupSection({
             ))}
         </View>
 
-        {validationMessage ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionError}>{validationMessage}</Text> : null}
+        {validationMessage ? (
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionError}>
+            {validationMessage}
+          </Text>
+        ) : null}
       </View>
     </View>
   );

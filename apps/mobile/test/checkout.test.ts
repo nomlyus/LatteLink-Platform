@@ -4,8 +4,6 @@ import { createCartItem, DEFAULT_CUSTOMIZATION } from "../src/cart/model";
 import {
   CheckoutSubmissionError,
   checkoutSnapshotMatchesCart,
-  createCheckoutIdempotencyKey,
-  createDemoApplePayToken,
   isCheckoutLocationConsistent,
   isRetryableCheckoutForCart,
   prepareStripeCheckout,
@@ -55,11 +53,24 @@ describe("checkout helpers", () => {
     expect(isCheckoutLocationConsistent("northside-01", "northside-01")).toBe(true);
     expect(isCheckoutLocationConsistent("northside-01", "northside-02")).toBe(false);
     expect(isCheckoutLocationConsistent(null, "northside-02")).toBe(false);
-    await expect(prepareStripeCheckout({
-      cartLocationId: "northside-01",
-      selectedLocationId: "northside-02",
-      items: [createCartItem({ menuItemId: "latte", itemName: "Latte", basePriceCents: 575, customizationGroups: [], customization: DEFAULT_CUSTOMIZATION })]
-    }, checkoutApi)).rejects.toMatchObject({ stage: "quote" });
+    await expect(
+      prepareStripeCheckout(
+        {
+          cartLocationId: "northside-01",
+          selectedLocationId: "northside-02",
+          items: [
+            createCartItem({
+              menuItemId: "latte",
+              itemName: "Latte",
+              basePriceCents: 575,
+              customizationGroups: [],
+              customization: DEFAULT_CUSTOMIZATION
+            })
+          ]
+        },
+        checkoutApi
+      )
+    ).rejects.toMatchObject({ stage: "quote" });
     expect(checkoutApi.quoteOrder).not.toHaveBeenCalled();
   });
 
@@ -157,16 +168,6 @@ describe("checkout helpers", () => {
     ]);
   });
 
-  it("creates prefixed idempotency keys", () => {
-    const key = createCheckoutIdempotencyKey();
-    expect(key.startsWith("mobile-checkout-")).toBe(true);
-  });
-
-  it("creates prefixed demo Apple Pay tokens", () => {
-    const token = createDemoApplePayToken();
-    expect(token.startsWith("apple-pay-token-")).toBe(true);
-  });
-
   it("keeps definitive pay failures on the cart", () => {
     const error = new CheckoutSubmissionError("Card payment was declined", "pay");
 
@@ -212,24 +213,39 @@ describe("checkout helpers", () => {
     const checkoutApi = {
       quoteOrder: vi.fn(),
       createCheckoutDraft: vi.fn(),
-      createStripeMobilePaymentSession: vi.fn().mockRejectedValue(
-        new Error('Payment request failed: {"code":"STRIPE_ACCOUNT_NOT_READY","message":"Location is not ready for Stripe mobile checkout"}')
-      )
+      createStripeMobilePaymentSession: vi
+        .fn()
+        .mockRejectedValue(
+          new Error(
+            'Payment request failed: {"code":"STRIPE_ACCOUNT_NOT_READY","message":"Location is not ready for Stripe mobile checkout"}'
+          )
+        )
     };
 
-    const items = [createCartItem({
-      menuItemId: "latte",
-      itemName: "Latte",
-      basePriceCents: 575,
-      customizationGroups: [],
-      customization: DEFAULT_CUSTOMIZATION
-    })];
+    const items = [
+      createCartItem({
+        menuItemId: "latte",
+        itemName: "Latte",
+        basePriceCents: 575,
+        customizationGroups: [],
+        customization: DEFAULT_CUSTOMIZATION
+      })
+    ];
 
-    await expect(prepareStripeCheckout({ cartLocationId: "flagship-01", selectedLocationId: "flagship-01", items, existingCheckout: { ...existingCheckout, quoteItems: toQuoteItems(items) } }, checkoutApi))
-      .rejects.toMatchObject({
-        stage: "pay",
-        message: "Ordering is unavailable at this location right now. Please try again later."
-      });
+    await expect(
+      prepareStripeCheckout(
+        {
+          cartLocationId: "flagship-01",
+          selectedLocationId: "flagship-01",
+          items,
+          existingCheckout: { ...existingCheckout, quoteItems: toQuoteItems(items) }
+        },
+        checkoutApi
+      )
+    ).rejects.toMatchObject({
+      stage: "pay",
+      message: "Ordering is unavailable at this location right now. Please try again later."
+    });
     expect(checkoutApi.createStripeMobilePaymentSession).toHaveBeenCalledWith({
       checkoutId: existingCheckout.checkoutId
     });
@@ -416,13 +432,15 @@ describe("checkout helpers", () => {
   });
 
   it("stops before checkout creation if the returned quote location is wrong", async () => {
-    const items = [createCartItem({
-      menuItemId: "latte",
-      itemName: "Latte",
-      basePriceCents: 575,
-      customizationGroups: [],
-      customization: DEFAULT_CUSTOMIZATION
-    })];
+    const items = [
+      createCartItem({
+        menuItemId: "latte",
+        itemName: "Latte",
+        basePriceCents: 575,
+        customizationGroups: [],
+        customization: DEFAULT_CUSTOMIZATION
+      })
+    ];
     const checkoutApi = {
       quoteOrder: vi.fn().mockResolvedValue({
         quoteId: "5ec083a1-0f31-4d04-a525-7808a0d7624b",
@@ -433,24 +451,31 @@ describe("checkout helpers", () => {
       createStripeMobilePaymentSession: vi.fn()
     };
 
-    await expect(prepareStripeCheckout({
-      cartLocationId: "northside-01",
-      selectedLocationId: "northside-01",
-      items
-    }, checkoutApi)).rejects.toMatchObject({ stage: "quote" });
+    await expect(
+      prepareStripeCheckout(
+        {
+          cartLocationId: "northside-01",
+          selectedLocationId: "northside-01",
+          items
+        },
+        checkoutApi
+      )
+    ).rejects.toMatchObject({ stage: "quote" });
     expect(checkoutApi.quoteOrder).toHaveBeenCalledWith(expect.objectContaining({ locationId: "northside-01" }));
     expect(checkoutApi.createCheckoutDraft).not.toHaveBeenCalled();
     expect(checkoutApi.createStripeMobilePaymentSession).not.toHaveBeenCalled();
   });
 
   it("does not create a payment session for a draft that differs from its quote location", async () => {
-    const items = [createCartItem({
-      menuItemId: "latte",
-      itemName: "Latte",
-      basePriceCents: 575,
-      customizationGroups: [],
-      customization: DEFAULT_CUSTOMIZATION
-    })];
+    const items = [
+      createCartItem({
+        menuItemId: "latte",
+        itemName: "Latte",
+        basePriceCents: 575,
+        customizationGroups: [],
+        customization: DEFAULT_CUSTOMIZATION
+      })
+    ];
     const checkoutApi = {
       quoteOrder: vi.fn().mockResolvedValue({
         quoteId: "5ec083a1-0f31-4d04-a525-7808a0d7624b",
@@ -470,11 +495,16 @@ describe("checkout helpers", () => {
       createStripeMobilePaymentSession: vi.fn()
     };
 
-    await expect(prepareStripeCheckout({
-      cartLocationId: "northside-01",
-      selectedLocationId: "northside-01",
-      items
-    }, checkoutApi)).rejects.toMatchObject({ stage: "create" });
+    await expect(
+      prepareStripeCheckout(
+        {
+          cartLocationId: "northside-01",
+          selectedLocationId: "northside-01",
+          items
+        },
+        checkoutApi
+      )
+    ).rejects.toMatchObject({ stage: "create" });
     expect(checkoutApi.createStripeMobilePaymentSession).not.toHaveBeenCalled();
   });
 
@@ -550,13 +580,15 @@ describe("checkout helpers", () => {
   });
 
   it("rejects an existing checkout when its stored location differs from the cart", async () => {
-    const items = [createCartItem({
-      menuItemId: "latte",
-      itemName: "Latte",
-      basePriceCents: 575,
-      customizationGroups: [],
-      customization: DEFAULT_CUSTOMIZATION
-    })];
+    const items = [
+      createCartItem({
+        menuItemId: "latte",
+        itemName: "Latte",
+        basePriceCents: 575,
+        customizationGroups: [],
+        customization: DEFAULT_CUSTOMIZATION
+      })
+    ];
     const existingCheckout: CheckoutDraftSnapshot = {
       checkoutId: "123e4567-e89b-12d3-a456-426614174000",
       quoteId: "5ec083a1-0f31-4d04-a525-7808a0d7624b",
@@ -574,12 +606,17 @@ describe("checkout helpers", () => {
       createStripeMobilePaymentSession: vi.fn()
     };
 
-    await expect(prepareStripeCheckout({
-      cartLocationId: "northside-02",
-      selectedLocationId: "northside-02",
-      items,
-      existingCheckout
-    }, checkoutApi)).rejects.toMatchObject({ stage: "quote" });
+    await expect(
+      prepareStripeCheckout(
+        {
+          cartLocationId: "northside-02",
+          selectedLocationId: "northside-02",
+          items,
+          existingCheckout
+        },
+        checkoutApi
+      )
+    ).rejects.toMatchObject({ stage: "quote" });
     expect(checkoutApi.quoteOrder).not.toHaveBeenCalled();
     expect(checkoutApi.createStripeMobilePaymentSession).not.toHaveBeenCalled();
   });

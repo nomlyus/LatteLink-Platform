@@ -1,10 +1,8 @@
-import { BlurView } from "expo-blur";
-import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo } from "react";
-import { Platform, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { type LoyaltyLedgerEntry, type OrderHistoryEntry, useLoyaltyLedgerQuery, useOrderHistoryQuery } from "../../src/account/data";
+import { useLoyaltyLedgerQuery, useOrderHistoryQuery } from "../../src/account/data";
 import { useAuthSession } from "../../src/auth/session";
 import { formatUsd } from "../../src/menu/catalog";
 import {
@@ -12,73 +10,22 @@ import {
   findLoyaltyReversalEntriesForOrder,
   formatOrderDateTime,
   formatOrderReference,
-  formatOrderStatus,
   getLatestOrderTimelineNote
 } from "../../src/orders/history";
+import { sumReturnedPoints } from "../../src/orders/presentation";
 import { Button, uiPalette, uiTypography } from "../../src/ui/system";
+import { DetailRow, StatusBadge } from "../../src/orders/OrderDetailPrimitives";
 
-function sumReturnedPoints(entries: LoyaltyLedgerEntry[]) {
-  return entries.reduce((sum, entry) => sum + entry.points, 0);
-}
-
-function canUseLiquidGlassStatusPill() {
-  if (Platform.OS !== "ios") return false;
-
-  try {
-    return isLiquidGlassAvailable();
-  } catch {
-    return false;
-  }
-}
-
-function DetailRow({
-  label,
-  value
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <View style={styles.detailRow}>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.detailLabel}>{label}</Text>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.detailValue}>{value}</Text>
-    </View>
-  );
-}
-
-function StatusBadge({ status }: { status: OrderHistoryEntry["status"] }) {
-  const useLiquidGlass = canUseLiquidGlassStatusPill();
-
-  return (
-    <View style={styles.statusBadgeShell}>
-      {useLiquidGlass ? (
-        <GlassView glassEffectStyle="regular" colorScheme="auto" isInteractive style={styles.statusBadgeFrame} />
-      ) : (
-        <BlurView tint="light" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.statusBadgeFrame} />
-      )}
-      <View pointerEvents="none" style={styles.statusBadgeContent}>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.statusBadgeText, styles.statusBadgeTextGlass]}>{formatOrderStatus(status)}</Text>
-      </View>
-    </View>
-  );
-}
-
-function EmptyState({
-  title,
-  actionLabel,
-  onAction
-}: {
-  title: string;
-  actionLabel: string;
-  onAction: () => void;
-}) {
+function EmptyState({ title, actionLabel, onAction }: { title: string; actionLabel: string; onAction: () => void }) {
   return (
     <View style={styles.screen}>
       <View style={[styles.handleWrap, styles.handleWrapTop]}>
         <View style={styles.handle} />
       </View>
       <View style={styles.emptyWrap}>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emptyTitle}>{title}</Text>
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emptyTitle}>
+          {title}
+        </Text>
         <Button label={actionLabel} onPress={onAction} style={styles.emptyAction} />
       </View>
     </View>
@@ -95,7 +42,7 @@ export default function OrderDetailRoute() {
   const loyaltyLedgerQuery = useLoyaltyLedgerQuery(isAuthenticated);
 
   const order = useMemo(
-    () => (orderId ? (ordersQuery.data ?? []).find((entry) => entry.id === orderId) ?? null : null),
+    () => (orderId ? ((ordersQuery.data ?? []).find((entry) => entry.id === orderId) ?? null) : null),
     [orderId, ordersQuery.data]
   );
   const loyaltyReversalEntries = useMemo(
@@ -148,12 +95,18 @@ export default function OrderDetailRoute() {
         ]}
       >
         <View style={styles.hero}>
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.kicker}>Order details</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.kicker}>
+            Order details
+          </Text>
           <View style={styles.heroHeader}>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>{formatOrderReference(order.id)}</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>
+              {formatOrderReference(order.id)}
+            </Text>
             <StatusBadge status={order.status} />
           </View>
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.subtitle}>{formatOrderDateTime(findLatestOrderTime(order))}</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.subtitle}>
+            {formatOrderDateTime(findLatestOrderTime(order))}
+          </Text>
         </View>
 
         <View style={styles.section}>
@@ -163,17 +116,27 @@ export default function OrderDetailRoute() {
         </View>
 
         <View style={styles.section}>
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionLabel}>Pickup code</Text>
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.pickupCode}>{order.pickupCode}</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionLabel}>
+            Pickup code
+          </Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.pickupCode}>
+            {order.pickupCode}
+          </Text>
         </View>
 
         <View style={styles.section}>
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionLabel}>Status note</Text>
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.note}>{getLatestOrderTimelineNote(order)}</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionLabel}>
+            Status note
+          </Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.note}>
+            {getLatestOrderTimelineNote(order)}
+          </Text>
         </View>
 
         <View style={styles.section}>
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionLabel}>Items</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionLabel}>
+            Items
+          </Text>
           <View style={styles.itemList}>
             {order.items.map((item, index) => {
               const label = item.itemName?.trim() || item.itemId;
@@ -183,11 +146,17 @@ export default function OrderDetailRoute() {
                 <View key={`${order.id}-${item.itemId}-${index}`} style={styles.itemRow}>
                   <View style={styles.itemCopy}>
                     <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.itemName}>
-                      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.itemQuantity}>{`${item.quantity} x `}</Text>
+                      <Text
+                        allowFontScaling={false}
+                        maxFontSizeMultiplier={1}
+                        style={styles.itemQuantity}
+                      >{`${item.quantity} x `}</Text>
                       {label}
                     </Text>
                   </View>
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.itemAmount}>{formatUsd(lineTotal)}</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.itemAmount}>
+                    {formatUsd(lineTotal)}
+                  </Text>
                 </View>
               );
             })}
@@ -196,23 +165,39 @@ export default function OrderDetailRoute() {
 
         {order.status === "CANCELED" ? (
           <View style={styles.section}>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionLabel}>Canceled order</Text>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.note}>This order was canceled. If you were charged, contact the shop for help with your payment.</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionLabel}>
+              Canceled order
+            </Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.note}>
+              This order was canceled. If you were charged, contact the shop for help with your payment.
+            </Text>
           </View>
         ) : null}
 
         {hasLoyaltyReturn ? (
           <View style={styles.section}>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionLabel}>Loyalty returned</Text>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.note}>{returnedPoints > 0 ? `${returnedPoints} points returned to the account.` : "Loyalty activity recorded."}</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionLabel}>
+              Loyalty returned
+            </Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.note}>
+              {returnedPoints > 0 ? `${returnedPoints} points returned to the account.` : "Loyalty activity recorded."}
+            </Text>
             <View style={styles.refundList}>
               {loyaltyReversalEntries.map((entry) => (
                 <View key={entry.id} style={styles.refundRow}>
                   <View style={styles.refundCopy}>
-                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.refundTitle}>Points returned</Text>
-                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.refundMeta}>{formatOrderDateTime(entry.createdAt)}</Text>
+                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.refundTitle}>
+                      Points returned
+                    </Text>
+                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.refundMeta}>
+                      {formatOrderDateTime(entry.createdAt)}
+                    </Text>
                   </View>
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.refundPoints}>{`${entry.points > 0 ? "+" : ""}${entry.points} pts`}</Text>
+                  <Text
+                    allowFontScaling={false}
+                    maxFontSizeMultiplier={1}
+                    style={styles.refundPoints}
+                  >{`${entry.points > 0 ? "+" : ""}${entry.points} pts`}</Text>
                 </View>
               ))}
             </View>
@@ -283,38 +268,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     color: uiPalette.textSecondary
   },
-  statusBadge: {
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-    borderRadius: 999,
-    borderWidth: 1
-  },
-  statusBadgeShell: {
-    position: "relative",
-    alignSelf: "flex-start",
-    borderRadius: 999,
-    overflow: "hidden"
-  },
-  statusBadgeFrame: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 999,
-    overflow: "hidden"
-  },
-  statusBadgeContent: {
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-    borderRadius: 999
-  },
-  statusBadgeText: {
-    fontSize: 11,
-    lineHeight: 14,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-    fontWeight: "700"
-  },
-  statusBadgeTextGlass: {
-    color: uiPalette.text
-  },
   section: {
     paddingTop: 18,
     paddingBottom: 18,
@@ -328,27 +281,6 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     color: uiPalette.textMuted,
     fontWeight: "700"
-  },
-  detailRow: {
-    marginTop: 10,
-    flexDirection: "row",
-    alignItems: "baseline",
-    justifyContent: "space-between",
-    gap: 18
-  },
-  detailLabel: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: uiPalette.textSecondary
-  },
-  detailValue: {
-    flexShrink: 1,
-    textAlign: "right",
-    fontSize: 14,
-    lineHeight: 20,
-    color: uiPalette.text,
-    fontFamily: uiTypography.displayFamily,
-    fontWeight: "600"
   },
   pickupCode: {
     marginTop: 8,

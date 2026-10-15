@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   addCartItemAtLocation,
   calculateItemCount,
@@ -32,40 +32,44 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const cartRef = useRef(cart);
   cartRef.current = cart;
 
-  const commit = (nextCart: CartSnapshot) => {
+  const commit = useCallback((nextCart: CartSnapshot) => {
     cartRef.current = nextCart;
     setCart(nextCart);
-  };
+  }, []);
 
-  const value = useMemo<CartContextValue>(() => {
-    const itemCount = calculateItemCount(cart.items);
-    const subtotalCents = calculateSubtotalCents(cart.items);
-
+  const actions = useMemo(() => {
     return {
-      locationId: cart.locationId,
-      items: cart.items,
-      itemCount,
-      subtotalCents,
-      discountCode: cart.discountCode,
-      setDiscountCode: (code) => {
+      setDiscountCode: (code: string) => {
         commit({ ...cartRef.current, discountCode: code.toUpperCase().replace(/[^A-Z0-9_-]/g, "") });
       },
-      addItem: (item, selectedLocationId) => {
+      addItem: (item: CartItemInput, selectedLocationId: string | null) => {
         const result = addCartItemAtLocation(cartRef.current, selectedLocationId, item);
         if (result.ok) {
           commit(result.cart);
         }
         return result;
       },
-      setQuantity: (lineId, quantity) => {
+      setQuantity: (lineId: string, quantity: number) => {
         commit(setCartSnapshotItemQuantity(cartRef.current, lineId, quantity));
       },
-      removeItem: (lineId) => {
+      removeItem: (lineId: string) => {
         commit(removeCartSnapshotItem(cartRef.current, lineId));
       },
       clear: () => commit(clearCartSnapshot())
     };
-  }, [cart]);
+  }, [commit]);
+
+  const value = useMemo<CartContextValue>(
+    () => ({
+      ...actions,
+      locationId: cart.locationId,
+      items: cart.items,
+      itemCount: calculateItemCount(cart.items),
+      subtotalCents: calculateSubtotalCents(cart.items),
+      discountCode: cart.discountCode
+    }),
+    [actions, cart]
+  );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }

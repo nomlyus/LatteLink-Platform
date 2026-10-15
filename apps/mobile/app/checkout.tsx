@@ -1,449 +1,40 @@
+import { useCheckoutController } from "../src/orders/useCheckoutController";
 import { Ionicons } from "@expo/vector-icons";
-import { useQueryClient } from "@tanstack/react-query";
-import Constants from "expo-constants";
-import * as Linking from "expo-linking";
-import { useRouter } from "expo-router";
-import { PaymentSheetError, initPaymentSheet, initStripe, presentPaymentSheet } from "@stripe/stripe-react-native";
-import type { Order } from "@lattelink/contracts-orders";
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View
-} from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { buildPricingSummary, describeCustomization, type CartItem } from "../src/cart/model";
-import { useCart } from "../src/cart/store";
-import { useLocationContext } from "../src/location/LocationProvider";
-import { apiClient } from "../src/api/client";
-import {
-  formatUsd,
-  resolveAppConfigData,
-  resolveStoreConfigData,
-  useAppConfigQuery,
-  useStoreConfigQuery
-} from "../src/menu/catalog";
-import { mergeOrderIntoHistory, orderHistoryQueryKey, type OrderHistoryEntry } from "../src/account/data";
-import {
-  CheckoutSubmissionError,
-  checkoutSnapshotMatchesCart,
-  isCheckoutLocationConsistent,
-  isRetryableCheckoutForCart,
-  resolveInlineCheckoutErrorMessage,
-  shouldShowCheckoutFailureScreen,
-  toQuoteItems,
-  useStripeCheckoutMutation
-} from "../src/orders/checkout";
-import { useCheckoutFlow } from "../src/orders/flow";
+
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+
+import { formatUsd } from "../src/menu/catalog";
+
 import { GlassActionPill } from "../src/cart/GlassActionPill";
 import { Button, Card, SectionLabel, uiPalette, uiTypography } from "../src/ui/system";
-import { resolveConfiguredApplePayMerchantIdentifier } from "../src/orders/applePay";
-
-function StatusBanner({
-  message,
-  tone = "info"
-}: {
-  message: string;
-  tone?: "info" | "warning";
-}) {
-  return (
-    <View style={[styles.banner, tone === "warning" ? styles.bannerWarning : null]}>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.bannerText, tone === "warning" ? styles.bannerTextWarning : null]}>{message}</Text>
-    </View>
-  );
-}
-
-function SummaryRow({
-  label,
-  value,
-  emphasized = false
-}: {
-  label: string;
-  value: string;
-  emphasized?: boolean;
-}) {
-  return (
-    <View style={styles.summaryRow}>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.summaryLabel, emphasized ? styles.summaryLabelEmphasized : null]}>{label}</Text>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.summaryValue, emphasized ? styles.summaryValueEmphasized : null]}>{value}</Text>
-    </View>
-  );
-}
-
-function BagLineItem({ item }: { item: CartItem }) {
-  const customization = describeCustomization(item, {
-    includeNotes: true,
-    fallback: "Standard preparation"
-  });
-
-  return (
-    <View style={styles.bagItem}>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.bagQuantity}>{item.quantity}x</Text>
-      <View style={styles.bagCopy}>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.bagItemTitle}>{item.itemName}</Text>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.bagItemMeta}>{customization}</Text>
-      </View>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.bagItemPrice}>{formatUsd(item.lineTotalCents)}</Text>
-    </View>
-  );
-}
-
-function resolveStripeUrlScheme() {
-  const configuredScheme = Constants.expoConfig?.scheme;
-  if (typeof configuredScheme === "string" && configuredScheme.trim().length > 0) {
-    return configuredScheme.trim();
-  }
-  if (Array.isArray(configuredScheme)) {
-    const firstScheme = configuredScheme.find((scheme) => typeof scheme === "string" && scheme.trim().length > 0);
-    if (firstScheme) {
-      return firstScheme.trim();
-    }
-  }
-
-  const fallbackUrl = Linking.createURL("");
-  const schemeMatch = fallbackUrl.match(/^([a-z][a-z0-9+\-.]*):/i);
-  return schemeMatch?.[1];
-}
-
-function normalizeStripeReturnUrl(url: string | undefined, scheme: string | undefined) {
-  if (!url || !scheme) {
-    return undefined;
-  }
-
-  try {
-    const parsedUrl = new URL(url);
-    return parsedUrl.protocol === `${scheme}:` ? url : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function resolveStripeReturnUrl(): string | undefined {
-  const scheme = resolveStripeUrlScheme();
-  const path = "stripe-redirect";
-
-  if (scheme) {
-    return normalizeStripeReturnUrl(Linking.createURL(path, { scheme }), scheme);
-  }
-
-  return normalizeStripeReturnUrl(
-    Constants.appOwnership === "expo" ? Linking.createURL(`/--/${path}`) : Linking.createURL(path),
-    resolveStripeUrlScheme()
-  );
-}
-
-function buildCheckoutOrderHistoryEntry(params: {
-  order: {
-    id: string;
-    pickupCode: string;
-    items: OrderHistoryEntry["items"];
-    total: OrderHistoryEntry["total"];
-  };
-  status: OrderHistoryEntry["status"];
-  occurredAt: string;
-}): OrderHistoryEntry {
-  return {
-    id: params.order.id,
-    pickupCode: params.order.pickupCode,
-    status: params.status,
-    items: params.order.items,
-    total: params.order.total,
-    timeline: [
-      {
-        status: params.status,
-        occurredAt: params.occurredAt
-      }
-    ]
-  };
-}
+import { BagLineItem, StatusBanner, SummaryRow } from "../src/orders/CheckoutPrimitives";
 
 export default function CheckoutScreen() {
-  const insets = useSafeAreaInsets();
-  const router = useRouter();
-  const queryClient = useQueryClient();
-  const { items, locationId: cartLocationId, subtotalCents, discountCode, setDiscountCode, clear } = useCart();
-  const location = useLocationContext();
-  const { retryOrder, clearRetryOrder, clearFailure, setConfirmation, setFailure, setRetryOrder } = useCheckoutFlow();
-  const appConfigQuery = useAppConfigQuery();
-  const storeConfigQuery = useStoreConfigQuery();
-  const appConfig = appConfigQuery.data ? resolveAppConfigData(appConfigQuery.data) : null;
-  const storeConfig = storeConfigQuery.data ? resolveStoreConfigData(storeConfigQuery.data) : null;
-  const pricingSummary = buildPricingSummary(subtotalCents, storeConfig?.taxRateBasisPoints ?? 0);
-  const checkoutMutation = useStripeCheckoutMutation();
-  const liveCartContextRef = useRef({ items, cartLocationId, selectedLocationId: location.selectedLocationId });
-  liveCartContextRef.current = { items, cartLocationId, selectedLocationId: location.selectedLocationId };
-  useEffect(() => {
-    checkoutMutation.reset();
-  }, [cartLocationId, checkoutMutation.reset, location.selectedLocationId]);
-  const storeConfigLoading = !storeConfig && (storeConfigQuery.isLoading || storeConfigQuery.isFetching);
-  const appConfigLoading = !appConfig && (appConfigQuery.isLoading || appConfigQuery.isFetching);
-  const checkoutContextLoading = storeConfigLoading || appConfigLoading;
-  const storeClosedMessage =
-    storeConfig && !storeConfig.isOpen
-      ? "The store is currently closed. Come back during opening hours."
-      : null;
-  const checkoutUnavailableMessage = storeConfigLoading
-    ? "Loading store hours..."
-    : appConfigLoading
-      ? "Loading checkout configuration..."
-      : !storeConfig
-    ? "Store details are temporarily unavailable. Retry loading checkout before paying."
-    : !appConfig
-      ? "Checkout configuration is temporarily unavailable. Retry loading checkout before paying."
-      : !appConfig.paymentCapabilities.stripe.enabled
-        ? "Stripe checkout is not enabled for this store yet."
-        : !appConfig.paymentCapabilities.stripe.onboarded
-          ? "Stripe onboarding is incomplete for this store."
-          : !appConfig.paymentCapabilities.card && !appConfig.paymentCapabilities.applePay
-            ? "No supported mobile payment methods are enabled for this store."
-      : storeClosedMessage;
-  const checkoutReady = checkoutUnavailableMessage === null;
-  const checkoutUnavailableTone = checkoutContextLoading ? "info" : "warning";
-  const showCheckoutRetry = Boolean(checkoutUnavailableMessage) && !checkoutContextLoading;
-  const quoteItems = useMemo(() => toQuoteItems(items), [items]);
-  const retryableOrder = isRetryableCheckoutForCart(retryOrder, quoteItems, cartLocationId, location.selectedLocationId)
-    ? retryOrder ?? undefined
-    : undefined;
-  const itemCount = useMemo(() => items.reduce((sum, item) => sum + item.quantity, 0), [items]);
-  const applePayMerchantIdentifier = resolveConfiguredApplePayMerchantIdentifier();
-  const brandName = appConfig?.brand.brandName ?? "Your order";
-  const storeStatusLabel = storeConfig
-    ? storeConfig.isOpen
-      ? "Open now"
-      : "Closed right now"
-    : storeConfigLoading
-      ? "Loading store hours"
-      : "Store unavailable";
-  const etaLabel = storeConfig ? `${storeConfig.prepEtaMinutes} min pickup` : "ETA unavailable";
-
-  const [paymentSheetPending, setPaymentSheetPending] = useState(false);
-  const [statusMessage, setStatusMessage] = useState("");
-  const [statusTone, setStatusTone] = useState<"info" | "warning">("info");
-  const locationContextValid = isCheckoutLocationConsistent(cartLocationId, location.selectedLocationId);
-  const payActionDisabled = !checkoutReady || !locationContextValid || items.length === 0 || paymentSheetPending || checkoutMutation.isPending;
-  const payActionLabel =
-    paymentSheetPending || checkoutMutation.isPending
-      ? "Opening secure payment…"
-      : discountCode
-        ? "Review final total"
-        : `Pay ${formatUsd(pricingSummary.totalCents)}`;
-
-  async function invalidateAccountQueries() {
-    await queryClient.invalidateQueries({ queryKey: ["account"] });
-  }
-
-  function refreshCheckoutContext() {
-    void Promise.allSettled([appConfigQuery.refetch(), storeConfigQuery.refetch()]);
-  }
-
-  function dismissCheckoutToCart() {
-    router.dismissTo("/cart");
-  }
-
-  function dismissCheckout() {
-    if (router.canGoBack()) {
-      router.back();
-      return;
-    }
-
-    router.replace("/cart");
-  }
-
-  async function handleStripeCheckout() {
-    if (!isCheckoutLocationConsistent(cartLocationId, location.selectedLocationId)) {
-      setStatusMessage("Your bag does not match the selected location. Return to your bag before checkout.");
-      setStatusTone("warning");
-      return;
-    }
-    if (items.length === 0) {
-      setStatusMessage("Add an item to your bag before checkout.");
-      setStatusTone("warning");
-      return;
-    }
-
-    if (!storeConfig || !appConfig) {
-      setStatusMessage(checkoutUnavailableMessage ?? "Checkout is temporarily unavailable.");
-      setStatusTone("warning");
-      return;
-    }
-
-    if (!storeConfig.isOpen) {
-      setStatusMessage(storeClosedMessage ?? "The store is currently closed.");
-      setStatusTone("warning");
-      return;
-    }
-
-    setPaymentSheetPending(true);
-    setStatusMessage("Preparing secure payment…");
-    setStatusTone("info");
-
-    try {
-      const preparedCheckout = await checkoutMutation.mutateAsync({
-        cartLocationId,
-        selectedLocationId: location.selectedLocationId,
-        items,
-        discountCode,
-        existingCheckout: retryableOrder
-      });
-
-      const checkoutStillMatchesCurrentCart = () => {
-        const current = liveCartContextRef.current;
-        return checkoutSnapshotMatchesCart(
-          preparedCheckout.checkout,
-          current.items,
-          current.cartLocationId,
-          current.selectedLocationId
-        );
-      };
-      if (!checkoutStillMatchesCurrentCart()) {
-        clearRetryOrder();
-        throw new Error("Your bag or selected location changed while checkout was preparing. Review your bag and try again.");
-      }
-
-      await initStripe({
-        publishableKey: preparedCheckout.paymentSession.publishableKey,
-        stripeAccountId: preparedCheckout.paymentSession.stripeAccountId,
-        merchantIdentifier: preparedCheckout.paymentSession.applePayEnabled ? applePayMerchantIdentifier : undefined,
-        urlScheme: resolveStripeUrlScheme()
-      });
-
-      const stripeReturnUrl = resolveStripeReturnUrl();
-      const initResult = await initPaymentSheet({
-        merchantDisplayName: preparedCheckout.paymentSession.merchantDisplayName,
-        paymentIntentClientSecret: preparedCheckout.paymentSession.paymentIntentClientSecret,
-        ...(stripeReturnUrl ? { returnURL: stripeReturnUrl } : {}),
-        allowsDelayedPaymentMethods: false,
-        applePay: preparedCheckout.paymentSession.applePayEnabled
-          ? {
-              merchantCountryCode: preparedCheckout.paymentSession.merchantCountryCode
-            }
-          : undefined
-      });
-
-      if (initResult.error) {
-        setRetryOrder(preparedCheckout.checkout);
-        setStatusMessage("Payment could not open. Your bag is still ready, so you can try again.");
-        setStatusTone("warning");
-        return;
-      }
-
-      setStatusMessage("Waiting for Stripe confirmation…");
-
-      if (!checkoutStillMatchesCurrentCart()) {
-        clearRetryOrder();
-        setStatusMessage("Your bag or selected location changed. No payment was started. Review your bag and try again.");
-        setStatusTone("warning");
-        return;
-      }
-
-      const presentResult = await presentPaymentSheet();
-      if (presentResult.error?.code === PaymentSheetError.Canceled) {
-        setRetryOrder(preparedCheckout.checkout);
-        clearFailure();
-        setStatusMessage("");
-        setStatusTone("info");
-        dismissCheckoutToCart();
-        return;
-      }
-
-      if (presentResult.error) {
-        setRetryOrder(preparedCheckout.checkout);
-        setStatusMessage("Payment didn’t go through. Your bag is still ready, so you can try again.");
-        setStatusTone("warning");
-        return;
-      }
-
-      setStatusMessage("Verifying payment with Stripe…");
-      let finalizedOrder: Order;
-      try {
-        const finalizedPayment = await apiClient.finalizeStripeMobilePayment({
-          checkoutId: preparedCheckout.checkout.checkoutId,
-          paymentIntentId: preparedCheckout.paymentSession.paymentIntentId
-        });
-        if (!("order" in finalizedPayment)) throw new Error("Checkout finalization returned a legacy order response");
-        finalizedOrder = finalizedPayment.order;
-      } catch {
-        setStatusMessage("Payment was received, but confirmation is still processing. Check Orders in a moment.");
-        setStatusTone("info");
-        clear();
-        clearRetryOrder();
-        void invalidateAccountQueries();
-        dismissCheckoutToCart();
-        return;
-      }
-
-      const occurredAt = new Date().toISOString();
-      const nextOrder = buildCheckoutOrderHistoryEntry({
-        order: finalizedOrder,
-        status: finalizedOrder.status,
-        occurredAt
-      });
-      queryClient.setQueryData<OrderHistoryEntry[] | undefined>(orderHistoryQueryKey(location.brandId), (currentOrders) =>
-        mergeOrderIntoHistory(currentOrders, nextOrder)
-      );
-      setConfirmation({
-        orderId: finalizedOrder.id,
-        pickupCode: finalizedOrder.pickupCode,
-        status: finalizedOrder.status,
-        total: finalizedOrder.total,
-        items: finalizedOrder.items,
-        occurredAt
-      });
-      clear();
-      setStatusMessage("");
-      setStatusTone("info");
-      void invalidateAccountQueries();
-      dismissCheckoutToCart();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Checkout failed.";
-
-      if (error instanceof CheckoutSubmissionError) {
-        void invalidateAccountQueries();
-
-        if (error.stage === "pay") {
-          setStatusMessage("");
-          setStatusTone("info");
-          setFailure({
-            message,
-            stage: error.stage,
-            occurredAt: new Date().toISOString(),
-            checkout: error.checkout
-          });
-          router.replace("/checkout-failure");
-          return;
-        }
-
-        if (!shouldShowCheckoutFailureScreen(error)) {
-          clearFailure();
-          clearRetryOrder();
-          setStatusMessage(resolveInlineCheckoutErrorMessage(error));
-          setStatusTone("warning");
-          return;
-        }
-
-        setStatusMessage("");
-        setStatusTone("info");
-        setFailure({
-          message,
-          stage: error.stage,
-          occurredAt: new Date().toISOString(),
-          checkout: error.checkout
-        });
-        dismissCheckoutToCart();
-        return;
-      }
-
-      setStatusMessage(message);
-      setStatusTone("warning");
-    } finally {
-      setPaymentSheetPending(false);
-    }
-  }
-  const scrollBottomPadding = Math.max(insets.bottom, 16) + 172;
-
+  const {
+    insets,
+    items,
+    discountCode,
+    setDiscountCode,
+    storeConfig,
+    pricingSummary,
+    storeConfigLoading,
+    checkoutUnavailableMessage,
+    checkoutUnavailableTone,
+    showCheckoutRetry,
+    retryableOrder,
+    itemCount,
+    brandName,
+    storeStatusLabel,
+    etaLabel,
+    statusMessage,
+    statusTone,
+    payActionDisabled,
+    payActionLabel,
+    refreshCheckoutContext,
+    dismissCheckout,
+    handleStripeCheckout,
+    scrollBottomPadding
+  } = useCheckoutController();
   return (
     <View style={styles.screen}>
       <View style={styles.handleWrap}>
@@ -453,14 +44,23 @@ export default function CheckoutScreen() {
       <View style={styles.headerArea}>
         {showCheckoutRetry ? (
           <View style={styles.headerUtilityRow}>
-            <Pressable accessibilityRole="button" accessibilityLabel="Retry checkout configuration" onPress={refreshCheckoutContext} style={({ pressed }) => [styles.inlineAction, pressed ? styles.inlineActionPressed : null]}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Retry checkout configuration"
+              onPress={refreshCheckoutContext}
+              style={({ pressed }) => [styles.inlineAction, pressed ? styles.inlineActionPressed : null]}
+            >
               <Ionicons name="refresh-outline" size={15} color={uiPalette.textSecondary} />
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.inlineActionText}>Retry</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.inlineActionText}>
+                Retry
+              </Text>
             </Pressable>
           </View>
         ) : null}
 
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.headerTitle}>Checkout</Text>
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.headerTitle}>
+          Checkout
+        </Text>
         <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.headerSubtitle}>
           {storeConfig
             ? storeConfig.isOpen
@@ -480,8 +80,12 @@ export default function CheckoutScreen() {
       >
         {items.length === 0 ? (
           <Card style={styles.emptyState}>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emptyTitle}>Your cart is empty.</Text>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emptyBody}>Add items from the menu before opening checkout.</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emptyTitle}>
+              Your cart is empty.
+            </Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emptyBody}>
+              Add items from the menu before opening checkout.
+            </Text>
             <Button label="Back to cart" variant="secondary" onPress={dismissCheckout} />
           </Card>
         ) : (
@@ -495,16 +99,24 @@ export default function CheckoutScreen() {
 
             <Card style={styles.sectionCard}>
               <SectionLabel label="Order" />
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionTitle}>Summary</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionTitle}>
+                Summary
+              </Text>
               <View style={styles.summaryMetaRow}>
                 <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryMetaText}>
                   {itemCount} {itemCount === 1 ? "item" : "items"}
                 </Text>
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryMetaDot}>•</Text>
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryMetaText}>{storeStatusLabel}</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryMetaDot}>
+                  •
+                </Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryMetaText}>
+                  {storeStatusLabel}
+                </Text>
               </View>
               {storeConfig?.pickupInstructions ? (
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionBody}>{storeConfig.pickupInstructions}</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionBody}>
+                  {storeConfig.pickupInstructions}
+                </Text>
               ) : null}
 
               <View style={styles.bagList}>
@@ -515,8 +127,12 @@ export default function CheckoutScreen() {
 
               <View style={styles.sectionDivider} />
               <View style={styles.primaryField}>
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.fieldLabel}>Discount code</Text>
-                <TextInput allowFontScaling={false} maxFontSizeMultiplier={1}
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.fieldLabel}>
+                  Discount code
+                </Text>
+                <TextInput
+                  allowFontScaling={false}
+                  maxFontSizeMultiplier={1}
                   value={discountCode}
                   onChangeText={setDiscountCode}
                   autoCapitalize="characters"
@@ -526,7 +142,9 @@ export default function CheckoutScreen() {
                   style={styles.fieldInput}
                 />
                 {discountCode ? (
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.fieldHint}>Code will be validated before Stripe opens. The payment sheet will show the final discounted total.</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.fieldHint}>
+                    Code will be validated before Stripe opens. The payment sheet will show the final discounted total.
+                  </Text>
                 ) : null}
               </View>
               <View style={styles.sectionDivider} />
@@ -536,7 +154,6 @@ export default function CheckoutScreen() {
               <SummaryRow label="Tax" value={formatUsd(pricingSummary.taxCents)} />
               <SummaryRow label="Total" value={formatUsd(pricingSummary.totalCents)} emphasized />
             </Card>
-
           </>
         )}
       </ScrollView>
@@ -545,7 +162,9 @@ export default function CheckoutScreen() {
         <View pointerEvents="box-none" style={[styles.bottomDock, { paddingBottom: Math.max(insets.bottom, 16) }]}>
           {checkoutUnavailableMessage || statusMessage ? (
             <View style={styles.bottomStatusStack}>
-              {checkoutUnavailableMessage ? <StatusBanner message={checkoutUnavailableMessage} tone={checkoutUnavailableTone} /> : null}
+              {checkoutUnavailableMessage ? (
+                <StatusBanner message={checkoutUnavailableMessage} tone={checkoutUnavailableTone} />
+              ) : null}
 
               {statusMessage ? (
                 <StatusBanner message={statusMessage} tone={statusTone === "warning" ? "warning" : "info"} />
@@ -648,26 +267,6 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: uiPalette.textSecondary
   },
-  banner: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 18,
-    backgroundColor: uiPalette.surfaceMuted,
-    borderWidth: 1,
-    borderColor: uiPalette.border
-  },
-  bannerWarning: {
-    backgroundColor: "rgba(176, 122, 58, 0.08)",
-    borderColor: "rgba(176, 122, 58, 0.18)"
-  },
-  bannerText: {
-    fontSize: 13,
-    lineHeight: 19,
-    color: uiPalette.textSecondary
-  },
-  bannerTextWarning: {
-    color: uiPalette.text
-  },
   sectionCard: {
     gap: 0
   },
@@ -706,68 +305,10 @@ const styles = StyleSheet.create({
     marginTop: 16,
     gap: 14
   },
-  bagItem: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12
-  },
-  bagQuantity: {
-    width: 28,
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: "700",
-    color: uiPalette.textSecondary
-  },
-  bagCopy: {
-    flex: 1,
-    gap: 4
-  },
-  bagItemTitle: {
-    fontSize: 15,
-    lineHeight: 19,
-    color: uiPalette.text,
-    fontWeight: "700"
-  },
-  bagItemMeta: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: uiPalette.textSecondary
-  },
-  bagItemPrice: {
-    fontSize: 15,
-    lineHeight: 19,
-    color: uiPalette.text,
-    fontWeight: "700"
-  },
   sectionDivider: {
     marginVertical: 18,
     height: 1,
     backgroundColor: uiPalette.border
-  },
-  summaryRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 4
-  },
-  summaryLabel: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: uiPalette.textSecondary
-  },
-  summaryLabelEmphasized: {
-    color: uiPalette.text,
-    fontWeight: "700"
-  },
-  summaryValue: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: uiPalette.text
-  },
-  summaryValueEmphasized: {
-    fontSize: 18,
-    lineHeight: 22,
-    fontWeight: "700"
   },
   primaryField: {
     marginTop: 16
@@ -798,22 +339,6 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     color: uiPalette.textSecondary
   },
-  fieldGrid: {
-    marginTop: 14,
-    flexDirection: "row",
-    gap: 10
-  },
-  fieldGridItem: {
-    flex: 1
-  },
-  actions: {
-    marginTop: 16,
-    flexDirection: "row",
-    gap: 10
-  },
-  actionButton: {
-    flex: 1
-  },
   bottomStatusStack: {
     gap: 12
   },
@@ -825,19 +350,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
     gap: 12
-  },
-  applePayPressable: {
-    width: "100%"
-  },
-  applePayPressableDisabled: {
-    opacity: 1
-  },
-  applePayPressablePressed: {
-    opacity: 0.88
-  },
-  applePayNativeButton: {
-    height: 54,
-    width: "100%",
-    borderRadius: 18
   }
 });

@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { Linking, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DeleteAccountSheet } from "../../src/account/DeleteAccountSheet";
 import { AccountFloatingHeader, ACCOUNT_HEADER_HEIGHT } from "../../src/account/AccountFloatingHeader";
@@ -10,64 +10,7 @@ import { useCart } from "../../src/cart/store";
 import { resolvePrivacyPolicyUrl } from "../../src/legal/links";
 import { isMobileLoyaltyVisible, resolveAppConfigData, useAppConfigQuery } from "../../src/menu/catalog";
 import { Button, Chip, GlassCard, ScreenScroll, SectionLabel, uiPalette, uiTypography } from "../../src/ui/system";
-
-function SettingsInfoRow({
-  label,
-  value,
-  isLast = false
-}: {
-  label: string;
-  value: string;
-  isLast?: boolean;
-}) {
-  return (
-    <View style={styles.sectionRow}>
-      <View style={styles.sectionRowInner}>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionRowLabel}>{label}</Text>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionRowValue}>{value}</Text>
-      </View>
-      {isLast ? null : <View style={styles.sectionRowDivider} />}
-    </View>
-  );
-}
-
-function SettingsActionRow({
-  label,
-  onPress,
-  disabled = false,
-  isLast = false,
-  tone = "default"
-}: {
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-  isLast?: boolean;
-  tone?: "default" | "danger";
-}) {
-  return (
-    <Pressable
-      disabled={disabled}
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ disabled }}
-      style={({ pressed }) => [styles.sectionRow, pressed && !disabled ? styles.sectionRowPressed : null]}
-    >
-      <View style={styles.sectionRowInner}>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1}
-          style={[
-            styles.sectionRowLabel,
-            tone === "danger" ? styles.sectionRowLabelDanger : null,
-            disabled ? styles.sectionRowLabelDisabled : null
-          ]}
-        >
-          {label}
-        </Text>
-      </View>
-      {isLast ? null : <View style={styles.sectionRowDivider} />}
-    </Pressable>
-  );
-}
+import { SettingsInfoRow, SettingsActionRow } from "../../src/account/SettingsRows";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -144,11 +87,18 @@ export default function SettingsPage() {
   if (!isAuthenticated) {
     return (
       <View style={styles.screenShell}>
-        <ScreenScroll bottomInset={48} contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}>
+        <ScreenScroll
+          bottomInset={48}
+          contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}
+        >
           <GlassCard style={styles.heroCard}>
             <SectionLabel label="Settings" />
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>{recoveryCopy.title}</Text>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroBody}>{recoveryCopy.body}</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>
+              {recoveryCopy.title}
+            </Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroBody}>
+              {recoveryCopy.body}
+            </Text>
             <Button
               label={recoveryCopy.actionLabel}
               variant="secondary"
@@ -157,7 +107,11 @@ export default function SettingsPage() {
             />
           </GlassCard>
 
-          {actionError ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionError}>{actionError}</Text> : null}
+          {actionError ? (
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionError}>
+              {actionError}
+            </Text>
+          ) : null}
 
           <View style={styles.settingsSection}>
             <SectionLabel label="Legal" />
@@ -174,26 +128,43 @@ export default function SettingsPage() {
           </View>
         </ScreenScroll>
 
-        <AccountFloatingHeader title="Settings" insetTop={insets.top} onBack={goBack} backgroundColor={headerBackgroundColor} foregroundColor={headerForegroundColor} />
+        <AccountFloatingHeader
+          title="Settings"
+          insetTop={insets.top}
+          onBack={goBack}
+          backgroundColor={headerBackgroundColor}
+          foregroundColor={headerForegroundColor}
+        />
       </View>
     );
   }
 
   return (
     <View style={styles.screenShell}>
-      <ScreenScroll bottomInset={48} contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}>
+      <ScreenScroll
+        bottomInset={48}
+        contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}
+      >
         <GlassCard style={styles.heroCard}>
           <View style={styles.heroTopRow}>
             <View style={styles.heroCopy}>
               <SectionLabel label="Preferences" />
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>Account settings</Text>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroBody}>Manage the account-level settings tied to this device and store profile.</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>
+                Account settings
+              </Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroBody}>
+                Manage the account-level settings tied to this device and store profile.
+              </Text>
             </View>
             <Chip label="Active" active />
           </View>
         </GlassCard>
 
-        {actionError ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionError}>{actionError}</Text> : null}
+        {actionError ? (
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionError}>
+            {actionError}
+          </Text>
+        ) : null}
 
         <View style={styles.settingsSection}>
           <SectionLabel label="App" />
@@ -241,7 +212,13 @@ export default function SettingsPage() {
         </View>
       </ScreenScroll>
 
-      <AccountFloatingHeader title="Settings" insetTop={insets.top} onBack={goBack} backgroundColor={headerBackgroundColor} foregroundColor={headerForegroundColor} />
+      <AccountFloatingHeader
+        title="Settings"
+        insetTop={insets.top}
+        onBack={goBack}
+        backgroundColor={headerBackgroundColor}
+        foregroundColor={headerForegroundColor}
+      />
       <DeleteAccountSheet
         open={deleteAccountSheetOpen}
         bottomInset={insets.bottom}
@@ -309,47 +286,5 @@ const styles = StyleSheet.create({
     borderTopColor: uiPalette.border,
     borderBottomWidth: 1,
     borderBottomColor: uiPalette.border
-  },
-  sectionRow: {
-    minHeight: 68
-  },
-  sectionRowPressed: {
-    opacity: 0.72
-  },
-  sectionRowInner: {
-    minHeight: 68,
-    paddingHorizontal: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 16
-  },
-  sectionRowDivider: {
-    marginHorizontal: 12,
-    height: 1,
-    backgroundColor: uiPalette.border
-  },
-  sectionRowLabel: {
-    flex: 1,
-    fontSize: 15,
-    lineHeight: 20,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-    color: uiPalette.text,
-    fontFamily: uiTypography.displayFamily,
-    fontWeight: "600"
-  },
-  sectionRowLabelDanger: {
-    color: uiPalette.danger
-  },
-  sectionRowLabelDisabled: {
-    color: uiPalette.textMuted
-  },
-  sectionRowValue: {
-    flexShrink: 1,
-    textAlign: "right",
-    fontSize: 14,
-    lineHeight: 20,
-    color: uiPalette.textSecondary
   }
 });

@@ -1,9 +1,9 @@
-import { Ionicons } from "@expo/vector-icons";
+import { useRefresh } from "../ui/useRefresh";
+import { useInitialReveal } from "../ui/useInitialReveal";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   Animated as RNAnimated,
-  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -12,226 +12,31 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent
 } from "react-native";
-import Animated, { Easing, Extrapolation, interpolate, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from "react-native-reanimated";
+import Animated, { Extrapolation, interpolate, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import {
-  Button,
-  ScreenBackdrop,
-  TabBarDepthBackdrop,
-  uiPalette,
-  uiTypography
-} from "../ui/system";
+import { Button, ScreenBackdrop, TabBarDepthBackdrop, uiPalette, uiTypography } from "../ui/system";
 import {
   resolveAppConfigData,
   resolveMenuData,
   resolveStoreConfigData,
   useAppConfigQuery,
   useMenuQuery,
-  useStoreConfigQuery,
-  type MenuCategory,
-  type MenuItem
+  useStoreConfigQuery
 } from "../menu/catalog";
 import { isBackendReachabilityError } from "../api/client";
 import { getTabBarBottomOffset, TAB_BAR_HEIGHT } from "../navigation/tabBarMetrics";
 import { LocationPicker } from "../location/LocationPicker";
 import { useLocationContext } from "../location/LocationProvider";
 import { MenuItemRow, SectionHeader } from "../components";
-
-type MenuSection = {
-  id: string;
-  label: string;
-  items: MenuItem[];
-};
+import { CollapsibleSectionHeader } from "../menu/CollapsibleSectionHeader";
+import { buildMenuSections } from "../menu/presentation";
+import { LoadingMenuState } from "../menu/MenuLoadingState";
 
 const MENU_HEADER_TOP_PADDING = 0;
 const MENU_HEADER_EXPANDED_HEIGHT = 130;
 const MENU_HEADER_COLLAPSED_HEIGHT = 52;
 const MENU_HEADER_SNAP_VELOCITY_THRESHOLD = 0.2;
 const MENU_HEADER_SNAP_EDGE_TOLERANCE = 2;
-const MENU_SECTION_HEADER_GAP = 14;
-
-function LoadingBlock({
-  width = "100%",
-  height,
-  radius = 12
-}: {
-  width?: number | `${number}%`;
-  height: number;
-  radius?: number;
-}) {
-  return (
-    <View
-      style={[
-        styles.loadingBlock,
-        {
-          width,
-          height,
-          borderRadius: radius
-        }
-      ]}
-    />
-  );
-}
-
-function LoadingMenuRow() {
-  return (
-    <View style={styles.menuRow}>
-      <View style={styles.menuRowMain}>
-        <View style={styles.menuImage} />
-        <View style={[styles.menuBodyWrap, styles.menuBodyWrapWithDivider]}>
-          <View style={styles.menuBodyContent}>
-            <View style={styles.menuCopy}>
-              <View style={styles.menuTitleRow}>
-                <LoadingBlock width="48%" height={18} radius={9} />
-                <LoadingBlock width={56} height={18} radius={9} />
-              </View>
-              <LoadingBlock width="82%" height={12} radius={6} />
-              <LoadingBlock width="58%" height={12} radius={6} />
-            </View>
-          </View>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-function LoadingMenuState({
-  headerExpandedHeight,
-  contentBottomInset,
-  insets
-}: {
-  headerExpandedHeight: number;
-  contentBottomInset: number;
-  insets: ReturnType<typeof useSafeAreaInsets>;
-}) {
-  const pulse = useSharedValue(0);
-
-  useEffect(() => {
-    pulse.value = withRepeat(withTiming(1, { duration: 820, easing: Easing.inOut(Easing.ease) }), -1, true);
-  }, [pulse]);
-
-  const pulseStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(pulse.value, [0, 1], [0.56, 1])
-  }));
-
-  return (
-    <View style={styles.screen}>
-      <ScreenBackdrop />
-
-      <ScrollView
-        bounces={false}
-        showsVerticalScrollIndicator={false}
-        scrollEnabled={false}
-        contentInsetAdjustmentBehavior="never"
-        contentContainerStyle={[
-          styles.scrollContent,
-          {
-            paddingTop: headerExpandedHeight,
-            paddingBottom: contentBottomInset
-          }
-        ]}
-      >
-        <Animated.View style={pulseStyle}>
-          <View style={styles.sectionStickyHeader}>
-            <View style={styles.sectionHeader}>
-              <SectionHeader label="Featured" action={<Ionicons name="chevron-up-outline" size={16} color={uiPalette.textMuted} />} />
-            </View>
-          </View>
-          <View style={styles.sectionListBlock}>
-            <View style={styles.sectionList}>
-              <LoadingMenuRow />
-              <LoadingMenuRow />
-              <LoadingMenuRow />
-            </View>
-          </View>
-
-          <View style={styles.sectionStickyHeader}>
-            <View style={styles.sectionHeader}>
-              <SectionHeader
-                label="Menu"
-                action={<Ionicons name="chevron-up-outline" size={16} color={uiPalette.textMuted} />}
-              />
-            </View>
-          </View>
-          <View style={styles.sectionListBlock}>
-            <View style={styles.sectionList}>
-              <LoadingMenuRow />
-              <LoadingMenuRow />
-            </View>
-          </View>
-        </Animated.View>
-      </ScrollView>
-
-      <View style={[styles.headerShell, { paddingTop: insets.top + MENU_HEADER_TOP_PADDING, height: headerExpandedHeight }]}>
-        <View style={styles.header}>
-          <View style={styles.headerCopy}>
-            <View style={[styles.pickupMetaWrap, styles.loadingPickupMetaWrap]}>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.pickupMeta}>Loading pickup estimate</Text>
-            </View>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.locationText}>Loading location</Text>
-          </View>
-        </View>
-
-        <View style={[styles.tabsWrap, styles.loadingTabsWrap]}>
-          <View style={styles.tabRow}>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.activeTab}>Menu</Text>
-          </View>
-        </View>
-      </View>
-
-      <TabBarDepthBackdrop />
-    </View>
-  );
-}
-
-function buildSections(categories: MenuCategory[]): MenuSection[] {
-  const allItems = [...new Map(categories.flatMap((category) => category.items).map((item) => [item.id, item])).values()];
-  const featuredItems = allItems.filter((item) => item.featured);
-
-  return [
-    ...(featuredItems.length > 0 ? [{ id: "featured", label: "Featured", items: featuredItems }] : []),
-    ...categories.map((category) => ({
-      id: category.id,
-      label: category.title,
-      items: category.items
-    }))
-  ];
-}
-
-function CollapsibleSectionHeader({
-  label,
-  collapsed,
-  onPress
-}: {
-  label: string;
-  collapsed: boolean;
-  onPress: () => void;
-}) {
-  const rotation = useSharedValue(collapsed ? 1 : 0);
-
-  useEffect(() => {
-    rotation.value = withTiming(collapsed ? 1 : 0, { duration: 240, easing: Easing.out(Easing.cubic) });
-  }, [collapsed, rotation]);
-
-  const chevronStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${interpolate(rotation.value, [0, 1], [0, 180])}deg` }]
-  }));
-
-  return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`Toggle ${label}`} onPress={onPress} style={styles.sectionStickyHeader}>
-      <View style={styles.sectionHeader}>
-        <SectionHeader
-          label={label}
-          action={
-            <Animated.View style={chevronStyle}>
-              <Ionicons name="chevron-up-outline" size={16} color={uiPalette.textMuted} />
-            </Animated.View>
-          }
-        />
-      </View>
-    </Pressable>
-  );
-}
 
 export function MenuScreen() {
   const router = useRouter();
@@ -248,22 +53,25 @@ export function MenuScreen() {
   const hasBlockingConfigError =
     (!!appConfigQuery.error && !appConfigQuery.data) || (!!storeConfigQuery.error && !storeConfigQuery.data);
   const hasBlockingMenuError = (!!menuQuery.error && !menuQuery.data) || hasBlockingConfigError;
-  const menuErrorMessage =
-    [menuQuery.error, appConfigQuery.error, storeConfigQuery.error].some(isBackendReachabilityError)
-      ? "Unable to reach backend. Pull to refresh or try again in a moment."
-      : "We couldn’t load the live menu and store details. Pull to refresh or try again in a moment.";
+  const menuErrorMessage = [menuQuery.error, appConfigQuery.error, storeConfigQuery.error].some(
+    isBackendReachabilityError
+  )
+    ? "Unable to reach backend. Pull to refresh or try again in a moment."
+    : "We couldn’t load the live menu and store details. Pull to refresh or try again in a moment.";
   const menu = isInitialLoading || hasBlockingMenuError ? null : resolveMenuData(menuQuery.data);
+  const { loadingOpacity, showLoadingOverlay } = useInitialReveal(isInitialLoading || !menu);
   const scrollViewRef = useRef<ScrollView | null>(null);
-  const loadingOpacity = useRef(new RNAnimated.Value(1)).current;
   const scrollY = useSharedValue(0);
   const dockBottom = getTabBarBottomOffset(insets.bottom > 0);
   const contentBottomInset = dockBottom + TAB_BAR_HEIGHT + 24;
   const headerExpandedHeight = insets.top + MENU_HEADER_EXPANDED_HEIGHT;
   const headerCollapsedHeight = insets.top + MENU_HEADER_COLLAPSED_HEIGHT;
   const headerCollapseDistance = headerExpandedHeight - headerCollapsedHeight;
-  const [showLoadingOverlay, setShowLoadingOverlay] = useState(true);
-  const [didFinishInitialReveal, setDidFinishInitialReveal] = useState(false);
-  const [isManualRefresh, setIsManualRefresh] = useState(false);
+  const { refreshing: isManualRefresh, refresh: handleRefresh } = useRefresh([
+    menuQuery.refetch,
+    appConfigQuery.refetch,
+    storeConfigQuery.refetch
+  ]);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
 
   const toggleSection = useCallback((sectionId: string) => {
@@ -278,35 +86,11 @@ export function MenuScreen() {
     });
   }, []);
 
-  const sections = useMemo(() => buildSections(menu?.categories ?? []), [menu?.categories]);
-  const shouldShowInitialLoading = !didFinishInitialReveal && (isInitialLoading || !menu);
+  const sections = useMemo(() => buildMenuSections(menu?.categories ?? []), [menu?.categories]);
 
   const setScrollViewRef = useCallback((node: ScrollView | null) => {
     scrollViewRef.current = node;
   }, []);
-
-  useEffect(() => {
-    if (didFinishInitialReveal) return;
-
-    if (shouldShowInitialLoading) {
-      setShowLoadingOverlay(true);
-      loadingOpacity.stopAnimation();
-      loadingOpacity.setValue(1);
-      return;
-    }
-
-    setShowLoadingOverlay(true);
-    loadingOpacity.stopAnimation();
-    RNAnimated.timing(loadingOpacity, {
-      toValue: 0,
-      duration: 260,
-      useNativeDriver: true
-    }).start(({ finished }) => {
-      if (!finished) return;
-      setShowLoadingOverlay(false);
-      setDidFinishInitialReveal(true);
-    });
-  }, [didFinishInitialReveal, loadingOpacity, shouldShowInitialLoading]);
 
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -347,7 +131,10 @@ export function MenuScreen() {
 
   const snapHeader = useCallback(
     (offsetY: number, velocityY = 0) => {
-      if (offsetY <= MENU_HEADER_SNAP_EDGE_TOLERANCE || offsetY >= headerCollapseDistance - MENU_HEADER_SNAP_EDGE_TOLERANCE) {
+      if (
+        offsetY <= MENU_HEADER_SNAP_EDGE_TOLERANCE ||
+        offsetY >= headerCollapseDistance - MENU_HEADER_SNAP_EDGE_TOLERANCE
+      ) {
         return;
       }
 
@@ -384,23 +171,18 @@ export function MenuScreen() {
     [snapHeader]
   );
 
-  const handleRefresh = useCallback(() => {
-    if (isManualRefresh) return;
-
-    setIsManualRefresh(true);
-    void Promise.allSettled([menuQuery.refetch(), appConfigQuery.refetch(), storeConfigQuery.refetch()]).finally(() => {
-      setIsManualRefresh(false);
-    });
-  }, [appConfigQuery, isManualRefresh, menuQuery, storeConfigQuery]);
-
   if (!isInitialLoading && hasBlockingMenuError) {
     return (
       <View style={styles.screen}>
         <ScreenBackdrop />
         <View style={[styles.errorShell, { paddingTop: insets.top + 88, paddingBottom: contentBottomInset }]}>
           <SectionHeader label="Menu" />
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.errorTitle}>Menu temporarily unavailable.</Text>
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.errorBody}>{menuErrorMessage}</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.errorTitle}>
+            Menu temporarily unavailable.
+          </Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.errorBody}>
+            {menuErrorMessage}
+          </Text>
           <Button label="Retry" variant="secondary" onPress={handleRefresh} style={styles.errorAction} />
         </View>
         <TabBarDepthBackdrop />
@@ -454,10 +236,16 @@ export function MenuScreen() {
                       key={item.id}
                       item={item}
                       isLast={index === section.items.length - 1}
-                      onPress={(selectedItem) => router.push({ pathname: "/menu-customize", params: { itemId: selectedItem.id } })}
+                      onPress={(selectedItem) =>
+                        router.push({ pathname: "/menu-customize", params: { itemId: selectedItem.id } })
+                      }
                     />
                   ))}
-                  {section.items.length === 0 ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emptyText}>Nothing matches that search right now.</Text> : null}
+                  {section.items.length === 0 ? (
+                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emptyText}>
+                      Nothing matches that search right now.
+                    </Text>
+                  ) : null}
                 </View>
               </View>
             )
@@ -466,17 +254,31 @@ export function MenuScreen() {
       </Animated.ScrollView>
 
       <Animated.View
-        style={[styles.headerShell, { paddingTop: insets.top + MENU_HEADER_TOP_PADDING, backgroundColor: headerBackgroundColor }, headerStyle]}
+        style={[
+          styles.headerShell,
+          { paddingTop: insets.top + MENU_HEADER_TOP_PADDING, backgroundColor: headerBackgroundColor },
+          headerStyle
+        ]}
       >
         <View style={styles.header}>
           <View style={styles.headerCopy}>
             <Animated.View style={[styles.pickupMetaWrap, pickupMetaStyle]}>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.pickupMeta, { color: headerForegroundColor }]}>
-                {storeConfig ? `Estimated pick-up is ${storeConfig.prepEtaMinutes} min` : "Estimated pick-up unavailable"}
+              <Text
+                allowFontScaling={false}
+                maxFontSizeMultiplier={1}
+                style={[styles.pickupMeta, { color: headerForegroundColor }]}
+              >
+                {storeConfig
+                  ? `Estimated pick-up is ${storeConfig.prepEtaMinutes} min`
+                  : "Estimated pick-up unavailable"}
               </Text>
             </Animated.View>
             <LocationPicker color={headerForegroundColor}>
-              <Animated.Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.locationText, locationStyle, { color: headerForegroundColor }]}>
+              <Animated.Text
+                allowFontScaling={false}
+                maxFontSizeMultiplier={1}
+                style={[styles.locationText, locationStyle, { color: headerForegroundColor }]}
+              >
                 {location.selectedLocation?.displayName ?? appConfig?.brand.locationName ?? "Store info unavailable"}
               </Animated.Text>
             </LocationPicker>
@@ -485,7 +287,13 @@ export function MenuScreen() {
 
         <Animated.View style={[styles.tabsWrap, tabsStyle]}>
           <View style={styles.tabRow}>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.activeTab, { color: headerForegroundColor }]}>Menu</Text>
+            <Text
+              allowFontScaling={false}
+              maxFontSizeMultiplier={1}
+              style={[styles.activeTab, { color: headerForegroundColor }]}
+            >
+              Menu
+            </Text>
           </View>
         </Animated.View>
       </Animated.View>
@@ -494,7 +302,11 @@ export function MenuScreen() {
 
       {showLoadingOverlay ? (
         <RNAnimated.View pointerEvents="auto" style={[styles.loadingOverlay, { opacity: loadingOpacity }]}>
-          <LoadingMenuState headerExpandedHeight={headerExpandedHeight} contentBottomInset={contentBottomInset} insets={insets} />
+          <LoadingMenuState
+            headerExpandedHeight={headerExpandedHeight}
+            contentBottomInset={contentBottomInset}
+            insets={insets}
+          />
         </RNAnimated.View>
       ) : null}
     </View>
@@ -532,10 +344,6 @@ const styles = StyleSheet.create({
   pickupMetaWrap: {
     overflow: "hidden"
   },
-  loadingPickupMetaWrap: {
-    height: 18,
-    marginBottom: 6
-  },
   pickupMeta: {
     fontSize: 13,
     lineHeight: 18,
@@ -554,10 +362,6 @@ const styles = StyleSheet.create({
   tabsWrap: {
     overflow: "hidden"
   },
-  loadingTabsWrap: {
-    height: 34,
-    marginTop: 9
-  },
   tabRow: {
     flexDirection: "row",
     alignItems: "center"
@@ -569,69 +373,12 @@ const styles = StyleSheet.create({
     fontFamily: uiTypography.headerFamily,
     fontWeight: "600"
   },
-  sectionStickyHeader: {
-    marginTop: MENU_SECTION_HEADER_GAP
-  },
   sectionListBlock: {
     marginTop: 0
-  },
-  sectionHeader: {
-    backgroundColor: uiPalette.background,
-    paddingBottom: 10,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center"
   },
   sectionList: {
     borderTopWidth: 1,
     borderTopColor: uiPalette.border
-  },
-  menuRow: {
-    minHeight: 132
-  },
-  menuRowMain: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 16,
-    width: "100%"
-  },
-  menuImage: {
-    width: 108,
-    height: 132,
-    backgroundColor: "#D5D4CE",
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden"
-  },
-  menuBodyWrap: {
-    flex: 1,
-    minWidth: 0,
-    minHeight: 132,
-    paddingTop: 0,
-    paddingBottom: 0,
-    justifyContent: "center"
-  },
-  menuBodyWrapWithDivider: {
-    borderBottomWidth: 1,
-    borderBottomColor: uiPalette.border
-  },
-  menuBodyContent: {
-    minHeight: 132,
-    justifyContent: "center",
-    paddingVertical: 10
-  },
-  menuCopy: {
-    justifyContent: "center",
-    gap: 1
-  },
-  menuTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12
-  },
-  loadingBlock: {
-    backgroundColor: "rgba(219, 216, 207, 0.92)"
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,

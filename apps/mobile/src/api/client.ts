@@ -1,13 +1,15 @@
 import { mobileBrandBootstrapRequestSchema } from "@lattelink/contracts-catalog";
-import { orderSchema } from "@lattelink/contracts-orders";
+import { GazelleApiClient, UNABLE_TO_REACH_BACKEND_MESSAGE, isBackendReachabilityError } from "@lattelink/sdk-mobile";
 import {
-  GazelleApiClient,
-  UNABLE_TO_REACH_BACKEND_MESSAGE,
-  isBackendReachabilityError
-} from "@lattelink/sdk-mobile";
-import { z } from "zod";
-
-const fallbackOrderUpdatePollMs = 5_000;
+  ordersStreamSnapshotSchema,
+  ordersStreamUpdateSchema,
+  OrdersStreamEventHandler,
+  OrdersStreamErrorHandler,
+  isAbortError,
+  parseSseEventChunks,
+  readSseEventData,
+  startOrdersPolling
+} from "./orderEvents";
 
 function normalizeApiBaseUrl(value: string | undefined | null) {
   return value?.trim().replace(/\/+$/, "") ?? "";
@@ -161,66 +163,11 @@ export const MOBILE_API_ENVIRONMENT = {
     catalogApiBaseUrlEnvironmentError ??
     brandConfigurationError
 };
-
-const ordersStreamSnapshotSchema = z.object({
-  type: z.literal("snapshot"),
-  orders: z.array(orderSchema)
-});
-const ordersStreamUpdateSchema = z.object({
-  type: z.literal("order_update"),
-  order: orderSchema
-});
-export type OrdersStreamEvent =
-  | z.output<typeof ordersStreamSnapshotSchema>
-  | z.output<typeof ordersStreamUpdateSchema>;
-type OrdersStreamEventHandler = (event: OrdersStreamEvent) => void;
-type OrdersStreamErrorHandler = (error: unknown) => void;
 type MobileApiClient = GazelleApiClient & {
-  subscribeToOrders(
-    onEvent: OrdersStreamEventHandler,
-    onError?: OrdersStreamErrorHandler
-  ): () => void;
+  subscribeToOrders(onEvent: OrdersStreamEventHandler, onError?: OrdersStreamErrorHandler): () => void;
 };
 
-function isAbortError(error: unknown) {
-  if (!error || typeof error !== "object") {
-    return false;
-  }
-
-  const candidate = error as { name?: string; code?: string; message?: string };
-  if (candidate.name === "AbortError" || candidate.code === "ABORT_ERR") {
-    return true;
-  }
-
-  return typeof candidate.message === "string" && candidate.message.toLowerCase().includes("aborted");
-}
-
-function parseSseEventChunks(buffer: string) {
-  const chunks = buffer.split(/\r?\n\r?\n/);
-  return {
-    completeEvents: chunks.slice(0, -1),
-    remainder: chunks.at(-1) ?? ""
-  };
-}
-
-function readSseEventData(block: string) {
-  const dataLines = block
-    .split(/\r?\n/)
-    .filter((line) => line.startsWith("data:"))
-    .map((line) => line.slice("data:".length).trimStart());
-
-  if (dataLines.length === 0) {
-    return undefined;
-  }
-
-  return dataLines.join("\n");
-}
-
-async function streamOrders(params: {
-  accessToken: string;
-  onEvent: OrdersStreamEventHandler;
-  signal: AbortSignal;
-}) {
+async function streamOrders(params: { accessToken: string; onEvent: OrdersStreamEventHandler; signal: AbortSignal }) {
   let response: Response;
 
   const brandId = MOBILE_API_ENVIRONMENT.brandId;
@@ -229,14 +176,17 @@ async function streamOrders(params: {
   }
 
   try {
-    response = await fetch(resolveConfiguredApiUrl(API_BASE_URL, `/orders/stream?brandId=${encodeURIComponent(brandId)}`), {
-      method: "GET",
-      headers: {
-        Accept: "text/event-stream",
-        Authorization: `Bearer ${params.accessToken}`
-      },
-      signal: params.signal
-    });
+    response = await fetch(
+      resolveConfiguredApiUrl(API_BASE_URL, `/orders/stream?brandId=${encodeURIComponent(brandId)}`),
+      {
+        method: "GET",
+        headers: {
+          Accept: "text/event-stream",
+          Authorization: `Bearer ${params.accessToken}`
+        },
+        signal: params.signal
+      }
+    );
   } catch (error) {
     throw toReachabilityError(error);
   }
@@ -290,41 +240,6 @@ async function streamOrders(params: {
   }
 }
 
-function startOrdersPolling(params: {
-  client: GazelleApiClient;
-  onEvent: OrdersStreamEventHandler;
-  onError?: OrdersStreamErrorHandler;
-}) {
-  let disposed = false;
-
-  const poll = async () => {
-    if (disposed) {
-      return;
-    }
-
-    try {
-      params.onEvent({
-        type: "snapshot",
-        orders: orderSchema.array().parse(await params.client.listOrders())
-      });
-    } catch (error) {
-      if (!disposed) {
-        params.onError?.(error);
-      }
-    }
-  };
-
-  void poll();
-  const intervalHandle = setInterval(() => {
-    void poll();
-  }, fallbackOrderUpdatePollMs);
-
-  return () => {
-    disposed = true;
-    clearInterval(intervalHandle);
-  };
-}
-
 const baseApiClient = new GazelleApiClient({
   baseUrl: API_BASE_URL,
   brandId: MOBILE_API_ENVIRONMENT.brandId
@@ -340,6 +255,9 @@ baseApiClient.setAccessToken = (token?: string) => {
 export const apiClient = Object.assign(baseApiClient, {
   subscribeToOrders(onEvent: OrdersStreamEventHandler, onError?: OrdersStreamErrorHandler) {
     let disposed = false;
+    const deliverEvent: OrdersStreamEventHandler = (event) => {
+      if (!disposed) onEvent(event);
+    };
     let fallbackCleanup = () => {};
     const abortController = new AbortController();
 
@@ -356,7 +274,7 @@ export const apiClient = Object.assign(baseApiClient, {
       stopFallback();
       fallbackCleanup = startOrdersPolling({
         client: baseApiClient,
-        onEvent,
+        onEvent: deliverEvent,
         onError
       });
     };
@@ -382,7 +300,7 @@ export const apiClient = Object.assign(baseApiClient, {
       try {
         await streamOrders({
           accessToken: streamAccessToken,
-          onEvent,
+          onEvent: deliverEvent,
           signal: abortController.signal
         });
         if (disposed) {

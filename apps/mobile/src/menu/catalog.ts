@@ -22,13 +22,18 @@ import {
 import { API_BASE_URL, CATALOG_API_BASE_URL, apiClient, catalogApiClient } from "../api/client";
 import { useLocationContext } from "../location/LocationProvider";
 import { withCriticalDataLoadSentry } from "../observability/criticalDataLoad";
+export { resolveMenuImageUrl } from "./images";
+export type { MenuImageVariant } from "./images";
 
 export const catalogQueryKeys = {
   menu: (locationId: string | null, brandId: string) => ["catalog", "menu", locationId, brandId] as const,
   appConfig: (locationId: string | null, brandId: string) => ["catalog", "app-config", locationId, brandId] as const,
-  storeConfig: (locationId: string | null, brandId: string) => ["catalog", "store-config", locationId, brandId] as const,
-  homeNewsCards: (locationId: string | null, brandId: string) => ["catalog", "home-news-cards", locationId, brandId] as const,
-  mobileExperience: (locationId: string | null, brandId: string) => ["catalog", "mobile-experience", locationId, brandId] as const
+  storeConfig: (locationId: string | null, brandId: string) =>
+    ["catalog", "store-config", locationId, brandId] as const,
+  homeNewsCards: (locationId: string | null, brandId: string) =>
+    ["catalog", "home-news-cards", locationId, brandId] as const,
+  mobileExperience: (locationId: string | null, brandId: string) =>
+    ["catalog", "mobile-experience", locationId, brandId] as const
 };
 const catalogStaleTimeMs = 60_000;
 
@@ -39,33 +44,6 @@ function requireLocationRequestContext(brandId: string, locationId: string | nul
     throw new Error("A selected branded-app location is required before loading catalog data.");
   }
   return { brandId, locationId };
-}
-
-export type MenuImageVariant = "list" | "hero";
-
-function replaceLastExtension(pathname: string, nextExtension: string) {
-  return pathname.replace(/\.[^/.]+$/, `.${nextExtension}`);
-}
-
-export function resolveMenuImageUrl(imageUrl: string | undefined, variant: MenuImageVariant) {
-  if (!imageUrl) {
-    return undefined;
-  }
-
-  try {
-    const url = new URL(imageUrl);
-    if (!url.pathname.includes("/menu-items/") || !url.pathname.includes("/original/")) {
-      return imageUrl;
-    }
-
-    url.pathname = replaceLastExtension(
-      url.pathname.replace("/original/", variant === "list" ? "/mobile-list/" : "/mobile-hero/"),
-      "jpg"
-    );
-    return url.toString();
-  } catch {
-    return imageUrl;
-  }
 }
 
 function filterVisibleCategories(menu: MenuResponse): MenuCategory[] {
@@ -87,7 +65,9 @@ async function fetchMenu(context: LocationRequestContext): Promise<MenuResponse>
       locationId: context.locationId
     },
     async () => {
-      const response = menuResponseSchema.parse(await apiClient.forLocation(context.locationId).menu({ signal: context.signal }));
+      const response = menuResponseSchema.parse(
+        await apiClient.forLocation(context.locationId).menu({ signal: context.signal })
+      );
       return {
         ...response,
         categories: filterVisibleCategories(response)
@@ -106,7 +86,9 @@ async function fetchHomeNewsCards(context: LocationRequestContext): Promise<Home
       locationId: context.locationId
     },
     async () => {
-      const response = homeNewsCardsResponseSchema.parse(await apiClient.forLocation(context.locationId).homeNewsCards({ signal: context.signal }));
+      const response = homeNewsCardsResponseSchema.parse(
+        await apiClient.forLocation(context.locationId).homeNewsCards({ signal: context.signal })
+      );
       return {
         ...response,
         cards: response.cards.filter((card) => card.visible).sort((left, right) => left.sortOrder - right.sortOrder)
@@ -124,7 +106,10 @@ async function fetchStoreConfig(context: LocationRequestContext): Promise<StoreC
       apiBaseUrl: API_BASE_URL,
       locationId: context.locationId
     },
-    async () => storeConfigResponseSchema.parse(await apiClient.forLocation(context.locationId).storeConfig({ signal: context.signal }))
+    async () =>
+      storeConfigResponseSchema.parse(
+        await apiClient.forLocation(context.locationId).storeConfig({ signal: context.signal })
+      )
   );
 }
 
@@ -160,7 +145,10 @@ async function fetchMobileExperience(context: LocationRequestContext): Promise<M
       apiBaseUrl: API_BASE_URL,
       locationId: context.locationId
     },
-    async () => mobileExperienceDocumentSchema.parse(await apiClient.forLocation(context.locationId).mobileExperience({ signal: context.signal }))
+    async () =>
+      mobileExperienceDocumentSchema.parse(
+        await apiClient.forLocation(context.locationId).mobileExperience({ signal: context.signal })
+      )
   );
 }
 
@@ -210,7 +198,8 @@ export function useHomeNewsCardsQuery() {
   return useQuery({
     queryKey: catalogQueryKeys.homeNewsCards(selectedLocationId, brandId),
     enabled: isReady && Boolean(selectedLocationId),
-    queryFn: ({ signal }) => fetchHomeNewsCards({ ...requireLocationRequestContext(brandId, selectedLocationId), signal }),
+    queryFn: ({ signal }) =>
+      fetchHomeNewsCards({ ...requireLocationRequestContext(brandId, selectedLocationId), signal }),
     staleTime: catalogStaleTimeMs
   });
 }
@@ -220,7 +209,8 @@ export function useStoreConfigQuery() {
   return useQuery({
     queryKey: catalogQueryKeys.storeConfig(selectedLocationId, brandId),
     enabled: isReady && Boolean(selectedLocationId),
-    queryFn: ({ signal }) => fetchStoreConfig({ ...requireLocationRequestContext(brandId, selectedLocationId), signal }),
+    queryFn: ({ signal }) =>
+      fetchStoreConfig({ ...requireLocationRequestContext(brandId, selectedLocationId), signal }),
     staleTime: catalogStaleTimeMs
   });
 }
@@ -240,7 +230,8 @@ export function useMobileExperienceQuery() {
   return useQuery({
     queryKey: catalogQueryKeys.mobileExperience(selectedLocationId, brandId),
     enabled: isReady && Boolean(selectedLocationId),
-    queryFn: ({ signal }) => fetchMobileExperience({ ...requireLocationRequestContext(brandId, selectedLocationId), signal }),
+    queryFn: ({ signal }) =>
+      fetchMobileExperience({ ...requireLocationRequestContext(brandId, selectedLocationId), signal }),
     staleTime: catalogStaleTimeMs
   });
 }
@@ -271,25 +262,11 @@ export function isMobileOrderTrackingEnabled(config: AppConfig | undefined) {
   return resolvedConfig ? isOrderTrackingEnabled(resolvedConfig) : false;
 }
 
-export function createEmptyCustomizationInput(): MenuItemCustomizationInput {
-  return {
-    selectedOptions: [],
-    notes: ""
-  };
-}
-
 export function formatUsd(amountCents: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD"
   }).format(amountCents / 100);
-}
-
-export function toCategoryById(categories: MenuCategory[]): Record<string, MenuCategory> {
-  return categories.reduce<Record<string, MenuCategory>>((acc, category) => {
-    acc[category.id] = category;
-    return acc;
-  }, {});
 }
 
 export type {

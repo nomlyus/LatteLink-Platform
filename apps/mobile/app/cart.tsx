@@ -1,14 +1,19 @@
+import { CartLineItem } from "../src/cart/CartLineItem";
 import { Ionicons } from "@expo/vector-icons";
-import { BlurView } from "expo-blur";
-import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getCheckoutRecoveryActionLabel } from "../src/auth/recovery";
 import { useAuthSession } from "../src/auth/session";
 import { ClearCartSheet } from "../src/cart/ClearCartSheet";
-import { buildPricingSummary, describeCustomization } from "../src/cart/model";
+import {
+  CartHeaderActionChip,
+  CartSectionHeading,
+  CartStickyActionPill,
+  CartSummaryRow
+} from "../src/cart/CartPrimitives";
+import { buildPricingSummary } from "../src/cart/model";
 import { RemoveItemSheet } from "../src/cart/RemoveItemSheet";
 import { useCart } from "../src/cart/store";
 import { useLocationContext } from "../src/location/LocationProvider";
@@ -16,7 +21,6 @@ import {
   formatUsd,
   resolveAppConfigData,
   resolveMenuData,
-  resolveMenuImageUrl,
   resolveStoreConfigData,
   useAppConfigQuery,
   useMenuQuery,
@@ -27,235 +31,23 @@ import { useCheckoutFlow } from "../src/orders/flow";
 import { getTabBarBottomOffset, TAB_BAR_HEIGHT } from "../src/navigation/tabBarMetrics";
 import { uiPalette, uiTypography } from "../src/ui/system";
 
-function SummaryRow({
-  label,
-  value,
-  emphasized = false
-}: {
-  label: string;
-  value: string;
-  emphasized?: boolean;
-}) {
-  return (
-    <View style={styles.summaryRow}>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.summaryText, emphasized ? styles.summaryStrong : null]}>{label}</Text>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.summaryText, emphasized ? styles.summaryStrong : null]}>{value}</Text>
-    </View>
-  );
-}
-
-function canUseLiquidGlassSheets() {
-  if (Platform.OS !== "ios") return false;
-
-  try {
-    return isLiquidGlassAvailable();
-  } catch {
-    return false;
-  }
-}
-
-function StickyActionPill({
-  label,
-  value,
-  icon,
-  onPress,
-  disabled = false
-}: {
-  label: string;
-  value: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  onPress: () => void;
-  disabled?: boolean;
-}) {
-  const useLiquidGlass = canUseLiquidGlassSheets();
-
-  const content = (
-    <View style={[styles.stickyPillInner, disabled ? styles.stickyPillInnerDisabled : null]}>
-      <View style={styles.stickyPillLead}>
-        <Ionicons name={icon} size={16} color={disabled ? uiPalette.textMuted : uiPalette.text} />
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.stickyPillLabel, disabled ? styles.stickyPillLabelDisabled : null]}>{label}</Text>
-      </View>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.stickyPillValue, disabled ? styles.stickyPillValueDisabled : null]}>{value}</Text>
-    </View>
-  );
-
-  return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.stickyPillShell, pressed && !disabled ? styles.stickyPillPressed : null]}>
-      {useLiquidGlass ? (
-        <GlassView glassEffectStyle="regular" colorScheme="auto" isInteractive style={styles.stickyPillFrame}>
-          {content}
-        </GlassView>
-      ) : (
-        <BlurView tint="light" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.stickyPillFrame}>
-          {content}
-        </BlurView>
-      )}
-    </Pressable>
-  );
-}
-
-function HeaderActionChip({
-  label,
-  icon,
-  onPress
-}: {
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  onPress: () => void;
-}) {
-  const useLiquidGlass = canUseLiquidGlassSheets();
-
-  const content = (
-    <View style={[styles.headerActionChipInner, useLiquidGlass ? styles.headerActionChipInnerGlass : styles.headerActionChipInnerFallback]}>
-      <Ionicons name={icon} size={13} color={uiPalette.textSecondary} />
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.headerActionChipText}>{label}</Text>
-    </View>
-  );
-
-  return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.headerActionChipShell, pressed ? styles.headerActionChipPressed : null]}>
-      {useLiquidGlass ? (
-        <GlassView glassEffectStyle="regular" colorScheme="auto" isInteractive style={styles.headerActionChipFrame}>
-          {content}
-        </GlassView>
-      ) : (
-        <BlurView tint="light" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.headerActionChipFrame}>
-          {content}
-        </BlurView>
-      )}
-    </Pressable>
-  );
-}
-
-function RowQuantityControl({
-  quantity,
-  canDecrease,
-  onDecrease,
-  onIncrease,
-  onRemove
-}: {
-  quantity: number;
-  canDecrease: boolean;
-  onDecrease: () => void;
-  onIncrease: () => void;
-  onRemove: () => void;
-}) {
-  const useLiquidGlass = canUseLiquidGlassSheets();
-
-  const content = (
-    <View style={[styles.stepperInner, useLiquidGlass ? styles.stepperInnerGlass : styles.stepperInnerFallback]}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Increase quantity" style={[styles.stepperButton, useLiquidGlass ? styles.stepperButtonGlass : null]} onPress={onIncrease}>
-        <Ionicons name="add" size={16} color={uiPalette.text} />
-      </Pressable>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.stepperValue}>{quantity}</Text>
-      <Pressable accessibilityRole="button" accessibilityLabel="Decrease quantity" accessibilityState={{ disabled: !canDecrease }} disabled={!canDecrease} style={[styles.stepperButton, useLiquidGlass ? styles.stepperButtonGlass : null, !canDecrease ? styles.stepperButtonDisabled : null]} onPress={onDecrease}>
-        <Ionicons name="remove" size={16} color={uiPalette.text} />
-      </Pressable>
-      <View style={[styles.stepperDivider, useLiquidGlass ? styles.stepperDividerGlass : null]} />
-      <Pressable accessibilityRole="button" accessibilityLabel="Remove item" style={[styles.stepperButton, useLiquidGlass ? styles.stepperButtonGlass : null]} onPress={onRemove}>
-        <Ionicons name="trash-outline" size={16} color={uiPalette.textSecondary} />
-      </Pressable>
-    </View>
-  );
-
-  return useLiquidGlass ? (
-    <GlassView glassEffectStyle="regular" colorScheme="auto" isInteractive style={styles.stepperShell}>
-      {content}
-    </GlassView>
-  ) : (
-    <BlurView tint="light" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.stepperShell}>
-      {content}
-    </BlurView>
-  );
-}
-
-function SectionHeading({
-  eyebrow,
-  title,
-  action
-}: {
-  eyebrow: string;
-  title: string;
-  action?: React.ReactNode;
-}) {
-  return (
-    <View style={styles.sectionHeader}>
-      <View style={styles.sectionCopy}>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionEyebrow}>{eyebrow}</Text>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionTitle}>{title}</Text>
-      </View>
-      {action ? <View>{action}</View> : null}
-    </View>
-  );
-}
-
-function resolveItemIcon(name: string): keyof typeof Ionicons.glyphMap {
-  const haystack = name.toLowerCase();
-  if (haystack.includes("tea") || haystack.includes("matcha")) return "leaf-outline";
-  if (
-    haystack.includes("croissant") ||
-    haystack.includes("cookie") ||
-    haystack.includes("muffin") ||
-    haystack.includes("pastry")
-  ) {
-    return "nutrition-outline";
-  }
-  if (
-    haystack.includes("latte") ||
-    haystack.includes("espresso") ||
-    haystack.includes("coffee") ||
-    haystack.includes("cappuccino")
-  ) {
-    return "cafe-outline";
-  }
-  return "sparkles-outline";
-}
-
-function CartItemArtwork({
-  itemName,
-  imageUrl
-}: {
-  itemName: string;
-  imageUrl?: string;
-}) {
-  const [imageFailed, setImageFailed] = useState(false);
-  const optimizedImageUrl = resolveMenuImageUrl(imageUrl, "list");
-  const [activeImageUrl, setActiveImageUrl] = useState(optimizedImageUrl);
-
-  useEffect(() => {
-    setImageFailed(false);
-    setActiveImageUrl(optimizedImageUrl);
-  }, [optimizedImageUrl]);
-
-  return (
-    <View style={styles.itemIconWrap}>
-      {activeImageUrl && !imageFailed ? (
-        <Image
-          source={{ uri: activeImageUrl }}
-          style={styles.itemArtwork}
-          resizeMode="contain"
-          onError={() => {
-            if (imageUrl && activeImageUrl !== imageUrl) {
-              setActiveImageUrl(imageUrl);
-              return;
-            }
-            setImageFailed(true);
-          }}
-        />
-      ) : (
-        <Ionicons name={resolveItemIcon(itemName)} size={18} color={uiPalette.accent} />
-      )}
-    </View>
-  );
-}
-
 export default function CartModalScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const stickyFooterBottom = getTabBarBottomOffset(insets.bottom > 0);
   const stickyFooterClearance = stickyFooterBottom + TAB_BAR_HEIGHT + 16;
   const { isAuthenticated, authRecoveryState } = useAuthSession();
-  const { items, locationId: cartLocationId, itemCount, subtotalCents, discountCode, setDiscountCode, setQuantity, removeItem, clear } = useCart();
+  const {
+    items,
+    locationId: cartLocationId,
+    itemCount,
+    subtotalCents,
+    discountCode,
+    setDiscountCode,
+    setQuantity,
+    removeItem,
+    clear
+  } = useCart();
   const location = useLocationContext();
   const { confirmation, failure, retryOrder, clearRetryOrder, clearFailure } = useCheckoutFlow();
   const appConfigQuery = useAppConfigQuery();
@@ -275,15 +67,15 @@ export default function CartModalScreen() {
     : appConfigLoading
       ? "Loading checkout configuration..."
       : !storeConfig
-    ? "Store details are temporarily unavailable. Retry loading checkout before paying."
-    : !appConfig
-      ? "Checkout configuration is temporarily unavailable. Retry loading checkout before paying."
-      : storeClosedMessage;
+        ? "Store details are temporarily unavailable. Retry loading checkout before paying."
+        : !appConfig
+          ? "Checkout configuration is temporarily unavailable. Retry loading checkout before paying."
+          : storeClosedMessage;
   const checkoutReady = checkoutUnavailableMessage === null;
   const showCheckoutRetry = Boolean(checkoutUnavailableMessage) && !checkoutContextLoading;
   const quoteItems = useMemo(() => toQuoteItems(items), [items]);
   const retryableOrder = isRetryableCheckoutForCart(retryOrder, quoteItems, cartLocationId, location.selectedLocationId)
-    ? retryOrder ?? undefined
+    ? (retryOrder ?? undefined)
     : undefined;
   const menuItemsById = useMemo(
     () => new Map((menu?.categories ?? []).flatMap((category) => category.items).map((item) => [item.id, item])),
@@ -301,26 +93,30 @@ export default function CartModalScreen() {
     ? checkoutContextLoading
       ? "Loading checkout"
       : storeClosedMessage
-      ? "Store closed"
-      : "Checkout unavailable"
+        ? "Store closed"
+        : "Checkout unavailable"
     : !locationContextValid
       ? "Bag location unavailable"
-    : isAuthenticated
-      ? retryableOrder
-        ? "Retry payment"
-        : "Continue to checkout"
-      : getCheckoutRecoveryActionLabel(authRecoveryState);
-  const stickyActionIcon: keyof typeof Ionicons.glyphMap = !checkoutReady || !locationContextValid
-    ? "alert-circle-outline"
-    : isAuthenticated
-      ? retryableOrder
-        ? "refresh-outline"
-        : "card-outline"
-      : "log-in-outline";
+      : isAuthenticated
+        ? retryableOrder
+          ? "Retry payment"
+          : "Continue to checkout"
+        : getCheckoutRecoveryActionLabel(authRecoveryState);
+  const stickyActionIcon: keyof typeof Ionicons.glyphMap =
+    !checkoutReady || !locationContextValid
+      ? "alert-circle-outline"
+      : isAuthenticated
+        ? retryableOrder
+          ? "refresh-outline"
+          : "card-outline"
+        : "log-in-outline";
   const stickyActionValue = formatUsd(checkoutReady ? pricingSummary.totalCents : subtotalCents);
 
   useEffect(() => {
-    if (retryOrder && !isRetryableCheckoutForCart(retryOrder, quoteItems, cartLocationId, location.selectedLocationId)) {
+    if (
+      retryOrder &&
+      !isRetryableCheckoutForCart(retryOrder, quoteItems, cartLocationId, location.selectedLocationId)
+    ) {
       clearRetryOrder();
     }
   }, [cartLocationId, clearRetryOrder, location.selectedLocationId, quoteItems, retryOrder]);
@@ -367,7 +163,9 @@ export default function CartModalScreen() {
           {location.cartInvalidatedNotice ? (
             <View style={styles.locationNotice}>
               <Ionicons name="information-circle-outline" size={18} color={uiPalette.warning} />
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.locationNoticeText}>{location.cartInvalidatedNotice}</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.locationNoticeText}>
+                {location.cartInvalidatedNotice}
+              </Text>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Dismiss cart notice"
@@ -380,7 +178,9 @@ export default function CartModalScreen() {
           ) : null}
           <View style={styles.headerRow}>
             <View style={styles.headerCopy}>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.headerTitle}>Order Review</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.headerTitle}>
+                Order Review
+              </Text>
               <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.headerSubtitle}>
                 {storeConfig
                   ? storeConfig.isOpen
@@ -392,10 +192,9 @@ export default function CartModalScreen() {
               </Text>
             </View>
             {showCheckoutRetry ? (
-              <HeaderActionChip label="Retry" icon="refresh-outline" onPress={refreshCheckoutContext} />
+              <CartHeaderActionChip label="Retry" icon="refresh-outline" onPress={refreshCheckoutContext} />
             ) : null}
           </View>
-
         </View>
         <ScrollView
           bounces
@@ -412,70 +211,38 @@ export default function CartModalScreen() {
         >
           {items.length === 0 ? (
             <View style={styles.emptyPage}>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emptyEyebrow}>Bag</Text>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emptyTitle}>Your cart is empty.</Text>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emptyBody}>Add drinks or pastries from the menu, then come back here to review and pay.</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emptyEyebrow}>
+                Bag
+              </Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emptyTitle}>
+                Your cart is empty.
+              </Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emptyBody}>
+                Add drinks or pastries from the menu, then come back here to review and pay.
+              </Text>
             </View>
           ) : (
             <>
               <View style={styles.sectionBlock}>
-                <SectionHeading
+                <CartSectionHeading
                   eyebrow="Bag"
                   title="Items"
                   action={
-                    <HeaderActionChip label="Clear" icon="close-outline" onPress={() => setClearSheetOpen(true)} />
+                    <CartHeaderActionChip label="Clear" icon="close-outline" onPress={() => setClearSheetOpen(true)} />
                   }
                 />
 
                 <View style={styles.lineStack}>
-                  {items.map((item, index) => {
-                    const customizationSummary = describeCustomization(item, { fallback: "Standard build" });
-                    const notes = item.customization.notes.trim();
-                    const menuItem = menuItemsById.get(item.menuItemId);
-
-                    return (
-                      <View key={item.lineId}>
-                        <View style={styles.lineCard}>
-                          <View style={styles.lineTopRow}>
-                            <CartItemArtwork itemName={item.itemName} imageUrl={menuItem?.imageUrl} />
-
-                            <View style={[styles.lineBodyWrap, index < items.length - 1 ? styles.lineBodyWrapWithDivider : null]}>
-                              <View style={styles.lineBodyContent}>
-                                <View style={styles.lineDetailColumn}>
-                                  <View style={styles.lineHeaderRow}>
-                                    <View style={styles.lineCopy}>
-                                      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.itemTitle}>{item.itemName}</Text>
-                                      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.itemBody}>{`${customizationSummary} • ${formatUsd(item.unitPriceCents)} each`}</Text>
-                                      {notes ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.itemNoteText}>{notes}</Text> : null}
-                                    </View>
-
-                                    <View style={styles.linePriceBlock}>
-                                      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.linePriceValue}>{formatUsd(item.lineTotalCents)}</Text>
-                                    </View>
-                                  </View>
-
-                                  <View style={styles.lineFooter}>
-                                    <RowQuantityControl
-                                      quantity={item.quantity}
-                                      canDecrease={item.quantity > 1}
-                                      onDecrease={() => {
-                                        if (item.quantity <= 1) {
-                                          return;
-                                        }
-                                        setQuantity(item.lineId, item.quantity - 1);
-                                      }}
-                                      onIncrease={() => setQuantity(item.lineId, item.quantity + 1)}
-                                      onRemove={() => setPendingRemovalLineId(item.lineId)}
-                                    />
-                                  </View>
-                                </View>
-                              </View>
-                            </View>
-                          </View>
-                        </View>
-                      </View>
-                    );
-                  })}
+                  {items.map((item, index) => (
+                    <CartLineItem
+                      key={item.lineId}
+                      item={item}
+                      imageUrl={menuItemsById.get(item.menuItemId)?.imageUrl}
+                      isLast={index === items.length - 1}
+                      onSetQuantity={(quantity) => setQuantity(item.lineId, quantity)}
+                      onRemove={() => setPendingRemovalLineId(item.lineId)}
+                    />
+                  ))}
                 </View>
               </View>
 
@@ -484,17 +251,25 @@ export default function CartModalScreen() {
                   <View style={styles.pickupMethodBlock}>
                     <View style={styles.pickupMethodRow}>
                       <Ionicons name="location-outline" size={13} color={uiPalette.textMuted} />
-                      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.pickupMethodText}>{`Counter Pickup · ${storeConfig.prepEtaMinutes} min`}</Text>
+                      <Text
+                        allowFontScaling={false}
+                        maxFontSizeMultiplier={1}
+                        style={styles.pickupMethodText}
+                      >{`Counter Pickup · ${storeConfig.prepEtaMinutes} min`}</Text>
                     </View>
                   </View>
                 ) : null}
 
-                <SectionHeading eyebrow="Checkout" title="Summary" />
+                <CartSectionHeading eyebrow="Checkout" title="Summary" />
                 <View style={styles.checkoutContent}>
                   <View style={styles.deckDivider} />
                   <View style={styles.discountCodeBlock}>
-                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.discountCodeLabel}>Discount code</Text>
-                    <TextInput allowFontScaling={false} maxFontSizeMultiplier={1}
+                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.discountCodeLabel}>
+                      Discount code
+                    </Text>
+                    <TextInput
+                      allowFontScaling={false}
+                      maxFontSizeMultiplier={1}
                       value={discountCode}
                       onChangeText={setDiscountCode}
                       autoCapitalize="characters"
@@ -503,22 +278,30 @@ export default function CartModalScreen() {
                       placeholderTextColor={uiPalette.textMuted}
                       style={styles.discountCodeInput}
                     />
-                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryNote}>Discounts are validated against live store rules when you pay.</Text>
+                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryNote}>
+                      Discounts are validated against live store rules when you pay.
+                    </Text>
                   </View>
 
                   <View style={styles.summaryWrap}>
-                    <SummaryRow label={`Items (${itemCount})`} value={formatUsd(pricingSummary.subtotalCents)} />
+                    <CartSummaryRow label={`Items (${itemCount})`} value={formatUsd(pricingSummary.subtotalCents)} />
                     {storeConfig ? (
                       <>
-                        <SummaryRow
+                        <CartSummaryRow
                           label={`Tax (${(storeConfig.taxRateBasisPoints / 100).toFixed(2)}%)`}
                           value={formatUsd(pricingSummary.taxCents)}
                         />
                         <View style={styles.summaryDivider} />
-                        <SummaryRow label="Total due today" value={formatUsd(pricingSummary.totalCents)} emphasized />
+                        <CartSummaryRow
+                          label="Total due today"
+                          value={formatUsd(pricingSummary.totalCents)}
+                          emphasized
+                        />
                       </>
                     ) : (
-                      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryNote}>Reconnect store details to load live tax, pickup timing, and checkout totals.</Text>
+                      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryNote}>
+                        Reconnect store details to load live tax, pickup timing, and checkout totals.
+                      </Text>
                     )}
                   </View>
                 </View>
@@ -529,7 +312,7 @@ export default function CartModalScreen() {
 
         {items.length > 0 ? (
           <View pointerEvents="box-none" style={[styles.stickyFooterWrap, { bottom: stickyFooterBottom }]}>
-            <StickyActionPill
+            <CartStickyActionPill
               label={stickyActionLabel}
               value={stickyActionValue}
               icon={stickyActionIcon}
@@ -681,220 +464,8 @@ const styles = StyleSheet.create({
   sectionBlock: {
     marginTop: 4
   },
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-    gap: 12
-  },
-  sectionCopy: {
-    flex: 1
-  },
-  sectionEyebrow: {
-    fontSize: 11,
-    lineHeight: 14,
-    textTransform: "uppercase",
-    letterSpacing: 1.15,
-    color: uiPalette.textMuted,
-    fontWeight: "700"
-  },
-  sectionTitle: {
-    marginTop: 4,
-    fontSize: 20,
-    lineHeight: 24,
-    fontWeight: "700",
-    color: uiPalette.text,
-    letterSpacing: -0.3,
-    fontFamily: uiTypography.displayFamily
-  },
-  headerActionChipShell: {
-    borderRadius: 999
-  },
-  headerActionChipPressed: {
-    opacity: 0.8
-  },
-  headerActionChipFrame: {
-    borderRadius: 999,
-    overflow: "hidden"
-  },
-  headerActionChipInner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999
-  },
-  headerActionChipInnerGlass: {
-    backgroundColor: "rgba(255,255,255,0.025)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)"
-  },
-  headerActionChipInnerFallback: {
-    backgroundColor: "rgba(255,255,255,0.46)",
-    borderWidth: 1,
-    borderColor: uiPalette.border
-  },
-  headerActionChipText: {
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: "600",
-    color: uiPalette.textSecondary
-  },
   lineStack: {
     marginTop: 16
-  },
-  lineCard: {
-    paddingHorizontal: 0,
-    minHeight: 132,
-    borderRadius: 0
-  },
-  lineTopRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
-    width: "100%"
-  },
-  itemIconWrap: {
-    width: 88,
-    height: 132,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  itemArtwork: {
-    width: "100%",
-    height: "100%"
-  },
-  lineBodyWrap: {
-    flex: 1,
-    minWidth: 0,
-    minHeight: 132,
-    justifyContent: "center"
-  },
-  lineBodyWrapWithDivider: {
-    borderBottomWidth: 1,
-    borderBottomColor: uiPalette.border
-  },
-  lineBodyContent: {
-    minHeight: 132,
-    justifyContent: "center",
-    paddingVertical: 10
-  },
-  lineDetailColumn: {
-    flex: 1,
-    minHeight: 112,
-    justifyContent: "space-between"
-  },
-  lineHeaderRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12
-  },
-  lineCopy: {
-    flex: 1
-  },
-  itemTitle: {
-    fontSize: 16,
-    lineHeight: 20,
-    letterSpacing: 1.3,
-    textTransform: "uppercase",
-    color: uiPalette.text,
-    fontFamily: uiTypography.displayFamily,
-    fontWeight: "500"
-  },
-  itemBody: {
-    marginTop: 2,
-    fontSize: 12,
-    lineHeight: 14,
-    color: uiPalette.textSecondary
-  },
-  itemNoteText: {
-    marginTop: 4,
-    fontSize: 12,
-    lineHeight: 17,
-    color: uiPalette.textMuted
-  },
-  linePriceBlock: {
-    alignItems: "flex-end"
-  },
-  linePriceLabel: {
-    fontSize: 10,
-    lineHeight: 12,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    color: uiPalette.textMuted,
-    fontWeight: "700"
-  },
-  linePriceValue: {
-    fontSize: 14,
-    lineHeight: 20,
-    letterSpacing: 1.4,
-    textTransform: "uppercase",
-    color: uiPalette.text,
-    fontFamily: uiTypography.displayFamily,
-    fontWeight: "400"
-  },
-  lineFooter: {
-    marginTop: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "flex-end"
-  },
-  stepperShell: {
-    height: 40,
-    borderRadius: 999,
-    overflow: "hidden"
-  },
-  stepperInner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 8,
-    height: 40,
-    borderRadius: 999
-  },
-  stepperInnerGlass: {
-    backgroundColor: "rgba(255, 255, 255, 0.01)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.11)"
-  },
-  stepperInnerFallback: {
-    borderRadius: 999,
-    backgroundColor: uiPalette.surfaceStrong,
-    borderWidth: 1,
-    borderColor: uiPalette.border
-  },
-  stepperButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: uiPalette.surfaceMuted
-  },
-  stepperButtonGlass: {
-    backgroundColor: "rgba(255, 255, 255, 0.18)"
-  },
-  stepperButtonDisabled: {
-    opacity: 0.55
-  },
-  stepperValue: {
-    minWidth: 16,
-    fontSize: 15,
-    lineHeight: 18,
-    fontWeight: "700",
-    textAlign: "center",
-    color: uiPalette.text
-  },
-  stepperDivider: {
-    width: 1,
-    height: 24,
-    marginHorizontal: 3,
-    borderRadius: 999,
-    backgroundColor: "rgba(23, 21, 19, 0.20)"
-  },
-  stepperDividerGlass: {
-    backgroundColor: "rgba(23, 21, 19, 0.18)"
   },
   checkoutDeck: {
     marginTop: 18,
@@ -951,20 +522,6 @@ const styles = StyleSheet.create({
   summaryWrap: {
     gap: 10
   },
-  summaryRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 12
-  },
-  summaryText: {
-    fontSize: 14,
-    lineHeight: 22,
-    color: uiPalette.textSecondary
-  },
-  summaryStrong: {
-    fontWeight: "700",
-    color: uiPalette.text
-  },
   summaryDivider: {
     height: 1,
     backgroundColor: "rgba(23, 21, 19, 0.08)"
@@ -975,142 +532,9 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     color: uiPalette.textSecondary
   },
-  paymentStatusRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12
-  },
-  paymentStatusIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.56)",
-    borderWidth: 1,
-    borderColor: uiPalette.border
-  },
-  paymentStatusCopy: {
-    flex: 1
-  },
-  paymentStatusTitle: {
-    fontSize: 15,
-    lineHeight: 18,
-    fontWeight: "700",
-    color: uiPalette.text,
-    fontFamily: uiTypography.displayFamily
-  },
-  paymentStatusBody: {
-    marginTop: 4,
-    fontSize: 13,
-    lineHeight: 19,
-    color: uiPalette.textSecondary
-  },
-  devSection: {
-    marginTop: 16,
-    padding: 14,
-    borderRadius: 20,
-    backgroundColor: "rgba(255,255,255,0.44)",
-    borderWidth: 1,
-    borderColor: uiPalette.border
-  },
-  devEyebrow: {
-    marginBottom: 10,
-    fontSize: 11,
-    lineHeight: 14,
-    textTransform: "uppercase",
-    letterSpacing: 1.1,
-    color: uiPalette.textMuted,
-    fontWeight: "700"
-  },
-  tokenInput: {
-    minHeight: 52,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: uiPalette.border,
-    backgroundColor: uiPalette.surfaceStrong,
-    paddingHorizontal: 14,
-    color: uiPalette.text
-  },
-  cardInput: {
-    marginTop: 10
-  },
-  cardRow: {
-    marginTop: 10,
-    flexDirection: "row",
-    gap: 10
-  },
-  cardFieldSmall: {
-    flex: 1
-  },
-  cardFieldMedium: {
-    flex: 1.35
-  },
-  devActions: {
-    marginTop: 10,
-    flexDirection: "row",
-    gap: 10
-  },
   stickyFooterWrap: {
     position: "absolute",
     left: 18,
     right: 18
-  },
-  stickyPillShell: {
-    minHeight: 60,
-    borderRadius: 999,
-    overflow: "hidden",
-    shadowColor: "#000000",
-    shadowOpacity: 0.09,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6
-  },
-  stickyPillPressed: {
-    opacity: 0.9
-  },
-  stickyPillFrame: {
-    minHeight: 60,
-    borderRadius: 999,
-    overflow: "hidden"
-  },
-  stickyPillInner: {
-    minHeight: 60,
-    paddingHorizontal: 18,
-    borderRadius: 999,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "rgba(255,255,255,0.01)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)"
-  },
-  stickyPillInnerDisabled: {
-    backgroundColor: "rgba(255,255,255,0.02)"
-  },
-  stickyPillLead: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    flexShrink: 1
-  },
-  stickyPillLabel: {
-    fontSize: 15,
-    lineHeight: 18,
-    fontWeight: "600",
-    color: uiPalette.text
-  },
-  stickyPillLabelDisabled: {
-    color: uiPalette.textMuted
-  },
-  stickyPillValue: {
-    fontSize: 16,
-    lineHeight: 20,
-    fontWeight: "700",
-    color: uiPalette.text,
-    fontFamily: uiTypography.displayFamily
-  },
-  stickyPillValueDisabled: {
-    color: uiPalette.textMuted
   }
 });

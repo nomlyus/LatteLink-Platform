@@ -1,50 +1,25 @@
-import { Ionicons } from "@expo/vector-icons";
-import { BlurView } from "expo-blur";
-import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
+import { useInitialReveal } from "../src/ui/useInitialReveal";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import {
-  describeCustomizationSelection,
-  priceMenuItemCustomization,
-  type CustomizationValidationIssue
-} from "@lattelink/contracts-catalog";
-import {
-  Animated as RNAnimated,
-  Image,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-  type StyleProp,
-  type ViewStyle
-} from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { describeCustomizationSelection, priceMenuItemCustomization } from "@lattelink/contracts-catalog";
+import { Animated as RNAnimated, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCart } from "../src/cart/store";
 import { useLocationContext } from "../src/location/LocationProvider";
 import {
   buildDefaultCustomization,
   DEFAULT_CUSTOMIZATION,
-  isCustomizationOptionSelected,
-  normalizeCustomization,
   resolveCartCustomization,
   type CartCustomization
 } from "../src/cart/model";
 import { CustomizationGroupSection } from "../src/menu/CustomizationGroupSection";
-import {
-  formatUsd,
-  resolveMenuData,
-  resolveMenuImageUrl,
-  useMenuQuery,
-  type MenuItem,
-  type MenuItemCustomizationGroup,
-  type MenuItemCustomizationOption
-} from "../src/menu/catalog";
+import { ProductImage, SimpleModalState } from "../src/menu/MenuCustomizeStates";
+import { FooterPill, FooterQuantityPill } from "../src/menu/MenuCustomizeFooter";
+import { formatUsd, resolveMenuData, useMenuQuery, type MenuItem } from "../src/menu/catalog";
 import { CustomizeModalLoadingSheet } from "../src/menu/CustomizeModalLoadingSheet";
 import { getTabBarBottomOffset, TAB_BAR_HEIGHT } from "../src/navigation/tabBarMetrics";
 import { uiPalette, uiTypography } from "../src/ui/system";
+import { updateCustomizationOption, findGroupIssue } from "../src/menu/customizationSelection";
 
 const MAX_QUANTITY = 20;
 
@@ -57,247 +32,6 @@ function resolveItemId(input: string | string[] | undefined): string | null {
 function findMenuItemById(itemId: string | null, items: MenuItem[]): MenuItem | null {
   if (!itemId) return null;
   return items.find((item) => item.id === itemId) ?? null;
-}
-
-function canUseLiquidGlassFooter() {
-  if (Platform.OS !== "ios") return false;
-
-  try {
-    return isLiquidGlassAvailable();
-  } catch {
-    return false;
-  }
-}
-
-function updateCustomizationOption(
-  customization: CartCustomization,
-  group: MenuItemCustomizationGroup,
-  option: MenuItemCustomizationOption
-): CartCustomization {
-  const active = isCustomizationOptionSelected(customization, group.id, option.id);
-  const otherSelections = customization.selectedOptions.filter((selection) => selection.groupId !== group.id);
-  const groupSelections = customization.selectedOptions.filter((selection) => selection.groupId === group.id);
-
-  if (group.selectionType === "single") {
-    return normalizeCustomization({
-      ...customization,
-      selectedOptions: [...otherSelections, { groupId: group.id, optionId: option.id }]
-    });
-  }
-
-  if (active) {
-    return normalizeCustomization({
-      ...customization,
-      selectedOptions: customization.selectedOptions.filter(
-        (selection) => !(selection.groupId === group.id && selection.optionId === option.id)
-      )
-    });
-  }
-
-  if (groupSelections.length >= group.maxSelections) {
-    if (group.maxSelections === 1) {
-      return normalizeCustomization({
-        ...customization,
-        selectedOptions: [...otherSelections, { groupId: group.id, optionId: option.id }]
-      });
-    }
-
-    return customization;
-  }
-
-  return normalizeCustomization({
-    ...customization,
-    selectedOptions: [...customization.selectedOptions, { groupId: group.id, optionId: option.id }]
-  });
-}
-
-function findGroupIssue(issues: CustomizationValidationIssue[], groupId: string) {
-  return issues.find((issue) => issue.groupId === groupId);
-}
-
-function FooterPill({
-  children,
-  style
-}: {
-  children: ReactNode;
-  style?: StyleProp<ViewStyle>;
-}) {
-  const useLiquidGlass = canUseLiquidGlassFooter();
-
-  const content = (
-    <View style={[styles.footerPillInner, useLiquidGlass ? styles.footerPillInnerGlass : styles.footerPillInnerFallback]}>
-      {children}
-    </View>
-  );
-
-  return (
-    <View style={[styles.footerPillShell, style]}>
-      {useLiquidGlass ? (
-        <GlassView glassEffectStyle="regular" colorScheme="auto" isInteractive style={styles.footerPillFrame}>
-          {content}
-        </GlassView>
-      ) : (
-        <BlurView tint="light" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.footerPillFrame}>
-          {content}
-        </BlurView>
-      )}
-    </View>
-  );
-}
-
-function FooterQuantityPill({
-  quantity,
-  onDecrease,
-  onIncrease,
-  canDecrease,
-  canIncrease,
-  style
-}: {
-  quantity: number;
-  onDecrease: () => void;
-  onIncrease: () => void;
-  canDecrease: boolean;
-  canIncrease: boolean;
-  style?: StyleProp<ViewStyle>;
-}) {
-  const useLiquidGlass = canUseLiquidGlassFooter();
-
-  return (
-    <View style={[styles.footerQuantityShell, style]}>
-      <View pointerEvents="box-none" style={styles.footerQuantityMergeLayer}>
-        {useLiquidGlass ? (
-          <>
-            <GlassView glassEffectStyle="regular" colorScheme="auto" isInteractive style={styles.footerQuantityBaseGlass}>
-              <View style={styles.footerQuantityBaseGlassInner} />
-            </GlassView>
-            <View style={[styles.footerQuantityOrbGlassShell, styles.footerQuantityOrbGlassLeft]}>
-              <GlassView glassEffectStyle="clear" colorScheme="auto" isInteractive style={styles.footerQuantityOrbGlassView} />
-            </View>
-            <View style={[styles.footerQuantityOrbGlassShell, styles.footerQuantityOrbGlassRight]}>
-              <GlassView glassEffectStyle="clear" colorScheme="auto" isInteractive style={styles.footerQuantityOrbGlassView} />
-            </View>
-          </>
-        ) : (
-          <>
-            <BlurView tint="light" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.footerQuantityBaseGlass}>
-              <View style={styles.footerQuantityBaseFallbackInner} />
-            </BlurView>
-            <View style={[styles.footerQuantityOrbGlassShell, styles.footerQuantityOrbGlassLeft]}>
-              <BlurView tint="light" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.footerQuantityOrbGlassView}>
-                <View style={styles.footerMiniPillFallbackSurface} />
-              </BlurView>
-            </View>
-            <View style={[styles.footerQuantityOrbGlassShell, styles.footerQuantityOrbGlassRight]}>
-              <BlurView tint="light" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.footerQuantityOrbGlassView}>
-                <View style={styles.footerMiniPillFallbackSurface} />
-              </BlurView>
-            </View>
-          </>
-        )}
-      </View>
-
-      <View pointerEvents="box-none" style={styles.footerQuantityContentLayer}>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.footerQuantityValue}>{quantity}</Text>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Decrease quantity"
-          accessibilityState={{ disabled: !canDecrease }}
-          style={[styles.footerOrbButton, styles.footerQuantityOrbControlLeft, !canDecrease ? styles.footerStepperButtonDisabled : null]}
-          onPress={onDecrease}
-          disabled={!canDecrease}
-        >
-          <Ionicons name="remove" size={18} color={!canDecrease ? uiPalette.textMuted : uiPalette.text} />
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Increase quantity"
-          accessibilityState={{ disabled: !canIncrease }}
-          style={[styles.footerOrbButton, styles.footerQuantityOrbControlRight, !canIncrease ? styles.footerStepperButtonDisabled : null]}
-          onPress={onIncrease}
-          disabled={!canIncrease}
-        >
-          <Ionicons name="add" size={18} color={!canIncrease ? uiPalette.textMuted : uiPalette.text} />
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
-function ProductImage({
-  imageUrl,
-  onReady
-}: {
-  imageUrl?: string;
-  onReady?: () => void;
-}) {
-  const [imageFailed, setImageFailed] = useState(false);
-  const optimizedImageUrl = resolveMenuImageUrl(imageUrl, "hero");
-  const [activeImageUrl, setActiveImageUrl] = useState(optimizedImageUrl);
-
-  useEffect(() => {
-    setImageFailed(false);
-    setActiveImageUrl(optimizedImageUrl);
-  }, [optimizedImageUrl]);
-
-  useEffect(() => {
-    if (!activeImageUrl) {
-      onReady?.();
-    }
-  }, [activeImageUrl, onReady]);
-
-  return (
-    <View style={styles.heroImage}>
-      {activeImageUrl && !imageFailed ? (
-        <Image
-          source={{ uri: activeImageUrl }}
-          style={styles.heroImagePhoto}
-          resizeMode="cover"
-          onLoadEnd={onReady}
-          onError={() => {
-            if (imageUrl && activeImageUrl !== imageUrl) {
-              setActiveImageUrl(imageUrl);
-              return;
-            }
-            setImageFailed(true);
-            onReady?.();
-          }}
-        />
-      ) : (
-        <View style={styles.heroDrink}>
-          <Ionicons name="cafe-outline" size={34} color={uiPalette.surfaceStrong} />
-        </View>
-      )}
-    </View>
-  );
-}
-
-function SimpleModalState({
-  title,
-  body,
-  actionLabel,
-  onAction
-}: {
-  title: string;
-  body: string;
-  actionLabel?: string;
-  onAction?: () => void;
-}) {
-  return (
-    <View style={styles.backdrop}>
-      <View style={[styles.sheet, styles.centerState]}>
-        <View style={styles.handleWrap}>
-          <View style={styles.handle} />
-        </View>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.centerTitle}>{title}</Text>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.centerText}>{body}</Text>
-        {actionLabel && onAction ? (
-          <Pressable accessibilityRole="button" accessibilityLabel={actionLabel} onPress={onAction} style={styles.inlinePrimary}>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.inlinePrimaryText}>{actionLabel}</Text>
-          </Pressable>
-        ) : null}
-      </View>
-    </View>
-  );
 }
 
 export default function MenuCustomizeModalScreen() {
@@ -315,18 +49,18 @@ export default function MenuCustomizeModalScreen() {
   const menu = isInitialLoading ? null : resolveMenuData(menuQuery.data);
   const items = useMemo(() => menu?.categories.flatMap((category) => category.items) ?? [], [menu?.categories]);
   const item = useMemo(() => findMenuItemById(itemId, items), [itemId, items]);
-  const loadingOpacity = useRef(new RNAnimated.Value(1)).current;
 
   const [customization, setCustomization] = useState<CartCustomization>(DEFAULT_CUSTOMIZATION);
   const [quantity, setQuantity] = useState(1);
   const [showValidationErrors, setShowValidationErrors] = useState(false);
   const [cartLocationError, setCartLocationError] = useState<string | null>(null);
-  const [showLoadingOverlay, setShowLoadingOverlay] = useState(true);
-  const [didFinishInitialReveal, setDidFinishInitialReveal] = useState(false);
   const [readyHeroItemId, setReadyHeroItemId] = useState<string | null>(null);
 
   const heroReady = !item || !item.imageUrl || readyHeroItemId === item.id;
-  const shouldShowInitialLoading = !didFinishInitialReveal && (isInitialLoading || (Boolean(item) && !heroReady));
+  const { loadingOpacity, showLoadingOverlay } = useInitialReveal(isInitialLoading || (Boolean(item) && !heroReady), {
+    resetKey: itemId,
+    skipAnimation: !item && !isInitialLoading
+  });
 
   useEffect(() => {
     setCustomization(item ? buildDefaultCustomization(item.customizationGroups) : DEFAULT_CUSTOMIZATION);
@@ -334,15 +68,11 @@ export default function MenuCustomizeModalScreen() {
     setShowValidationErrors(false);
   }, [item]);
 
-  useEffect(() => {
-    setDidFinishInitialReveal(false);
-    setShowLoadingOverlay(true);
-    loadingOpacity.stopAnimation();
-    loadingOpacity.setValue(1);
-  }, [itemId, loadingOpacity]);
-
   const resolvedCustomization = useMemo(
-    () => (item ? resolveCartCustomization(item.customizationGroups, customization) : resolveCartCustomization([], customization)),
+    () =>
+      item
+        ? resolveCartCustomization(item.customizationGroups, customization)
+        : resolveCartCustomization([], customization),
     [customization, item]
   );
   const pricedCustomization = useMemo(
@@ -367,7 +97,9 @@ export default function MenuCustomizeModalScreen() {
 
     const rankByGroupId = new Map(item.customizationGroups.map((group, index) => [group.id, index] as const));
     return [...resolvedCustomization.groupSelections].sort(
-      (left, right) => (rankByGroupId.get(left.groupId) ?? Number.MAX_SAFE_INTEGER) - (rankByGroupId.get(right.groupId) ?? Number.MAX_SAFE_INTEGER)
+      (left, right) =>
+        (rankByGroupId.get(left.groupId) ?? Number.MAX_SAFE_INTEGER) -
+        (rankByGroupId.get(right.groupId) ?? Number.MAX_SAFE_INTEGER)
     );
   }, [item, resolvedCustomization.groupSelections]);
   const customizationPreview = useMemo(
@@ -382,36 +114,6 @@ export default function MenuCustomizeModalScreen() {
   );
   const priceLine = formatUsd(selectedUnitPriceCents);
   const metaLine = customizationPreview;
-  useEffect(() => {
-    if (didFinishInitialReveal) return;
-
-    if (!item && !isInitialLoading) {
-      loadingOpacity.stopAnimation();
-      loadingOpacity.setValue(0);
-      setShowLoadingOverlay(false);
-      setDidFinishInitialReveal(true);
-      return;
-    }
-
-    if (shouldShowInitialLoading) {
-      setShowLoadingOverlay(true);
-      loadingOpacity.stopAnimation();
-      loadingOpacity.setValue(1);
-      return;
-    }
-
-    setShowLoadingOverlay(true);
-    loadingOpacity.stopAnimation();
-    RNAnimated.timing(loadingOpacity, {
-      toValue: 0,
-      duration: 260,
-      useNativeDriver: true
-    }).start(({ finished }) => {
-      if (!finished) return;
-      setShowLoadingOverlay(false);
-      setDidFinishInitialReveal(true);
-    });
-  }, [didFinishInitialReveal, isInitialLoading, item, loadingOpacity, shouldShowInitialLoading]);
 
   function closeModal() {
     if (router.canGoBack()) {
@@ -428,19 +130,24 @@ export default function MenuCustomizeModalScreen() {
       return;
     }
 
-    const result = addItem({
-      menuItemId: item.id,
-      itemName: item.name,
-      basePriceCents: item.priceCents,
-      customizationGroups: item.customizationGroups,
-      customization,
-      quantity
-    }, location.selectedLocationId);
+    const result = addItem(
+      {
+        menuItemId: item.id,
+        itemName: item.name,
+        basePriceCents: item.priceCents,
+        customizationGroups: item.customizationGroups,
+        customization,
+        quantity
+      },
+      location.selectedLocationId
+    );
 
     if (!result.ok) {
-      setCartLocationError(result.reason === "location_mismatch"
-        ? "Your bag belongs to a different location. Clear it before adding items here."
-        : "Choose an available location before adding this item.");
+      setCartLocationError(
+        result.reason === "location_mismatch"
+          ? "Your bag belongs to a different location. Clear it before adding items here."
+          : "Choose an available location before adding this item."
+      );
       return;
     }
 
@@ -490,11 +197,21 @@ export default function MenuCustomizeModalScreen() {
 
             <View style={styles.content}>
               <View style={styles.titleRow}>
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.title, styles.titleText]}>{item.name}</Text>
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.price}>{priceLine}</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.title, styles.titleText]}>
+                  {item.name}
+                </Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.price}>
+                  {priceLine}
+                </Text>
               </View>
-              {metaLine ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.meta}>{metaLine}</Text> : null}
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.description}>{item.description}</Text>
+              {metaLine ? (
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.meta}>
+                  {metaLine}
+                </Text>
+              ) : null}
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.description}>
+                {item.description}
+              </Text>
 
               <View>
                 <View style={styles.customizationSectionsWrap}>
@@ -503,20 +220,30 @@ export default function MenuCustomizeModalScreen() {
                       key={group.id}
                       group={group}
                       customization={customization}
-                      validationMessage={showValidationErrors ? findGroupIssue(resolvedCustomization.issues, group.id)?.message : undefined}
-                      onSelectOption={(option) => setCustomization((prev) => updateCustomizationOption(prev, group, option))}
+                      validationMessage={
+                        showValidationErrors
+                          ? findGroupIssue(resolvedCustomization.issues, group.id)?.message
+                          : undefined
+                      }
+                      onSelectOption={(option) =>
+                        setCustomization((prev) => updateCustomizationOption(prev, group, option))
+                      }
                     />
                   ))}
                 </View>
 
                 <View style={styles.section}>
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionTitle}>Notes</Text>
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionBody}>Optional instructions for the barista.</Text>
-                  <TextInput allowFontScaling={false} maxFontSizeMultiplier={1}
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionTitle}>
+                    Notes
+                  </Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionBody}>
+                    Optional instructions for the barista.
+                  </Text>
+                  <TextInput
+                    allowFontScaling={false}
+                    maxFontSizeMultiplier={1}
                     value={customization.notes}
-                    onChangeText={(value) =>
-                      setCustomization((prev) => ({ ...prev, notes: value }))
-                    }
+                    onChangeText={(value) => setCustomization((prev) => ({ ...prev, notes: value }))}
                     placeholder="No foam, easy ice, half sweet..."
                     placeholderTextColor={uiPalette.textMuted}
                     style={styles.noteInput}
@@ -527,16 +254,30 @@ export default function MenuCustomizeModalScreen() {
 
               <View style={styles.summarySection}>
                 <View style={styles.summaryRow}>
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryLabel}>Customization</Text>
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryValue}>{formatUsd(customizationDeltaCents)}</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryLabel}>
+                    Customization
+                  </Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryValue}>
+                    {formatUsd(customizationDeltaCents)}
+                  </Text>
                 </View>
                 {showValidationErrors && !resolvedCustomization.valid ? (
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryError}>{resolvedCustomization.issues[0]?.message ?? "Please finish the required selections."}</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryError}>
+                    {resolvedCustomization.issues[0]?.message ?? "Please finish the required selections."}
+                  </Text>
                 ) : null}
-                {cartLocationError ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryError}>{cartLocationError}</Text> : null}
+                {cartLocationError ? (
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryError}>
+                    {cartLocationError}
+                  </Text>
+                ) : null}
                 <View style={styles.summaryRow}>
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryLabel}>Total</Text>
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryValueStrong}>{formatUsd(totalCents)}</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryLabel}>
+                    Total
+                  </Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryValueStrong}>
+                    {formatUsd(totalCents)}
+                  </Text>
                 </View>
               </View>
             </View>
@@ -544,8 +285,17 @@ export default function MenuCustomizeModalScreen() {
 
           <View pointerEvents="box-none" style={[styles.footerRow, { bottom: footerBottom }]}>
             <FooterPill style={styles.footerPrimaryPill}>
-              <Pressable accessibilityRole="button" accessibilityLabel="Add to cart" accessibilityState={{ disabled: !location.isReady || location.isSwitchingLocation }} onPress={addSelectedItem} disabled={!location.isReady || location.isSwitchingLocation} style={[styles.footerButton, styles.footerPrimaryButton]}>
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.footerPrimaryText}>Add to Cart</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Add to cart"
+                accessibilityState={{ disabled: !location.isReady || location.isSwitchingLocation }}
+                onPress={addSelectedItem}
+                disabled={!location.isReady || location.isSwitchingLocation}
+                style={[styles.footerButton, styles.footerPrimaryButton]}
+              >
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.footerPrimaryText}>
+                  Add to Cart
+                </Text>
               </Pressable>
             </FooterPill>
             <FooterQuantityPill
@@ -600,63 +350,9 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: "rgba(151, 160, 154, 0.52)"
   },
-  centerState: {
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 28
-  },
-  centerTitle: {
-    fontSize: 30,
-    lineHeight: 36,
-    color: uiPalette.text,
-    fontFamily: uiTypography.displayFamily,
-    fontWeight: "600",
-    textAlign: "center"
-  },
-  centerText: {
-    marginTop: 10,
-    fontSize: 15,
-    lineHeight: 24,
-    color: uiPalette.textSecondary,
-    textAlign: "center"
-  },
-  inlinePrimary: {
-    marginTop: 18,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 16,
-    backgroundColor: uiPalette.primary
-  },
-  inlinePrimaryText: {
-    color: uiPalette.primaryText,
-    fontSize: 15,
-    lineHeight: 20,
-    fontWeight: "600"
-  },
   heroWrap: {
     paddingHorizontal: 20,
     paddingTop: 36
-  },
-  heroImage: {
-    height: 420,
-    backgroundColor: "#9BD8FF",
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden"
-  },
-  heroImagePhoto: {
-    width: "100%",
-    height: "100%"
-  },
-  heroDrink: {
-    width: 126,
-    height: 280,
-    borderRadius: 30,
-    backgroundColor: "rgba(29, 26, 23, 0.68)",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.38)"
   },
   content: {
     paddingHorizontal: 20,
@@ -734,9 +430,6 @@ const styles = StyleSheet.create({
     color: uiPalette.text,
     textAlignVertical: "top"
   },
-  stepperButtonDisabled: {
-    opacity: 0.55
-  },
   summarySection: {
     marginBottom: 24
   },
@@ -782,38 +475,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8
   },
-  footerPillShell: {
-    borderRadius: 999,
-    overflow: "visible",
-    minHeight: 60,
-    shadowColor: "#000000",
-    shadowOpacity: 0.09,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6
-  },
-  footerPillFrame: {
-    minHeight: 60,
-    borderRadius: 999,
-    overflow: "hidden"
-  },
-  footerPillInner: {
-    minHeight: 60,
-    borderRadius: 999,
-    paddingHorizontal: 4,
-    paddingVertical: 2,
-    justifyContent: "center"
-  },
-  footerPillInnerGlass: {
-    backgroundColor: "transparent",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.3)"
-  },
-  footerPillInnerFallback: {
-    backgroundColor: "rgba(248, 244, 236, 0.98)",
-    borderWidth: 1,
-    borderColor: "rgba(230, 221, 208, 0.94)"
-  },
   footerPrimaryPill: {
     flex: 1.9
   },
@@ -834,106 +495,6 @@ const styles = StyleSheet.create({
   },
   footerPrimaryText: {
     fontSize: 17,
-    lineHeight: 22,
-    color: uiPalette.text,
-    fontWeight: "600"
-  },
-  footerQuantityShell: {
-    minHeight: 60,
-    borderRadius: 999,
-    overflow: "visible",
-    shadowColor: "#000000",
-    shadowOpacity: 0.09,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6
-  },
-  footerQuantityMergeLayer: {
-    ...StyleSheet.absoluteFillObject
-  },
-  footerQuantityBaseGlass: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 999,
-    overflow: "hidden"
-  },
-  footerQuantityBaseGlassInner: {
-    flex: 1,
-    borderRadius: 999,
-    backgroundColor: "rgba(255, 255, 255, 0.003)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.11)"
-  },
-  footerQuantityBaseFallbackInner: {
-    flex: 1,
-    borderRadius: 999,
-    backgroundColor: "rgba(248, 244, 236, 0.98)",
-    borderWidth: 1,
-    borderColor: "rgba(230, 221, 208, 0.94)"
-  },
-  footerQuantityOrbGlassShell: {
-    position: "absolute",
-    top: 9,
-    width: 42,
-    height: 42,
-    borderRadius: 999,
-    overflow: "visible",
-    shadowColor: "#000000",
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4
-  },
-  footerQuantityOrbGlassLeft: {
-    left: 6
-  },
-  footerQuantityOrbGlassRight: {
-    right: 6
-  },
-  footerQuantityOrbGlassView: {
-    width: 42,
-    height: 42,
-    borderRadius: 999,
-    overflow: "hidden"
-  },
-  footerMiniPillFallbackSurface: {
-    flex: 1,
-    borderRadius: 999,
-    backgroundColor: "rgba(248, 244, 236, 0.98)",
-    borderWidth: 1,
-    borderColor: "rgba(230, 221, 208, 0.94)",
-    padding: 2,
-    justifyContent: "center"
-  },
-  footerQuantityContentLayer: {
-    minHeight: 60,
-    width: "100%",
-    borderRadius: 999,
-    position: "relative",
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  footerOrbButton: {
-    position: "absolute",
-    top: 9,
-    width: 42,
-    height: 42,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  footerQuantityOrbControlLeft: {
-    left: 6
-  },
-  footerQuantityOrbControlRight: {
-    right: 6
-  },
-  footerStepperButtonDisabled: {
-    opacity: 0.5
-  },
-  footerQuantityValue: {
-    minWidth: 28,
-    textAlign: "center",
-    fontSize: 18,
     lineHeight: 22,
     color: uiPalette.text,
     fontWeight: "600"

@@ -2,67 +2,11 @@ import { useRouter } from "expo-router";
 import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthSession } from "../../src/auth/session";
-import {
-  getLoyaltyQueryErrorMessage,
-  useLoyaltyBalanceQuery,
-  useLoyaltyLedgerQuery,
-  type LoyaltyLedgerEntry
-} from "../../src/account/data";
+import { getLoyaltyQueryErrorMessage, useLoyaltyBalanceQuery, useLoyaltyLedgerQuery } from "../../src/account/data";
 import { AccountFloatingHeader, ACCOUNT_HEADER_HEIGHT } from "../../src/account/AccountFloatingHeader";
 import { isMobileLoyaltyVisible, resolveAppConfigData, useAppConfigQuery } from "../../src/menu/catalog";
-import { Button, Card, Chip, GlassCard, ScreenScroll, SectionLabel, uiPalette, uiTypography } from "../../src/ui/system";
-
-function formatDateTime(value: string) {
-  const parsed = Date.parse(value);
-  if (!Number.isFinite(parsed)) return value;
-
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit"
-  }).format(parsed);
-}
-
-function formatLedgerType(type: LoyaltyLedgerEntry["type"]) {
-  switch (type) {
-    case "EARN":
-      return "Earned";
-    case "REDEEM":
-      return "Redeemed";
-    case "REFUND":
-      return "Returned";
-    case "ADJUSTMENT":
-    default:
-      return "Adjusted";
-  }
-}
-
-function formatLedgerPoints(points: number) {
-  return `${points > 0 ? "+" : ""}${points} pts`;
-}
-
-function ActivityRow({
-  entry,
-  showDivider
-}: {
-  entry: LoyaltyLedgerEntry;
-  showDivider: boolean;
-}) {
-  return (
-    <View style={[styles.activityRow, showDivider ? styles.activityRowDivider : null]}>
-      <View style={styles.activityLeft}>
-        <Chip label={formatLedgerType(entry.type)} active={entry.points >= 0} />
-        {entry.orderId ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.activityOrder}>{`Order ${entry.orderId.slice(0, 8).toUpperCase()}`}</Text> : null}
-      </View>
-
-      <View style={styles.activityRight}>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.activityPoints, entry.points < 0 ? styles.activityPointsNegative : null]}>{formatLedgerPoints(entry.points)}</Text>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.activityMeta}>{formatDateTime(entry.createdAt)}</Text>
-      </View>
-    </View>
-  );
-}
+import { Button, Card, GlassCard, ScreenScroll, SectionLabel, uiPalette, uiTypography } from "../../src/ui/system";
+import { RewardActivityRow } from "../../src/account/RewardActivityRow";
 
 export default function RewardsPage() {
   const router = useRouter();
@@ -92,11 +36,18 @@ export default function RewardsPage() {
   if (!isAuthenticated) {
     return (
       <View style={styles.screenShell}>
-        <ScreenScroll bottomInset={48} contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}>
+        <ScreenScroll
+          bottomInset={48}
+          contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}
+        >
           <GlassCard style={styles.heroCard}>
             <SectionLabel label="Rewards" />
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>Sign in to view rewards.</Text>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroBody}>Rewards activity and balances are attached to your account.</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>
+              Sign in to view rewards.
+            </Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroBody}>
+              Rewards activity and balances are attached to your account.
+            </Text>
             <Button
               label="Sign In"
               variant="secondary"
@@ -106,18 +57,33 @@ export default function RewardsPage() {
           </GlassCard>
         </ScreenScroll>
 
-        <AccountFloatingHeader title="Rewards" insetTop={insets.top} onBack={goBack} backgroundColor={headerBackgroundColor} foregroundColor={headerForegroundColor} />
+        <AccountFloatingHeader
+          title="Rewards"
+          insetTop={insets.top}
+          onBack={goBack}
+          backgroundColor={headerBackgroundColor}
+          foregroundColor={headerForegroundColor}
+        />
       </View>
     );
   }
 
   return (
     <View style={styles.screenShell}>
-      <ScreenScroll bottomInset={48} contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}>
+      <ScreenScroll
+        bottomInset={48}
+        contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}
+      >
         <GlassCard style={styles.heroCard}>
           <SectionLabel label="Balance" />
           <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>
-            {loyaltyEnabled ? (loyaltyBalance ? `${loyaltyBalance.availablePoints} pts` : loyaltyError ? "Unavailable" : "Loading") : "Off"}
+            {loyaltyEnabled
+              ? loyaltyBalance
+                ? `${loyaltyBalance.availablePoints} pts`
+                : loyaltyError
+                  ? "Unavailable"
+                  : "Loading"
+              : "Off"}
           </Text>
           <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroBody}>
             {loyaltyEnabled
@@ -128,8 +94,16 @@ export default function RewardsPage() {
           </Text>
           {loyaltyEnabled ? (
             <View style={styles.balanceMetaWrap}>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.balanceMeta}>{`Pending ${loyaltyBalance ? loyaltyBalance.pendingPoints : "--"} pts`}</Text>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.balanceMeta}>{`Lifetime ${loyaltyBalance ? loyaltyBalance.lifetimeEarned : "--"} pts`}</Text>
+              <Text
+                allowFontScaling={false}
+                maxFontSizeMultiplier={1}
+                style={styles.balanceMeta}
+              >{`Pending ${loyaltyBalance ? loyaltyBalance.pendingPoints : "--"} pts`}</Text>
+              <Text
+                allowFontScaling={false}
+                maxFontSizeMultiplier={1}
+                style={styles.balanceMeta}
+              >{`Lifetime ${loyaltyBalance ? loyaltyBalance.lifetimeEarned : "--"} pts`}</Text>
             </View>
           ) : null}
           {loyaltyEnabled && loyaltyError ? (
@@ -147,20 +121,30 @@ export default function RewardsPage() {
         <Card style={styles.sectionCard}>
           <SectionLabel label="Activity" />
           {!loyaltyEnabled ? (
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.bodyText}>Loyalty is disabled for this client.</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.bodyText}>
+              Loyalty is disabled for this client.
+            </Text>
           ) : loyaltyLedger.length === 0 ? (
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.bodyText}>Your next paid order will show up here once points post.</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.bodyText}>
+              Your next paid order will show up here once points post.
+            </Text>
           ) : (
             <View style={styles.activityList}>
               {loyaltyLedger.map((entry, index) => (
-                <ActivityRow key={entry.id} entry={entry} showDivider={index < loyaltyLedger.length - 1} />
+                <RewardActivityRow key={entry.id} entry={entry} showDivider={index < loyaltyLedger.length - 1} />
               ))}
             </View>
           )}
         </Card>
       </ScreenScroll>
 
-      <AccountFloatingHeader title="Rewards" insetTop={insets.top} onBack={goBack} backgroundColor={headerBackgroundColor} foregroundColor={headerForegroundColor} />
+      <AccountFloatingHeader
+        title="Rewards"
+        insetTop={insets.top}
+        onBack={goBack}
+        backgroundColor={headerBackgroundColor}
+        foregroundColor={headerForegroundColor}
+      />
     </View>
   );
 }
@@ -214,45 +198,5 @@ const styles = StyleSheet.create({
   },
   activityList: {
     marginTop: 14
-  },
-  activityRow: {
-    minHeight: 72,
-    paddingVertical: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12
-  },
-  activityRowDivider: {
-    borderBottomWidth: 1,
-    borderBottomColor: uiPalette.border
-  },
-  activityLeft: {
-    flex: 1,
-    gap: 8
-  },
-  activityOrder: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: uiPalette.textSecondary
-  },
-  activityRight: {
-    alignItems: "flex-end",
-    gap: 4
-  },
-  activityPoints: {
-    fontSize: 14,
-    lineHeight: 18,
-    color: uiPalette.text,
-    fontFamily: uiTypography.displayFamily,
-    fontWeight: "600"
-  },
-  activityPointsNegative: {
-    color: uiPalette.danger
-  },
-  activityMeta: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: uiPalette.textSecondary
   }
 });

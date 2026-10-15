@@ -1,5 +1,6 @@
+import { canUseLiquidGlass } from "./glass";
 import { BlurView } from "expo-blur";
-import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
+import { GlassView } from "expo-glass-effect";
 import { LinearGradient } from "expo-linear-gradient";
 import type { ReactNode } from "react";
 import {
@@ -162,36 +163,13 @@ export function TabBarDepthBackdrop() {
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
       <View style={[styles.tabBarDepthBelowFade, { height: dockBottom + 10 }]}>
         <LinearGradient
-          colors={[
-            "rgba(0, 0, 0, 0)",
-            "rgba(0, 0, 0, 0.008)",
-            "rgba(0, 0, 0, 0.03)",
-            "rgba(0, 0, 0, 0.065)"
-          ]}
+          colors={["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0.008)", "rgba(0, 0, 0, 0.03)", "rgba(0, 0, 0, 0.065)"]}
           locations={[0, 0.62, 0.86, 1]}
           start={{ x: 0.5, y: 0 }}
           end={{ x: 0.5, y: 1 }}
           style={styles.tabBarDepthGradient}
         />
       </View>
-    </View>
-  );
-}
-
-type TitleBlockProps = {
-  title: string;
-  subtitle?: string;
-  action?: ReactNode;
-};
-
-export function TitleBlock({ title, subtitle, action }: TitleBlockProps) {
-  return (
-    <View style={styles.titleWrap}>
-      <View style={styles.titleCopy}>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.titleText}>{title}</Text>
-        {subtitle ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.subtitleText}>{subtitle}</Text> : null}
-      </View>
-      {action ? <View style={styles.titleAction}>{action}</View> : null}
     </View>
   );
 }
@@ -213,7 +191,7 @@ type GlassCardProps = {
 };
 
 export function GlassCard({ children, style, contentStyle }: GlassCardProps) {
-  const useLiquidGlass = canUseLiquidGlassCard();
+  const useLiquidGlass = canUseLiquidGlass();
 
   return (
     <View style={[styles.cardShell, style]}>
@@ -229,16 +207,6 @@ export function GlassCard({ children, style, contentStyle }: GlassCardProps) {
       <View style={[styles.cardContent, contentStyle]}>{children}</View>
     </View>
   );
-}
-
-function canUseLiquidGlassCard() {
-  if (Platform.OS !== "ios") return false;
-
-  try {
-    return isLiquidGlassAvailable();
-  } catch {
-    return false;
-  }
 }
 
 type ButtonProps = {
@@ -279,7 +247,13 @@ export function Button({
     >
       <View style={styles.buttonInner}>
         {left}
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.buttonText, buttonTextStyles[variant], labelStyle]}>{label}</Text>
+        <Text
+          allowFontScaling={false}
+          maxFontSizeMultiplier={1}
+          style={[styles.buttonText, buttonTextStyles[variant], labelStyle]}
+        >
+          {label}
+        </Text>
         {right}
       </View>
     </Pressable>
@@ -307,13 +281,23 @@ export function Chip({ label, active = false, onPress, style }: ChipProps) {
         style
       ]}
     >
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.chipText, active ? styles.chipTextActive : null]}>{label}</Text>
+      <Text
+        allowFontScaling={false}
+        maxFontSizeMultiplier={1}
+        style={[styles.chipText, active ? styles.chipTextActive : null]}
+      >
+        {label}
+      </Text>
     </Pressable>
   );
 }
 
 export function SectionLabel({ label }: { label: string }) {
-  return <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionLabel}>{label}</Text>;
+  return (
+    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionLabel}>
+      {label}
+    </Text>
+  );
 }
 
 const buttonVariantStyles = StyleSheet.create({
@@ -351,22 +335,6 @@ const styles = StyleSheet.create({
   backdropBase: {
     backgroundColor: uiPalette.background
   },
-  backdropGlow: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 180,
-    backgroundColor: "rgba(255,255,255,0.22)"
-  },
-  backdropWash: {
-    position: "absolute",
-    top: 116,
-    left: 20,
-    right: 20,
-    height: 1,
-    backgroundColor: "rgba(23, 21, 19, 0.06)"
-  },
   tabBarDepthBelowFade: {
     position: "absolute",
     left: 0,
@@ -375,33 +343,6 @@ const styles = StyleSheet.create({
   },
   tabBarDepthGradient: {
     ...StyleSheet.absoluteFillObject
-  },
-  titleWrap: {
-    flexDirection: "row",
-    gap: 14,
-    alignItems: "flex-start",
-    justifyContent: "space-between"
-  },
-  titleCopy: {
-    flex: 1
-  },
-  titleAction: {
-    paddingTop: 4
-  },
-  titleText: {
-    fontSize: 38,
-    lineHeight: 42,
-    fontWeight: "700",
-    letterSpacing: -1.2,
-    color: uiPalette.chromeText,
-    fontFamily: uiTypography.displayFamily
-  },
-  subtitleText: {
-    marginTop: 8,
-    fontSize: 15,
-    lineHeight: 23,
-    color: uiPalette.chromeMuted,
-    fontFamily: uiTypography.bodyFamily
   },
   card: {
     borderRadius: uiRadii.large,

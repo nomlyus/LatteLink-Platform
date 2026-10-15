@@ -1,112 +1,15 @@
 import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
-import { BlurView } from "expo-blur";
-import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
-import { Image, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo } from "react";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import { GlassActionPill } from "../src/cart/GlassActionPill";
-import { formatUsd, resolveMenuData, resolveMenuImageUrl, useMenuQuery, type MenuItem } from "../src/menu/catalog";
+import { formatUsd, resolveMenuData, useMenuQuery, type MenuItem } from "../src/menu/catalog";
+import { OrderItemThumbnail } from "../src/components/OrderItemThumbnail";
 import { useCheckoutFlow, type CheckoutConfirmation } from "../src/orders/flow";
 import { formatOrderDateTime } from "../src/orders/history";
+import { formatOrderItemDescription } from "../src/orders/presentation";
 import { uiPalette, uiTypography } from "../src/ui/system";
-
-function resolveOrderItemIcon(name: string) {
-  const haystack = name.toLowerCase();
-  if (haystack.includes("tea") || haystack.includes("matcha")) return "leaf-outline" as const;
-  if (
-    haystack.includes("croissant") ||
-    haystack.includes("cookie") ||
-    haystack.includes("muffin") ||
-    haystack.includes("pastry")
-  ) {
-    return "nutrition-outline" as const;
-  }
-  if (
-    haystack.includes("latte") ||
-    haystack.includes("espresso") ||
-    haystack.includes("coffee") ||
-    haystack.includes("cappuccino") ||
-    haystack.includes("cortado")
-  ) {
-    return "cafe-outline" as const;
-  }
-
-  return "sparkles-outline" as const;
-}
-
-function OrderItemThumbnail({
-  label,
-  imageUrl
-}: {
-  label: string;
-  imageUrl?: string;
-}) {
-  const [imageFailed, setImageFailed] = useState(false);
-  const optimizedImageUrl = resolveMenuImageUrl(imageUrl, "list");
-  const [activeImageUrl, setActiveImageUrl] = useState(optimizedImageUrl);
-
-  useEffect(() => {
-    setImageFailed(false);
-    setActiveImageUrl(optimizedImageUrl);
-  }, [optimizedImageUrl]);
-
-  return (
-    <View style={styles.menuLikeImage}>
-      {activeImageUrl && !imageFailed ? (
-        <Image
-          source={{ uri: activeImageUrl }}
-          style={styles.menuLikeImagePhoto}
-          resizeMode="cover"
-          onError={() => {
-            if (imageUrl && activeImageUrl !== imageUrl) {
-              setActiveImageUrl(imageUrl);
-              return;
-            }
-            setImageFailed(true);
-          }}
-        />
-      ) : (
-        <Ionicons name={resolveOrderItemIcon(label)} size={22} color={uiPalette.accent} />
-      )}
-    </View>
-  );
-}
-
-function formatOrderItemDescription(item: CheckoutConfirmation["items"][number], menuItem?: MenuItem) {
-  const selectedOptions = item.customization?.selectedOptions?.map((selection) => selection.optionLabel).filter(Boolean) ?? [];
-  const notes = item.customization?.notes?.trim();
-  const details = [...selectedOptions, ...(notes ? [notes] : [])];
-  const suffix = details.length > 0 ? details.join(" • ") : menuItem?.description?.trim() ?? "";
-  return suffix.length > 0 ? `${item.quantity}x • ${suffix}` : `${item.quantity}x`;
-}
-
-function canUseLiquidGlass() {
-  if (Platform.OS !== "ios") return false;
-
-  try {
-    return isLiquidGlassAvailable();
-  } catch {
-    return false;
-  }
-}
-
-function PickupCodePill({ code }: { code: string }) {
-  const useLiquidGlass = canUseLiquidGlass();
-
-  return (
-    <View style={styles.pickupCodePillShell}>
-      {useLiquidGlass ? (
-        <GlassView glassEffectStyle="regular" colorScheme="auto" isInteractive style={styles.pickupCodePillFrame} />
-      ) : (
-        <BlurView tint="light" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.pickupCodePillFrame} />
-      )}
-      <View pointerEvents="none" style={styles.pickupCodePillContent}>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.pickupCodePillText}>{code}</Text>
-      </View>
-    </View>
-  );
-}
+import { PickupCodePill, SummaryRow } from "../src/orders/CheckoutSuccessPrimitives";
 
 function resolveConfirmationCopy(confirmation: CheckoutConfirmation | null) {
   if (!confirmation) {
@@ -129,23 +32,6 @@ function resolveConfirmationCopy(confirmation: CheckoutConfirmation | null) {
   };
 }
 
-function SummaryRow({
-  label,
-  value,
-  emphasized = false
-}: {
-  label: string;
-  value: string;
-  emphasized?: boolean;
-}) {
-  return (
-    <View style={styles.summaryRow}>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryLabel}>{label}</Text>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.summaryValue, emphasized ? styles.summaryValueStrong : null]}>{value}</Text>
-    </View>
-  );
-}
-
 export default function CheckoutSuccessScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -154,7 +40,8 @@ export default function CheckoutSuccessScreen() {
   const menuQuery = useMenuQuery();
   const menu = resolveMenuData(menuQuery.data);
   const menuItemsById = useMemo(
-    () => new Map((menu?.categories ?? []).flatMap((category) => category.items).map((item) => [item.id, item] as const)),
+    () =>
+      new Map((menu?.categories ?? []).flatMap((category) => category.items).map((item) => [item.id, item] as const)),
     [menu?.categories]
   );
   const resolvedItems = resolvedConfirmation?.items ?? [];
@@ -189,10 +76,16 @@ export default function CheckoutSuccessScreen() {
           {resolvedConfirmation ? (
             <>
               <View style={styles.heroBlock}>
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>{confirmationCopy.title}</Text>
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>{confirmationCopy.body}</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>
+                  {confirmationCopy.title}
+                </Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>
+                  {confirmationCopy.body}
+                </Text>
                 <View style={styles.heroCodeRow}>
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroCodeLabel}>Pickup Code</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroCodeLabel}>
+                    Pickup Code
+                  </Text>
                   <PickupCodePill code={resolvedConfirmation.pickupCode} />
                 </View>
               </View>
@@ -200,7 +93,9 @@ export default function CheckoutSuccessScreen() {
               <View style={[styles.pickupCodeStage, resolvedItems.length > 0 ? styles.pickupCodeStageWithItems : null]}>
                 {resolvedItems.length > 0 ? (
                   <View style={styles.orderItemsBlock}>
-                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.orderItemsLabel}>Items</Text>
+                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.orderItemsLabel}>
+                      Items
+                    </Text>
                     {resolvedItems.map((item, index) => {
                       const menuItem = menuItemsById.get(item.itemId) as MenuItem | undefined;
                       const label = item.itemName ?? menuItem?.name ?? item.itemId;
@@ -210,15 +105,41 @@ export default function CheckoutSuccessScreen() {
                       return (
                         <View key={`${item.itemId}-${index}`} style={styles.menuLikeRow}>
                           <View style={styles.menuLikeRowMain}>
-                            <OrderItemThumbnail label={label} imageUrl={menuItem?.imageUrl} />
-                            <View style={[styles.menuLikeBodyWrap, index < resolvedItems.length - 1 ? styles.menuLikeBodyWrapWithDivider : null]}>
+                            <OrderItemThumbnail
+                              label={label}
+                              imageUrl={menuItem?.imageUrl}
+                              style={styles.menuLikeImage}
+                            />
+                            <View
+                              style={[
+                                styles.menuLikeBodyWrap,
+                                index < resolvedItems.length - 1 ? styles.menuLikeBodyWrapWithDivider : null
+                              ]}
+                            >
                               <View style={styles.menuLikeBodyContent}>
                                 <View style={styles.menuLikeCopy}>
                                   <View style={styles.menuLikeTitleRow}>
-                                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.menuLikeTitle}>{label}</Text>
-                                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.menuLikeMeta}>{formatUsd(lineTotal)}</Text>
+                                    <Text
+                                      allowFontScaling={false}
+                                      maxFontSizeMultiplier={1}
+                                      style={styles.menuLikeTitle}
+                                    >
+                                      {label}
+                                    </Text>
+                                    <Text
+                                      allowFontScaling={false}
+                                      maxFontSizeMultiplier={1}
+                                      style={styles.menuLikeMeta}
+                                    >
+                                      {formatUsd(lineTotal)}
+                                    </Text>
                                   </View>
-                                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} numberOfLines={3} style={styles.menuLikeDescription}>
+                                  <Text
+                                    allowFontScaling={false}
+                                    maxFontSizeMultiplier={1}
+                                    numberOfLines={3}
+                                    style={styles.menuLikeDescription}
+                                  >
                                     {description}
                                   </Text>
                                 </View>
@@ -240,8 +161,12 @@ export default function CheckoutSuccessScreen() {
             </>
           ) : (
             <View style={styles.heroBlockEmpty}>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>{confirmationCopy.title}</Text>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>{confirmationCopy.body}</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>
+                {confirmationCopy.title}
+              </Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>
+                {confirmationCopy.body}
+              </Text>
             </View>
           )}
         </ScrollView>
@@ -326,32 +251,6 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
     justifyContent: "flex-start"
   },
-  pickupCodePillShell: {
-    position: "relative",
-    alignSelf: "flex-start",
-    borderRadius: 999,
-    overflow: "hidden"
-  },
-  pickupCodePillFrame: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 999,
-    overflow: "hidden"
-  },
-  pickupCodePillContent: {
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  pickupCodePillText: {
-    fontSize: 16,
-    lineHeight: 20,
-    letterSpacing: 1.3,
-    color: uiPalette.text,
-    fontFamily: uiTypography.displayFamily,
-    fontWeight: "600"
-  },
   orderItemsBlock: {
     width: "100%",
     maxWidth: 460,
@@ -378,14 +277,8 @@ const styles = StyleSheet.create({
   menuLikeImage: {
     width: 108,
     height: 132,
-    backgroundColor: "#D5D4CE",
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden"
-  },
-  menuLikeImagePhoto: {
-    width: "100%",
-    height: "100%"
+    borderRadius: 0,
+    backgroundColor: "#D5D4CE"
   },
   menuLikeBodyWrap: {
     flex: 1,
@@ -438,33 +331,6 @@ const styles = StyleSheet.create({
   },
   summarySection: {
     paddingTop: 2
-  },
-  summaryRow: {
-    paddingVertical: 13,
-    borderBottomWidth: 1,
-    borderBottomColor: uiPalette.border,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 16
-  },
-  summaryLabel: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: uiPalette.textSecondary
-  },
-  summaryValue: {
-    flexShrink: 1,
-    fontSize: 14,
-    lineHeight: 20,
-    color: uiPalette.text,
-    textAlign: "right"
-  },
-  summaryValueStrong: {
-    fontFamily: uiTypography.displayFamily,
-    fontWeight: "600",
-    letterSpacing: 1,
-    textTransform: "uppercase"
   },
   footerContent: {
     marginTop: "auto",

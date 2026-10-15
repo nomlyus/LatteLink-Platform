@@ -86,13 +86,6 @@ export function resolveCartCustomization(
   });
 }
 
-export function getCustomizationDeltaCents(
-  groups: MenuItemCustomizationGroup[],
-  customization: CartCustomization | undefined
-): number {
-  return resolveCartCustomization(groups, customization).customizationDeltaCents;
-}
-
 export function getUnitPriceCents(
   basePriceCents: number,
   groups: MenuItemCustomizationGroup[],
@@ -210,9 +203,7 @@ export function removeCartItem(items: CartItem[], lineId: string): CartItem[] {
 }
 
 function withCartItems(cart: CartSnapshot, items: CartItem[]): CartSnapshot {
-  return items.length === 0
-    ? EMPTY_CART_SNAPSHOT
-    : { ...cart, items };
+  return items.length === 0 ? EMPTY_CART_SNAPSHOT : { ...cart, items };
 }
 
 export function addCartItemAtLocation(
