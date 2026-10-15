@@ -7,5 +7,6 @@ packages:
   - infra/terraform/envs/*
 
 onlyBuiltDependencies:
+  - '@sentry/cli'
   - esbuild
   - sharp

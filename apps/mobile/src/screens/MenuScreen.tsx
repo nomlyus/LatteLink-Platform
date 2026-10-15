@@ -381,7 +381,7 @@ const styles = StyleSheet.create({
     borderTopColor: uiPalette.border
   },
   loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 30
   },
   errorShell: {

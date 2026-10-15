@@ -174,8 +174,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     elevation: 6
   },
-  footerQuantityMergeLayer: { ...StyleSheet.absoluteFillObject },
-  footerQuantityBaseGlass: { ...StyleSheet.absoluteFillObject, borderRadius: 999, overflow: "hidden" },
+  footerQuantityMergeLayer: { ...StyleSheet.absoluteFill },
+  footerQuantityBaseGlass: { ...StyleSheet.absoluteFill, borderRadius: 999, overflow: "hidden" },
   footerQuantityBaseGlassInner: {
     flex: 1,
     borderRadius: 999,

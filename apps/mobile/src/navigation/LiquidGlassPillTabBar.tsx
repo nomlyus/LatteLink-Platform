@@ -430,10 +430,10 @@ const styles = StyleSheet.create({
     elevation: 2
   },
   glassMergeLayer: {
-    ...StyleSheet.absoluteFillObject
+    ...StyleSheet.absoluteFill
   },
   glassBase: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 999,
     overflow: "hidden"
   },
@@ -479,7 +479,7 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent"
   },
   baseIconRow: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     paddingHorizontal: 3,
     paddingVertical: 3,
     flexDirection: "row",

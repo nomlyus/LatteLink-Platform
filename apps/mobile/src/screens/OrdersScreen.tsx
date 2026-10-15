@@ -313,7 +313,7 @@ const styles = StyleSheet.create({
     flex: 1
   },
   loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 30
   },
   pageHeader: {

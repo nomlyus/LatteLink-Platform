@@ -144,9 +144,8 @@ export function DateSheet({
             mode="date"
             display="spinner"
             maximumDate={maxDate}
-            onChange={(_, date) => {
-              if (date) onChange(date);
-            }}
+            onValueChange={(_, date) => onChange(date)}
+            onDismiss={() => onChange(defaultDate)}
             style={styles.datePicker}
             textColor={uiPalette.text}
           />

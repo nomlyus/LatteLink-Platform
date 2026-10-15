@@ -196,7 +196,7 @@ const styles = StyleSheet.create({
     elevation: 3
   },
   sectionFrame: {
-    ...StyleSheet.absoluteFillObject
+    ...StyleSheet.absoluteFill
   },
   sectionGlassInner: {
     flex: 1,

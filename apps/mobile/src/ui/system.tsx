@@ -342,7 +342,7 @@ const styles = StyleSheet.create({
     bottom: 0
   },
   tabBarDepthGradient: {
-    ...StyleSheet.absoluteFillObject
+    ...StyleSheet.absoluteFill
   },
   card: {
     borderRadius: uiRadii.large,
@@ -361,7 +361,7 @@ const styles = StyleSheet.create({
     ...uiShadow.card
   },
   cardFrame: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: uiRadii.large,
     overflow: "hidden"
   },

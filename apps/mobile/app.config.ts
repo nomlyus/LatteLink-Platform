@@ -65,14 +65,9 @@ const config: ExpoConfig = {
   name: nativeIdentity.displayName,
   slug: nativeIdentity.slug,
   scheme: nativeIdentity.scheme,
-  version: process.env.APP_VERSION ?? "1.2.0",
+  version: process.env.APP_VERSION ?? "1.3.0",
   orientation: "portrait",
   icon: nativeIdentity.iconPath,
-  splash: {
-    image: nativeIdentity.splashPath,
-    resizeMode: "contain",
-    backgroundColor: "#F7F4ED"
-  },
   userInterfaceStyle: "light",
   updates: {
     ...(nativeIdentity.easProjectId ? { url: `https://u.expo.dev/${nativeIdentity.easProjectId}` } : {})
@@ -94,7 +89,7 @@ const config: ExpoConfig = {
           }
         : {})
     },
-    runtimeVersion: process.env.APP_RUNTIME_VERSION ?? "1.2.0"
+    runtimeVersion: process.env.APP_RUNTIME_VERSION ?? "1.3.0"
   },
   android: {
     runtimeVersion: {
@@ -102,7 +97,8 @@ const config: ExpoConfig = {
     }
   },
   experiments: {
-    typedRoutes: true
+    typedRoutes: true,
+    reactCompiler: false
   },
   extra: {
     appVariant: nativeIdentity.variant,
@@ -118,6 +114,21 @@ const config: ExpoConfig = {
     "expo-secure-store",
     "expo-font",
     "expo-apple-authentication",
+    [
+      "expo-splash-screen",
+      {
+        image: nativeIdentity.splashPath,
+        resizeMode: "contain",
+        backgroundColor: "#F7F4ED",
+        enableFullScreenImage_legacy: true
+      }
+    ],
+    [
+      "expo-build-properties",
+      {
+        ios: { deploymentTarget: "16.4", useFrameworks: "dynamic" }
+      }
+    ],
     stripePlugin,
     [
       "expo-notifications",

@@ -93,6 +93,5 @@ const nodeModulesPaths = new Set([
 
 config.watchFolders = [...watchFolders];
 config.resolver.nodeModulesPaths = [...nodeModulesPaths];
-config.resolver.unstable_enableSymlinks = true;
 
 module.exports = withNativeWind(config, { input: "./global.css" });

@@ -78,7 +78,7 @@ const styles = StyleSheet.create({
     overflow: "hidden"
   },
   statusPillFrame: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 999,
     overflow: "hidden"
   },

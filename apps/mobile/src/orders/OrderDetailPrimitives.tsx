@@ -50,7 +50,7 @@ const styles = StyleSheet.create({
     overflow: "hidden"
   },
   statusBadgeFrame: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 999,
     overflow: "hidden"
   },

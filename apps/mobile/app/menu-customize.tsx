@@ -434,7 +434,7 @@ const styles = StyleSheet.create({
     marginBottom: 24
   },
   loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 20
   },
   summaryRow: {

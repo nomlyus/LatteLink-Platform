@@ -347,7 +347,7 @@ const styles = StyleSheet.create({
     elevation: 2
   },
   baseIconRow: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     paddingHorizontal: 3,
     paddingVertical: 3,
     flexDirection: "row",

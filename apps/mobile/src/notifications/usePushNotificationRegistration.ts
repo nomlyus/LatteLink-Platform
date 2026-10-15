@@ -11,7 +11,6 @@ Notifications.setNotificationHandler({
   handleNotification: async () => {
     const active = AppState.currentState === "active";
     return {
-      shouldShowAlert: !active,
       shouldShowBanner: !active,
       shouldShowList: true,
       shouldPlaySound: !active,

@@ -1,11 +1,12 @@
 {
   "cli": {
-    "version": ">= 16.0.0",
+    "version": ">= 24.14.0",
     "appVersionSource": "remote"
   },
   "build": {
     "base": {
       "ios": {
+        "image": "macos-tahoe-26.5-xcode-26.6",
         "resourceClass": "m-medium"
       }
     },

@@ -56,7 +56,7 @@ const styles = StyleSheet.create({
     overflow: "hidden"
   },
   pickupCodePillFrame: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 999,
     overflow: "hidden"
   },
