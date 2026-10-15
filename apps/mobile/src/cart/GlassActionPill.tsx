@@ -39,7 +39,7 @@ export function GlassActionPill({ label, onPress, tone = "default", disabled = f
         tone === "danger" ? styles.actionPillInnerDanger : null
       ]}
     >
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1}
+      <Text
         style={[
           styles.actionPillText,
           tone === "danger" ? styles.actionPillTextDanger : null,
@@ -52,7 +52,14 @@ export function GlassActionPill({ label, onPress, tone = "default", disabled = f
   );
 
   return (
-    <Pressable disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.actionPillShell, pressed && !disabled ? styles.actionPillPressed : null, disabled ? styles.actionPillDisabled : null]}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [styles.actionPillShell, pressed && !disabled ? styles.actionPillPressed : null, disabled ? styles.actionPillDisabled : null]}
+    >
       {useLiquidGlass ? (
         <GlassView
           glassEffectStyle="regular"

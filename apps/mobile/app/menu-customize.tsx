@@ -196,8 +196,10 @@ function FooterQuantityPill({
       </View>
 
       <View pointerEvents="box-none" style={styles.footerQuantityContentLayer}>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.footerQuantityValue}>{quantity}</Text>
+        <Text style={styles.footerQuantityValue}>{quantity}</Text>
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Decrease quantity"
           style={[styles.footerOrbButton, styles.footerQuantityOrbControlLeft, !canDecrease ? styles.footerStepperButtonDisabled : null]}
           onPress={onDecrease}
           disabled={!canDecrease}
@@ -205,6 +207,8 @@ function FooterQuantityPill({
           <Ionicons name="remove" size={18} color={!canDecrease ? uiPalette.textMuted : uiPalette.text} />
         </Pressable>
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Increase quantity"
           style={[styles.footerOrbButton, styles.footerQuantityOrbControlRight, !canIncrease ? styles.footerStepperButtonDisabled : null]}
           onPress={onIncrease}
           disabled={!canIncrease}
@@ -281,11 +285,11 @@ function SimpleModalState({
         <View style={styles.handleWrap}>
           <View style={styles.handle} />
         </View>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.centerTitle}>{title}</Text>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.centerText}>{body}</Text>
+        <Text style={styles.centerTitle}>{title}</Text>
+        <Text style={styles.centerText}>{body}</Text>
         {actionLabel && onAction ? (
-          <Pressable onPress={onAction} style={styles.inlinePrimary}>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.inlinePrimaryText}>{actionLabel}</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel={actionLabel} onPress={onAction} style={styles.inlinePrimary}>
+            <Text style={styles.inlinePrimaryText}>{actionLabel}</Text>
           </Pressable>
         ) : null}
       </View>
@@ -462,11 +466,11 @@ export default function MenuCustomizeModalScreen() {
 
             <View style={styles.content}>
               <View style={styles.titleRow}>
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.title, styles.titleText]}>{item.name}</Text>
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.price}>{priceLine}</Text>
+                <Text style={[styles.title, styles.titleText]}>{item.name}</Text>
+                <Text style={styles.price}>{priceLine}</Text>
               </View>
-              {metaLine ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.meta}>{metaLine}</Text> : null}
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.description}>{item.description}</Text>
+              {metaLine ? <Text style={styles.meta}>{metaLine}</Text> : null}
+              <Text style={styles.description}>{item.description}</Text>
 
               <View>
                 <View style={styles.customizationSectionsWrap}>
@@ -482,9 +486,9 @@ export default function MenuCustomizeModalScreen() {
                 </View>
 
                 <View style={styles.section}>
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionTitle}>Notes</Text>
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionBody}>Optional instructions for the barista.</Text>
-                  <TextInput allowFontScaling={false} maxFontSizeMultiplier={1}
+                  <Text style={styles.sectionTitle}>Notes</Text>
+                  <Text style={styles.sectionBody}>Optional instructions for the barista.</Text>
+                  <TextInput
                     value={customization.notes}
                     onChangeText={(value) =>
                       setCustomization((prev) => ({ ...prev, notes: value }))
@@ -499,15 +503,15 @@ export default function MenuCustomizeModalScreen() {
 
               <View style={styles.summarySection}>
                 <View style={styles.summaryRow}>
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryLabel}>Customization</Text>
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryValue}>{formatUsd(customizationDeltaCents)}</Text>
+                  <Text style={styles.summaryLabel}>Customization</Text>
+                  <Text style={styles.summaryValue}>{formatUsd(customizationDeltaCents)}</Text>
                 </View>
                 {showValidationErrors && !resolvedCustomization.valid ? (
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryError}>{resolvedCustomization.issues[0]?.message ?? "Please finish the required selections."}</Text>
+                  <Text style={styles.summaryError}>{resolvedCustomization.issues[0]?.message ?? "Please finish the required selections."}</Text>
                 ) : null}
                 <View style={styles.summaryRow}>
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryLabel}>Total</Text>
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryValueStrong}>{formatUsd(totalCents)}</Text>
+                  <Text style={styles.summaryLabel}>Total</Text>
+                  <Text style={styles.summaryValueStrong}>{formatUsd(totalCents)}</Text>
                 </View>
               </View>
             </View>
@@ -515,8 +519,8 @@ export default function MenuCustomizeModalScreen() {
 
           <View pointerEvents="box-none" style={[styles.footerRow, { bottom: footerBottom }]}>
             <FooterPill style={styles.footerPrimaryPill}>
-              <Pressable onPress={addSelectedItem} style={[styles.footerButton, styles.footerPrimaryButton]}>
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.footerPrimaryText}>Add to Cart</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel="Add to cart" onPress={addSelectedItem} style={[styles.footerButton, styles.footerPrimaryButton]}>
+                <Text style={styles.footerPrimaryText}>Add to Cart</Text>
               </Pressable>
             </FooterPill>
             <FooterQuantityPill

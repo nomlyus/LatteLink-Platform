@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 type RuntimeConfig = {
@@ -39,6 +41,14 @@ afterEach(() => {
 });
 
 describe("mobile API environment guard", () => {
+  it("keeps the example environment aligned with release host guards", () => {
+    const example = readFileSync(join(import.meta.dirname, "..", ".env.example"), "utf8");
+
+    expect(example).not.toContain("example.com");
+    expect(example).toContain("EXPO_PUBLIC_API_BASE_URL=https://api-dev.nomly.us/v1");
+    expect(example).toContain("IOS_ASSOCIATED_DOMAINS=webcredentials:api-dev.nomly.us");
+  });
+
   it("allows beta builds to use the dev API", async () => {
     const { API_BASE_URL, MOBILE_API_ENVIRONMENT } = await loadApiClientEnvironment({
       appVariant: "beta",

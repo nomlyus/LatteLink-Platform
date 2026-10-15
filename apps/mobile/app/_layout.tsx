@@ -85,7 +85,10 @@ function StartupCatalogGate({
 }) {
   const appConfigQuery = useAppConfigQuery();
   const apiConfigurationError = MOBILE_API_ENVIRONMENT.apiConfigurationError;
-  const hasBlockingError = Boolean(apiConfigurationError) || (!!appConfigQuery.error && !appConfigQuery.data);
+  // Keep the shell usable during backend outages. Individual screens expose
+  // their own unavailable/loading states; only invalid build configuration is
+  // unrecoverable through a retry.
+  const hasBlockingError = Boolean(apiConfigurationError);
   const isInitialLoading = appConfigQuery.isLoading && !appConfigQuery.data && !apiConfigurationError;
   const errorMessage = apiConfigurationError
     ? apiConfigurationError
@@ -105,8 +108,8 @@ function StartupCatalogGate({
         <ScreenBackdrop />
         <View style={styles.startupCard}>
           <ActivityIndicator color={uiPalette.primary} />
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.startupTitle}>Loading live store data</Text>
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.startupBody}>Connecting to the configured backend before showing the app.</Text>
+          <Text style={styles.startupTitle}>Loading live store data</Text>
+          <Text style={styles.startupBody}>Connecting to the configured backend before showing the app.</Text>
         </View>
       </View>
     );
@@ -117,9 +120,9 @@ function StartupCatalogGate({
       <View style={styles.startupScreen}>
         <ScreenBackdrop />
         <View style={styles.startupCard}>
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.startupEyebrow}>Configuration required</Text>
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.startupTitle}>App data unavailable.</Text>
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.startupBody}>{errorMessage}</Text>
+          <Text style={styles.startupEyebrow}>Configuration required</Text>
+          <Text style={styles.startupTitle}>App data unavailable.</Text>
+          <Text style={styles.startupBody}>{errorMessage}</Text>
           <Button
             label="Retry"
             variant="secondary"
@@ -134,7 +137,18 @@ function StartupCatalogGate({
     );
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      {appConfigQuery.error && !appConfigQuery.data ? (
+        <View pointerEvents="none" style={styles.nonBlockingStartupNotice}>
+          <Text style={styles.nonBlockingStartupNoticeText}>
+            Live store data is unavailable. Some actions may be limited.
+          </Text>
+        </View>
+      ) : null}
+    </>
+  );
 }
 
 function RootLayout() {
@@ -332,6 +346,23 @@ const styles = StyleSheet.create({
   },
   startupAction: {
     marginTop: 8
+  },
+  nonBlockingStartupNotice: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    bottom: 16,
+    alignItems: "center"
+  },
+  nonBlockingStartupNoticeText: {
+    color: uiPalette.textMuted,
+    fontSize: 12,
+    lineHeight: 16,
+    backgroundColor: uiPalette.surfaceStrong,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    textAlign: "center"
   }
 });
 

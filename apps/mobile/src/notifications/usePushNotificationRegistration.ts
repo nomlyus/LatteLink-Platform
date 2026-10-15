@@ -50,49 +50,62 @@ export function usePushNotificationRegistration(isAuthenticated: boolean) {
   const registeredRef = useRef(false);
 
   useEffect(() => {
+    let cancelled = false;
+
     if (!isAuthenticated) {
       registeredRef.current = false;
-      return;
+      return () => {
+        cancelled = true;
+      };
     }
 
     if (registeredRef.current) {
-      return;
+      return () => {
+        cancelled = true;
+      };
     }
 
     async function register() {
-      const { status: existingStatus } = await Notifications.getPermissionsAsync();
-      let finalStatus = existingStatus;
-
-      if (existingStatus !== "granted") {
-        const { status } = await Notifications.requestPermissionsAsync();
-        finalStatus = status;
-      }
-
-      if (finalStatus !== "granted") {
-        return;
-      }
-
-      let tokenData: Notifications.ExpoPushToken;
       try {
+        const { status: existingStatus } = await Notifications.getPermissionsAsync();
+        let finalStatus = existingStatus;
+
+        if (existingStatus !== "granted") {
+          const { status } = await Notifications.requestPermissionsAsync();
+          finalStatus = status;
+        }
+
+        if (cancelled || finalStatus !== "granted") {
+          return;
+        }
+
         const projectId = resolveExpoProjectId();
-        tokenData = projectId
+        const tokenData = projectId
           ? await Notifications.getExpoPushTokenAsync({ projectId })
           : await Notifications.getExpoPushTokenAsync();
-      } catch {
-        return;
-      }
+        if (cancelled) {
+          return;
+        }
 
-      const platform = Platform.OS === "ios" ? "ios" : "android";
-      const deviceId = await getOrCreateDeviceId();
+        const platform = Platform.OS === "ios" ? "ios" : "android";
+        const deviceId = await getOrCreateDeviceId();
+        if (cancelled) {
+          return;
+        }
 
-      try {
         await mutation.mutateAsync({ deviceId, platform, expoPushToken: tokenData.data });
-        registeredRef.current = true;
+        if (!cancelled) {
+          registeredRef.current = true;
+        }
       } catch {
         registeredRef.current = false;
       }
     }
 
     void register();
+
+    return () => {
+      cancelled = true;
+    };
   }, [isAuthenticated, mutation]);
 }

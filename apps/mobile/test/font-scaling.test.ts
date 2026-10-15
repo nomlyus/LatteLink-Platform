@@ -22,7 +22,7 @@ function getTagName(node: ts.JsxOpeningLikeElement) {
 }
 
 describe("font scaling defaults", () => {
-  it("explicitly locks every rendered text component", () => {
+  it("does not disable system text scaling", () => {
     const violations: string[] = [];
 
     for (const filePath of sourceRoots.flatMap(listTsxFiles)) {
@@ -38,13 +38,19 @@ describe("font scaling defaults", () => {
         if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
           const tagName = getTagName(node);
           if (lockedTextComponents.has(tagName)) {
-            const attributes = new Set(
-              node.attributes.properties
-                .filter(ts.isJsxAttribute)
-                .map((attribute) => attribute.name.getText())
+            const allowFontScaling = node.attributes.properties.find(
+              (attribute): attribute is ts.JsxAttribute =>
+                ts.isJsxAttribute(attribute) && attribute.name.getText() === "allowFontScaling"
             );
+            const maxFontSizeMultiplier = node.attributes.properties.find(
+              (attribute): attribute is ts.JsxAttribute =>
+                ts.isJsxAttribute(attribute) && attribute.name.getText() === "maxFontSizeMultiplier"
+            );
+            const disablesScaling =
+              allowFontScaling?.initializer?.getText() === "{false}" ||
+              maxFontSizeMultiplier?.initializer?.getText() === "{1}";
 
-            if (!attributes.has("allowFontScaling") || !attributes.has("maxFontSizeMultiplier")) {
+            if (disablesScaling) {
               const position = source.getLineAndCharacterOfPosition(node.getStart(source));
               violations.push(`${filePath}:${position.line + 1} ${tagName}`);
             }

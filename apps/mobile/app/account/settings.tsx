@@ -23,8 +23,8 @@ function SettingsInfoRow({
   return (
     <View style={styles.sectionRow}>
       <View style={styles.sectionRowInner}>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionRowLabel}>{label}</Text>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionRowValue}>{value}</Text>
+        <Text style={styles.sectionRowLabel}>{label}</Text>
+        <Text style={styles.sectionRowValue}>{value}</Text>
       </View>
       {isLast ? null : <View style={styles.sectionRowDivider} />}
     </View>
@@ -47,11 +47,14 @@ function SettingsActionRow({
   return (
     <Pressable
       disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled }}
       onPress={onPress}
       style={({ pressed }) => [styles.sectionRow, pressed && !disabled ? styles.sectionRowPressed : null]}
     >
       <View style={styles.sectionRowInner}>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1}
+        <Text
           style={[
             styles.sectionRowLabel,
             tone === "danger" ? styles.sectionRowLabelDanger : null,
@@ -144,8 +147,8 @@ export default function SettingsPage() {
         <ScreenScroll bottomInset={48} contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}>
           <GlassCard style={styles.heroCard}>
             <SectionLabel label="Settings" />
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>{recoveryCopy.title}</Text>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroBody}>{recoveryCopy.body}</Text>
+            <Text style={styles.heroTitle}>{recoveryCopy.title}</Text>
+            <Text style={styles.heroBody}>{recoveryCopy.body}</Text>
             <Button
               label={recoveryCopy.actionLabel}
               variant="secondary"
@@ -154,7 +157,7 @@ export default function SettingsPage() {
             />
           </GlassCard>
 
-          {actionError ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionError}>{actionError}</Text> : null}
+          {actionError ? <Text style={styles.sectionError}>{actionError}</Text> : null}
 
           <View style={styles.settingsSection}>
             <SectionLabel label="Legal" />
@@ -183,14 +186,14 @@ export default function SettingsPage() {
           <View style={styles.heroTopRow}>
             <View style={styles.heroCopy}>
               <SectionLabel label="Preferences" />
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>Account settings</Text>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroBody}>Manage the account-level settings tied to this device and store profile.</Text>
+              <Text style={styles.heroTitle}>Account settings</Text>
+              <Text style={styles.heroBody}>Manage the account-level settings tied to this device and store profile.</Text>
             </View>
             <Chip label="Active" active />
           </View>
         </GlassCard>
 
-        {actionError ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionError}>{actionError}</Text> : null}
+        {actionError ? <Text style={styles.sectionError}>{actionError}</Text> : null}
 
         <View style={styles.settingsSection}>
           <SectionLabel label="App" />

@@ -30,11 +30,11 @@ export function AccountFloatingHeader({
           <View style={styles.pageMetaSpacer} />
           <View style={styles.pageTitleRow}>
             {onBack ? (
-              <Pressable onPress={onBack} style={({ pressed }) => [styles.backButton, pressed ? styles.backButtonPressed : null]}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={onBack} style={({ pressed }) => [styles.backButton, pressed ? styles.backButtonPressed : null]}>
                 <Ionicons name="arrow-back" size={16} color={fg} />
               </Pressable>
             ) : null}
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.pageTitle, { color: fg }]}>{title}</Text>
+            <Text style={[styles.pageTitle, { color: fg }]}>{title}</Text>
           </View>
         </View>
       </View>

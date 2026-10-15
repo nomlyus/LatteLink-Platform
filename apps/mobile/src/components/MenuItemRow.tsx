@@ -59,17 +59,23 @@ function MenuItemArtwork({
 
 export function MenuItemRow({ item, isLast, onPress, onImageReady }: MenuItemRowProps) {
   return (
-    <Pressable onPress={() => onPress(item)} style={({ pressed }) => [styles.menuRow, pressed ? styles.pressed : null]}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${item.name}, ${formatUsd(item.priceCents)}`}
+      accessibilityHint="Open item customization"
+      onPress={() => onPress(item)}
+      style={({ pressed }) => [styles.menuRow, pressed ? styles.pressed : null]}
+    >
       <View style={styles.menuRowMain}>
         <MenuItemArtwork imageUrl={item.imageUrl} onReady={onImageReady} />
         <View style={[styles.menuBodyWrap, !isLast ? styles.menuBodyWrapWithDivider : null]}>
           <View style={styles.menuBodyContent}>
             <View style={styles.menuCopy}>
               <View style={styles.menuTitleRow}>
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.menuTitle}>{item.name}</Text>
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.menuMeta}>{formatUsd(item.priceCents)}</Text>
+                <Text style={styles.menuTitle}>{item.name}</Text>
+                <Text style={styles.menuMeta}>{formatUsd(item.priceCents)}</Text>
               </View>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} numberOfLines={3} style={styles.menuDescription}>
+              <Text numberOfLines={3} style={styles.menuDescription}>
                 {item.description}
               </Text>
             </View>

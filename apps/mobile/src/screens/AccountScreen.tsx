@@ -32,9 +32,9 @@ function AccountPageRow({
   onPress: () => void;
 }) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.pageRow, pressed ? styles.pageRowPressed : null]}>
+    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.pageRow, pressed ? styles.pageRowPressed : null]}>
       <View style={styles.pageRowInner}>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} numberOfLines={1} style={styles.pageRowLabel}>
+        <Text numberOfLines={1} style={styles.pageRowLabel}>
           {label}
         </Text>
         <Ionicons name="arrow-forward" size={16} color={uiPalette.text} style={styles.pageRowChevron} />
@@ -65,12 +65,12 @@ function GuestSignInPill({
   const content = (
       <View style={[styles.loggedOutStaticCtaContent, useLiquidGlass ? null : styles.loggedOutStaticCtaContentFallback]}>
         <Ionicons name="log-in-outline" size={16} color={uiPalette.text} />
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.loggedOutStaticCtaLabel}>{label}</Text>
+        <Text style={styles.loggedOutStaticCtaLabel}>{label}</Text>
       </View>
   );
 
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.loggedOutStaticCtaPressable, pressed ? styles.glassPillPressed : null]}>
+    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.loggedOutStaticCtaPressable, pressed ? styles.glassPillPressed : null]}>
       <View style={styles.loggedOutStaticCtaShell}>
         {useLiquidGlass ? (
           <GlassView glassEffectStyle="regular" colorScheme="auto" isInteractive style={styles.loggedOutStaticCtaFrame}>
@@ -167,8 +167,8 @@ export function AccountScreen() {
       <View style={styles.screenShell}>
         <ScreenStatic style={[styles.loggedOutStaticPage, { paddingTop: headerOffset, paddingBottom: staticBottomInset }]}>
           <View style={styles.loggedOutStaticBody}>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.loggedOutStaticTitle}>{recoveryCopy.title}</Text>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.loggedOutStaticText}>{recoveryCopy.body}</Text>
+            <Text style={styles.loggedOutStaticTitle}>{recoveryCopy.title}</Text>
+            <Text style={styles.loggedOutStaticText}>{recoveryCopy.body}</Text>
           </View>
 
           <GuestSignInPill
@@ -194,29 +194,29 @@ export function AccountScreen() {
           <View style={styles.heroTopRow}>
             <View style={styles.heroCopy}>
               <SectionLabel label="Account" />
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>{accountGreeting}</Text>
+              <Text style={styles.heroTitle}>{accountGreeting}</Text>
             </View>
             <Chip label={loyaltyEnabled ? "Loyalty On" : "Loyalty Off"} active={loyaltyEnabled} />
           </View>
 
           <View style={styles.pointsWrap}>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.pointsLabel}>Available points</Text>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.pointsValue}>
+            <Text style={styles.pointsLabel}>Available points</Text>
+            <Text style={styles.pointsValue}>
               {loyaltyEnabled ? (loyaltyBalance ? `${loyaltyBalance.availablePoints}` : loyaltyError ? "--" : "…") : "Off"}
             </Text>
             <View style={styles.pointsMetaRow}>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.pointsMeta}>{loyaltyEnabled ? `Lifetime ${loyaltyBalance ? loyaltyBalance.lifetimeEarned : "--"} pts` : "Loyalty unavailable"}</Text>
+              <Text style={styles.pointsMeta}>{loyaltyEnabled ? `Lifetime ${loyaltyBalance ? loyaltyBalance.lifetimeEarned : "--"} pts` : "Loyalty unavailable"}</Text>
             </View>
             {loyaltyEnabled && loyaltyError ? (
               <View style={styles.pointsErrorWrap}>
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.pointsError}>{getLoyaltyQueryErrorMessage(loyaltyError)}</Text>
+                <Text style={styles.pointsError}>{getLoyaltyQueryErrorMessage(loyaltyError)}</Text>
                 <Pressable
                   onPress={() => {
                     void Promise.allSettled([loyaltyBalanceQuery.refetch(), loyaltyLedgerQuery.refetch()]);
                   }}
                   style={({ pressed }) => [styles.pointsRetry, pressed ? styles.pointsRetryPressed : null]}
                 >
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.pointsRetryLabel}>Retry rewards</Text>
+                  <Text style={styles.pointsRetryLabel}>Retry rewards</Text>
                 </Pressable>
               </View>
             ) : null}
@@ -238,7 +238,7 @@ export function AccountScreen() {
                 pressed && sentryDiagnosticState !== "sending" ? styles.diagnosticButtonPressed : null
               ]}
             >
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.diagnosticLabel}>
+              <Text style={styles.diagnosticLabel}>
                 {sentryDiagnosticState === "sending"
                   ? "Sending Sentry diagnostic…"
                   : sentryDiagnosticState === "sent"

@@ -5,7 +5,7 @@ import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
 import { PaymentSheetError, initPaymentSheet, initStripe, presentPaymentSheet } from "@stripe/stripe-react-native";
 import type { Order } from "@lattelink/contracts-orders";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -48,7 +48,7 @@ function StatusBanner({
 }) {
   return (
     <View style={[styles.banner, tone === "warning" ? styles.bannerWarning : null]}>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.bannerText, tone === "warning" ? styles.bannerTextWarning : null]}>{message}</Text>
+      <Text style={[styles.bannerText, tone === "warning" ? styles.bannerTextWarning : null]}>{message}</Text>
     </View>
   );
 }
@@ -64,8 +64,8 @@ function SummaryRow({
 }) {
   return (
     <View style={styles.summaryRow}>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.summaryLabel, emphasized ? styles.summaryLabelEmphasized : null]}>{label}</Text>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.summaryValue, emphasized ? styles.summaryValueEmphasized : null]}>{value}</Text>
+      <Text style={[styles.summaryLabel, emphasized ? styles.summaryLabelEmphasized : null]}>{label}</Text>
+      <Text style={[styles.summaryValue, emphasized ? styles.summaryValueEmphasized : null]}>{value}</Text>
     </View>
   );
 }
@@ -78,12 +78,12 @@ function BagLineItem({ item }: { item: CartItem }) {
 
   return (
     <View style={styles.bagItem}>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.bagQuantity}>{item.quantity}x</Text>
+      <Text style={styles.bagQuantity}>{item.quantity}x</Text>
       <View style={styles.bagCopy}>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.bagItemTitle}>{item.itemName}</Text>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.bagItemMeta}>{customization}</Text>
+        <Text style={styles.bagItemTitle}>{item.itemName}</Text>
+        <Text style={styles.bagItemMeta}>{customization}</Text>
       </View>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.bagItemPrice}>{formatUsd(item.lineTotalCents)}</Text>
+      <Text style={styles.bagItemPrice}>{formatUsd(item.lineTotalCents)}</Text>
     </View>
   );
 }
@@ -209,6 +209,7 @@ export default function CheckoutScreen() {
   const etaLabel = storeConfig ? `${storeConfig.prepEtaMinutes} min pickup` : "ETA unavailable";
 
   const [paymentSheetPending, setPaymentSheetPending] = useState(false);
+  const paymentSubmissionInFlightRef = useRef(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [statusTone, setStatusTone] = useState<"info" | "warning">("info");
   const payActionDisabled = !checkoutReady || paymentSheetPending || checkoutMutation.isPending;
@@ -241,6 +242,10 @@ export default function CheckoutScreen() {
   }
 
   async function handleStripeCheckout() {
+    if (paymentSubmissionInFlightRef.current) {
+      return;
+    }
+
     if (!storeConfig || !appConfig) {
       setStatusMessage(checkoutUnavailableMessage ?? "Checkout is temporarily unavailable.");
       setStatusTone("warning");
@@ -253,6 +258,7 @@ export default function CheckoutScreen() {
       return;
     }
 
+    paymentSubmissionInFlightRef.current = true;
     setPaymentSheetPending(true);
     setStatusMessage("Preparing secure payment…");
     setStatusTone("info");
@@ -394,6 +400,7 @@ export default function CheckoutScreen() {
       setStatusMessage(message);
       setStatusTone("warning");
     } finally {
+      paymentSubmissionInFlightRef.current = false;
       setPaymentSheetPending(false);
     }
   }
@@ -408,15 +415,20 @@ export default function CheckoutScreen() {
       <View style={styles.headerArea}>
         {showCheckoutRetry ? (
           <View style={styles.headerUtilityRow}>
-            <Pressable onPress={refreshCheckoutContext} style={({ pressed }) => [styles.inlineAction, pressed ? styles.inlineActionPressed : null]}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Retry checkout details"
+              onPress={refreshCheckoutContext}
+              style={({ pressed }) => [styles.inlineAction, pressed ? styles.inlineActionPressed : null]}
+            >
               <Ionicons name="refresh-outline" size={15} color={uiPalette.textSecondary} />
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.inlineActionText}>Retry</Text>
+              <Text style={styles.inlineActionText}>Retry</Text>
             </Pressable>
           </View>
         ) : null}
 
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.headerTitle}>Checkout</Text>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.headerSubtitle}>
+        <Text style={styles.headerTitle}>Checkout</Text>
+        <Text style={styles.headerSubtitle}>
           {storeConfig
             ? storeConfig.isOpen
               ? `${brandName} • ${etaLabel}`
@@ -435,8 +447,8 @@ export default function CheckoutScreen() {
       >
         {items.length === 0 ? (
           <Card style={styles.emptyState}>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emptyTitle}>Your cart is empty.</Text>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emptyBody}>Add items from the menu before opening checkout.</Text>
+            <Text style={styles.emptyTitle}>Your cart is empty.</Text>
+            <Text style={styles.emptyBody}>Add items from the menu before opening checkout.</Text>
             <Button label="Back to cart" variant="secondary" onPress={dismissCheckout} />
           </Card>
         ) : (
@@ -450,16 +462,16 @@ export default function CheckoutScreen() {
 
             <Card style={styles.sectionCard}>
               <SectionLabel label="Order" />
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionTitle}>Summary</Text>
+              <Text style={styles.sectionTitle}>Summary</Text>
               <View style={styles.summaryMetaRow}>
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryMetaText}>
+                <Text style={styles.summaryMetaText}>
                   {itemCount} {itemCount === 1 ? "item" : "items"}
                 </Text>
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryMetaDot}>•</Text>
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryMetaText}>{storeStatusLabel}</Text>
+                <Text style={styles.summaryMetaDot}>•</Text>
+                <Text style={styles.summaryMetaText}>{storeStatusLabel}</Text>
               </View>
               {storeConfig?.pickupInstructions ? (
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionBody}>{storeConfig.pickupInstructions}</Text>
+                <Text style={styles.sectionBody}>{storeConfig.pickupInstructions}</Text>
               ) : null}
 
               <View style={styles.bagList}>
@@ -470,8 +482,8 @@ export default function CheckoutScreen() {
 
               <View style={styles.sectionDivider} />
               <View style={styles.primaryField}>
-                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.fieldLabel}>Discount code</Text>
-                <TextInput allowFontScaling={false} maxFontSizeMultiplier={1}
+                <Text style={styles.fieldLabel}>Discount code</Text>
+                <TextInput
                   value={discountCode}
                   onChangeText={setDiscountCode}
                   autoCapitalize="characters"
@@ -481,7 +493,7 @@ export default function CheckoutScreen() {
                   style={styles.fieldInput}
                 />
                 {discountCode ? (
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.fieldHint}>Code will be validated before Stripe opens. The payment sheet will show the final discounted total.</Text>
+                  <Text style={styles.fieldHint}>Code will be validated before Stripe opens. The payment sheet will show the final discounted total.</Text>
                 ) : null}
               </View>
               <View style={styles.sectionDivider} />
