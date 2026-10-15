@@ -25,8 +25,8 @@ Recovery snapshot: 84 runtime source files (`app`/`src`, TS/TSX/CJS, excluding d
 - [x] app routes: root/tabs, auth/profile, cart/checkout/outcomes, order/refund details, account routes.
 - [x] src: account, api, auth, brand/config, cart, components, home, legal, location, menu, navigation, notifications, observability, orders, screens, theme, ui.
 - [x] native, build/config/scripts/assets, tests and shared-package consumers reviewed for references and integration boundaries. Native source/config/assets preserved; no native runtime test claimed.
-- [ ] Focused domain tests, lint/typecheck, complete tests, production bundle validation.
-- [ ] Final dependency/style checks, metrics, diff review, logical commits.
+- [x] Focused domain tests, lint/typecheck, complete tests. Production Hermes bundle validation passed on both platforms, including the final committed implementation.
+- [x] Final dependency/style checks, metrics, diff review, implementation and verification documentation commits.
 
 ## Implementation checkpoint
 
@@ -41,7 +41,7 @@ Recovery snapshot: 84 runtime source files (`app`/`src`, TS/TSX/CJS, excluding d
 
 ## Validation and risks
 
-Baseline known checks: mobile ESLint/typecheck and 96 tests passed in prior session work. Prior repository pushes reported existing Dependabot findings; dependency remediation is outside this architectural change. No simulator/device visual or live payment verification has run. No completion claim until all boxes have evidence. Work remains in progress.
+Baseline known checks: mobile ESLint/typecheck and 96 tests passed in prior session work. Prior repository pushes reported existing Dependabot findings; dependency remediation is outside this architectural change. No simulator/device visual or live payment verification has run. The static audit, architectural pass, available validation and final diff review are complete, subject to the explicit limitations below.
 
 ## Coverage findings and retained responsibilities
 
@@ -79,4 +79,43 @@ CI=true pnpm --filter @lattelink/mobile build:workspace-deps
 CI=true pnpm exec turbo run lint typecheck test --filter=@lattelink/mobile... --concurrency=2
 ```
 
-Production-mode Hermes export already completed for iOS (8.06 MB) and Android (8.08 MB), with 50 assets, using local app identity and NODE_ENV=production; this is bundle validation, not merchant release/signing validation. Re-export final source after the last edits. No release credentials or production services are required or fabricated.
+Production-mode Hermes export completed for iOS (8.06 MB) and Android (8.08 MB), with 50 assets, using local app identity and NODE_ENV=production; this is bundle validation, not merchant release/signing validation. Final committed source was re-exported successfully. No release credentials or production services were required or fabricated.
+
+## Final source metrics
+
+Comparison is against the recovered uncommitted state at the start of this autonomous run, not against the older pre-session application. Source definition is recorded in [the per-file audit inventory](apps/mobile/MOBILE_SOURCE_AUDIT.md).
+
+| Metric | Recovered | Final |
+| --- | ---: | ---: |
+| Runtime implementation files | 84 | 105 |
+| Physical source LOC | 16,966 | 17,645 |
+| Largest source file | 850 | 568 |
+| Files over 500 lines | 10 | 3 |
+| Files over 1,000 lines | 0 | 0 |
+| Static relative import cycles | 0 | 0 |
+
+Total LOC rose because previously compressed JSX/styles were formatted into readable multiline definitions and new lifecycle/domain interfaces were added. LOC reduction was not used as a completion proxy. Largest final files: LiquidGlassPillTabBar 568, cart 540, menu-customize 502, OrdersScreen 492, ui/system 445. Remaining size is justified by cohesive platform-specific gestures/styles or screen composition; reusable rows, payment orchestration, customization selection, loaders and independent UI are extracted.
+
+## Final verification record
+
+- Pinned frozen install recovered all 1,253 dependencies; lockfile and manifests unchanged. Eight mobile dependency builds passed.
+- Mobile ESLint and strict TypeScript passed after the last implementation edits.
+- Mobile tests: **21 files, 104 tests passed**. Recovery had 18 files/96 tests; 11 meaningful domain/transport assertions were added, while 3 assertions attached only to deleted dead helpers/theme facade were removed.
+- Broad dependency validation: **35/35 Turbo tasks passed**, across mobile and its dependency scope (11 packages). Shared contract/token/SDK tests contributed 83 passing tests, for **187 total** including mobile. Later mobile-only cleanup was revalidated with mobile lint/typecheck/tests.
+- 269 extracted style definitions compared against `341d304`: zero semantic differences. 15 critical payment, environment-guard, SSE parser, customization and auth helper function bodies compared after whitespace normalization: identical.
+- Complete relative static dependency scan: zero cycles. Style reference scan: zero orphan properties. Re-export and external symbol searches included repository source/tests/config and native Swift/ObjC references before removal.
+- Production exports passed for iOS and Android with Hermes bytecode and 50 assets. Final `d445be6` exports in `/tmp/rawaq-mobile-refactor-verified`: iOS `index-5a31a0440b96ad9838cbf7dc541a3845.hbc` (8.06 MB), Android `index-3a3e51ecc9c23d7d305579ce48fc2033.hbc` (8.08 MB), plus metadata/assets. Expo export exited 0.
+- Final scope review: only mobile code/tests and refactoring documents changed. No native sources, dependency manifests/lockfile, backend, dashboard, migrations, credentials or production data changed.
+- Dynamic Type remains intentionally disabled; the source-wide font-scaling enforcement test passes.
+
+## Commit record
+
+- `d445be6 refactor(mobile): separate feature presentation and lifecycle logic` — implementation, previous session work, focused tests and progress record.
+- `docs(mobile): record completed source audit and verification` — final per-file audit inventory, metrics, results and limitations (own hash available in Git log).
+- Commits remain local on `develop`; nothing deployed or published.
+
+## Remaining limitations
+
+All runtime source directories have been statically audited and the justified architectural changes implemented. The per-file inventory includes retained files; unchanged files were evaluated rather than mechanically rewritten. Existing native integration/build configuration was audited for references and preserved.
+
+Linux cannot provide Xcode signing, native iOS/Android simulator interaction or Apple Pay/Stripe device transactions. No native binary build, visual/gesture comparison, live backend checkout, notification delivery or production release preflight is claimed. Merchant release preflight requires real release identity/Sentry configuration and signing inputs; no fake credentials were supplied. Very large menu/history/rewards datasets still warrant device profiling before changing scroll architecture. No known regression remains in the available static, unit or bundling checks.
