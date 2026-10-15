@@ -1,5 +1,9 @@
 # Rawaq mobile SDK 57 upgrade
 
+The original cloud checkpoints below are historical. See **macOS native
+acceptance follow-up — October 15, 2026** for the recovered local results and
+current native integration changes.
+
 ## Baseline and scope
 
 - Existing `develop` checkout, clean at start, HEAD `dde11e8`; refactor `d445be6` and review documentation `7556e15` preserved.
@@ -119,7 +123,7 @@ SDK 57 implementation and feasible automated validation are complete. Native acc
 | Default app / iOS runtime | 1.2.0 | 1.3.0 | Native runtime boundary; merchant inputs must also advance |
 | EAS iOS image | SDK-selected | macos-tahoe-26.5-xcode-26.6 | Stable SDK 57 image, no Xcode 27 scene-lifecycle opt-in |
 
-## Final verification results
+## Cloud verification results — prior checkpoint
 
 | Check | Result |
 | --- | --- |
@@ -147,7 +151,7 @@ SDK 57 implementation and feasible automated validation are complete. Native acc
 1. **Non-CNG native config synchronization:** the tracked iOS project is intentionally customized (Apple Pay bridge, merchant identity, ReleaseProduction). Expo config plugins do not automatically regenerate all tracked native fields during EAS builds. Required native template/Podfile/target/runtime changes were applied manually; identity scripts retained. Do not run SDK 57's destructive default prebuild on this project. Native project review and pod integration still require a Mac.
 2. **Vendor version recommendations:** Expo recommends Sentry ~7.11.0 and Stripe 0.64.0; this app uses newer stable 8.31.0 / 0.82.0. Their vendor peers admit this RN/React/Expo combination, the SDK 57 Directory/native-support/peer checks pass, and both vendors pass native codegen plus application typecheck/bundling. Stripe's documented SPM/dynamic-framework requirement has been applied. **That evidence does not prove native linkage or payment behavior.** The warnings remain visible; no `expo.install.exclude`, Doctor skip list, peer-ignore flag or experimental engine workaround was introduced.
 
-## Required native/device follow-up — acceptance blockers
+## Cloud acceptance blockers — recovery checklist
 
 1. On macOS with the pinned Xcode 26.6 / supported CocoaPods, run `pnpm install --frozen-lockfile --strict-peer-dependencies`, then `cd apps/mobile/ios && pod install`. Review/commit the generated SDK 57 `Podfile.lock` and any Xcode/SwiftPM integration changes. Build both existing beta and ReleaseProduction configurations. Validate Stripe SPM frameworks are embedded (no `dyld` launch error), and the custom Apple Pay module is still registered.
 2. Build Android with its merchant package ID, SDK/NDK/toolchain and credentials configured. The repository has no checked-in Android project; no Android identity/production config was invented here.
@@ -188,4 +192,215 @@ Run checks individually: full `expo install --check` and Doctor intentionally re
 
 - `56fc562` — SDK/native/tooling migrations, pnpm lockfile and focused tests. Parent is the completed refactor/review `dde11e8`.
 - `docs(mobile): record SDK 57 verification and native acceptance blockers` — this full inventory, decisions, actual results and reproducible follow-up (its hash is in Git history).
-- Both remain local on `develop`. No native build result beyond codegen was inferred from passing exports.
+- At the cloud checkpoint both were local on `develop`. This follow-up pulled
+  them from origin; it does not push new work. No native build result beyond
+  codegen was inferred from the cloud exports.
+
+## macOS native acceptance follow-up — October 15, 2026
+
+### Recovery and toolchain
+
+- The existing `lattelink-platform` checkout was clean on `develop` at
+  `574ac41`. Fetched and fast-forwarded `origin/develop` to `7ff3d6c`; verified
+  `dde11e8`, `56fc562`, and `7ff3d6c` are present, with no newer remote commits
+  at recovery. No new branch or worktree was created.
+- Used Node **22.23.3**, Corepack **0.34.6**, and the repository-pinned pnpm
+  **10.5.2**. `CI=true corepack pnpm install --frozen-lockfile
+  --strict-peer-dependencies` passed, including workspace postinstall builds.
+  `pnpm-lock.yaml` and dependency manifests are unchanged by this follow-up.
+- CocoaPods **1.16.2** runs with Homebrew Ruby **4.0.1** (the system Ruby is
+  2.6.10). Selected Xcode is **26.3 / 17C529**, with iPhoneOS SDK **26.2**;
+  the other installed Xcode is 16.4. Expo's
+  [SDK 57 support matrix](https://docs.expo.dev/versions/v57.0.0/) requires
+  **Xcode 26.4+**, so this machine is below the documented supported minimum.
+  The EAS Xcode 26.6 image pin remains unchanged; no remote build was submitted.
+- No Android SDK, `sdkmanager`, `adb`, Gradle, or modern JDK was found. The only
+  Java runtime is Java 8 and `javac` is unavailable. There is no Android native
+  project or configured Android package identifier. No Android project was
+  generated and no production identifier was invented.
+
+### Confirmed integration fix and generated dependencies
+
+The first real `pod install` failed: although the Podfile selected dynamic
+frameworks, Expo 57's precompiled-module pre-install hook converted
+React-Core-dependent pods, including `stripe-react-native`, into static
+libraries. Stripe 0.82's SPM integration correctly rejected that linkage.
+
+Set the supported `ios.usePrecompiledModules: false` build-properties option
+and matching native `EXPO_USE_PRECOMPILED_MODULES: "false"`. This source-builds
+Expo modules instead of applying that static-linkage conversion. It does not
+disable Stripe SPM, change Hermes, disable New Architecture, change vendor
+versions, or suppress the linkage check. React Native Core/dependency prebuilt
+artifacts remain on their normal supported path. See the installed Expo
+autolinking `precompiled_modules.rb#perform_pre_install` and
+[Stripe's documented dynamic-framework requirement](https://github.com/stripe/stripe-react-native/tree/v0.82.0#ios-dependency-resolution).
+
+- `pod install` then passed: **117 direct dependencies / 117 pods**, with 186
+  pod/subspec entries in the generated lockfile. The lockfile and sandbox
+  `Manifest.lock` match. Native source/script phases were reviewed.
+- `pod install --deployment` also passed against that lockfile; no dependency
+  resolution changes were required. Privacy-manifest aggregation changed only
+  ordering of existing reasons; the original ordering was retained to avoid
+  committing meaningless privacy changes.
+- `xcodebuild -resolvePackageDependencies -workspace LatteLinkBeta.xcworkspace
+  -scheme LatteLinkBeta -clonedSourcePackagesDirPath /tmp/rawaq-sdk57-spm`
+  passed. Generated `Package.resolved` pins Stripe iOS **26.14.0** at
+  `4cc854692674cd38e1efa0c7b3fe9a3f067ad116`.
+- CocoaPods generated SDK 57 framework/resource references, the vendor's
+  `[stripe-react-native] Embed SPM Frameworks` phase, the correct
+  `ReleaseProduction` xcconfig, and RN 0.86.3 paths replacing the stale 0.81.5
+  paths. These are actual installer output, not a hand-written lockfile.
+- Custom Apple Pay Swift/ObjC sources, shared scheme, entitlement contents,
+  app identifiers, and all six iOS deployment-target settings (16.4) are retained.
+  CocoaPods warns that multiple entitlement files exist and it uses the first
+  when generating Expo integration. The app configurations still explicitly use
+  their original beta/production entitlement files; signing/device verification
+  remains necessary.
+- `expo-updates` emits a missing optional `expo-dev-client/package.json` probe
+  during podspec evaluation; installation completes without that optional dev
+  client. No unnecessary dev-client dependency was added to silence it.
+
+Final installed versions remain **Expo 57.0.29, RN 0.86.3, React 19.2.3,
+Reanimated 4.5.1, Worklets 0.10.1, Stripe RN 0.82.0, Sentry RN 8.31.0**.
+The resolved Hermes native/compiler version is **250829098.0.17**. SDK 57's
+memory/startup regression fixes remain present; no experimental Worklets mode
+or custom Hermes switch was introduced.
+
+### Automated verification on this Mac
+
+| Command/check | Actual result |
+| --- | --- |
+| Frozen pnpm install with strict peers | Passed, exit 0 |
+| CocoaPods install / frozen `--deployment` rerun | Both passed, 117 pods; lockfile and installed manifest match |
+| SwiftPM dependency resolution | Passed; Stripe iOS 26.14.0 locked |
+| `turbo run lint typecheck test --filter=@lattelink/mobile... --concurrency=2 --output-logs=errors-only` | Initial 35/35 tasks, zero cache hits; after native regression tests 35/35, 32 cached |
+| Mobile tests | 26 files, **126 passed**, zero failed/skipped |
+| Shared dependency tests | **83 passed**, zero failed/skipped; **209** total with mobile |
+| Repository `turbo run lint typecheck --concurrency=2 --output-logs=errors-only` | **81/81 passed**, 74 cached after preserving stale ignored dashboard `.next/types`; final recheck 81/81 cached |
+| Expo install compatibility check | Exit 1, recommendations remain visible (below) |
+| Expo Doctor 1.20.4 `--verbose` | **19/21 passed**, exit 1, no exclusions or suppressions |
+| `expo-modules-autolinking verify --verbose` | Passed, no duplicate native modules |
+| `expo config --type introspect --json` | Passed, exit 0; schema and Metro checks also pass in Doctor |
+| iOS codegen | Passed during CocoaPods installation |
+| Android `generate-codegen-artifacts.js --path . --targetPlatform android --outputPath /tmp/rawaq-sdk57-mac-codegen-android` | Passed; not an Android native build |
+| Final production Hermes export for both platforms | Passed, exit 0, 53 assets; output `/tmp/rawaq-sdk57-mac-export-final` |
+| Native project/manifest `plutil -lint`, lockfile path review, `git diff --check` | Passed; no machine-absolute native lockfile paths or unintended source changes |
+
+Exports used `CI=true EXPO_NO_TELEMETRY=1 EXPO_OFFLINE=1 NODE_ENV=production
+APP_VARIANT=local corepack pnpm exec expo export --platform ios --platform
+android --output-dir /tmp/rawaq-sdk57-mac-export-final --max-workers 2`.
+iOS bytecode is `index-5f55b20e438384a636d5306643338da7.hbc` (7.4 MB);
+Android is `index-3b04cc774bb4597abd935d173fa3d059.hbc` (7.7 MB), matching the
+cloud export filenames. Exports are not native compilation, signing or UI QA.
+
+The first repository-wide check failed only on pre-existing ignored Next types
+referring to the removed dashboard catch-all route. Preserved that directory at
+`/tmp/rawaq-stale-dashboard-types.OoCf8X/types`; the recheck passed without
+modifying dashboard/backend source or weakening TypeScript settings.
+
+Doctor's two findings remain native/config synchronization and version
+recommendations. As of this run, Expo also recommends newly published
+**57.0.30 / Router 57.0.28**, in addition to the already documented older
+Sentry ~7.11 / Stripe 0.64 recommendations. The Expo patch changelog lists no
+user-facing changes. These were not silently installed while verifying the
+pinned upgrade; the four recommendations are unresolved, not reported as a
+passing dependency check. Native compilation, not peers/codegen alone, is
+needed to accept the vendor versions.
+
+### Native compilation results and remaining blockers
+
+Inspected the actual workspace/project: one `LatteLinkBeta` app target/scheme,
+with `Debug`, `Release` (beta), and `ReleaseProduction` configurations.
+Both full-app attempts used the existing workspace and scheme, generic iOS
+device destination, two build jobs, unsigned compilation, local-only identity
+(`us.nomly.local`), app version 1.3.0, and disabled Sentry uploads. No merchant
+release identity, asset or credential was replaced. Commands were:
+
+```sh
+# Run from apps/mobile/ios with Node 22 / pnpm 10.5.2 on PATH.
+export APP_VARIANT=local APP_VERSION=1.3.0
+export SENTRY_DISABLE_AUTO_UPLOAD=true EXPO_NO_TELEMETRY=1
+xcodebuild -workspace LatteLinkBeta.xcworkspace -scheme LatteLinkBeta \
+  -configuration Release -destination 'generic/platform=iOS' \
+  -derivedDataPath /tmp/rawaq-sdk57-ios-build \
+  -clonedSourcePackagesDirPath /tmp/rawaq-sdk57-spm \
+  -disableAutomaticPackageResolution -jobs 2 \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+  IOS_BUNDLE_IDENTIFIER=us.nomly.local EXPO_PUBLIC_APP_DISPLAY_NAME='Nomly Local' build
+# Same command, replacing Release with ReleaseProduction, was run separately.
+```
+
+- **Release / beta:** attempted full generic-device build. It stalled in Stripe
+  resource asset compilation; after several minutes without progress it was
+  explicitly interrupted (exit 75, `BUILD INTERRUPTED`). This is not a source
+  failure or a passing native build. The later configuration got past asset
+  processing, so the initial delay is not established as a permanent blocker.
+- **ReleaseProduction:** package resolution, resource processing, native
+  codegen, and native dependency compilation ran. Build **failed, exit 65** in
+  `ExpoModulesCore`'s `ios/Core/Events/EventEmitter.swift`, lines 52 and 79:
+  `sending 'emitter' risks causing data races`. The installed compiler is
+  Apple Swift **6.2.4** in Xcode 26.3. This matches the
+  [upstream Xcode 26.3 issue and minimum-version guidance](https://github.com/expo/expo/issues/48961)
+  and [source-build reproduction](https://github.com/expo/expo/issues/47539).
+  Supported Xcode **26.4+ / Swift 6.3**, preferably the pinned **26.6**, is
+  required before another acceptance build. No unsafe Sendable wrapper,
+  concurrency-check suppression, language-mode downgrade, vendor patch or
+  native framework workaround was applied.
+- **Android binary compilation:** not attempted, blocked by missing modern
+  JDK/SDK/Gradle/native project and explicit merchant package configuration.
+  Android codegen and production Hermes export passed, but neither is binary
+  compilation.
+
+No successful full native build, link, signing, install, launch, or Apple Pay
+bridge runtime registration is claimed. Stripe/Sentry/native framework
+embedding still needs a successful supported-Xcode build and device launch.
+The initial asset delay's cause is not proven; the actionable compile blocker
+is the documented unsupported Swift/Xcode version. No simulator/emulator was
+booted or application launched; only dependency resolution and generic-device
+build commands were used. Xcode's asset compiler uses its own platform helper
+internally during device builds; that was not an app/simulator verification.
+
+Native acceptance is **incomplete; not ready for physical-device QA binaries**.
+Install/select supported Xcode and rerun both configurations; provision Android
+tooling and legitimate release identity separately. Signing/device/live-service
+acceptance remains outside the evidence from unsigned builds and JS exports.
+
+### Runtime and physical-device safety
+
+Default app version / iOS runtime remain **1.3.0**; checked-in Expo.plist and
+config match. This shell has no explicit app/runtime/release-identity overrides,
+and no mobile `.env` file exists beyond the example. Existing tests verify
+explicit merchant overrides are preserved, so real release inputs must still
+be checked for a fresh SDK 57 runtime before any build/update. Remote EAS
+environment values and signing credentials were not fetched or changed.
+**Never publish SDK 57 bytecode to an SDK 54 runtime.** Beta/production channel
+separation remains unchanged; a channel name alone does not establish native
+runtime compatibility.
+
+After successful supported-toolchain native builds and signing, physical QA
+still needs all of:
+
+- [ ] Authentication persistence, cold start, expired-session recovery, Apple sign-in.
+- [ ] Brand/location isolation, location switching, cart invalidation and quote scope.
+- [ ] Navigation, gestures, sheets, safe areas and the intentionally disabled Dynamic Type.
+- [ ] Menu images, fallback/cache behavior, modifiers/defaults, cart totals and authoritative quotes.
+- [ ] Notification permission, registration, delivery and foreground/background behavior.
+- [ ] Stripe card/3DS success, cancellation, decline, retry, deep-link return and timeouts.
+- [ ] Apple Pay entitlement/merchant identity, custom bridge registration, payment-sheet behavior.
+- [ ] Orders/history, realtime reconnect and loyalty balances/activity.
+- [ ] Embedded Stripe dynamic frameworks at launch (including absence of `dyld` missing-library errors).
+- [ ] Hermes/Reanimated/Worklets startup, memory, animations and interruptions on physical hardware.
+
+No physical-device/live-payment/push QA, OTA publication, deployment, submission,
+real charge, notification send, backend change, or production-data write is
+part of this follow-up. The cart-change-during-payment architectural issue is
+unchanged.
+
+### Follow-up local commits
+
+- `88434cd` — `fix(mobile): resolve SDK 57 native Stripe dependency integration`:
+  supported source-build option, real CocoaPods/SwiftPM locks and generated
+  Xcode integration, with two additional regression tests.
+- The accompanying documentation commit records the Mac checks and the exact
+  native acceptance blockers. Both commits are local on `develop`; no push,
+  merge, deployment, publication or submission was performed.
