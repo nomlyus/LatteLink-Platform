@@ -64,8 +64,8 @@ function DetailRow({
 }) {
   return (
     <View style={styles.detailRow}>
-      <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={styles.detailValue}>{value}</Text>
+      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.detailLabel}>{label}</Text>
+      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.detailValue}>{value}</Text>
     </View>
   );
 }
@@ -75,7 +75,7 @@ function StatusBadge({ status }: { status: OrderHistoryEntry["status"] }) {
 
   return (
     <View style={[styles.statusBadge, { backgroundColor: tone.backgroundColor, borderColor: tone.borderColor }]}>
-      <Text style={[styles.statusBadgeText, { color: tone.textColor }]}>{formatOrderStatus(status)}</Text>
+      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.statusBadgeText, { color: tone.textColor }]}>{formatOrderStatus(status)}</Text>
     </View>
   );
 }
@@ -109,12 +109,12 @@ export function OrderDetailSheet({ order, refundEntries, bottomInset, onClose }:
         contentContainerStyle={[styles.content, { paddingBottom: Math.max(bottomInset, 12) }]}
       >
         <View style={styles.hero}>
-          <Text style={styles.kicker}>Order details</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.kicker}>Order details</Text>
           <View style={styles.heroHeader}>
-            <Text style={styles.title}>{formatOrderReference(order.id)}</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>{formatOrderReference(order.id)}</Text>
             <StatusBadge status={order.status} />
           </View>
-          <Text style={styles.subtitle}>{formatOrderDateTime(findLatestOrderTime(order))}</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.subtitle}>{formatOrderDateTime(findLatestOrderTime(order))}</Text>
         </View>
 
         <View style={styles.section}>
@@ -133,17 +133,17 @@ export function OrderDetailSheet({ order, refundEntries, bottomInset, onClose }:
         </View>
 
         <View style={styles.pickupSection}>
-          <Text style={styles.sectionLabel}>Pickup code</Text>
-          <Text style={styles.pickupCode}>{order.pickupCode}</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionLabel}>Pickup code</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.pickupCode}>{order.pickupCode}</Text>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Status note</Text>
-          <Text style={styles.note}>{latestNote}</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionLabel}>Status note</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.note}>{latestNote}</Text>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Items</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionLabel}>Items</Text>
           <View style={styles.itemList}>
             {order.items.map((item, index) => {
               const label = item.itemName?.trim() || item.itemId;
@@ -152,10 +152,10 @@ export function OrderDetailSheet({ order, refundEntries, bottomInset, onClose }:
               return (
                 <View key={`${order.id}-${item.itemId}-${index}`} style={styles.itemRow}>
                   <View style={styles.itemCopy}>
-                    <Text style={styles.itemName}>{label}</Text>
-                    <Text style={styles.itemMeta}>{`${item.quantity}x`}</Text>
+                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.itemName}>{label}</Text>
+                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.itemMeta}>{`${item.quantity}x`}</Text>
                   </View>
-                  <Text style={styles.itemAmount}>{formatUsd(lineTotal)}</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.itemAmount}>{formatUsd(lineTotal)}</Text>
                 </View>
               );
             })}
@@ -164,23 +164,23 @@ export function OrderDetailSheet({ order, refundEntries, bottomInset, onClose }:
 
         {order.status === "CANCELED" ? (
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Canceled order</Text>
-            <Text style={styles.note}>This order was canceled. If you were charged, contact the shop for help with your payment.</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionLabel}>Canceled order</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.note}>This order was canceled. If you were charged, contact the shop for help with your payment.</Text>
           </View>
         ) : null}
 
         {hasLoyaltyReturn ? (
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Loyalty returned</Text>
-            <Text style={styles.note}>{returnedPoints > 0 ? `${returnedPoints} points returned to the account.` : "Loyalty activity recorded."}</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionLabel}>Loyalty returned</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.note}>{returnedPoints > 0 ? `${returnedPoints} points returned to the account.` : "Loyalty activity recorded."}</Text>
             <View style={styles.refundList}>
               {refundEntries.map((entry) => (
                 <View key={entry.id} style={styles.refundRow}>
                   <View style={styles.refundCopy}>
-                    <Text style={styles.refundTitle}>Points returned</Text>
-                    <Text style={styles.refundMeta}>{formatOrderDateTime(entry.createdAt)}</Text>
+                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.refundTitle}>Points returned</Text>
+                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.refundMeta}>{formatOrderDateTime(entry.createdAt)}</Text>
                   </View>
-                  <Text style={styles.refundPoints}>{`${entry.points > 0 ? "+" : ""}${entry.points} pts`}</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.refundPoints}>{`${entry.points > 0 ? "+" : ""}${entry.points} pts`}</Text>
                 </View>
               ))}
             </View>

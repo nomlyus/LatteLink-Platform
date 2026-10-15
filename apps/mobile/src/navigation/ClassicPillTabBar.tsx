@@ -134,7 +134,7 @@ export function ClassicPillTabBar({ state, descriptors, navigation }: PillTabBar
                   color={useActiveIcons ? "rgba(18, 18, 18, 0.96)" : "rgba(60, 60, 67, 0.72)"}
                 />
               </View>
-              <Text numberOfLines={1} style={[styles.tabLabel, useActiveIcons ? styles.tabLabelActive : null]}>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} numberOfLines={1} style={[styles.tabLabel, useActiveIcons ? styles.tabLabelActive : null]}>
                 {label}
               </Text>
             </View>
@@ -254,7 +254,7 @@ export function ClassicPillTabBar({ state, descriptors, navigation }: PillTabBar
                       >
                         <View style={styles.tabContent}>
                           <View style={styles.tabIconBox} />
-                          <Text numberOfLines={1} style={[styles.tabLabel, styles.tabLabelPlaceholder]}>
+                          <Text allowFontScaling={false} maxFontSizeMultiplier={1} numberOfLines={1} style={[styles.tabLabel, styles.tabLabelPlaceholder]}>
                             {label}
                           </Text>
                         </View>
@@ -273,7 +273,7 @@ export function ClassicPillTabBar({ state, descriptors, navigation }: PillTabBar
               <View style={styles.cartPillInner}>
                 <Ionicons name="bag-handle-outline" size={21} color={uiPalette.text} />
                 <View style={styles.cartCountBadge}>
-                  <Text style={styles.cartCountLabel}>{itemCount > 99 ? "99+" : String(itemCount)}</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.cartCountLabel}>{itemCount > 99 ? "99+" : String(itemCount)}</Text>
                 </View>
               </View>
             </BlurView>

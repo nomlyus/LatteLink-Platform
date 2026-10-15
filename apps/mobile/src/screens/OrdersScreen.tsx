@@ -204,14 +204,14 @@ function OrderItemStrip({
         )}
         {remainingItemTypes > 0 ? (
           <View style={[styles.orderThumb, styles.orderThumbStacked, styles.orderThumbCount]}>
-            <Text style={styles.orderThumbCountText}>{`+${remainingItemTypes}`}</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.orderThumbCountText}>{`+${remainingItemTypes}`}</Text>
           </View>
         ) : null}
       </View>
 
       <View style={styles.orderItemsCopy}>
-        <Text style={styles.orderItemsTitle}>{buildOrderItemsSummary(order, menuItemsById)}</Text>
-        <Text style={styles.orderItemsMeta}>{`${totalUnits} item${totalUnits === 1 ? "" : "s"}`}</Text>
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.orderItemsTitle}>{buildOrderItemsSummary(order, menuItemsById)}</Text>
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.orderItemsMeta}>{`${totalUnits} item${totalUnits === 1 ? "" : "s"}`}</Text>
       </View>
     </View>
   );
@@ -328,7 +328,7 @@ function OrderProgressStep({
           </Animated.View>
         </Animated.View>
       </View>
-      <Animated.Text style={[styles.progressLabel, labelAnimatedStyle]}>{label}</Animated.Text>
+      <Animated.Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.progressLabel, labelAnimatedStyle]}>{label}</Animated.Text>
     </View>
   );
 }
@@ -383,7 +383,7 @@ function HistoryRow({
     >
       <View style={styles.historyTopRow}>
         <OrderStatusPill status={historyStatus} glassStyle="regular" />
-        <Text style={styles.historyAmount}>{formatUsd(order.total.amountCents)}</Text>
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.historyAmount}>{formatUsd(order.total.amountCents)}</Text>
       </View>
 
       <View style={styles.historyContentRow}>
@@ -399,21 +399,21 @@ function HistoryRow({
           )}
           {remainingItemTypes > 0 ? (
             <View style={[styles.orderThumb, styles.orderThumbStacked, styles.orderThumbCount]}>
-              <Text style={styles.orderThumbCountText}>{`+${remainingItemTypes}`}</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.orderThumbCountText}>{`+${remainingItemTypes}`}</Text>
             </View>
           ) : null}
         </View>
       </View>
 
       <View style={styles.orderItemsCopy}>
-        <Text style={styles.orderItemsTitle}>{buildOrderItemsSummary(order, menuItemsById)}</Text>
-        <Text style={styles.orderItemsMeta}>{`${totalUnits} item${totalUnits === 1 ? "" : "s"}`}</Text>
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.orderItemsTitle}>{buildOrderItemsSummary(order, menuItemsById)}</Text>
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.orderItemsMeta}>{`${totalUnits} item${totalUnits === 1 ? "" : "s"}`}</Text>
       </View>
 
       <View style={styles.historyMetaRow}>
-        <Text style={styles.historyMeta}>{formatOrderDateTime(findLatestOrderTime(order))}</Text>
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.historyMeta}>{formatOrderDateTime(findLatestOrderTime(order))}</Text>
         <View style={styles.historyMetaAction}>
-          <Text style={styles.historyMetaActionText}>Details</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.historyMetaActionText}>Details</Text>
           <Ionicons name="chevron-forward" size={14} color={uiPalette.textMuted} />
         </View>
       </View>
@@ -433,7 +433,7 @@ function OrdersHeader({
       <View style={styles.pageHeader}>
         <View style={styles.pageCopy}>
           <View style={styles.pageMetaSpacer} />
-          <Text style={[styles.pageTitle, foregroundColor ? { color: foregroundColor } : null]}>{title}</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.pageTitle, foregroundColor ? { color: foregroundColor } : null]}>{title}</Text>
         </View>
       </View>
       <View style={styles.pageTabsSpacer} />
@@ -541,8 +541,8 @@ export function OrdersScreen() {
       <View style={styles.screenShell}>
         <ScreenStatic style={[styles.loggedOutStaticPage, { paddingTop: headerOffset, paddingBottom: staticBottomInset }]}>
           <View style={styles.loggedOutStaticBody}>
-            <Text style={styles.loggedOutStaticTitle}>{recoveryCopy.title}</Text>
-            <Text style={styles.loggedOutStaticText}>{recoveryCopy.body}</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.loggedOutStaticTitle}>{recoveryCopy.title}</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.loggedOutStaticText}>{recoveryCopy.body}</Text>
           </View>
         </ScreenStatic>
 
@@ -572,17 +572,17 @@ export function OrdersScreen() {
             <ActiveOrderPill>
               <View style={styles.activeTopRow}>
                 <OrderStatusPill status={activeOrderStatus ?? activeOrder.status} glassStyle="clear" />
-                <Text style={styles.activeAmount}>{formatUsd(activeOrder.total.amountCents)}</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.activeAmount}>{formatUsd(activeOrder.total.amountCents)}</Text>
               </View>
 
-              <Text style={styles.activeTitle}>{getActiveOrderTitle(activeOrderStatus ?? activeOrder.status)}</Text>
-              <Text style={styles.activeBody}>{getActiveOrderBody(activeOrderStatus ?? activeOrder.status)}</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.activeTitle}>{getActiveOrderTitle(activeOrderStatus ?? activeOrder.status)}</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.activeBody}>{getActiveOrderBody(activeOrderStatus ?? activeOrder.status)}</Text>
 
               <OrderItemStrip order={activeOrder} menuItemsById={menuItemsById} />
 
               <View style={styles.pickupCodeBlock}>
-                <Text style={styles.metricLabel}>Pickup code</Text>
-                <Text style={styles.pickupCodeValue}>{activeOrder.pickupCode}</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.metricLabel}>Pickup code</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.pickupCodeValue}>{activeOrder.pickupCode}</Text>
               </View>
 
               <OrderProgress status={activeOrderStatus ?? activeOrder.status} />
@@ -604,7 +604,7 @@ export function OrdersScreen() {
                     }}
                     style={styles.paymentButton}
                   />
-                  {pendingCancelError ? <Text style={styles.pendingCancelError}>{pendingCancelError}</Text> : null}
+                  {pendingCancelError ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.pendingCancelError}>{pendingCancelError}</Text> : null}
                 </View>
               ) : null}
             </ActiveOrderPill>
@@ -617,7 +617,7 @@ export function OrdersScreen() {
               label="Recent orders"
               action={
                 !ordersQuery.isLoading && !ordersQuery.error ? (
-                  <Text style={styles.sectionMeta}>{`${orderHistory.length} total`}</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionMeta}>{`${orderHistory.length} total`}</Text>
                 ) : undefined
               }
             />
@@ -625,12 +625,12 @@ export function OrdersScreen() {
 
           {ordersQuery.error ? (
             <View style={styles.sectionMessageBlock}>
-              <Text style={styles.sectionMessage}>Unable to load recent orders.</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionMessage}>Unable to load recent orders.</Text>
               <Button label="Retry" variant="secondary" onPress={refreshOrders} style={styles.sectionMessageAction} />
             </View>
           ) : null}
           {!ordersQuery.isLoading && !ordersQuery.error && orderHistory.length === 0 ? (
-            <Text style={styles.sectionMessage}>Completed pickups and older orders will collect here.</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionMessage}>Completed pickups and older orders will collect here.</Text>
           ) : null}
 
           {!ordersQuery.isLoading && !ordersQuery.error && orderHistory.length > 0 ? (

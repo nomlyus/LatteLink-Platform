@@ -34,7 +34,7 @@ export function AccountFloatingHeader({
                 <Ionicons name="arrow-back" size={16} color={fg} />
               </Pressable>
             ) : null}
-            <Text style={[styles.pageTitle, { color: fg }]}>{title}</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.pageTitle, { color: fg }]}>{title}</Text>
           </View>
         </View>
       </View>

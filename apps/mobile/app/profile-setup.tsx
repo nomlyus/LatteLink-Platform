@@ -54,9 +54,9 @@ function DateSheet({
     >
       <BottomSheetView>
         <View style={styles.sheetHeader}>
-          <Text style={styles.sheetTitle}>Birthday</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sheetTitle}>Birthday</Text>
           <TouchableOpacity onPress={() => sheetRef.current?.close()} style={styles.sheetDone}>
-            <Text style={styles.sheetDoneText}>Done</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sheetDoneText}>Done</Text>
           </TouchableOpacity>
         </View>
         <View style={styles.datePickerWrap}>
@@ -173,10 +173,10 @@ export default function ProfileSetupScreen() {
           <View style={styles.handle} />
         </View>
         <View style={[styles.centerContent, { paddingTop: insets.top + 52 }]}>
-          <Text style={styles.title}>Preparing profile setup…</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>Preparing profile setup…</Text>
           <View style={styles.loadingRow}>
             <ActivityIndicator color={uiPalette.primary} />
-            <Text style={styles.body}>Loading your account details.</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>Loading your account details.</Text>
           </View>
         </View>
       </View>
@@ -190,13 +190,13 @@ export default function ProfileSetupScreen() {
       </View>
 
       <View style={[styles.centerContent, { paddingTop: insets.top + 52 }]}>
-        <Text style={styles.title}>Finish your profile.</Text>
-        <Text style={styles.body}>Add a name now. Phone and birthday are optional, and you can skip for now.</Text>
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>Finish your profile.</Text>
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>Add a name now. Phone and birthday are optional, and you can skip for now.</Text>
 
         <View style={styles.form}>
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Full name</Text>
-            <TextInput
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.fieldLabel}>Full name</Text>
+            <TextInput allowFontScaling={false} maxFontSizeMultiplier={1}
               autoCapitalize="words"
               autoComplete="name"
               autoCorrect={false}
@@ -209,8 +209,8 @@ export default function ProfileSetupScreen() {
           </View>
 
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Phone number</Text>
-            <TextInput
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.fieldLabel}>Phone number</Text>
+            <TextInput allowFontScaling={false} maxFontSizeMultiplier={1}
               autoComplete="tel"
               autoCorrect={false}
               keyboardType="phone-pad"
@@ -223,9 +223,9 @@ export default function ProfileSetupScreen() {
           </View>
 
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Birthday</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.fieldLabel}>Birthday</Text>
             <TouchableOpacity style={styles.textInputButton} onPress={openDateSheet}>
-              <Text style={birthday ? styles.textInput : styles.textInputPlaceholder}>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={birthday ? styles.textInput : styles.textInputPlaceholder}>
                 {birthday ? birthday.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "Not set"}
               </Text>
             </TouchableOpacity>
@@ -235,7 +235,7 @@ export default function ProfileSetupScreen() {
 
       <View style={[styles.bottomDock, { paddingBottom: Math.max(insets.bottom, 12) }]}>
           {profileQuery.isError ? (
-            <Text style={styles.errorText}>Profile lookup failed. You can still continue or skip.</Text>
+            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.errorText}>Profile lookup failed. You can still continue or skip.</Text>
           ) : null}
           <GlassActionPill label={saveProfileMutation.isPending ? "Saving…" : "Continue"} onPress={handleContinue} tone="dark" disabled={saveProfileMutation.isPending || name.trim().length === 0} />
           <GlassActionPill label="Skip for now" onPress={handleSkip} />

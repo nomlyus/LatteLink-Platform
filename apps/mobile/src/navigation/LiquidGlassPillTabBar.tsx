@@ -175,7 +175,7 @@ export function LiquidGlassPillTabBar({ state, descriptors, navigation }: PillTa
                   color={useActiveIcons ? "rgba(18, 18, 18, 0.94)" : "rgba(38, 38, 44, 0.58)"}
                 />
               </View>
-              <Text
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1}
                 numberOfLines={1}
                 style={[styles.tabLabel, styles.tabLabelGlass, useActiveIcons ? styles.tabLabelActive : null]}
               >
@@ -366,7 +366,7 @@ export function LiquidGlassPillTabBar({ state, descriptors, navigation }: PillTa
                     >
                       <View style={styles.tabContent}>
                         <View style={styles.tabIconBox} />
-                        <Text numberOfLines={1} style={[styles.tabLabel, styles.tabLabelPlaceholder]}>
+                        <Text allowFontScaling={false} maxFontSizeMultiplier={1} numberOfLines={1} style={[styles.tabLabel, styles.tabLabelPlaceholder]}>
                           {label}
                         </Text>
                       </View>
@@ -384,7 +384,7 @@ export function LiquidGlassPillTabBar({ state, descriptors, navigation }: PillTa
               <View style={styles.cartGlassInner}>
                 <Ionicons name="bag-handle-outline" size={21} color={uiPalette.text} />
                 <View style={styles.cartCountBadge}>
-                  <Text style={styles.cartCountLabel}>{itemCount > 99 ? "99+" : String(itemCount)}</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.cartCountLabel}>{itemCount > 99 ? "99+" : String(itemCount)}</Text>
                 </View>
               </View>
             </GlassView>

@@ -83,8 +83,8 @@ export function LocationPicker({ children, color = uiPalette.text }: { children:
           <View style={styles.sheet}>
             <View style={styles.sheetHeader}>
               <View style={styles.sheetHeadingCopy}>
-                <Text style={styles.sheetEyebrow}>Your locations</Text>
-                <Text style={styles.sheetTitle}>Choose a location</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sheetEyebrow}>Your locations</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sheetTitle}>Choose a location</Text>
               </View>
               <Pressable
                 accessibilityRole="button"
@@ -98,7 +98,7 @@ export function LocationPicker({ children, color = uiPalette.text }: { children:
 
             {pendingLocationId ? (
               <>
-                <Text style={styles.sheetNote}>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sheetNote}>
                   Changing location will clear your cart. Your discount and any pending checkout will also be removed.
                 </Text>
                 <View style={styles.confirmActions}>
@@ -108,7 +108,7 @@ export function LocationPicker({ children, color = uiPalette.text }: { children:
                     disabled={isSwitchingLocation}
                     style={({ pressed }) => [styles.cancelButton, pressed ? styles.locationRowPressed : null]}
                   >
-                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.cancelButtonText}>Cancel</Text>
                   </Pressable>
                   <Pressable
                     accessibilityRole="button"
@@ -117,14 +117,14 @@ export function LocationPicker({ children, color = uiPalette.text }: { children:
                     style={({ pressed }) => [styles.confirmButton, pressed ? styles.locationRowPressed : null]}
                   >
                     {isSwitchingLocation ? <ActivityIndicator color={uiPalette.surfaceStrong} size="small" /> : null}
-                    <Text style={styles.confirmButtonText}>Clear cart and switch</Text>
+                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.confirmButtonText}>Clear cart and switch</Text>
                   </Pressable>
                 </View>
               </>
             ) : (
-              <Text style={styles.sheetNote}>Your menu and store details will update for the selected location.</Text>
+              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sheetNote}>Your menu and store details will update for the selected location.</Text>
             )}
-            {selectionError ? <Text style={styles.errorText}>{selectionError}</Text> : null}
+            {selectionError ? <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.errorText}>{selectionError}</Text> : null}
 
             {!pendingLocationId ? <View style={styles.locationList}>
               {locations.map((location) => {
@@ -140,10 +140,10 @@ export function LocationPicker({ children, color = uiPalette.text }: { children:
                     style={({ pressed }) => [styles.locationRow, pressed ? styles.locationRowPressed : null, disabled && !isSelected ? styles.locationRowDisabled : null]}
                   >
                     <View style={styles.locationCopy}>
-                      <Text style={[styles.locationName, isSelected ? styles.locationNameSelected : null]} numberOfLines={1}>
+                      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.locationName, isSelected ? styles.locationNameSelected : null]} numberOfLines={1}>
                         {location.displayName}
                       </Text>
-                      <Text style={styles.marketLabel} numberOfLines={1}>{location.marketLabel}</Text>
+                      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.marketLabel} numberOfLines={1}>{location.marketLabel}</Text>
                     </View>
                     {isSwitchingLocation && !isSelected ? (
                       <ActivityIndicator color={uiPalette.primary} size="small" />

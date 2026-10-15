@@ -65,8 +65,8 @@ export function RemoveItemSheet({
     >
       <BottomSheetView style={[styles.content, { paddingBottom: Math.max(bottomInset, 8) }]}>
         <View>
-          <Text style={styles.title}>Remove Item?</Text>
-          <Text style={styles.body}>{bodyCopy}</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>Remove Item?</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>{bodyCopy}</Text>
         </View>
 
         <View style={styles.actionsSpacer} />

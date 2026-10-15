@@ -80,7 +80,7 @@ export function OrderStatusPill({
           <BlurView tint="light" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.statusPillFrame} />
         )}
         <View pointerEvents="none" style={styles.statusPillContent}>
-          <Text style={[styles.statusPillText, styles.statusPillTextGlass]}>{label}</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.statusPillText, styles.statusPillTextGlass]}>{label}</Text>
         </View>
       </View>
     );
@@ -96,7 +96,7 @@ export function OrderStatusPill({
         }
       ]}
     >
-      <Text style={[styles.statusPillText, { color: tone.textColor }]}>{label}</Text>
+      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.statusPillText, { color: tone.textColor }]}>{label}</Text>
     </View>
   );
 }

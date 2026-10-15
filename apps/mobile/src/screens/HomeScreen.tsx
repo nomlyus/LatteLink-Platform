@@ -62,7 +62,7 @@ function HomeNewsTag({ label }: { label: NewsLabel }) {
           : styles.newsLabelInnerFallback
       ]}
     >
-      <Text style={styles.newsLabelText}>{label}</Text>
+      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.newsLabelText}>{label}</Text>
     </View>
   );
 
@@ -246,8 +246,8 @@ export function HomeScreen() {
         <ScreenBackdrop />
         <View style={[styles.errorShell, { paddingTop: insets.top + 88, paddingBottom: contentBottomInset }]}>
           <SectionHeader label="Home" />
-          <Text style={styles.errorTitle}>Home temporarily unavailable.</Text>
-          <Text style={styles.errorBody}>{homeErrorMessage}</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.errorTitle}>Home temporarily unavailable.</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.errorBody}>{homeErrorMessage}</Text>
           <Button label="Retry" variant="secondary" onPress={handleRefresh} style={styles.errorAction} />
         </View>
         <TabBarDepthBackdrop />
@@ -289,9 +289,9 @@ export function HomeScreen() {
             if (section.type === "hero") {
               return (
                 <GlassCard key={section.id} style={styles.experienceHeroCard} contentStyle={styles.experienceHeroCardContent}>
-                  <Text style={styles.experienceEyebrow}>Featured</Text>
-                  <Text style={styles.experienceHeroTitle}>{section.title ?? brandName}</Text>
-                  <Text style={styles.experienceHeroBody}>{section.subtitle ?? locationName}</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.experienceEyebrow}>Featured</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.experienceHeroTitle}>{section.title ?? brandName}</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.experienceHeroBody}>{section.subtitle ?? locationName}</Text>
                   <Button
                     label={section.actionLabel ?? "Order now"}
                     variant="primary"
@@ -313,7 +313,7 @@ export function HomeScreen() {
                         size={18}
                         color={uiPalette.text}
                       />
-                      <Text style={styles.quickActionText}>
+                      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.quickActionText}>
                         {action === "open_menu" ? "Menu" : action === "open_orders" ? "Orders" : "Account"}
                       </Text>
                     </Pressable>
@@ -335,17 +335,17 @@ export function HomeScreen() {
               return (
                 <View key={section.id} style={styles.featuredMenuSection}>
                   <View style={styles.sectionTitleRow}>
-                    <Text style={styles.sectionTitle}>{section.title ?? "Popular today"}</Text>
+                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionTitle}>{section.title ?? "Popular today"}</Text>
                     <Pressable accessibilityRole="button" accessibilityLabel="Open menu" onPress={() => router.push("/(tabs)/menu")} style={styles.sectionLink}>
-                      <Text style={styles.sectionLinkText}>Menu</Text>
+                      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionLinkText}>Menu</Text>
                       <Ionicons name="chevron-forward" size={15} color={uiPalette.primary} />
                     </Pressable>
                   </View>
                   <View style={styles.featuredMenuGrid}>
                     {featuredItems.map((item) => (
                       <GlassCard key={item.id} style={styles.featuredMenuCard} contentStyle={styles.featuredMenuCardContent}>
-                        <Text style={styles.featuredMenuName}>{item.name}</Text>
-                        <Text numberOfLines={2} style={styles.featuredMenuDescription}>{item.description}</Text>
+                        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.featuredMenuName}>{item.name}</Text>
+                        <Text allowFontScaling={false} maxFontSizeMultiplier={1} numberOfLines={2} style={styles.featuredMenuDescription}>{item.description}</Text>
                       </GlassCard>
                     ))}
                   </View>
@@ -361,11 +361,11 @@ export function HomeScreen() {
                 </View>
 
                 <View style={styles.newsCopy}>
-                  <Text style={styles.newsTitle}>{item.title}</Text>
-                  <Text style={styles.newsBody}>{item.body}</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.newsTitle}>{item.title}</Text>
+                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.newsBody}>{item.body}</Text>
                 </View>
 
-                <Text style={styles.newsNote}>{item.note}</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.newsNote}>{item.note}</Text>
               </GlassCard>
             ));
           })}
@@ -377,19 +377,19 @@ export function HomeScreen() {
       >
         <Animated.View style={headerContentStyle}>
           <View style={styles.hero}>
-            <Animated.Text style={[styles.title, titleStyle, { color: headerForegroundColor }]}>{displayBrandName}</Animated.Text>
+            <Animated.Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.title, titleStyle, { color: headerForegroundColor }]}>{displayBrandName}</Animated.Text>
           </View>
 
           <Animated.View style={[styles.storeRail, storeRailStyle]}>
             <View style={styles.storeCopy}>
               <LocationPicker color={headerForegroundColor}>
-                <Animated.Text style={[styles.storeTitle, storeTitleStyle, { color: headerForegroundColor }]}>{displayLocationName}</Animated.Text>
+                <Animated.Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.storeTitle, storeTitleStyle, { color: headerForegroundColor }]}>{displayLocationName}</Animated.Text>
               </LocationPicker>
             </View>
 
             <Animated.View style={menuLinkStyle}>
               <Pressable accessibilityRole="button" accessibilityLabel="Open menu" onPress={() => router.push("/(tabs)/menu")} style={styles.inlineLink}>
-                <Text style={[styles.inlineLinkText, { color: headerForegroundColor }]}>Menu</Text>
+                <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.inlineLinkText, { color: headerForegroundColor }]}>Menu</Text>
                 <Ionicons name="chevron-forward" size={16} color={headerForegroundColor} />
               </Pressable>
             </Animated.View>

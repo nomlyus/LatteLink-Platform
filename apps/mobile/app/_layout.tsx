@@ -107,8 +107,8 @@ function StartupCatalogGate({
         <ScreenBackdrop />
         <View style={styles.startupCard}>
           <ActivityIndicator color={uiPalette.primary} />
-          <Text style={styles.startupTitle}>Loading store locations</Text>
-          <Text style={styles.startupBody}>Connecting to the configured brand before showing the app.</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.startupTitle}>Loading store locations</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.startupBody}>Connecting to the configured brand before showing the app.</Text>
         </View>
       </View>
     );
@@ -136,9 +136,9 @@ function StartupCatalogGate({
       <View style={styles.startupScreen}>
         <ScreenBackdrop />
         <View style={styles.startupCard}>
-          <Text style={styles.startupEyebrow}>Configuration required</Text>
-          <Text style={styles.startupTitle}>Store unavailable.</Text>
-          <Text style={styles.startupBody}>{errorMessage}</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.startupEyebrow}>Configuration required</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.startupTitle}>Store unavailable.</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.startupBody}>{errorMessage}</Text>
           <Button
             label="Retry"
             variant="secondary"
@@ -186,8 +186,8 @@ function StartupAppConfigGate({
         <ScreenBackdrop />
         <View style={styles.startupCard}>
           <ActivityIndicator color={uiPalette.primary} />
-          <Text style={styles.startupTitle}>Loading live store data</Text>
-          <Text style={styles.startupBody}>Connecting to the configured backend before showing the app.</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.startupTitle}>Loading live store data</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.startupBody}>Connecting to the configured backend before showing the app.</Text>
         </View>
       </View>
     );
@@ -198,9 +198,9 @@ function StartupAppConfigGate({
       <View style={styles.startupScreen}>
         <ScreenBackdrop />
         <View style={styles.startupCard}>
-          <Text style={styles.startupEyebrow}>Configuration required</Text>
-          <Text style={styles.startupTitle}>App data unavailable.</Text>
-          <Text style={styles.startupBody}>{errorMessage}</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.startupEyebrow}>Configuration required</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.startupTitle}>App data unavailable.</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.startupBody}>{errorMessage}</Text>
           <Button
             label="Retry"
             variant="secondary"
@@ -225,7 +225,7 @@ function StartupAppConfigGate({
           accessibilityLabel="Live store data is unavailable. Some actions may be limited."
           style={styles.liveDataNotice}
         >
-          <Text style={styles.liveDataNoticeText}>Live store data is unavailable. Some actions may be limited.</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.liveDataNoticeText}>Live store data is unavailable. Some actions may be limited.</Text>
         </View>
       ) : null}
     </View>
