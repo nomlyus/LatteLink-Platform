@@ -84,6 +84,17 @@ async function createProject() {
 }
 
 describe("iOS native merchant identity assets", () => {
+  it("synchronizes beta assets for development clients using the same variant boundary", async () => {
+    const { mobileRoot, icon } = await createProject();
+    try {
+      const result = await syncNativeIdentityAssets({ mobileRoot, env: { ...releaseEnvironment, EAS_BUILD_PROFILE: "development" } });
+      expect(result.skipped).toBe(false);
+      expect(await readFile(resolve(mobileRoot, "ios/LatteLinkBeta/Images.xcassets/AppIcon.appiconset/App-Icon-1024x1024@1x.png"))).toEqual(icon);
+    } finally {
+      await rm(mobileRoot, { recursive: true, force: true });
+    }
+  });
+
   it("copies explicit merchant icon and splash assets into the committed native project before compilation", async () => {
     const { mobileRoot, icon, splash } = await createProject();
     try {

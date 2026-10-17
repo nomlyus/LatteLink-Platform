@@ -20,10 +20,13 @@ declare namespace nativeIdentityResolver {
   function resolveMobileNativeIdentity(
     env?: Record<string, string | undefined>
   ): MobileNativeIdentity;
+
+  function resolveVariant(env: Record<string, string | undefined>): MobileAppVariant;
 }
 
 declare const nativeIdentityResolver: {
   resolveMobileNativeIdentity: typeof nativeIdentityResolver.resolveMobileNativeIdentity;
+  resolveVariant: typeof nativeIdentityResolver.resolveVariant;
 };
 
 export = nativeIdentityResolver;

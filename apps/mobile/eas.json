@@ -10,6 +10,21 @@
         "resourceClass": "m-medium"
       }
     },
+    "development": {
+      "extends": "base",
+      "developmentClient": true,
+      "distribution": "internal",
+      "environment": "preview",
+      "ios": {
+        "buildConfiguration": "Debug"
+      },
+      "env": {
+        "APP_VARIANT": "beta",
+        "EXPO_PUBLIC_APP_VARIANT": "beta",
+        "APP_DISPLAY_NAME": "Rawaq Dev",
+        "EXPO_PUBLIC_APP_DISPLAY_NAME": "Rawaq Dev"
+      }
+    },
     "beta": {
       "extends": "base",
       "autoIncrement": true,

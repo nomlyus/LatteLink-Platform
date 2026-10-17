@@ -21,6 +21,15 @@ const releaseIdentity = {
 };
 
 describe("mobile native release identity", () => {
+  it("maps development builds to the explicit beta identity without relaxing identity validation", () => {
+    expect(resolveMobileNativeIdentity({ ...releaseIdentity, EAS_BUILD_PROFILE: "development" }))
+      .toMatchObject({ variant: "beta", isRelease: true, bundleIdentifier: releaseIdentity.IOS_BUNDLE_IDENTIFIER });
+    expect(() => resolveMobileNativeIdentity({ EAS_BUILD_PROFILE: "development", APP_VARIANT: "beta" }))
+      .toThrow(/Release native identity is incomplete/);
+    expect(() => resolveMobileNativeIdentity({ ...releaseIdentity, EAS_BUILD_PROFILE: "development", APP_VARIANT: "production" }))
+      .toThrow(/APP_VARIANT must match EAS_BUILD_PROFILE/);
+  });
+
   it("resolves an explicitly configured second-brand identity", () => {
     expect(resolveMobileNativeIdentity(releaseIdentity)).toMatchObject({
       variant: "beta",

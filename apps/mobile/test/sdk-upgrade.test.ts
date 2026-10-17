@@ -15,6 +15,16 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("SDK 57 upgrade boundaries", () => {
+  it("includes the SDK-matched development client and physical-device Metro discovery", () => {
+    const manifest = JSON.parse(read("package.json"));
+    expect(manifest.dependencies["expo-dev-client"]).toBe("~57.0.20");
+    expect(manifest.scripts["dev:client"]).toBe("expo start --dev-client");
+    const info = read("ios/LatteLinkBeta/Info.plist");
+    expect(info).toContain("NSLocalNetworkUsageDescription");
+    expect(info).toContain("<string>_expo._tcp</string>");
+    expect(info).toContain("<string>$(EXPO_SCHEME)</string>");
+  });
+
   it("uses the fixed SDK / React Native engine combination without compatibility exclusions", () => {
     const manifest = JSON.parse(read("package.json"));
     expect(manifest.dependencies.expo).toBe("~57.0.29");

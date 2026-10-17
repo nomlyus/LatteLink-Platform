@@ -15,12 +15,15 @@ function configuredValue(env, name) {
 }
 
 function resolveVariant(env) {
-  const easProfile = configuredValue(env, "EAS_BUILD_PROFILE");
+  const buildProfile = configuredValue(env, "EAS_BUILD_PROFILE");
+  // A development client uses the existing beta identity and dev backend;
+  // build profiles are not additional merchant/runtime variants.
+  const easProfile = buildProfile === "development" ? "beta" : buildProfile;
   const appVariant = configuredValue(env, "APP_VARIANT");
   const knownVariants = new Set(["local", "beta", "production"]);
 
   if (easProfile && easProfile !== "beta" && easProfile !== "production") {
-    throw new Error(`EAS_BUILD_PROFILE must be beta or production. Received: ${easProfile}`);
+    throw new Error(`EAS_BUILD_PROFILE must be development, beta, or production. Received: ${buildProfile}`);
   }
   if (appVariant && !knownVariants.has(appVariant)) {
     throw new Error(`APP_VARIANT must be local, beta, or production. Received: ${appVariant}`);
@@ -132,4 +135,4 @@ function resolveMobileNativeIdentity(env = process.env) {
   };
 }
 
-module.exports = { resolveMobileNativeIdentity };
+module.exports = { resolveMobileNativeIdentity, resolveVariant };

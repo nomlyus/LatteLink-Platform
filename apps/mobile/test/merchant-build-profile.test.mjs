@@ -8,6 +8,22 @@ const SOURCE_COMMIT = "0123456789abcdef0123456789abcdef01234567";
 const EAS_CONFIG_PATH = new URL("../eas.json", import.meta.url);
 
 describe("merchant mobile build preparation", () => {
+  it("keeps development clients separate from store distribution and production configuration", async () => {
+    const config = JSON.parse(await readFile(EAS_CONFIG_PATH, "utf8"));
+    expect(config.build.development).toMatchObject({
+      extends: "base",
+      developmentClient: true,
+      distribution: "internal",
+      environment: "preview",
+      ios: { buildConfiguration: "Debug" },
+      env: { APP_VARIANT: "beta", EXPO_PUBLIC_APP_VARIANT: "beta" }
+    });
+    expect(config.build.development.ios.simulator).toBeUndefined();
+    expect(config.build.development.channel).toBeUndefined();
+    expect(config.build.beta.distribution).toBe("store");
+    expect(config.build.production.environment).toBe("production");
+  });
+
   it("marks EAS beta and production builds as releases and does not pin another merchant's ASC app", async () => {
     const config = JSON.parse(await readFile(EAS_CONFIG_PATH, "utf8"));
 

@@ -2,20 +2,10 @@ import { Buffer } from "node:buffer";
 import { copyFile, mkdir, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import nativeIdentityResolver from "../src/config/nativeIdentity.cjs";
 
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const RELEASE_VARIANTS = new Set(["beta", "production"]);
-
-function releaseVariant(env) {
-  const variant = env.EAS_BUILD_PROFILE?.trim() || env.APP_VARIANT?.trim() || "local";
-  if (variant !== "local" && !RELEASE_VARIANTS.has(variant)) {
-    throw new Error("Native identity asset sync requires APP_VARIANT local, beta, or production.");
-  }
-  if (env.EAS_BUILD_PROFILE?.trim() && env.APP_VARIANT?.trim() !== variant) {
-    throw new Error("APP_VARIANT must match EAS_BUILD_PROFILE for native identity asset sync.");
-  }
-  return variant;
-}
 
 function validateReleaseInputs(env) {
   const required = [
@@ -72,7 +62,7 @@ async function resolvePngPath(mobileRoot, assetPath, name) {
 }
 
 export async function syncNativeIdentityAssets({ mobileRoot, env = process.env }) {
-  const variant = releaseVariant(env);
+  const variant = nativeIdentityResolver.resolveVariant(env);
   if (!RELEASE_VARIANTS.has(variant)) {
     return { skipped: true };
   }

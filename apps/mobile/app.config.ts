@@ -77,6 +77,8 @@ const config: ExpoConfig = {
     bundleIdentifier: nativeIdentity.bundleIdentifier,
     usesAppleSignIn: true,
     infoPlist: {
+      NSLocalNetworkUsageDescription: "Allow $(PRODUCT_NAME) to connect to the development server on your local network.",
+      NSBonjourServices: ["_expo._tcp"],
       NSCameraUsageDescription: "Allow $(PRODUCT_NAME) to access the camera to scan QR codes and capture profile images when those features are used.",
       NSUserNotificationUsageDescription: "$(PRODUCT_NAME) uses notifications to alert you when your order is ready for pickup."
     },

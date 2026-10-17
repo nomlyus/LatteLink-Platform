@@ -404,3 +404,65 @@ unchanged.
 - The accompanying documentation commit records the Mac checks and the exact
   native acceptance blockers. Both commits are local on `develop`; no push,
   merge, deployment, publication or submission was performed.
+
+## Physical-device development client (2026-10-16)
+
+The first cloud beta build, **35**, finished successfully on the pinned Xcode
+26.6 image: [EAS build c02eed65](https://expo.dev/accounts/yazandaoud/projects/lattelink-mobile/builds/c02eed65-4e20-4426-8137-d99cd626a999).
+This establishes signed beta compilation, not physical-device acceptance. It
+was not submitted to TestFlight or the App Store. Preview configuration was
+explicitly updated to version/runtime **1.3.0**, with the existing Rawaq beta
+identity and dev API; production configuration was unchanged.
+
+Daily UI development uses a separate `development` EAS profile, not repeated
+TestFlight builds. It includes `expo-dev-client` **57.0.20**, uses Debug/internal
+ad hoc distribution, inherits Xcode 26.6 and the preview environment, and keeps
+the existing beta bundle/Apple Pay identity. It displays **Rawaq Dev**. Because
+it reuses the beta bundle identifier, installing it replaces an installed Rawaq
+beta, not the production app; their beta-local data is not isolated from each
+other. No new production identifiers or payment credentials are created.
+
+`EAS_BUILD_PROFILE=development` maps to the existing `beta` app variant in the
+shared native identity resolver and asset-sync step. A development profile
+cannot select the production variant, and full merchant identity validation
+still applies. The custom AppDelegate already supports the Expo dev launcher;
+the custom Apple Pay bridge, dynamic frameworks, deployment target, schemes,
+and ReleaseProduction configuration are retained. The native plist declares
+local network access and `_expo._tcp` discovery for Metro. No prebuild is used.
+
+One-time local environment setup from `apps/mobile` (requires Expo login):
+
+```sh
+APP_VARIANT=local EXPO_SLUG=lattelink-mobile \
+EAS_PROJECT_ID=18320a67-0f15-4860-9f84-845eb0f4c31c \
+npx --yes eas-cli@24.14.0 env:pull --environment preview --path .env.local --non-interactive
+```
+
+`.env.local` is ignored by Git. This pulls the existing preview configuration;
+the Sentry upload secret is intentionally unavailable and is not needed to run
+Metro. Do not copy production environment values into this file.
+
+After installing the development build on a registered physical iPhone:
+
+```sh
+pnpm dev:client --scheme lattelink
+```
+
+Use the same Wi-Fi network, allow local-network access, and scan Metro's QR
+code with the iPhone. If LAN access is blocked, append `--tunnel`. The explicit
+scheme matches the existing native `$(EXPO_SCHEME)` value in preview; there is
+no generated-native-project dependency. Enable iOS Developer Mode if prompted.
+Saving JS/TS/styles uses Fast Refresh. Native dependency/code/configuration
+changes require another development build. Neither command submits an app,
+publishes an OTA update, or launches a simulator.
+
+The native project uses environment-valued bundle/version settings. Xcode
+resolves those correctly, but EAS's static parser does not. Cloud build
+invocations must first verify resolved Xcode settings, then supply the
+process-scoped `EAS_DANGEROUS_OVERRIDE_IOS_BUNDLE_IDENTIFIER` matching that
+verified beta identity; this does not change native signing settings. EAS may
+display `$(APP_VERSION)` in build metadata even though Xcode resolves 1.3.0.
+
+Development build signing/install remains pending device registration and
+an ad hoc provisioning profile containing that device. Do not claim a dev
+client build or live Fast Refresh passed until those steps actually complete.

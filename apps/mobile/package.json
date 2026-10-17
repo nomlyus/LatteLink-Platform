@@ -6,6 +6,7 @@
   "scripts": {
     "build:workspace-deps": "cd ../.. && corepack pnpm --filter @lattelink/contracts-core build && corepack pnpm --filter @lattelink/contracts-auth build && corepack pnpm --filter @lattelink/contracts-catalog build && corepack pnpm --filter @lattelink/contracts-orders build && corepack pnpm --filter @lattelink/contracts-loyalty build && corepack pnpm --filter @lattelink/contracts-notifications build && corepack pnpm --filter @lattelink/design-tokens build && corepack pnpm --filter @lattelink/sdk-mobile build",
     "dev": "expo start --clear",
+    "dev:client": "expo start --dev-client",
     "ios": "expo run:ios",
     "android": "expo run:android",
     "build": "echo 'Use EAS build for mobile artifacts'",
@@ -39,6 +40,7 @@
     "expo-build-properties": "~57.0.22",
     "expo-constants": "~57.0.22",
     "expo-crypto": "~57.0.4",
+    "expo-dev-client": "~57.0.20",
     "expo-font": "~57.0.4",
     "expo-glass-effect": "~57.0.4",
     "expo-linear-gradient": "~57.0.2",
