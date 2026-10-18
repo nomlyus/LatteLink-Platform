@@ -436,6 +436,22 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.get("/v1/app-config", { schema: { querystring: publicCustomerLocationQueryJsonSchema }, attachValidation: true }, async (request, reply) => {
     reply.header("cache-control", publicCatalogCacheControl);
+    if (repository.getPublicCustomerLocation) {
+      const parsed = publicCustomerLocationRequestSchema.safeParse(request.query);
+      if (!parsed.success) {
+        return reply.status(400).send(serviceErrorSchema.parse({
+          code: "INVALID_PUBLIC_LOCATION_REQUEST",
+          message: "Valid brandId and locationId query parameters are required.", requestId: request.id
+        }));
+      }
+      const context = await repository.getPublicCustomerLocation(parsed.data.brandId, parsed.data.locationId);
+      if (!context) {
+        return reply.status(404).send(serviceErrorSchema.parse({
+          code: "PUBLIC_LOCATION_NOT_AVAILABLE", message: "Location not available.", requestId: request.id
+        }));
+      }
+      return context.appConfig;
+    }
     const access = await resolvePublicCustomerLocation(request, reply);
     if (!access) return reply;
     const locationContext = await getPublicLocationContext(access.locationId);

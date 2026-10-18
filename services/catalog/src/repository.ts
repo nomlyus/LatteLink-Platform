@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readPublicLocationSnapshot } from "./public-location-snapshot.js";
 import { assertOwnerSetupComplete, OwnerSetupIncompleteError } from "./owner-setup.js";
 import { saveOwnerInputPostgres } from "./owner-input-postgres.js";
 import { assertOwnerSubmissionReady, assertOwnerSubmissionLocationSet } from "./owner-submission.js";
@@ -505,6 +506,11 @@ type CatalogRepository = {
   /** Uses the same persisted onboarding/config readiness rule as the public mobile bootstrap. */
   isCustomerLocationLaunchableForBrand(brandId: string, locationId: string): Promise<boolean>;
   getAppConfig(locationId: string): Promise<AppConfig | undefined>;
+  /** PostgreSQL can validate access and return configuration from one fresh snapshot. */
+  getPublicCustomerLocation?(brandId: string, locationId: string): Promise<{
+    appConfig: AppConfig;
+    storeConfig: StoreConfigResponse;
+  } | undefined>;
   listInternalLocations(): Promise<InternalLocationSummary[]>;
   getInternalLocationSummary(locationId: string): Promise<InternalLocationSummary | undefined>;
   bootstrapInternalLocation(input: InternalLocationBootstrap): Promise<InternalLocationSummary>;
@@ -1027,11 +1033,12 @@ function buildChecklist(input: {
   progress: OnboardingProgressRecord;
   paymentProfile?: ClientPaymentProfile;
   menu?: MenuResponse;
+  hasVisibleMenuItems?: boolean;
   appIdentity?: AppIdentityProfile;
   mobileRelease?: MobileReleaseProfile;
 }) {
   const paymentReadiness = buildPaymentReadiness(input.paymentProfile);
-  const menuReady = menuHasVisibleItems(input.menu) || input.progress.menuReady;
+  const menuReady = (input.hasVisibleMenuItems ?? menuHasVisibleItems(input.menu)) || input.progress.menuReady;
   const appIdentityReadiness = input.appIdentity?.readiness ?? buildAppIdentityReadiness(undefined);
   const mobileReleaseReady = isMobileReleaseReady(input.mobileRelease);
 
@@ -1132,6 +1139,7 @@ function buildOnboardingSummary(input: {
   progress: OnboardingProgressRecord;
   paymentProfile?: ClientPaymentProfile;
   menu?: MenuResponse;
+  hasVisibleMenuItems?: boolean;
   appIdentity?: AppIdentityProfile;
   mobileRelease?: MobileReleaseProfile;
 }) {
@@ -3489,13 +3497,8 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
       // The legacy location summary can hydrate default config; bootstrap requires explicit per-location app and store records.
       const readinessByLocation = await Promise.all(
         memberships.map(async (membership) => {
-          const [onboarding, locationSummary, appConfig, storeConfig] = await Promise.all([
-            this.getInternalLocationOnboarding(membership.locationId),
-            this.getInternalLocationSummary(membership.locationId),
-            this.getAppConfig(membership.locationId),
-            this.getStoreConfig(membership.locationId)
-          ]);
-          return isCustomerLocationLaunchable({ brand, membership, onboarding, appConfig, storeConfig, locationSummary })
+          const context = await this.getPublicCustomerLocation!(brandId, membership.locationId);
+          return context
             ? membership.locationId
             : undefined;
         })
@@ -3520,56 +3523,51 @@ async function createPostgresRepository(connectionString: string): Promise<Catal
       return Boolean(membership);
     },
     async isCustomerLocationLaunchableForBrand(brandId, locationId) {
-      const row = await db
-        .selectFrom("catalog_client_locations as memberships")
-        .innerJoin("catalog_clients as clients", "clients.tenant_id", "memberships.tenant_id")
-        .selectAll("memberships")
-        .select([
-          "clients.tenant_id as client_tenant_id",
-          "clients.brand_id as client_brand_id",
-          "clients.client_name as client_name",
-          "clients.owner_profile_json as owner_profile_json",
-          "clients.status as client_status",
-          "clients.created_at as client_created_at",
-          "clients.updated_at as client_updated_at"
-        ])
-        .where("clients.brand_id", "=", brandId)
-        .where("memberships.location_id", "=", locationId)
-        .whereRef("memberships.brand_id", "=", "clients.brand_id")
-        .executeTakeFirst();
-      if (!row) return false;
-
-      const client = toClientRecord({
-        tenant_id: row.client_tenant_id,
-        brand_id: row.client_brand_id,
-        client_name: row.client_name,
-        owner_profile_json: row.owner_profile_json,
-        status: row.client_status,
-        created_at: row.client_created_at,
-        updated_at: row.client_updated_at
+      return Boolean(await this.getPublicCustomerLocation!(brandId, locationId));
+    },
+    async getPublicCustomerLocation(brandId, locationId) {
+      const snapshot = await readPublicLocationSnapshot(db, brandId, locationId);
+      if (!snapshot) return undefined;
+      const client = toClientRecord(snapshot.client);
+      const location = toClientLocationRecord(snapshot.location);
+      const paymentProfile = snapshot.payment
+        ? clientPaymentProfileSchema.parse(snapshot.payment.payment_profile_json)
+        : undefined;
+      const appConfig = applyPaymentProfileToAppConfig(
+        applyRuntimeFulfillmentMode(appConfigSchema.parse(snapshot.app.app_config_json)), paymentProfile
+      );
+      const storeConfig = buildStoreConfigResponse({
+        locationId: snapshot.store.location_id,
+        hoursText: snapshot.store.hours_text,
+        prepEtaMinutes: snapshot.store.prep_eta_minutes,
+        taxRateBasisPoints: snapshot.store.tax_rate_basis_points,
+        pickupInstructions: snapshot.store.pickup_instructions
       });
-      const location = toClientLocationRecord(row);
-      const brand: MobileBrandRecord = {
-        tenantId: client.tenantId,
-        brandId: client.brandId,
-        displayName: client.ownerProfile?.customerFacingName ?? client.clientName
-      };
-      const membership: MobileBrandLocationMembership = {
-        tenantId: location.tenantId,
-        brandId: location.brandId,
-        locationId: location.locationId,
-        locationName: location.locationName,
-        marketLabel: location.marketLabel,
-        timezone: location.timezone,
-        primaryLocation: location.primaryLocation
-      };
-      const [onboarding, locationSummary, appConfig, storeConfig] = await Promise.all([
-        this.getInternalLocationOnboarding(locationId),
-        this.getInternalLocationSummary(locationId),
-        this.getAppConfig(locationId),
-        this.getStoreConfig(locationId)
-      ]);
-      return isCustomerLocationLaunchable({ brand, membership, onboarding, appConfig, storeConfig, locationSummary });
+      const locationSummary = buildInternalLocationSummary({
+        brandId: appConfig.brand.brandId, brandName: appConfig.brand.brandName,
+        locationId, locationName: appConfig.brand.locationName, marketLabel: appConfig.brand.marketLabel,
+        storeName: snapshot.store.store_name, hours: snapshot.store.hours_text,
+        pickupInstructions: snapshot.store.pickup_instructions, taxRateBasisPoints: snapshot.store.tax_rate_basis_points,
+        capabilities: appConfig.storeCapabilities, paymentProfile
+      });
+      const onboarding = buildOnboardingSummary({
+        client, location, locationSummary,
+        storeConfig: buildAdminStoreConfig({
+          locationId, storeName: snapshot.store.store_name, locationName: appConfig.brand.locationName,
+          timezone: location.timezone, hours: snapshot.store.hours_text,
+          pickupInstructions: snapshot.store.pickup_instructions, taxRateBasisPoints: snapshot.store.tax_rate_basis_points,
+          capabilities: appConfig.storeCapabilities
+        }),
+        progress: toOnboardingProgressRecord(snapshot.progress), paymentProfile,
+        hasVisibleMenuItems: snapshot.has_visible_menu_items,
+        appIdentity: snapshot.identity ? toAppIdentityProfile(snapshot.identity) : undefined,
+        mobileRelease: snapshot.release ? toMobileReleaseProfile(snapshot.release) : undefined
+      });
+      const launchable = isCustomerLocationLaunchable({
+        brand: { tenantId: client.tenantId, brandId: client.brandId, displayName: client.clientName },
+        membership: location, onboarding, appConfig, storeConfig, locationSummary
+      });
+      return launchable ? { appConfig, storeConfig } : undefined;
     },
     async getAppConfig(locationId) {
       const row = await db
