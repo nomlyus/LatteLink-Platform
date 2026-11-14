@@ -2,17 +2,18 @@ import * as AppleAuthentication from "expo-apple-authentication";
 import Constants, { AppOwnership } from "expo-constants";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View, useColorScheme } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getAuthScreenRecoveryCopy } from "../src/auth/recovery";
 import { useCustomerProfileQuery, isCustomerProfileComplete } from "../src/auth/profile";
 import { useAppleExchangeMutation, useDevAccessMutation } from "../src/auth/useAuth";
-import { generateAuthNonce } from "../src/auth/nonce";
+import { requestAppleSignIn } from "../src/auth/requestAppleSignIn";
 import { useAuthSession } from "../src/auth/session";
 import { MOBILE_API_ENVIRONMENT } from "../src/api/client";
 import { Button, uiPalette, uiTypography } from "../src/ui/system";
 import {
   resolveReturnToPath,
+  getAuthReturnDestination,
   formatExpiresAt,
   getReturnLabel,
   resolveAppleSignInErrorMessage,
@@ -23,6 +24,7 @@ const DEFAULT_DEV_ACCESS_EMAIL = "dev@nomly.local";
 const DEFAULT_DEV_ACCESS_NAME = "Dev Tester";
 
 export default function AuthScreen() {
+  const dark = useColorScheme() === "dark";
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ returnTo?: string | string[] }>();
@@ -33,10 +35,10 @@ export default function AuthScreen() {
   const devAccess = useDevAccessMutation();
   const returnTo = useMemo(() => resolveReturnToPath(params.returnTo), [params.returnTo]);
   const continueIntoApp = useCallback(() => {
-    const destination = returnTo === "cart" ? "/cart" : (returnTo ?? "/(tabs)/menu");
+    const destination = getAuthReturnDestination(returnTo);
     router.dismissTo(destination);
   }, [returnTo, router]);
-  const topContentInset = insets.top + 52;
+  const topContentInset = 32;
   const recoveryCopy = useMemo(() => getAuthScreenRecoveryCopy(authRecoveryState), [authRecoveryState]);
   const profileQuery = useCustomerProfileQuery(isAuthenticated && !isHydrating);
   const profile = profileQuery.data;
@@ -106,24 +108,8 @@ export default function AuthScreen() {
 
     try {
       appleExchange.reset();
-      const safeNonce = generateAuthNonce();
-      const credential = await AppleAuthentication.signInAsync({
-        nonce: safeNonce,
-        requestedScopes: [
-          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-          AppleAuthentication.AppleAuthenticationScope.EMAIL
-        ]
-      });
-
-      if (!credential.identityToken || !credential.authorizationCode) {
-        return;
-      }
-
-      appleExchange.mutate({
-        identityToken: credential.identityToken,
-        authorizationCode: credential.authorizationCode,
-        nonce: safeNonce
-      });
+      const credential = await requestAppleSignIn();
+      if (credential) appleExchange.mutate(credential);
     } catch (error) {
       const errorCode = (error as { code?: string } | null)?.code;
       if (errorCode === "ERR_REQUEST_CANCELED") {
@@ -147,9 +133,6 @@ export default function AuthScreen() {
   if (isHydrating) {
     return (
       <View style={styles.screen}>
-        <View style={[styles.handleWrap, styles.handleWrapTop]}>
-          <View style={styles.handle} />
-        </View>
         <View style={[styles.centerContent, { paddingTop: topContentInset }]}>
           <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>
             Restoring your session…
@@ -157,7 +140,7 @@ export default function AuthScreen() {
           <View style={styles.loadingRow}>
             <ActivityIndicator color={uiPalette.primary} />
             <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>
-              Hydrating local credentials.
+              Getting things ready for you.
             </Text>
           </View>
         </View>
@@ -167,9 +150,6 @@ export default function AuthScreen() {
 
   return (
     <View style={styles.screen}>
-      <View style={[styles.handleWrap, styles.handleWrapTop]}>
-        <View style={styles.handle} />
-      </View>
       <View style={[styles.centerContent, { paddingTop: topContentInset }]}>
         {isAuthenticated ? (
           profileQuery.isLoading ? (
@@ -199,7 +179,7 @@ export default function AuthScreen() {
                 Finish your signup.
               </Text>
               <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>
-                We need a profile setup step before you can enter the app.
+                Add your name so we know who to call when your order is ready.
               </Text>
             </>
           ) : profileComplete ? (
@@ -253,12 +233,12 @@ export default function AuthScreen() {
           <>
             <AppleAuthentication.AppleAuthenticationButton
               buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-              buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+              buttonStyle={dark ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
               cornerRadius={18}
               style={styles.appleButton}
               onPress={handleNativeAppleSignIn}
             />
-            {MOBILE_API_ENVIRONMENT.variant ? (
+            {__DEV__ && MOBILE_API_ENVIRONMENT.variant ? (
               <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.environmentHint}>
                 {MOBILE_API_ENVIRONMENT.variant} · {MOBILE_API_ENVIRONMENT.apiBaseUrl || "API blocked"}
               </Text>
@@ -289,7 +269,7 @@ export default function AuthScreen() {
               variant="secondary"
               disabled
             />
-            {MOBILE_API_ENVIRONMENT.variant ? (
+            {__DEV__ && MOBILE_API_ENVIRONMENT.variant ? (
               <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.environmentHint}>
                 {MOBILE_API_ENVIRONMENT.variant} · {MOBILE_API_ENVIRONMENT.apiBaseUrl || "API blocked"}
               </Text>
@@ -322,23 +302,6 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: uiPalette.background
-  },
-  handleWrap: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    alignItems: "center",
-    zIndex: 10
-  },
-  handleWrapTop: {
-    paddingTop: 10
-  },
-  handle: {
-    width: 38,
-    height: 5,
-    borderRadius: 999,
-    backgroundColor: "rgba(151, 160, 154, 0.52)"
   },
   centerContent: {
     flex: 1,

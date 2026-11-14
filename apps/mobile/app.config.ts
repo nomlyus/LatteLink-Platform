@@ -37,7 +37,11 @@ if (nativeIdentity.isRelease) {
   ]) {
     const absolutePath = resolve(mobileRoot, assetPath);
     const relativePath = relative(mobileRoot, absolutePath);
-    if (relativePath.startsWith("..") || relativePath === "" || !statSync(absolutePath, { throwIfNoEntry: false })?.isFile()) {
+    if (
+      relativePath.startsWith("..") ||
+      relativePath === "" ||
+      !statSync(absolutePath, { throwIfNoEntry: false })?.isFile()
+    ) {
       throw new Error(`${key} must point to an existing file within the mobile project.`);
     }
   }
@@ -45,10 +49,10 @@ if (nativeIdentity.isRelease) {
 const applePayMerchantIdentifier = nativeIdentity.applePayMerchantIdentifier;
 const applePayMerchantIdentifiers = applePayMerchantIdentifier ? [applePayMerchantIdentifier] : [];
 const releaseApiBaseUrl = resolveReleaseApiBaseUrl();
-const stripePlugin = [
-  "@stripe/stripe-react-native",
-  { merchantIdentifier: applePayMerchantIdentifiers }
-] as [string, { merchantIdentifier: string[] }];
+const stripePlugin = ["@stripe/stripe-react-native", { merchantIdentifier: applePayMerchantIdentifiers }] as [
+  string,
+  { merchantIdentifier: string[] }
+];
 const sentryPlugin =
   process.env.SENTRY_ORG && process.env.SENTRY_PROJECT
     ? ([
@@ -65,10 +69,10 @@ const config: ExpoConfig = {
   name: nativeIdentity.displayName,
   slug: nativeIdentity.slug,
   scheme: nativeIdentity.scheme,
-  version: process.env.APP_VERSION ?? "1.3.0",
+  version: process.env.APP_VERSION ?? "1.4.0",
   orientation: "portrait",
   icon: nativeIdentity.iconPath,
-  userInterfaceStyle: "light",
+  userInterfaceStyle: "automatic",
   updates: {
     ...(nativeIdentity.easProjectId ? { url: `https://u.expo.dev/${nativeIdentity.easProjectId}` } : {})
   },
@@ -77,10 +81,13 @@ const config: ExpoConfig = {
     bundleIdentifier: nativeIdentity.bundleIdentifier,
     usesAppleSignIn: true,
     infoPlist: {
-      NSLocalNetworkUsageDescription: "Allow $(PRODUCT_NAME) to connect to the development server on your local network.",
+      NSLocalNetworkUsageDescription:
+        "Allow $(PRODUCT_NAME) to connect to the development server on your local network.",
       NSBonjourServices: ["_expo._tcp"],
-      NSCameraUsageDescription: "Allow $(PRODUCT_NAME) to access the camera to scan QR codes and capture profile images when those features are used.",
-      NSUserNotificationUsageDescription: "$(PRODUCT_NAME) uses notifications to alert you when your order is ready for pickup."
+      NSCameraUsageDescription:
+        "Allow $(PRODUCT_NAME) to access the camera to scan QR codes and capture profile images when those features are used.",
+      NSUserNotificationUsageDescription:
+        "$(PRODUCT_NAME) uses notifications to alert you when your order is ready for pickup."
     },
     associatedDomains: resolveAssociatedDomains(),
     entitlements: {
@@ -91,7 +98,7 @@ const config: ExpoConfig = {
           }
         : {})
     },
-    runtimeVersion: process.env.APP_RUNTIME_VERSION ?? "1.3.0"
+    runtimeVersion: process.env.APP_RUNTIME_VERSION ?? "1.4.0"
   },
   android: {
     runtimeVersion: {
@@ -130,7 +137,11 @@ const config: ExpoConfig = {
       {
         // Expo's precompiled-module mode forces React-dependent pods static,
         // which is incompatible with Stripe's dynamic SwiftPM bridge.
-        ios: { deploymentTarget: "16.4", useFrameworks: "dynamic", usePrecompiledModules: false }
+        ios: {
+          deploymentTarget: "16.4",
+          useFrameworks: "dynamic",
+          usePrecompiledModules: false
+        }
       }
     ],
     stripePlugin,

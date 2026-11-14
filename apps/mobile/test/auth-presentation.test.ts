@@ -1,11 +1,22 @@
 import { describe, expect, it } from "vitest";
 import {
   resolveReturnToPath,
+  getAuthReturnDestination,
   resolveAppleSignInErrorMessage,
   resolveDevAccessErrorMessage
 } from "../src/auth/presentation";
 
 describe("authentication presentation", () => {
+  it("maps existing auth-return values directly to canonical navigation without changing the allowlist", () => {
+    expect(getAuthReturnDestination("/(tabs)/home")).toBe("/(tabs)/(navigation)/home");
+    expect(getAuthReturnDestination("/(tabs)/orders")).toBe("/(tabs)/orders");
+    expect(resolveReturnToPath("/(tabs)/(navigation)/rewards")).toBe("/(tabs)/(navigation)/rewards");
+    expect(getAuthReturnDestination("/(tabs)/(navigation)/rewards")).toBe("/(tabs)/(navigation)/rewards");
+    expect(getAuthReturnDestination("/(tabs)/account")).toBe("/(tabs)/account");
+    expect(getAuthReturnDestination("cart")).toBe("/cart");
+    expect(getAuthReturnDestination(null)).toBe("/(tabs)/(navigation)/menu");
+    expect(resolveReturnToPath("https://example.test")).toBeNull();
+  });
   it("preserves the return destination allowlist and first-value semantics", () => {
     expect(resolveReturnToPath(["cart", "/(tabs)/orders"])).toBe("cart");
     expect(resolveReturnToPath("/(tabs)/account")).toBe("/(tabs)/account");

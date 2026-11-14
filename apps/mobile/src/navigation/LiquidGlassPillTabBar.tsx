@@ -1,20 +1,18 @@
 import { usePillTabSelection } from "./usePillTabSelection";
-import { Ionicons } from "@expo/vector-icons";
 import { GlassView } from "expo-glass-effect";
 import { useEffect } from "react";
 
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 
-import { uiPalette, uiTypography } from "../ui/system";
 import { TAB_BAR_HEIGHT } from "./tabBarMetrics";
-import { iconMap, iconSizeMap, labelMap, type PillTabBarProps } from "./pillTabBarShared";
+import type { PillTabBarProps } from "./pillTabBarShared";
+import { PillTabButtons, PillTabIcons } from "./PillTabItems";
+import { TabBarCartButton } from "./TabBarCartButton";
 
-export function LiquidGlassPillTabBar({ state, descriptors, navigation }: PillTabBarProps) {
+export function LiquidGlassPillTabBar({ state, descriptors, emitter, navigateToTab }: PillTabBarProps) {
   const {
-    router,
-    itemCount,
     tabRowWidth,
     setTabRowWidth,
     indicatorTranslateX,
@@ -33,7 +31,7 @@ export function LiquidGlassPillTabBar({ state, descriptors, navigation }: PillTa
     syncIndicatorToIndex,
     navigateToIndex,
     dragSpringConfig
-  } = usePillTabSelection({ state, navigation });
+  } = usePillTabSelection({ state, emitter, navigateToTab });
   const dragMorphProgress = useSharedValue(0);
   const dragVelocityInfluence = useSharedValue(0);
   const indicatorBaseTop = 3;
@@ -106,39 +104,6 @@ export function LiquidGlassPillTabBar({ state, descriptors, navigation }: PillTa
       ]
     };
   }, [indicatorWidth, tabRowWidth]);
-
-  const renderIconSlots = (useActiveIcons: boolean) =>
-    state.routes.map((route) => {
-      const descriptor = descriptors[route.key];
-      const label =
-        typeof descriptor.options.title === "string" ? descriptor.options.title : (labelMap[route.name] ?? route.name);
-      const iconNames = iconMap[route.name] ?? { default: "ellipse-outline", active: "ellipse" };
-      const iconSize = iconSizeMap[route.name] ?? 24;
-
-      return (
-        <View key={`${useActiveIcons ? "active" : "base"}-${route.key}`} style={styles.tabSlot}>
-          <View pointerEvents="none" style={styles.tabVisualButton}>
-            <View style={styles.tabContent}>
-              <View style={styles.tabIconBox}>
-                <Ionicons
-                  name={useActiveIcons ? iconNames.active : iconNames.default}
-                  size={iconSize}
-                  color={useActiveIcons ? "rgba(18, 18, 18, 0.94)" : "rgba(38, 38, 44, 0.58)"}
-                />
-              </View>
-              <Text
-                allowFontScaling={false}
-                maxFontSizeMultiplier={1}
-                numberOfLines={1}
-                style={[styles.tabLabel, styles.tabLabelGlass, useActiveIcons ? styles.tabLabelActive : null]}
-              >
-                {label}
-              </Text>
-            </View>
-          </View>
-        </View>
-      );
-    });
 
   useEffect(() => {
     if (slotWidth <= 0) return;
@@ -275,12 +240,12 @@ export function LiquidGlassPillTabBar({ state, descriptors, navigation }: PillTa
               </View>
 
               <View pointerEvents="none" style={styles.baseIconRow}>
-                {renderIconSlots(false)}
+                <PillTabIcons state={state} descriptors={descriptors} active={false} variant="glass" />
               </View>
               {indicatorWidth > 0 ? (
                 <Animated.View pointerEvents="none" style={[styles.activeIconWindow, activeIconWindowStyle]}>
                   <Animated.View style={[styles.activeIconTrack, activeIconTrackStyle]}>
-                    {renderIconSlots(true)}
+                    <PillTabIcons state={state} descriptors={descriptors} active variant="glass" />
                   </Animated.View>
                 </Animated.View>
               ) : null}
@@ -290,73 +255,18 @@ export function LiquidGlassPillTabBar({ state, descriptors, navigation }: PillTa
                 </GestureDetector>
               ) : null}
 
-              {state.routes.map((route, index) => {
-                const descriptor = descriptors[route.key];
-                const isFocused = activeIndex === index;
-                const label =
-                  typeof descriptor.options.title === "string"
-                    ? descriptor.options.title
-                    : (labelMap[route.name] ?? route.name);
-
-                const onPress = () => {
-                  const event = navigation.emit({
-                    type: "tabPress",
-                    target: route.key,
-                    canPreventDefault: true
-                  });
-
-                  if (!isFocused && !event.defaultPrevented) {
-                    navigation.navigate(route.name, route.params);
-                  }
-                };
-
-                return (
-                  <View key={route.key} style={styles.tabSlot}>
-                    <Pressable
-                      onPress={onPress}
-                      style={({ pressed }) => [styles.tabButton, pressed ? styles.tabPressed : null]}
-                      hitSlop={{ top: 2, bottom: 2, left: 14, right: 14 }}
-                      accessibilityRole="tab"
-                      accessibilityState={isFocused ? { selected: true } : {}}
-                      accessibilityLabel={descriptor.options.tabBarAccessibilityLabel ?? label}
-                    >
-                      <View style={styles.tabContent}>
-                        <View style={styles.tabIconBox} />
-                        <Text
-                          allowFontScaling={false}
-                          maxFontSizeMultiplier={1}
-                          numberOfLines={1}
-                          style={[styles.tabLabel, styles.tabLabelPlaceholder]}
-                        >
-                          {label}
-                        </Text>
-                      </View>
-                    </Pressable>
-                  </View>
-                );
-              })}
+              <PillTabButtons
+                state={state}
+                descriptors={descriptors}
+                emitter={emitter}
+                navigateToTab={navigateToTab}
+                activeIndex={activeIndex}
+              />
             </View>
           </Animated.View>
         </View>
 
-        {itemCount > 0 ? (
-          <Pressable
-            accessibilityLabel="Open cart"
-            style={styles.cartPillPressable}
-            onPress={() => router.push("/cart")}
-          >
-            <GlassView glassEffectStyle="regular" colorScheme="auto" isInteractive style={styles.cartGlassPill}>
-              <View style={styles.cartGlassInner}>
-                <Ionicons name="bag-handle-outline" size={21} color={uiPalette.text} />
-                <View style={styles.cartCountBadge}>
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.cartCountLabel}>
-                    {itemCount > 99 ? "99+" : String(itemCount)}
-                  </Text>
-                </View>
-              </View>
-            </GlassView>
-          </Pressable>
-        ) : null}
+        <TabBarCartButton variant="glass" />
       </View>
     </View>
   );
@@ -374,46 +284,6 @@ const styles = StyleSheet.create({
   },
   dockWrap: {
     flex: 1
-  },
-  cartPillPressable: {
-    width: 58,
-    minWidth: 58,
-    height: 58,
-    borderRadius: 999
-  },
-  cartGlassPill: {
-    flex: 1,
-    borderRadius: 999,
-    overflow: "hidden"
-  },
-  cartGlassInner: {
-    flex: 1,
-    borderRadius: 999,
-    overflow: "hidden",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.004)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.11)"
-  },
-  cartCountBadge: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    minWidth: 18,
-    height: 18,
-    paddingHorizontal: 4,
-    borderRadius: 9,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(23, 21, 19, 0.92)"
-  },
-  cartCountLabel: {
-    fontSize: 10,
-    lineHeight: 10,
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontFamily: uiTypography.bodyFamily
   },
   container: {
     borderRadius: 999,
@@ -508,61 +378,5 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: 999,
     zIndex: 4
-  },
-  tabSlot: {
-    flex: 1,
-    zIndex: 3,
-    alignItems: "stretch",
-    justifyContent: "center"
-  },
-  tabVisualButton: {
-    width: "100%",
-    minHeight: 58,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 6
-  },
-  tabButton: {
-    width: "100%",
-    minHeight: 58,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 6
-  },
-  tabContent: {
-    width: "100%",
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  tabIconBox: {
-    width: 28,
-    height: 28,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  tabPressed: {
-    opacity: 0.78
-  },
-  tabLabel: {
-    width: "100%",
-    marginTop: 0,
-    fontSize: 12,
-    lineHeight: 14,
-    color: "rgba(60, 60, 67, 0.72)",
-    fontWeight: "500",
-    letterSpacing: 0.1,
-    textAlign: "center",
-    fontFamily: uiTypography.bodyFamily
-  },
-  tabLabelGlass: {
-    color: "rgba(38, 38, 44, 0.58)"
-  },
-  tabLabelPlaceholder: {
-    opacity: 0
-  },
-  tabLabelActive: {
-    color: "rgba(18, 18, 18, 0.96)"
   }
 });

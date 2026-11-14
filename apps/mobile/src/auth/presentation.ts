@@ -1,8 +1,27 @@
-export type ReturnToPath = "cart" | "/(tabs)/home" | "/(tabs)/orders" | "/(tabs)/account";
+import { tabDestinations } from "../navigation/destinations";
+
+export type ReturnToPath = "cart" | "/(tabs)/home" | "/(tabs)/orders" | "/(tabs)/account" | "/(tabs)/(navigation)/rewards";
+
+export function getAuthReturnDestination(returnTo: ReturnToPath | null) {
+  switch (returnTo) {
+    case "cart":
+      return "/cart" as const;
+    case "/(tabs)/home":
+      return tabDestinations.home;
+    case "/(tabs)/orders":
+      return tabDestinations.orders;
+    case "/(tabs)/(navigation)/rewards":
+      return tabDestinations.rewards;
+    case "/(tabs)/account":
+      return tabDestinations.account;
+    default:
+      return tabDestinations.menu;
+  }
+}
 
 export function resolveReturnToPath(input: string | string[] | undefined): ReturnToPath | null {
   if (Array.isArray(input)) return resolveReturnToPath(input[0]);
-  if (input === "cart" || input === "/(tabs)/home" || input === "/(tabs)/orders" || input === "/(tabs)/account") {
+  if (input === "cart" || input === "/(tabs)/home" || input === "/(tabs)/orders" || input === "/(tabs)/account" || input === "/(tabs)/(navigation)/rewards") {
     return input;
   }
   return null;
@@ -16,9 +35,11 @@ export function formatExpiresAt(expiresAt: string): string {
 export function getReturnLabel(returnTo: ReturnToPath | null) {
   switch (returnTo) {
     case "cart":
-      return "Return to Checkout";
+      return "Return to Cart";
     case "/(tabs)/orders":
       return "Return to Orders";
+    case "/(tabs)/(navigation)/rewards":
+      return "Return to Rewards";
     case "/(tabs)/account":
       return "Return to Account";
     case "/(tabs)/home":

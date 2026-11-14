@@ -61,7 +61,7 @@ export function OrderStatusPill({ status, glassStyle = "regular" }: OrderStatusP
         {useLiquidGlass ? (
           <GlassView glassEffectStyle={glassStyle} colorScheme="auto" isInteractive style={styles.statusPillFrame} />
         ) : (
-          <BlurView tint="light" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.statusPillFrame} />
+          <BlurView tint="systemMaterial" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.statusPillFrame} />
         )}
         <View pointerEvents="none" style={styles.statusPillContent}>
           <Text

@@ -1,5 +1,5 @@
 import { canUseLiquidGlass } from "../ui/glass";
-import { Ionicons } from "@expo/vector-icons";
+import { SymbolView } from "expo-symbols";
 import { BlurView } from "expo-blur";
 import { GlassView } from "expo-glass-effect";
 import type { MenuItemCustomizationGroup, MenuItemCustomizationOption } from "@lattelink/contracts-catalog";
@@ -7,6 +7,7 @@ import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { type CartCustomization, isCustomizationOptionSelected } from "../cart/model";
 import { uiPalette, uiTypography } from "../ui/system";
 import { formatUsd } from "./catalog";
+import { availableCustomizationOptions } from "./customizationOptions";
 
 function getSelectionHint(group: MenuItemCustomizationGroup) {
   if (group.selectionType === "single") {
@@ -36,14 +37,6 @@ function getOptionMeta(option: MenuItemCustomizationOption) {
   return "Included";
 }
 
-function compareOptions(left: MenuItemCustomizationOption, right: MenuItemCustomizationOption) {
-  if (left.default !== right.default) {
-    return left.default ? -1 : 1;
-  }
-
-  return left.sortOrder - right.sortOrder || left.label.localeCompare(right.label) || left.id.localeCompare(right.id);
-}
-
 type OptionRowProps = {
   option: MenuItemCustomizationOption;
   selectionType: MenuItemCustomizationGroup["selectionType"];
@@ -61,15 +54,14 @@ function OptionRow({ option, selectionType, active, onPress }: OptionRowProps) {
       accessibilityLabel={option.label}
       accessibilityState={{ selected: active, disabled: !option.available }}
       disabled={!option.available}
-      style={({ pressed }) => [
+      style={[
         styles.optionRow,
         active ? styles.optionRowActive : null,
-        pressed ? styles.optionRowPressed : null
       ]}
     >
       <View style={styles.optionLeading}>
         <View style={[styles.optionSelectionControl, active ? styles.optionSelectionControlActive : null]}>
-          {active ? <Ionicons name="checkmark" size={13} color="#FFFFFF" /> : null}
+          {active ? <SymbolView name={{ ios: "checkmark", android: "check" }} size={13} weight="semibold" tintColor={uiPalette.primaryText} /> : null}
         </View>
 
         <View style={styles.optionTitleRow}>
@@ -130,7 +122,7 @@ export function CustomizationGroupSection({
           <View style={styles.sectionGlassInner} />
         </GlassView>
       ) : (
-        <BlurView tint="light" intensity={Platform.OS === "ios" ? 26 : 22} style={styles.sectionFrame}>
+        <BlurView tint="systemMaterial" intensity={Platform.OS === "ios" ? 26 : 22} style={styles.sectionFrame}>
           <View style={styles.sectionFallbackInner} />
         </BlurView>
       )}
@@ -160,10 +152,7 @@ export function CustomizationGroupSection({
         ) : null}
 
         <View style={styles.optionsStack}>
-          {group.options
-            .filter((option) => option.available)
-            .sort(compareOptions)
-            .map((option) => (
+          {availableCustomizationOptions(group).map((option) => (
               <OptionRow
                 key={option.id}
                 option={option}
@@ -201,16 +190,16 @@ const styles = StyleSheet.create({
   sectionGlassInner: {
     flex: 1,
     borderRadius: 28,
-    backgroundColor: "rgba(255, 252, 246, 0.10)",
+    backgroundColor: "transparent",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.28)"
+    borderColor: uiPalette.border
   },
   sectionFallbackInner: {
     flex: 1,
     borderRadius: 28,
-    backgroundColor: "rgba(255, 252, 246, 0.62)",
+    backgroundColor: uiPalette.surfaceStrong,
     borderWidth: 1,
-    borderColor: "rgba(23, 21, 19, 0.06)"
+    borderColor: uiPalette.border
   },
   sectionContent: {
     paddingHorizontal: 18,
@@ -227,9 +216,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.56)",
+    backgroundColor: uiPalette.accentSoft,
     borderWidth: 1,
-    borderColor: "rgba(23, 21, 19, 0.06)"
+    borderColor: uiPalette.border
   },
   headerPrimaryPillText: {
     fontSize: 11,
@@ -243,9 +232,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.32)",
+    backgroundColor: "transparent",
     borderWidth: 1,
-    borderColor: "rgba(23, 21, 19, 0.05)"
+    borderColor: uiPalette.border
   },
   headerSecondaryPillText: {
     fontSize: 11,
@@ -281,16 +270,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
     borderRadius: 20,
-    backgroundColor: "rgba(255,255,255,0.46)",
+    backgroundColor: "transparent",
     borderWidth: 1,
-    borderColor: "rgba(23, 21, 19, 0.06)"
+    borderColor: uiPalette.border
   },
   optionRowActive: {
-    backgroundColor: "rgba(255,255,255,0.82)",
-    borderColor: "rgba(23, 21, 19, 0.10)"
-  },
-  optionRowPressed: {
-    opacity: 0.92
+    backgroundColor: uiPalette.accentSoft,
+    borderColor: uiPalette.border
   },
   optionLeading: {
     flex: 1,
@@ -304,14 +290,14 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "rgba(23, 21, 19, 0.16)",
-    backgroundColor: "rgba(255,255,255,0.28)",
+    borderColor: uiPalette.borderStrong,
+    backgroundColor: "transparent",
     alignItems: "center",
     justifyContent: "center"
   },
   optionSelectionControlActive: {
-    borderColor: uiPalette.text,
-    backgroundColor: uiPalette.text
+    borderColor: uiPalette.primary,
+    backgroundColor: uiPalette.primary
   },
   optionTitleRow: {
     flex: 1,
@@ -335,10 +321,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: 999,
-    backgroundColor: "rgba(23, 21, 19, 0.05)"
+    backgroundColor: uiPalette.accentSoft
   },
   optionBadgeActive: {
-    backgroundColor: "rgba(23, 21, 19, 0.08)"
+    backgroundColor: uiPalette.accentSoft
   },
   optionBadgeText: {
     fontSize: 10,
@@ -364,6 +350,6 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 13,
     lineHeight: 18,
-    color: "#A55B3F"
+    color: uiPalette.danger
   }
 });

@@ -1,10 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useState, type ReactNode } from "react";
-import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View, type ColorValue } from "react-native";
 import { useLocationContext } from "./LocationProvider";
 import { uiPalette, uiTypography } from "../ui/system";
 
-export function LocationPicker({ children, color = uiPalette.text }: { children: ReactNode; color?: string }) {
+export function LocationPicker({ children, color = uiPalette.text }: { children: ReactNode; color?: Exclude<ColorValue, number | null | undefined> }) {
   const {
     hasMultipleLocations,
     locations,
@@ -210,15 +210,15 @@ const styles = StyleSheet.create({
   },
   sheetTitle: {
     color: uiPalette.text,
-    fontFamily: uiTypography.headerFamily,
+    fontFamily: uiTypography.displayFamily,
     fontSize: 23,
     fontWeight: "700",
     letterSpacing: -0.4
   },
   closeButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: uiPalette.surfaceMuted
@@ -262,7 +262,7 @@ const styles = StyleSheet.create({
     backgroundColor: uiPalette.primary
   },
   confirmButtonText: {
-    color: uiPalette.surfaceStrong,
+    color: uiPalette.primaryText,
     fontSize: 14,
     fontWeight: "700"
   },

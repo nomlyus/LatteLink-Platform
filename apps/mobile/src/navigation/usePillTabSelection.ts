@@ -1,9 +1,7 @@
 import { useCallback, useState } from "react";
-import { useRouter } from "expo-router";
 import { useWindowDimensions } from "react-native";
 import { useSharedValue, withSpring } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useCart } from "../cart/store";
 import { getTabBarBottomOffset } from "./tabBarMetrics";
 import type { PillTabBarProps } from "./pillTabBarShared";
 
@@ -17,11 +15,13 @@ const pressSpringConfig = {
   stiffness: 220,
   mass: 0.94
 } as const;
-export function usePillTabSelection({ state, navigation }: Pick<PillTabBarProps, "state" | "navigation">) {
-  const router = useRouter();
+export function usePillTabSelection({
+  state,
+  emitter,
+  navigateToTab
+}: Pick<PillTabBarProps, "state" | "emitter" | "navigateToTab">) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { itemCount } = useCart();
   const [tabRowWidth, setTabRowWidth] = useState(0);
   const [dragTargetIndex, setDragTargetIndex] = useState<number | null>(null);
   const indicatorTranslateX = useSharedValue(0);
@@ -72,22 +72,20 @@ export function usePillTabSelection({ state, navigation }: Pick<PillTabBarProps,
     const route = state.routes[nextIndex];
     if (!route || nextIndex === state.index) return;
 
-    const event = navigation.emit({
+    const event = emitter.emit({
       type: "tabPress",
       target: route.key,
       canPreventDefault: true
     });
 
     if (!event.defaultPrevented) {
-      navigation.navigate(route.name, route.params);
+      navigateToTab(route.key);
     } else {
       setPreviewIndex(null);
       syncIndicatorToIndex(state.index);
     }
   };
   return {
-    router,
-    itemCount,
     tabRowWidth,
     setTabRowWidth,
     indicatorTranslateX,

@@ -1,14 +1,12 @@
-import { canUseLiquidGlass } from "../ui/glass";
-import { Ionicons } from "@expo/vector-icons";
-import { BlurView } from "expo-blur";
-import { GlassView } from "expo-glass-effect";
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { SymbolView } from "expo-symbols";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { NativeGlassSurface } from "../ui/NativeGlassSurface";
 import type { ReactNode } from "react";
 import { OrderItemThumbnail, OrderStatusPill } from "../components";
 import { formatUsd } from "../menu/catalog";
 import type { MenuItem } from "../menu/catalog";
 import type { OrderHistoryEntry } from "../account/data";
-import { buildOrderItemsSummary, countOrderUnits, resolveHistoryItemIcon } from "./presentation";
+import { buildOrderItemsSummary, countOrderUnits } from "./presentation";
 import { findLatestOrderTime, formatOrderDateTime, formatOrderReference } from "./history";
 import { uiPalette, uiTypography } from "../ui/system";
 
@@ -28,7 +26,7 @@ function OrderHistoryItemThumbnail({
       label={label}
       imageUrl={menuItem?.imageUrl}
       size="small"
-      fallbackIcon={resolveHistoryItemIcon(label)}
+      fallbackSymbol={{ ios: "bag", android: "shopping_bag" }}
       style={[styles.orderThumb, stacked ? styles.orderThumbStacked : null]}
     />
   );
@@ -59,7 +57,7 @@ export function OrderItemStrip({
           ))
         ) : (
           <View style={styles.orderThumb}>
-            <Ionicons name="receipt-outline" size={16} color={uiPalette.accent} />
+            <SymbolView name={{ ios: "receipt", android: "receipt" }} size={16} tintColor={uiPalette.textSecondary} />
           </View>
         )}
         {remainingItemTypes > 0 ? (
@@ -87,27 +85,8 @@ export function OrderItemStrip({
 }
 
 export function ActiveOrderPill({ children }: { children: ReactNode }) {
-  const useLiquidGlass = canUseLiquidGlass();
-  const content = (
-    <View
-      style={[styles.activePanelInner, useLiquidGlass ? styles.activePanelInnerGlass : styles.activePanelInnerFallback]}
-    >
-      {children}
-    </View>
-  );
-  return (
-    <View style={styles.activePanelShell}>
-      {useLiquidGlass ? (
-        <GlassView glassEffectStyle="regular" colorScheme="auto" isInteractive style={styles.activePanelFrame}>
-          {content}
-        </GlassView>
-      ) : (
-        <BlurView tint="light" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.activePanelFrame}>
-          {content}
-        </BlurView>
-      )}
-    </View>
-  );
+  return <View style={styles.activePanelShell}><NativeGlassSurface style={styles.activePanelFrame}
+    contentStyle={styles.activePanelInner}>{children}</NativeGlassSurface></View>;
 }
 
 export function HistoryRow({
@@ -131,12 +110,6 @@ export function HistoryRow({
       onPress={onPress}
       style={({ pressed }) => [styles.historyRow, pressed ? styles.historyRowPressed : null]}
     >
-      <View style={styles.historyTopRow}>
-        <OrderStatusPill status={historyStatus} glassStyle="regular" />
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.historyAmount}>
-          {formatUsd(order.total.amountCents)}
-        </Text>
-      </View>
       <View style={styles.historyContentRow}>
         <View style={styles.historyThumbStack}>
           {previewItems.length > 0 ? (
@@ -150,7 +123,7 @@ export function HistoryRow({
             ))
           ) : (
             <View style={styles.orderThumb}>
-              <Ionicons name="receipt-outline" size={16} color={uiPalette.accent} />
+              <SymbolView name={{ ios: "receipt", android: "receipt" }} size={16} tintColor={uiPalette.textSecondary} />
             </View>
           )}
           {remainingItemTypes > 0 ? (
@@ -163,11 +136,17 @@ export function HistoryRow({
             </View>
           ) : null}
         </View>
+        <OrderStatusPill status={historyStatus} glassStyle="regular" />
       </View>
-      <View style={styles.orderItemsCopy}>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.orderItemsTitle}>
-          {buildOrderItemsSummary(order, menuItemsById)}
-        </Text>
+      <View style={[styles.orderItemsCopy, styles.historyCopy]}>
+        <View style={styles.historyTitleRow}>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.orderItemsTitle, styles.historyTitle]}>
+            {buildOrderItemsSummary(order, menuItemsById)}
+          </Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.historyAmount}>
+            {formatUsd(order.total.amountCents)}
+          </Text>
+        </View>
         <Text
           allowFontScaling={false}
           maxFontSizeMultiplier={1}
@@ -182,7 +161,7 @@ export function HistoryRow({
           <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.historyMetaActionText}>
             Details
           </Text>
-          <Ionicons name="chevron-forward" size={14} color={uiPalette.textMuted} />
+          <SymbolView name={{ ios: "chevron.right", android: "chevron_right" }} size={14} tintColor={uiPalette.textSecondary} />
         </View>
       </View>
     </Pressable>
@@ -190,26 +169,10 @@ export function HistoryRow({
 }
 
 const styles = StyleSheet.create({
-  activePanelShell: {
-    borderRadius: 36,
-    overflow: "hidden"
-  },
-  activePanelFrame: {
-    borderRadius: 36,
-    overflow: "hidden"
-  },
+  activePanelShell: {},
+  activePanelFrame: {},
   activePanelInner: {
-    padding: 22,
-    borderRadius: 36,
-    borderWidth: 1
-  },
-  activePanelInnerGlass: {
-    backgroundColor: "rgba(255,255,255,0.01)",
-    borderColor: "rgba(255,255,255,0.18)"
-  },
-  activePanelInnerFallback: {
-    backgroundColor: "rgba(255, 253, 248, 0.78)",
-    borderColor: "rgba(255,255,255,0.42)"
+    padding: 22
   },
   orderItemsRow: {
     marginTop: 12,
@@ -224,7 +187,7 @@ const styles = StyleSheet.create({
     height: 52,
     borderRadius: 0,
     overflow: "hidden",
-    backgroundColor: "#D5D4CE",
+    backgroundColor: uiPalette.surfaceMuted,
     alignItems: "center",
     justifyContent: "center"
   },
@@ -232,7 +195,7 @@ const styles = StyleSheet.create({
     marginLeft: -8
   },
   orderThumbCount: {
-    backgroundColor: "#D5D4CE"
+    backgroundColor: uiPalette.surfaceMuted
   },
   orderThumbCountText: {
     fontSize: 12,
@@ -264,13 +227,16 @@ const styles = StyleSheet.create({
   historyRowPressed: {
     opacity: 0.78
   },
-  historyTopRow: {
+  historyTitleRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "baseline",
     justifyContent: "space-between",
     gap: 12
   },
+  historyTitle: { flex: 1, minWidth: 0 },
+  historyCopy: { maxWidth: "100%", alignSelf: "stretch" },
   historyAmount: {
+    flexShrink: 0,
     fontSize: 14,
     lineHeight: 20,
     letterSpacing: 1.4,
@@ -280,13 +246,16 @@ const styles = StyleSheet.create({
     fontWeight: "400"
   },
   historyContentRow: {
-    marginTop: 12,
-    alignItems: "flex-start"
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12
   },
   historyThumbStack: {
     flexDirection: "row",
     alignItems: "center",
-    flexShrink: 0
+    flexShrink: 1,
+    minWidth: 0
   },
   historyMetaRow: {
     marginTop: 6,

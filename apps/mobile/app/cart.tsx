@@ -1,45 +1,53 @@
 import { CartLineItem } from "../src/cart/CartLineItem";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useCallback, useMemo, useRef } from "react";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
+import { CartHeader, CartCheckoutToolbar, nativeCartToolbarAvailable } from "../src/cart/CartNavigation";
 import { getCheckoutRecoveryActionLabel } from "../src/auth/recovery";
 import { useAuthSession } from "../src/auth/session";
-import { ClearCartSheet } from "../src/cart/ClearCartSheet";
 import {
   CartHeaderActionChip,
   CartSectionHeading,
   CartStickyActionPill,
   CartSummaryRow
 } from "../src/cart/CartPrimitives";
-import { buildPricingSummary } from "../src/cart/model";
-import { RemoveItemSheet } from "../src/cart/RemoveItemSheet";
 import { useCart } from "../src/cart/store";
 import { useLocationContext } from "../src/location/LocationProvider";
 import {
   formatUsd,
-  resolveAppConfigData,
   resolveMenuData,
-  resolveStoreConfigData,
-  useAppConfigQuery,
-  useMenuQuery,
-  useStoreConfigQuery
+  useMenuQuery
 } from "../src/menu/catalog";
-import { isCheckoutLocationConsistent, isRetryableCheckoutForCart, toQuoteItems } from "../src/orders/checkout";
+import { useCheckoutController } from "../src/orders/useCheckoutController";
 import { useCheckoutFlow } from "../src/orders/flow";
 import { getTabBarBottomOffset, TAB_BAR_HEIGHT } from "../src/navigation/tabBarMetrics";
-import { uiPalette, uiTypography } from "../src/ui/system";
+import { uiPalette } from "../src/ui/system";
+import { NativeCornerView } from "../src/ui/NativeCornerView";
+import { useNativeScrollEdge } from "../src/navigation/useNativeScrollEdge";
+import { nativeAppleHeaderCapabilities } from "../src/navigation/nativeAppleHeader";
+import { DiscountCodeField } from "../src/cart/DiscountCodeField";
+import { useCartScrollLayout } from "../src/cart/useCartScrollLayout";
 
 export default function CartModalScreen() {
+  return (
+      <SafeAreaProvider style={{ backgroundColor: uiPalette.backgroundAlt }}>
+        <CartContent />
+      </SafeAreaProvider>
+  );
+}
+
+function CartContent() {
   const router = useRouter();
+  const registerScrollEdge = useNativeScrollEdge(nativeAppleHeaderCapabilities().available);
+  const scrollLayout = useCartScrollLayout(registerScrollEdge);
   const insets = useSafeAreaInsets();
   const stickyFooterBottom = getTabBarBottomOffset(insets.bottom > 0);
   const stickyFooterClearance = stickyFooterBottom + TAB_BAR_HEIGHT + 16;
   const { isAuthenticated, authRecoveryState } = useAuthSession();
   const {
     items,
-    locationId: cartLocationId,
     itemCount,
     subtotalCents,
     discountCode,
@@ -48,120 +56,139 @@ export default function CartModalScreen() {
     removeItem,
     clear
   } = useCart();
+  const hadItems = useRef(items.length > 0);
   const location = useLocationContext();
-  const { confirmation, failure, retryOrder, clearRetryOrder, clearFailure } = useCheckoutFlow();
-  const appConfigQuery = useAppConfigQuery();
+  const discountAfterSignIn = useRef<{ code: string; items: typeof items; locationId: string | null; brandId: string } | null>(null);
+  const { confirmation, paymentConfirmationPending, failure, clearRetryOrder, clearFailure } = useCheckoutFlow();
+  const checkout = useCheckoutController();
+  const applyDiscountRef = useRef(checkout.discount.apply);
+  applyDiscountRef.current = checkout.discount.apply;
+  const {
+    storeConfig, pricingSummary, checkoutUnavailableMessage, checkoutReady, checkoutContextLoading,
+    showCheckoutRetry, locationContextValid, paymentInProgress, statusMessage
+  } = checkout;
   const menuQuery = useMenuQuery();
-  const storeConfigQuery = useStoreConfigQuery();
   const menu = menuQuery.data ? resolveMenuData(menuQuery.data) : null;
-  const appConfig = appConfigQuery.data ? resolveAppConfigData(appConfigQuery.data) : null;
-  const storeConfig = storeConfigQuery.data ? resolveStoreConfigData(storeConfigQuery.data) : null;
-  const pricingSummary = buildPricingSummary(subtotalCents, storeConfig?.taxRateBasisPoints ?? 0);
-  const storeConfigLoading = !storeConfig && (storeConfigQuery.isLoading || storeConfigQuery.isFetching);
-  const appConfigLoading = !appConfig && (appConfigQuery.isLoading || appConfigQuery.isFetching);
-  const checkoutContextLoading = storeConfigLoading || appConfigLoading;
-  const storeClosedMessage =
-    storeConfig && !storeConfig.isOpen ? "The store is currently closed. Come back during opening hours." : null;
-  const checkoutUnavailableMessage = storeConfigLoading
-    ? "Loading store hours..."
-    : appConfigLoading
-      ? "Loading checkout configuration..."
-      : !storeConfig
-        ? "Store details are temporarily unavailable. Retry loading checkout before paying."
-        : !appConfig
-          ? "Checkout configuration is temporarily unavailable. Retry loading checkout before paying."
-          : storeClosedMessage;
-  const checkoutReady = checkoutUnavailableMessage === null;
-  const showCheckoutRetry = Boolean(checkoutUnavailableMessage) && !checkoutContextLoading;
-  const quoteItems = useMemo(() => toQuoteItems(items), [items]);
-  const retryableOrder = isRetryableCheckoutForCart(retryOrder, quoteItems, cartLocationId, location.selectedLocationId)
-    ? (retryOrder ?? undefined)
-    : undefined;
   const menuItemsById = useMemo(
     () => new Map((menu?.categories ?? []).flatMap((category) => category.items).map((item) => [item.id, item])),
     [menu?.categories]
   );
-  const [pendingRemovalLineId, setPendingRemovalLineId] = useState<string | null>(null);
-  const pendingRemovalItem = useMemo(
-    () => items.find((item) => item.lineId === pendingRemovalLineId) ?? null,
-    [items, pendingRemovalLineId]
-  );
-  const [clearSheetOpen, setClearSheetOpen] = useState(false);
-  const locationContextValid = isCheckoutLocationConsistent(cartLocationId, location.selectedLocationId);
-  const stickyActionDisabled = !checkoutReady || !locationContextValid || items.length === 0;
+  const stickyActionDisabled = !checkoutReady || !locationContextValid || items.length === 0 || paymentInProgress || checkout.discount.applying;
   const stickyActionLabel = !checkoutReady
     ? checkoutContextLoading
       ? "Loading checkout"
-      : storeClosedMessage
+      : storeConfig && !storeConfig.isOpen
         ? "Store closed"
         : "Checkout unavailable"
     : !locationContextValid
       ? "Bag location unavailable"
       : isAuthenticated
-        ? retryableOrder
-          ? "Retry payment"
-          : "Continue to checkout"
+        ? checkout.payActionLabel
         : getCheckoutRecoveryActionLabel(authRecoveryState);
   const stickyActionIcon: keyof typeof Ionicons.glyphMap =
     !checkoutReady || !locationContextValid
       ? "alert-circle-outline"
       : isAuthenticated
-        ? retryableOrder
+        ? checkout.retryableOrder
           ? "refresh-outline"
           : "card-outline"
         : "log-in-outline";
   const stickyActionValue = formatUsd(checkoutReady ? pricingSummary.totalCents : subtotalCents);
 
-  useEffect(() => {
-    if (
-      retryOrder &&
-      !isRetryableCheckoutForCart(retryOrder, quoteItems, cartLocationId, location.selectedLocationId)
-    ) {
-      clearRetryOrder();
-    }
-  }, [cartLocationId, clearRetryOrder, location.selectedLocationId, quoteItems, retryOrder]);
-
   useFocusEffect(
     useCallback(() => {
-      if (confirmation) {
+      if (confirmation || paymentConfirmationPending) {
         router.replace("/checkout-success");
         return;
       }
 
       if (failure) {
         router.replace("/checkout-failure");
+        return;
       }
-    }, [confirmation, failure, router])
+
+      if (isAuthenticated && discountAfterSignIn.current) {
+        const intent = discountAfterSignIn.current;
+        discountAfterSignIn.current = null;
+        if (intent.code === discountCode && intent.items === items && intent.locationId === location.selectedLocationId && intent.brandId === location.brandId) {
+          void applyDiscountRef.current();
+        }
+      }
+
+      // Only dismiss while Cart is focused; checkout may clear the shared cart in the background.
+      if (items.length === 0 && hadItems.current && !paymentInProgress) {
+        hadItems.current = false;
+        if (router.canGoBack()) router.back();
+        else router.replace("/(tabs)/(navigation)/menu");
+      } else if (items.length > 0) {
+        hadItems.current = true;
+      }
+    }, [confirmation, paymentConfirmationPending, failure, items, paymentInProgress, router, isAuthenticated, discountCode, location.selectedLocationId, location.brandId])
   );
 
-  useEffect(() => {
-    if (pendingRemovalLineId && !pendingRemovalItem) {
-      setPendingRemovalLineId(null);
-    }
-  }, [pendingRemovalItem, pendingRemovalLineId]);
-
   function refreshCheckoutContext() {
-    void Promise.allSettled([appConfigQuery.refetch(), storeConfigQuery.refetch(), menuQuery.refetch()]);
+    checkout.refreshCheckoutContext();
+    void menuQuery.refetch();
   }
 
   function resetCartState() {
-    setClearSheetOpen(false);
-    setPendingRemovalLineId(null);
+    if (checkout.isPaymentInFlight()) return;
     clear();
     clearFailure();
     clearRetryOrder();
   }
 
+  function openCheckout() {
+    if (isAuthenticated) void checkout.handleStripeCheckout();
+    else router.push("/cart-sign-in");
+  }
+
+  function confirmClearCart() {
+    Alert.alert(
+      "Clear cart?",
+      `Remove all ${itemCount} ${itemCount === 1 ? "item" : "items"} from your cart?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Clear Cart", style: "destructive", onPress: resetCartState }
+      ]
+    );
+  }
+
+  function confirmRemoveItem(lineId: string, itemName: string) {
+    Alert.alert("Remove item?", `Remove ${itemName} from your cart?`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Remove", style: "destructive", onPress: () => {
+        if (!checkout.isPaymentInFlight()) removeItem(lineId);
+      } }
+    ]);
+  }
+
   return (
     <View style={styles.backdrop}>
-      <View style={styles.sheet}>
-        <View style={styles.handleWrap}>
-          <View style={styles.modalHandle} />
-        </View>
-
-        <View style={styles.headerArea}>
+      <CartHeader paymentInProgress={paymentInProgress} onClear={items.length > 0 && !paymentInProgress ? confirmClearCart : undefined} />
+      <View collapsable={false} style={styles.sheet}>
+        <ScrollView
+          onLayout={scrollLayout.onLayout}
+          bounces
+          alwaysBounceVertical={false}
+          showsVerticalScrollIndicator={false}
+          contentInsetAdjustmentBehavior="automatic"
+          keyboardDismissMode="interactive"
+          automaticallyAdjustKeyboardInsets
+          contentContainerStyle={[
+            {
+              minHeight: scrollLayout.minimumHeight,
+              paddingHorizontal: 20,
+              paddingTop: 12,
+              paddingBottom: items.length > 0 && !nativeCartToolbarAvailable ? stickyFooterClearance : 24
+            },
+            items.length === 0 ? styles.emptyScrollContent : null
+          ]}
+        >
+        {location.cartInvalidatedNotice || !checkoutReady || (statusMessage && !paymentInProgress) ? <View style={styles.headerArea}>
+          {statusMessage && !paymentInProgress ? <Text accessibilityRole="alert" allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.headerSubtitle}>{statusMessage}</Text> : null}
           {location.cartInvalidatedNotice ? (
-            <View style={styles.locationNotice}>
+            <NativeCornerView style={styles.locationNotice} cornerMode="fixed" fallbackRadius={12}>
               <Ionicons name="information-circle-outline" size={18} color={uiPalette.warning} />
               <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.locationNoticeText}>
                 {location.cartInvalidatedNotice}
@@ -174,41 +201,19 @@ export default function CartModalScreen() {
               >
                 <Ionicons name="close" size={17} color={uiPalette.textMuted} />
               </Pressable>
-            </View>
+            </NativeCornerView>
           ) : null}
-          <View style={styles.headerRow}>
+          {!checkoutReady ? <View style={styles.headerRow}>
             <View style={styles.headerCopy}>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.headerTitle}>
-                Order Review
-              </Text>
               <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.headerSubtitle}>
-                {storeConfig
-                  ? storeConfig.isOpen
-                    ? `Estimated wait is ${storeConfig.prepEtaMinutes} min`
-                    : "Store closed"
-                  : storeConfigLoading
-                    ? "Loading store hours..."
-                    : "Checkout details unavailable"}
+                {checkoutUnavailableMessage}
               </Text>
             </View>
             {showCheckoutRetry ? (
               <CartHeaderActionChip label="Retry" icon="refresh-outline" onPress={refreshCheckoutContext} />
             ) : null}
-          </View>
-        </View>
-        <ScrollView
-          bounces
-          showsVerticalScrollIndicator={false}
-          contentInsetAdjustmentBehavior="never"
-          contentContainerStyle={[
-            {
-              paddingHorizontal: 20,
-              paddingTop: items.length > 0 ? 14 : 8,
-              paddingBottom: items.length > 0 ? stickyFooterClearance : Math.max(insets.bottom, 12) + 8
-            },
-            items.length === 0 ? styles.emptyScrollContent : null
-          ]}
-        >
+          </View> : null}
+        </View> : null}
           {items.length === 0 ? (
             <View style={styles.emptyPage}>
               <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.emptyEyebrow}>
@@ -224,29 +229,23 @@ export default function CartModalScreen() {
           ) : (
             <>
               <View style={styles.sectionBlock}>
-                <CartSectionHeading
-                  eyebrow="Bag"
-                  title="Items"
-                  action={
-                    <CartHeaderActionChip label="Clear" icon="close-outline" onPress={() => setClearSheetOpen(true)} />
-                  }
-                />
+                <CartSectionHeading title="Items" />
 
-                <View style={styles.lineStack}>
+                <NativeCornerView style={styles.lineStack} cornerMode="fixed" fallbackRadius={18}>
                   {items.map((item, index) => (
                     <CartLineItem
                       key={item.lineId}
                       item={item}
                       imageUrl={menuItemsById.get(item.menuItemId)?.imageUrl}
                       isLast={index === items.length - 1}
-                      onSetQuantity={(quantity) => setQuantity(item.lineId, quantity)}
-                      onRemove={() => setPendingRemovalLineId(item.lineId)}
+                      disabled={paymentInProgress}
+                      onSetQuantity={(quantity) => { if (!checkout.isPaymentInFlight()) setQuantity(item.lineId, quantity); }}
+                      onRemove={() => confirmRemoveItem(item.lineId, item.itemName)}
                     />
                   ))}
-                </View>
+                </NativeCornerView>
               </View>
 
-              <View style={styles.checkoutDeck}>
                 {storeConfig ? (
                   <View style={styles.pickupMethodBlock}>
                     <View style={styles.pickupMethodRow}>
@@ -260,41 +259,37 @@ export default function CartModalScreen() {
                   </View>
                 ) : null}
 
-                <CartSectionHeading eyebrow="Checkout" title="Summary" />
-                <View style={styles.checkoutContent}>
-                  <View style={styles.deckDivider} />
+              <View style={styles.checkoutSpacer} />
+              <View style={styles.checkoutDeck}>
+                <CartSectionHeading title="Discount code" />
                   <View style={styles.discountCodeBlock}>
-                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.discountCodeLabel}>
-                      Discount code
-                    </Text>
-                    <TextInput
-                      allowFontScaling={false}
-                      maxFontSizeMultiplier={1}
-                      value={discountCode}
-                      onChangeText={setDiscountCode}
-                      autoCapitalize="characters"
-                      autoCorrect={false}
-                      placeholder="LAUNCH10"
-                      placeholderTextColor={uiPalette.textMuted}
-                      style={styles.discountCodeInput}
-                    />
-                    <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.summaryNote}>
-                      Discounts are validated against live store rules when you pay.
-                    </Text>
+                    <DiscountCodeField value={discountCode} disabled={paymentInProgress}
+                      applying={checkout.discount.applying} applied={checkout.discount.applied} error={checkout.discount.error}
+                      onApply={() => {
+                        if (!isAuthenticated) {
+                          discountAfterSignIn.current = { code: discountCode, items, locationId: location.selectedLocationId, brandId: location.brandId };
+                          router.push("/cart-sign-in");
+                        }
+                        else void checkout.discount.apply();
+                      }} onChange={(code) => {
+                      if (!checkout.isPaymentInFlight()) setDiscountCode(code);
+                    }} />
                   </View>
-
+                <CartSectionHeading title="Summary" />
+                <NativeCornerView style={styles.checkoutContent} cornerMode="fixed" fallbackRadius={18}>
                   <View style={styles.summaryWrap}>
                     <CartSummaryRow label={`Items (${itemCount})`} value={formatUsd(pricingSummary.subtotalCents)} />
                     {storeConfig ? (
                       <>
                         <CartSummaryRow
-                          label={`Tax (${(storeConfig.taxRateBasisPoints / 100).toFixed(2)}%)`}
+                          label="Tax"
                           value={formatUsd(pricingSummary.taxCents)}
                         />
+                        {pricingSummary.discountCents > 0 ? <CartSummaryRow label="Discount" value={`−${formatUsd(pricingSummary.discountCents)}`} /> : null}
                         <View style={styles.summaryDivider} />
                         <CartSummaryRow
                           label="Total due today"
-                          value={formatUsd(pricingSummary.totalCents)}
+                          value={formatUsd(checkout.authoritativeTotal ?? pricingSummary.totalCents)}
                           emphasized
                         />
                       </>
@@ -304,52 +299,27 @@ export default function CartModalScreen() {
                       </Text>
                     )}
                   </View>
-                </View>
+                </NativeCornerView>
               </View>
             </>
           )}
         </ScrollView>
 
-        {items.length > 0 ? (
+        {items.length > 0 && nativeCartToolbarAvailable ? (
+          <CartCheckoutToolbar contentWidth={scrollLayout.contentWidth} label={stickyActionLabel} value={isAuthenticated ? undefined : stickyActionValue}
+            disabled={stickyActionDisabled} onPress={openCheckout} />
+        ) : items.length > 0 ? (
           <View pointerEvents="box-none" style={[styles.stickyFooterWrap, { bottom: stickyFooterBottom }]}>
             <CartStickyActionPill
               label={stickyActionLabel}
               value={stickyActionValue}
               icon={stickyActionIcon}
               disabled={stickyActionDisabled}
-              onPress={() => {
-                if (isAuthenticated) {
-                  router.push("/checkout");
-                  return;
-                }
-
-                router.push({ pathname: "/auth", params: { returnTo: "cart" } });
-              }}
+              onPress={openCheckout}
             />
           </View>
         ) : null}
 
-        <ClearCartSheet
-          open={clearSheetOpen}
-          itemCount={itemCount}
-          bottomInset={Math.max(insets.bottom, 14)}
-          onClose={() => setClearSheetOpen(false)}
-          onCancel={() => setClearSheetOpen(false)}
-          onConfirm={resetCartState}
-        />
-
-        <RemoveItemSheet
-          open={pendingRemovalItem !== null}
-          itemName={pendingRemovalItem?.itemName}
-          bottomInset={Math.max(insets.bottom, 14)}
-          onClose={() => setPendingRemovalLineId(null)}
-          onCancel={() => setPendingRemovalLineId(null)}
-          onConfirm={() => {
-            if (!pendingRemovalItem) return;
-            removeItem(pendingRemovalItem.lineId);
-            setPendingRemovalLineId(null);
-          }}
-        />
       </View>
     </View>
   );
@@ -362,30 +332,10 @@ const styles = StyleSheet.create({
   },
   sheet: {
     flex: 1,
-    backgroundColor: "rgba(247, 244, 237, 0.985)",
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    borderWidth: 1,
-    borderColor: uiPalette.border
-  },
-  handleWrap: {
-    position: "absolute",
-    top: 14,
-    left: 0,
-    right: 0,
-    alignItems: "center",
-    zIndex: 10
-  },
-  modalHandle: {
-    width: 38,
-    height: 5,
-    borderRadius: 999,
-    backgroundColor: "rgba(151, 160, 154, 0.52)"
+    backgroundColor: "transparent"
   },
   headerArea: {
-    paddingHorizontal: 20,
-    paddingTop: 28,
-    paddingBottom: 4
+    paddingBottom: 12
   },
   locationNotice: {
     flexDirection: "row",
@@ -394,8 +344,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     paddingHorizontal: 12,
     paddingVertical: 9,
-    borderRadius: 13,
-    backgroundColor: "rgba(207, 148, 73, 0.12)"
+    backgroundColor: uiPalette.surfaceStrong
   },
   locationNoticeText: {
     flex: 1,
@@ -412,16 +361,6 @@ const styles = StyleSheet.create({
   headerCopy: {
     flex: 1
   },
-  headerTitle: {
-    marginTop: 15,
-    fontSize: 19,
-    lineHeight: 24,
-    letterSpacing: 2,
-    textTransform: "uppercase",
-    color: uiPalette.text,
-    fontFamily: uiTypography.displayFamily,
-    fontWeight: "600"
-  },
   headerSubtitle: {
     marginTop: 6,
     marginBottom: 6,
@@ -430,7 +369,6 @@ const styles = StyleSheet.create({
     color: uiPalette.textSecondary
   },
   emptyScrollContent: {
-    flexGrow: 1,
     justifyContent: "center"
   },
   emptyPage: {
@@ -465,17 +403,25 @@ const styles = StyleSheet.create({
     marginTop: 4
   },
   lineStack: {
-    marginTop: 16
+    marginTop: 12,
+    paddingHorizontal: 16,
+    backgroundColor: uiPalette.card,
+    overflow: "hidden"
   },
   checkoutDeck: {
-    marginTop: 18,
-    paddingTop: 2
+    flexShrink: 0
+  },
+  checkoutSpacer: {
+    flexGrow: 1,
+    minHeight: 8
   },
   pickupMethodBlock: {
-    marginBottom: 0
+    marginTop: 18
   },
   checkoutContent: {
-    marginTop: 16
+    marginTop: 12,
+    padding: 16,
+    backgroundColor: uiPalette.card
   },
   pickupMethodRow: {
     flexDirection: "row",
@@ -489,42 +435,16 @@ const styles = StyleSheet.create({
     color: uiPalette.textSecondary,
     fontWeight: "500"
   },
-  deckDivider: {
-    height: 1,
-    marginVertical: 18,
-    backgroundColor: "rgba(23, 21, 19, 0.08)"
-  },
   discountCodeBlock: {
-    marginBottom: 18,
-    gap: 8
-  },
-  discountCodeLabel: {
-    fontSize: 11,
-    lineHeight: 14,
-    textTransform: "uppercase",
-    letterSpacing: 1.15,
-    color: uiPalette.textMuted,
-    fontWeight: "700"
-  },
-  discountCodeInput: {
-    minHeight: 52,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: uiPalette.border,
-    backgroundColor: uiPalette.surfaceStrong,
-    paddingHorizontal: 14,
-    color: uiPalette.text,
-    fontSize: 16,
-    lineHeight: 20,
-    letterSpacing: 1.2,
-    fontWeight: "700"
+    marginHorizontal: -20,
+    marginBottom: 8
   },
   summaryWrap: {
     gap: 10
   },
   summaryDivider: {
     height: 1,
-    backgroundColor: "rgba(23, 21, 19, 0.08)"
+    backgroundColor: uiPalette.border
   },
   summaryNote: {
     marginTop: 6,

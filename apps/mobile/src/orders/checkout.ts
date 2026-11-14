@@ -7,6 +7,8 @@ import { z } from "zod";
 export type QuoteItem = z.input<typeof quoteRequestItemSchema>;
 export type CheckoutDraftSnapshot = z.output<typeof checkoutDraftSchema> & {
   quoteItems: QuoteItem[];
+  discountCode?: string;
+  quote?: Awaited<ReturnType<typeof apiClient.quoteOrder>>;
 };
 export type CheckoutSubmissionStage = "quote" | "create" | "pay";
 export type PreparedStripeCheckout = {
@@ -83,12 +85,14 @@ export function isRetryableCheckoutForCart(
   checkout: CheckoutDraftSnapshot | null,
   quoteItems: QuoteItem[],
   cartLocationId: string | null,
-  selectedLocationId: string | null
+  selectedLocationId: string | null,
+  discountCode?: string
 ) {
   return Boolean(
     checkout &&
     isCheckoutLocationConsistent(cartLocationId, selectedLocationId) &&
     checkout.locationId === cartLocationId &&
+    (discountCode === undefined || (checkout.discountCode ?? "") === discountCode.trim()) &&
     quoteItemsEqual(quoteItems, checkout.quoteItems)
   );
 }
@@ -152,11 +156,13 @@ function resolveCheckoutErrorMessage(error: unknown, fallback: string) {
 
 function toCheckoutDraftSnapshot(
   checkout: Awaited<ReturnType<typeof apiClient.createCheckoutDraft>> | CheckoutDraftSnapshot,
-  quoteItems: QuoteItem[]
+  quoteItems: QuoteItem[],
+  metadata: Pick<CheckoutDraftSnapshot, "discountCode" | "quote"> = {}
 ): CheckoutDraftSnapshot {
   return {
     ...checkoutDraftSchema.parse(checkout),
-    quoteItems
+    quoteItems,
+    ...metadata
   };
 }
 
@@ -183,9 +189,12 @@ export async function prepareStripeCheckout(
   const quoteItems = toQuoteItems(input.items);
 
   if (input.existingCheckout) {
-    const existingCheckout = toCheckoutDraftSnapshot(input.existingCheckout, input.existingCheckout.quoteItems);
+    const existingCheckout = toCheckoutDraftSnapshot(input.existingCheckout, input.existingCheckout.quoteItems, {
+      discountCode: input.existingCheckout.discountCode, quote: input.existingCheckout.quote
+    });
     if (
       existingCheckout.locationId !== input.cartLocationId ||
+      (input.existingCheckout.discountCode ?? "") !== (input.discountCode?.trim() ?? "") ||
       !quoteItemsEqual(existingCheckout.quoteItems, quoteItems)
     ) {
       throw new CheckoutSubmissionError("This checkout no longer matches your bag. Start checkout again.", "quote");
@@ -241,7 +250,7 @@ export async function prepareStripeCheckout(
     throw new CheckoutSubmissionError(message, "create");
   }
 
-  const checkoutSnapshot = toCheckoutDraftSnapshot(checkout, quoteItems);
+  const checkoutSnapshot = toCheckoutDraftSnapshot(checkout, quoteItems, { discountCode: input.discountCode?.trim() ?? "", quote });
   if (
     checkoutSnapshot.locationId !== input.cartLocationId ||
     checkoutSnapshot.quoteId !== quote.quoteId ||

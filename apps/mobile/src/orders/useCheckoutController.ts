@@ -1,9 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
 import { PaymentSheetError, initPaymentSheet, initStripe, presentPaymentSheet } from "@stripe/stripe-react-native";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { buildPricingSummary } from "../cart/model";
 import { useCart } from "../cart/store";
 import { useLocationContext } from "../location/LocationProvider";
@@ -24,29 +22,37 @@ import {
   resolveInlineCheckoutErrorMessage,
   shouldShowCheckoutFailureScreen,
   toQuoteItems,
-  useStripeCheckoutMutation
+  useStripeCheckoutMutation,
+  type CheckoutDraftSnapshot
 } from "./checkout";
 import { useCheckoutFlow } from "./flow";
+import { useAuthSession } from "../auth/session";
+import { useCartDiscount } from "../cart/useCartDiscount";
 
 import { resolveConfiguredApplePayMerchantIdentifier } from "./applePay";
 import type { Order } from "@lattelink/contracts-orders";
 import { buildCheckoutOrderHistoryEntry, resolveStripeReturnUrl, resolveStripeUrlScheme } from "./checkoutPresentation";
 
 export function useCheckoutController() {
-  const insets = useSafeAreaInsets();
-  const router = useRouter();
   const queryClient = useQueryClient();
-  const { items, locationId: cartLocationId, subtotalCents, discountCode, setDiscountCode, clear } = useCart();
+  const { isAuthenticated, session } = useAuthSession();
+  const { items, locationId: cartLocationId, subtotalCents, discountCode, clear } = useCart();
   const location = useLocationContext();
-  const { retryOrder, clearRetryOrder, clearFailure, setConfirmation, setFailure, setRetryOrder } = useCheckoutFlow();
+  const discount = useCartDiscount({ items, code: discountCode, brandId: location.brandId,
+    userId: isAuthenticated ? session?.userId : undefined, cartLocationId, selectedLocationId: location.selectedLocationId });
+  const [reviewedCheckout, setReviewedCheckout] = useState<CheckoutDraftSnapshot | null>(null);
+  const { retryOrder, clearRetryOrder, clearFailure, setConfirmation, setFailure, setRetryOrder, setPaymentConfirmationPending } = useCheckoutFlow();
   const appConfigQuery = useAppConfigQuery();
   const storeConfigQuery = useStoreConfigQuery();
   const appConfig = appConfigQuery.data ? resolveAppConfigData(appConfigQuery.data) : null;
   const storeConfig = storeConfigQuery.data ? resolveStoreConfigData(storeConfigQuery.data) : null;
-  const pricingSummary = buildPricingSummary(subtotalCents, storeConfig?.taxRateBasisPoints ?? 0);
+  const estimatedPricing = buildPricingSummary(subtotalCents, storeConfig?.taxRateBasisPoints ?? 0);
   const checkoutMutation = useStripeCheckoutMutation();
-  const liveCartContextRef = useRef({ items, cartLocationId, selectedLocationId: location.selectedLocationId });
-  liveCartContextRef.current = { items, cartLocationId, selectedLocationId: location.selectedLocationId };
+  const liveCartContextRef = useRef({ items, cartLocationId, selectedLocationId: location.selectedLocationId, discountCode, userId: session?.userId, brandId: location.brandId });
+  liveCartContextRef.current = { items, cartLocationId, selectedLocationId: location.selectedLocationId, discountCode, userId: session?.userId, brandId: location.brandId };
+  const paymentInFlight = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => {
     checkoutMutation.reset();
   }, [cartLocationId, checkoutMutation.reset, location.selectedLocationId]);
@@ -74,50 +80,48 @@ export function useCheckoutController() {
   const checkoutUnavailableTone = checkoutContextLoading ? "info" : "warning";
   const showCheckoutRetry = Boolean(checkoutUnavailableMessage) && !checkoutContextLoading;
   const quoteItems = useMemo(() => toQuoteItems(items), [items]);
-  const retryableOrder = isRetryableCheckoutForCart(retryOrder, quoteItems, cartLocationId, location.selectedLocationId)
+  const knownAppliedCheckout = [reviewedCheckout, retryOrder].find((checkout) =>
+    isRetryableCheckoutForCart(checkout, quoteItems, cartLocationId, location.selectedLocationId, discountCode)
+    && checkout?.quote?.appliedDiscountCode?.code.toUpperCase() === discountCode
+    && (checkout?.quote?.appliedDiscountCode?.discountCents ?? 0) > 0
+  );
+  // The text field is a draft. Only an accepted, scope-matching code belongs in a payment request.
+  const appliedDiscountCode = (discount.quote?.appliedDiscountCode?.code ?? knownAppliedCheckout?.discountCode ?? "").trim().toUpperCase();
+  const retryableOrder = isRetryableCheckoutForCart(retryOrder, quoteItems, cartLocationId, location.selectedLocationId, appliedDiscountCode)
     ? (retryOrder ?? undefined)
     : undefined;
-  const itemCount = useMemo(() => items.reduce((sum, item) => sum + item.quantity, 0), [items]);
   const applePayMerchantIdentifier = resolveConfiguredApplePayMerchantIdentifier();
-  const brandName = appConfig?.brand.brandName ?? "Your order";
-  const storeStatusLabel = storeConfig
-    ? storeConfig.isOpen
-      ? "Open now"
-      : "Closed right now"
-    : storeConfigLoading
-      ? "Loading store hours"
-      : "Store unavailable";
-  const etaLabel = storeConfig ? `${storeConfig.prepEtaMinutes} min pickup` : "ETA unavailable";
   const [paymentSheetPending, setPaymentSheetPending] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [statusTone, setStatusTone] = useState<"info" | "warning">("info");
   const locationContextValid = isCheckoutLocationConsistent(cartLocationId, location.selectedLocationId);
   const payActionDisabled =
-    !checkoutReady || !locationContextValid || items.length === 0 || paymentSheetPending || checkoutMutation.isPending;
+    !isAuthenticated || !checkoutReady || !locationContextValid || items.length === 0 || paymentSheetPending || checkoutMutation.isPending || discount.applying;
+  const authoritativeCheckout = isRetryableCheckoutForCart(reviewedCheckout, quoteItems, cartLocationId, location.selectedLocationId, appliedDiscountCode)
+    ? reviewedCheckout
+    : retryableOrder;
+  const authoritativeTotal = authoritativeCheckout?.total.amountCents;
+  const authoritativeQuote = authoritativeCheckout?.quote ?? discount.quote;
+  const pricingSummary = {
+    subtotalCents: authoritativeQuote?.subtotal.amountCents ?? estimatedPricing.subtotalCents,
+    taxCents: authoritativeQuote?.tax.amountCents ?? estimatedPricing.taxCents,
+    discountCents: authoritativeQuote?.discount.amountCents ?? 0,
+    totalCents: authoritativeTotal ?? authoritativeQuote?.total.amountCents ?? estimatedPricing.totalCents
+  };
   const payActionLabel =
     paymentSheetPending || checkoutMutation.isPending
-      ? "Opening secure payment…"
-      : discountCode
-        ? "Review final total"
-        : `Pay ${formatUsd(pricingSummary.totalCents)}`;
+      ? statusMessage || "Opening secure payment…"
+      : discount.applying
+        ? "Checking discount…"
+        : `Pay ${formatUsd(authoritativeTotal ?? pricingSummary.totalCents)}`;
   async function invalidateAccountQueries() {
     await queryClient.invalidateQueries({ queryKey: ["account"] });
   }
   function refreshCheckoutContext() {
     void Promise.allSettled([appConfigQuery.refetch(), storeConfigQuery.refetch()]);
   }
-  function dismissCheckoutToCart() {
-    router.dismissTo("/cart");
-  }
-  function dismissCheckout() {
-    if (router.canGoBack()) {
-      router.back();
-      return;
-    }
-
-    router.replace("/cart");
-  }
   async function handleStripeCheckout() {
+    if (paymentInFlight.current || discount.isApplying() || !isAuthenticated || !checkoutReady) return;
     if (!isCheckoutLocationConsistent(cartLocationId, location.selectedLocationId)) {
       setStatusMessage("Your bag does not match the selected location. Return to your bag before checkout.");
       setStatusTone("warning");
@@ -141,6 +145,10 @@ export function useCheckoutController() {
       return;
     }
 
+    paymentInFlight.current = true;
+    const operatorId = session?.userId;
+    const brandId = location.brandId;
+    const sameOperator = () => mounted.current && liveCartContextRef.current.userId === operatorId && liveCartContextRef.current.brandId === brandId;
     setPaymentSheetPending(true);
     setStatusMessage("Preparing secure payment…");
     setStatusTone("info");
@@ -150,13 +158,13 @@ export function useCheckoutController() {
         cartLocationId,
         selectedLocationId: location.selectedLocationId,
         items,
-        discountCode,
+        discountCode: appliedDiscountCode || undefined,
         existingCheckout: retryableOrder
       });
 
       const checkoutStillMatchesCurrentCart = () => {
         const current = liveCartContextRef.current;
-        return checkoutSnapshotMatchesCart(
+        return sameOperator() && current.discountCode === discountCode && checkoutSnapshotMatchesCart(
           preparedCheckout.checkout,
           current.items,
           current.cartLocationId,
@@ -164,11 +172,14 @@ export function useCheckoutController() {
         );
       };
       if (!checkoutStillMatchesCurrentCart()) {
+        if (!sameOperator()) return;
         clearRetryOrder();
         throw new Error(
           "Your bag or selected location changed while checkout was preparing. Review your bag and try again."
         );
       }
+
+      setReviewedCheckout(preparedCheckout.checkout);
 
       await initStripe({
         publishableKey: preparedCheckout.paymentSession.publishableKey,
@@ -190,6 +201,7 @@ export function useCheckoutController() {
           : undefined
       });
 
+      if (!sameOperator()) return;
       if (initResult.error) {
         setRetryOrder(preparedCheckout.checkout);
         setStatusMessage("Payment could not open. Your bag is still ready, so you can try again.");
@@ -209,12 +221,12 @@ export function useCheckoutController() {
       }
 
       const presentResult = await presentPaymentSheet();
+      if (!sameOperator()) return;
       if (presentResult.error?.code === PaymentSheetError.Canceled) {
         setRetryOrder(preparedCheckout.checkout);
         clearFailure();
         setStatusMessage("");
         setStatusTone("info");
-        dismissCheckoutToCart();
         return;
       }
 
@@ -235,15 +247,15 @@ export function useCheckoutController() {
         if (!("order" in finalizedPayment)) throw new Error("Checkout finalization returned a legacy order response");
         finalizedOrder = finalizedPayment.order;
       } catch {
-        setStatusMessage("Payment was received, but confirmation is still processing. Check Orders in a moment.");
-        setStatusTone("info");
-        clear();
+        if (!sameOperator()) return;
+        setPaymentConfirmationPending();
+        if (checkoutStillMatchesCurrentCart()) clear();
         clearRetryOrder();
         void invalidateAccountQueries();
-        dismissCheckoutToCart();
         return;
       }
 
+      if (!sameOperator()) return;
       const occurredAt = new Date().toISOString();
       const nextOrder = buildCheckoutOrderHistoryEntry({
         order: finalizedOrder,
@@ -262,16 +274,24 @@ export function useCheckoutController() {
         items: finalizedOrder.items,
         occurredAt
       });
-      clear();
+      if (checkoutStillMatchesCurrentCart()) clear();
       setStatusMessage("");
       setStatusTone("info");
       void invalidateAccountQueries();
-      dismissCheckoutToCart();
     } catch (error) {
+      if (!sameOperator()) return;
       const message = error instanceof Error ? error.message : "Checkout failed.";
 
       if (error instanceof CheckoutSubmissionError) {
         void invalidateAccountQueries();
+
+        if (error.stage === "quote") {
+          clearFailure();
+          clearRetryOrder();
+          setStatusMessage(resolveInlineCheckoutErrorMessage(error));
+          setStatusTone("warning");
+          return;
+        }
 
         if (error.stage === "pay") {
           setStatusMessage("");
@@ -282,7 +302,6 @@ export function useCheckoutController() {
             occurredAt: new Date().toISOString(),
             checkout: error.checkout
           });
-          router.replace("/checkout-failure");
           return;
         }
 
@@ -302,23 +321,17 @@ export function useCheckoutController() {
           occurredAt: new Date().toISOString(),
           checkout: error.checkout
         });
-        dismissCheckoutToCart();
         return;
       }
 
       setStatusMessage(message);
       setStatusTone("warning");
     } finally {
-      setPaymentSheetPending(false);
+      paymentInFlight.current = false;
+      if (mounted.current) setPaymentSheetPending(false);
     }
   }
-  const scrollBottomPadding = Math.max(insets.bottom, 16) + 172;
   return {
-    insets,
-    items,
-    subtotalCents,
-    discountCode,
-    setDiscountCode,
     storeConfig,
     pricingSummary,
     storeConfigLoading,
@@ -326,17 +339,27 @@ export function useCheckoutController() {
     checkoutUnavailableTone,
     showCheckoutRetry,
     retryableOrder,
-    itemCount,
-    brandName,
-    storeStatusLabel,
-    etaLabel,
     statusMessage,
     statusTone,
     payActionDisabled,
     payActionLabel,
+    authoritativeTotal,
+    discount: {
+      ...discount,
+      apply: () => {
+        if (paymentInFlight.current) return;
+        setReviewedCheckout(null);
+        clearRetryOrder();
+        setStatusMessage("");
+        return discount.apply();
+      }
+    },
+    paymentInProgress: paymentSheetPending || checkoutMutation.isPending,
+    isPaymentInFlight: () => paymentInFlight.current,
+    checkoutReady,
+    checkoutContextLoading,
+    locationContextValid,
     refreshCheckoutContext,
-    dismissCheckout,
-    handleStripeCheckout,
-    scrollBottomPadding
+    handleStripeCheckout
   } as const;
 }

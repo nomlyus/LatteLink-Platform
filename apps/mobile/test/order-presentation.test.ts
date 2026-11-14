@@ -9,6 +9,7 @@ vi.mock("react-native", () => ({
   StyleSheet: { create: (styles: unknown) => styles }
 }));
 vi.mock("@expo/vector-icons", () => ({ Ionicons: "Icon" }));
+vi.mock("expo-symbols", () => ({ SymbolView: "Symbol" }));
 vi.mock("../src/ui/system", () => ({
   uiPalette: { accent: "accent", surfaceMuted: "surfaceMuted" }
 }));
@@ -21,6 +22,11 @@ beforeEach(() => vi.stubGlobal("React", React));
 afterEach(() => vi.unstubAllGlobals());
 
 describe("order history fallback artwork", () => {
+  it("renders native symbols for the Orders sheet thumbnail fallback", () => {
+    expect(OrderItemThumbnail({ label: "Order", fallbackSymbol: { ios: "bag", android: "shopping_bag" } })).toMatchObject({
+      props: { children: { type: "Symbol", props: { name: { ios: "bag", android: "shopping_bag" } } } }
+    });
+  });
   it.each([
     ["Cortado", "sparkles-outline"],
     ["Cortado coffee", "cafe-outline"],

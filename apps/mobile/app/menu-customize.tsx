@@ -1,9 +1,12 @@
+import { tabDestinations } from "../src/navigation/destinations";
 import { useInitialReveal } from "../src/ui/useInitialReveal";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ComponentType } from "react";
 import { describeCustomizationSelection, priceMenuItemCustomization } from "@lattelink/contracts-catalog";
-import { Animated as RNAnimated, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Animated as RNAnimated, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { requireOptionalNativeModule } from "expo";
+import type { NativeMenuCustomizeContentProps } from "../src/menu/NativeMenuCustomizeContent";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCart } from "../src/cart/store";
 import { useLocationContext } from "../src/location/LocationProvider";
 import {
@@ -20,8 +23,17 @@ import { CustomizeModalLoadingSheet } from "../src/menu/CustomizeModalLoadingShe
 import { getTabBarBottomOffset, TAB_BAR_HEIGHT } from "../src/navigation/tabBarMetrics";
 import { uiPalette, uiTypography } from "../src/ui/system";
 import { updateCustomizationOption, findGroupIssue } from "../src/menu/customizationSelection";
+import { NativeSheetSurface } from "../src/ui/NativeSheetSurface";
+import { MenuCustomizeHeader } from "../src/menu/MenuCustomizeHeader";
+import { MenuItemNotes } from "../src/menu/MenuItemNotes";
 
 const MAX_QUANTITY = 20;
+
+const NativeMenuCustomizeContent = Platform.OS === "ios" && requireOptionalNativeModule("ExpoUI")
+  // SwiftUI views cannot be imported on platforms without their native view managers.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  ? (require("../src/menu/NativeMenuCustomizeContent") as { NativeMenuCustomizeContent: ComponentType<NativeMenuCustomizeContentProps> }).NativeMenuCustomizeContent
+  : null;
 
 function resolveItemId(input: string | string[] | undefined): string | null {
   if (Array.isArray(input)) return resolveItemId(input[0]);
@@ -35,6 +47,10 @@ function findMenuItemById(itemId: string | null, items: MenuItem[]): MenuItem | 
 }
 
 export default function MenuCustomizeModalScreen() {
+  return <NativeSheetSurface><SafeAreaProvider><MenuCustomizeHeader /><MenuCustomizeContent /></SafeAreaProvider></NativeSheetSurface>;
+}
+
+function MenuCustomizeContent() {
   const insets = useSafeAreaInsets();
   const footerBottom = getTabBarBottomOffset(insets.bottom > 0);
   const footerClearance = footerBottom + TAB_BAR_HEIGHT + 16;
@@ -120,7 +136,7 @@ export default function MenuCustomizeModalScreen() {
       router.back();
       return;
     }
-    router.replace("/(tabs)/menu");
+    router.replace(tabDestinations.menu);
   }
 
   function addSelectedItem() {
@@ -177,14 +193,26 @@ export default function MenuCustomizeModalScreen() {
     );
   }
 
+  if (NativeMenuCustomizeContent && item) {
+    return <View style={styles.backdrop}>
+      <NativeMenuCustomizeContent key={item.id} item={item} customization={customization} quantity={quantity}
+        maxQuantity={MAX_QUANTITY} unitPriceCents={selectedUnitPriceCents} customizationDeltaCents={customizationDeltaCents}
+        totalCents={totalCents} issues={showValidationErrors ? resolvedCustomization.issues : []}
+        cartLocationError={cartLocationError} canAddToCart={!showLoadingOverlay && location.isReady && !location.isSwitchingLocation}
+        onSelectOption={(group, option) => setCustomization((prev) => updateCustomizationOption(prev, group, option))}
+        onNotesChange={(notes) => setCustomization((prev) => ({ ...prev, notes }))}
+        onQuantityChange={(value) => setQuantity(Math.max(1, Math.min(value, MAX_QUANTITY)))}
+        onAddToCart={addSelectedItem} onImageReady={() => setReadyHeroItemId(item.id)} />
+      {showLoadingOverlay ? <RNAnimated.View pointerEvents="auto" style={[styles.loadingOverlay, { opacity: loadingOpacity }]}>
+        <CustomizeModalLoadingSheet />
+      </RNAnimated.View> : null}
+    </View>;
+  }
+
   return (
     <View style={styles.backdrop}>
       {item ? (
         <View style={styles.sheet}>
-          <View style={styles.handleWrap}>
-            <View style={styles.handle} />
-          </View>
-
           <ScrollView
             bounces
             showsVerticalScrollIndicator={false}
@@ -232,24 +260,7 @@ export default function MenuCustomizeModalScreen() {
                   ))}
                 </View>
 
-                <View style={styles.section}>
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionTitle}>
-                    Notes
-                  </Text>
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionBody}>
-                    Optional instructions for the barista.
-                  </Text>
-                  <TextInput
-                    allowFontScaling={false}
-                    maxFontSizeMultiplier={1}
-                    value={customization.notes}
-                    onChangeText={(value) => setCustomization((prev) => ({ ...prev, notes: value }))}
-                    placeholder="No foam, easy ice, half sweet..."
-                    placeholderTextColor={uiPalette.textMuted}
-                    style={styles.noteInput}
-                    multiline
-                  />
-                </View>
+                <MenuItemNotes value={customization.notes} onChangeText={(notes) => setCustomization((prev) => ({ ...prev, notes }))} />
               </View>
 
               <View style={styles.summarySection}>
@@ -326,74 +337,54 @@ const styles = StyleSheet.create({
   },
   sheet: {
     flex: 1,
-    backgroundColor: "rgba(246, 247, 244, 0.98)",
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    borderWidth: 1,
-    borderColor: uiPalette.border,
+    backgroundColor: "transparent",
     overflow: "hidden"
   },
   scrollContent: {
     paddingBottom: 0
   },
-  handleWrap: {
-    position: "absolute",
-    top: 16,
-    left: 0,
-    right: 0,
-    alignItems: "center",
-    zIndex: 10
-  },
-  handle: {
-    width: 38,
-    height: 5,
-    borderRadius: 999,
-    backgroundColor: "rgba(151, 160, 154, 0.52)"
-  },
   heroWrap: {
-    paddingHorizontal: 20,
-    paddingTop: 36
+    width: "100%"
   },
   content: {
     paddingHorizontal: 20,
-    paddingTop: 22
+    paddingTop: 24
   },
   titleRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 16
+    alignItems: "center",
+    gap: 8
   },
   title: {
-    fontSize: 22,
-    lineHeight: 30,
-    letterSpacing: 2.4,
-    textTransform: "uppercase",
+    fontSize: 30,
+    lineHeight: 36,
+    letterSpacing: -0.6,
+    textAlign: "center",
     color: uiPalette.text,
     fontFamily: uiTypography.displayFamily,
-    fontWeight: "600"
+    fontWeight: "700"
   },
   titleText: {
-    flex: 1
+    flexShrink: 1
   },
   price: {
-    marginTop: 4,
-    fontSize: 15,
+    fontSize: 17,
     lineHeight: 24,
     color: uiPalette.textSecondary,
     fontFamily: uiTypography.bodyFamily,
     fontWeight: "400"
   },
   meta: {
-    marginTop: 10,
+    marginTop: 12,
+    textAlign: "center",
     fontSize: 15,
     lineHeight: 24,
     color: uiPalette.textSecondary
   },
   description: {
-    marginTop: 22,
+    marginTop: 14,
     fontSize: 15,
-    lineHeight: 28,
+    lineHeight: 24,
+    textAlign: "center",
     color: uiPalette.textSecondary
   },
   customizationSectionsWrap: {
@@ -422,7 +413,8 @@ const styles = StyleSheet.create({
     minHeight: 112,
     borderWidth: 1,
     borderColor: uiPalette.border,
-    backgroundColor: "rgba(255,255,255,0.56)",
+    backgroundColor: uiPalette.surfaceStrong,
+    borderRadius: 18,
     paddingHorizontal: 14,
     paddingVertical: 14,
     fontSize: 15,
@@ -466,7 +458,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
     fontSize: 13,
     lineHeight: 18,
-    color: "#A55B3F"
+    color: uiPalette.danger
   },
   footerRow: {
     position: "absolute",

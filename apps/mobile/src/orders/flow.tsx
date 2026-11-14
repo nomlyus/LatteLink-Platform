@@ -21,6 +21,8 @@ export type CheckoutFailure = {
 
 type CheckoutFlowContextValue = {
   confirmation: CheckoutConfirmation | null;
+  paymentConfirmationPending: boolean;
+  setPaymentConfirmationPending: () => void;
   failure: CheckoutFailure | null;
   retryOrder: CheckoutDraftSnapshot | null;
   setConfirmation: (confirmation: CheckoutConfirmation) => void;
@@ -35,15 +37,24 @@ const CheckoutFlowContext = createContext<CheckoutFlowContextValue | undefined>(
 
 export function CheckoutFlowProvider({ children }: { children: ReactNode }) {
   const [confirmation, setConfirmationState] = useState<CheckoutConfirmation | null>(null);
+  const [paymentConfirmationPending, setPaymentConfirmationPending] = useState(false);
   const [failure, setFailureState] = useState<CheckoutFailure | null>(null);
   const [retryOrder, setRetryOrder] = useState<CheckoutDraftSnapshot | null>(null);
 
   const value = useMemo<CheckoutFlowContextValue>(
     () => ({
       confirmation,
+      paymentConfirmationPending,
+      setPaymentConfirmationPending: () => {
+        setPaymentConfirmationPending(true);
+        setConfirmationState(null);
+        setFailureState(null);
+        setRetryOrder(null);
+      },
       failure,
       retryOrder,
       setConfirmation: (nextConfirmation) => {
+        setPaymentConfirmationPending(false);
         setConfirmationState(nextConfirmation);
         setFailureState(null);
         setRetryOrder(null);
@@ -53,11 +64,11 @@ export function CheckoutFlowProvider({ children }: { children: ReactNode }) {
         setRetryOrder(nextFailure.checkout ?? null);
       },
       setRetryOrder,
-      clearConfirmation: () => setConfirmationState(null),
+      clearConfirmation: () => { setConfirmationState(null); setPaymentConfirmationPending(false); },
       clearFailure: () => setFailureState(null),
       clearRetryOrder: () => setRetryOrder(null)
     }),
-    [confirmation, failure, retryOrder]
+    [confirmation, paymentConfirmationPending, failure, retryOrder]
   );
 
   return <CheckoutFlowContext.Provider value={value}>{children}</CheckoutFlowContext.Provider>;

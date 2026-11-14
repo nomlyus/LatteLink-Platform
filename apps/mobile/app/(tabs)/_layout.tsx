@@ -1,18 +1,32 @@
-import { Tabs } from "expo-router";
-import { PillTabBar } from "../../src/navigation/PillTabBar";
+import { Stack } from "expo-router";
+import { useAuthSession } from "../../src/auth/session";
+import { accountSheetOptions } from "../../src/account/accountSheetOptions";
+
+export const unstable_settings = { initialRouteName: "(navigation)" };
 
 export default function TabsLayout() {
+  const { isAuthenticated } = useAuthSession();
   return (
-    <Tabs
-      tabBar={(props) => <PillTabBar {...props} />}
-      screenOptions={{
-        headerShown: false
-      }}
-    >
-      <Tabs.Screen name="home" options={{ title: "Home" }} />
-      <Tabs.Screen name="menu" options={{ title: "Menu" }} />
-      <Tabs.Screen name="orders" options={{ title: "Orders" }} />
-      <Tabs.Screen name="account" options={{ title: "Account" }} />
-    </Tabs>
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="(navigation)" />
+      <Stack.Screen
+        name="account"
+        options={accountSheetOptions(isAuthenticated)}
+      />
+      <Stack.Screen name="home" options={{ animation: "none" }} />
+      <Stack.Screen name="menu" options={{ animation: "none" }} />
+      <Stack.Screen
+        name="orders"
+        options={{
+          presentation: "formSheet",
+          sheetAllowedDetents: [1],
+          sheetInitialDetentIndex: 0,
+          sheetGrabberVisible: true,
+          sheetExpandsWhenScrolledToEdge: true,
+          gestureEnabled: true,
+          contentStyle: { backgroundColor: "transparent" }
+        }}
+      />
+    </Stack>
   );
 }

@@ -14,10 +14,10 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllEnvs());
 
-describe("SDK 57 upgrade boundaries", () => {
+describe("SDK 58 upgrade boundaries", () => {
   it("includes the SDK-matched development client and physical-device Metro discovery", () => {
     const manifest = JSON.parse(read("package.json"));
-    expect(manifest.dependencies["expo-dev-client"]).toBe("~57.0.20");
+    expect(manifest.dependencies["expo-dev-client"]).toBe("~58.0.14");
     expect(manifest.scripts["dev:client"]).toBe("expo start --dev-client");
     const info = read("ios/LatteLinkBeta/Info.plist");
     expect(info).toContain("NSLocalNetworkUsageDescription");
@@ -27,11 +27,12 @@ describe("SDK 57 upgrade boundaries", () => {
 
   it("uses the fixed SDK / React Native engine combination without compatibility exclusions", () => {
     const manifest = JSON.parse(read("package.json"));
-    expect(manifest.dependencies.expo).toBe("~57.0.29");
-    expect(manifest.dependencies["react-native"]).toBe("0.86.3");
-    expect(manifest.dependencies.react).toBe("19.2.3");
-    expect(manifest.dependencies["react-native-worklets"]).toBe("0.10.1");
-    expect(manifest.dependencies["react-native-reanimated"]).toBe("4.5.1");
+    expect(manifest.dependencies.expo).toBe("~58.0.16");
+    expect(manifest.dependencies["react-native"]).toBe("0.88.0");
+    expect(manifest.dependencies.react).toBe("19.3.1");
+    expect(manifest.dependencies["react-native-worklets"]).toBe("0.13.0");
+    expect(manifest.dependencies["react-native-reanimated"]).toBe("4.7.1");
+    expect(manifest.dependencies["react-native-screens"]).toBe("~4.30.0");
     expect(manifest.expo?.install?.exclude).toBeUndefined();
     expect(read("babel.config.js")).toContain('"react-native-worklets/plugin"');
   });
@@ -51,13 +52,13 @@ describe("SDK 57 upgrade boundaries", () => {
 
   it("starts a new default runtime while retaining explicit merchant runtime inputs", async () => {
     const { default: defaults } = await import("../app.config");
-    expect(defaults.version).toBe("1.3.0");
-    expect(defaults.ios?.runtimeVersion).toBe("1.3.0");
-    expect(read("ios/LatteLinkBeta/Supporting/Expo.plist")).toContain("<string>1.3.0</string>");
-    vi.stubEnv("APP_RUNTIME_VERSION", "merchant-sdk57-runtime");
+    expect(defaults.version).toBe("1.4.0");
+    expect(defaults.ios?.runtimeVersion).toBe("1.4.0");
+    expect(read("ios/LatteLinkBeta/Supporting/Expo.plist")).toContain("<string>1.4.0</string>");
+    vi.stubEnv("APP_RUNTIME_VERSION", "merchant-sdk58-runtime");
     vi.resetModules();
     const { default: configured } = await import("../app.config");
-    expect(configured.ios?.runtimeVersion).toBe("merchant-sdk57-runtime");
+    expect(configured.ios?.runtimeVersion).toBe("merchant-sdk58-runtime");
   });
 
   it("aligns native deployment/framework settings while retaining Apple Pay and production configuration", () => {
@@ -81,24 +82,52 @@ describe("SDK 57 upgrade boundaries", () => {
     const { default: config } = await import("../app.config");
     expect(config.plugins).toContainEqual([
       "expo-build-properties",
-      { ios: { deploymentTarget: "16.4", useFrameworks: "dynamic", usePrecompiledModules: false } }
+      {
+        ios: {
+          deploymentTarget: "16.4",
+          useFrameworks: "dynamic",
+          usePrecompiledModules: false
+        }
+      }
     ]);
   });
 
-  it("retains the resolved SDK 57 native graph and Stripe framework embedding", () => {
+  it("retains the resolved SDK 58 native graph and Stripe framework embedding", () => {
     const project = read("ios/LatteLinkBeta.xcodeproj/project.pbxproj");
     expect(project).toContain("[stripe-react-native] Embed SPM Frameworks");
     expect(project).toContain("Pods-LatteLinkBeta.releaseproduction.xcconfig");
     expect(project).not.toContain("react-native@0.81.");
     const pods = read("ios/Podfile.lock");
-    expect(pods).toContain("React-Core (0.86.3)");
-    expect(pods).toContain("RNReanimated (4.5.1)");
-    expect(pods).toContain("RNWorklets (0.10.1)");
+    expect(pods).toContain("React-Core (0.88.0)");
+    expect(pods).toContain("RNReanimated (4.7.1)");
+    expect(pods).toContain("RNWorklets (0.13.0)");
     expect(pods).toContain("stripe-react-native/Core (0.82.0)");
     const resolved = JSON.parse(read("ios/LatteLinkBeta.xcworkspace/xcshareddata/swiftpm/Package.resolved"));
-    expect(resolved.pins).toContainEqual(expect.objectContaining({
-      identity: "stripe-ios-spm",
-      state: expect.objectContaining({ version: "26.14.0" })
-    }));
+    expect(resolved.pins).toContainEqual(
+      expect.objectContaining({
+        identity: "stripe-ios-spm",
+        state: expect.objectContaining({ version: "26.14.0" })
+      })
+    );
+  });
+
+  it("starts React Native once through the scene lifecycle and retains native URL forwarding", () => {
+    const delegate = read("ios/LatteLinkBeta/AppDelegate.swift");
+    expect(delegate).toContain("ExpoReactNativeFactoryProvider");
+    expect(delegate).toContain("class SceneDelegate: ExpoAppSceneDelegate");
+    expect(delegate).not.toContain("factory.startReactNative(");
+    expect(delegate).not.toContain("RCTLinkingManager.application(");
+    const info = read("ios/LatteLinkBeta/Info.plist");
+    expect(info).toContain("UIApplicationSceneManifest");
+    expect(info).toContain("$(PRODUCT_MODULE_NAME).SceneDelegate");
+  });
+
+  it("builds a new development runtime on the supported SDK 58 image", () => {
+    const eas = JSON.parse(read("eas.json"));
+    expect(eas.build.base.ios.image).toBe("macos-tahoe-26.6-xcode-27.0");
+    expect(eas.build.development.env.APP_RUNTIME_VERSION).toBe("1.4.0");
+    expect(eas.build.development.env.APP_VERSION).toBe("1.4.0");
+    expect(eas.build.development.env.APP_VARIANT).toBe("beta");
+    expect(eas.build.production.ios.buildConfiguration).toBe("ReleaseProduction");
   });
 });

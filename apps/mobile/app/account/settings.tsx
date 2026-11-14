@@ -1,3 +1,4 @@
+import { tabDestinations } from "../../src/navigation/destinations";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Linking, StyleSheet, Text, View } from "react-native";
@@ -9,12 +10,15 @@ import { useAuthSession } from "../../src/auth/session";
 import { useCart } from "../../src/cart/store";
 import { resolvePrivacyPolicyUrl } from "../../src/legal/links";
 import { isMobileLoyaltyVisible, resolveAppConfigData, useAppConfigQuery } from "../../src/menu/catalog";
-import { Button, Chip, GlassCard, ScreenScroll, SectionLabel, uiPalette, uiTypography } from "../../src/ui/system";
+import { Button, ScreenScroll, SectionLabel, uiPalette, uiTypography } from "../../src/ui/system";
+import { AccountGlassCard } from "../../src/account/AccountGlassCard";
 import { SettingsInfoRow, SettingsActionRow } from "../../src/account/SettingsRows";
 
-export default function SettingsPage() {
+export default function SettingsPage({ presentation = "screen", contentTopInset = 0 }: { presentation?: "screen" | "sheet"; contentTopInset?: number } = {}) {
+  const isSheet = presentation === "sheet";
   const router = useRouter();
-  const insets = useSafeAreaInsets();
+  const safeInsets = useSafeAreaInsets();
+  const insets = { ...safeInsets, top: isSheet ? 16 : safeInsets.top };
   const { isAuthenticated, signOut, deleteAccount, authRecoveryState } = useAuthSession();
   const { clear } = useCart();
   const appConfigQuery = useAppConfigQuery();
@@ -22,9 +26,9 @@ export default function SettingsPage() {
   const loyaltyEnabled = isMobileLoyaltyVisible(appConfigQuery.data);
   const pushEnabled = appConfig?.featureFlags.pushNotifications ?? false;
   const privacyPolicyUrl = resolvePrivacyPolicyUrl();
-  const headerOffset = insets.top + ACCOUNT_HEADER_HEIGHT;
-  const headerBackgroundColor = appConfig?.header.background ?? uiPalette.background;
-  const headerForegroundColor = appConfig?.header.foreground ?? uiPalette.text;
+  const headerOffset = isSheet ? contentTopInset + 16 : insets.top + ACCOUNT_HEADER_HEIGHT;
+  const headerBackgroundColor = isSheet ? "transparent" : appConfig?.header.background ?? uiPalette.background;
+  const headerForegroundColor = isSheet ? uiPalette.text : appConfig?.header.foreground ?? uiPalette.text;
   const locationName = appConfig?.brand.locationName ?? "Location unavailable";
   const [signOutPending, setSignOutPending] = useState(false);
   const [deleteAccountPending, setDeleteAccountPending] = useState(false);
@@ -47,7 +51,9 @@ export default function SettingsPage() {
     try {
       await signOut();
       clear();
-      router.dismissTo("/(tabs)/home");
+      router.dismissTo(tabDestinations.home);
+    } catch {
+      setActionError("We couldn’t sign you out. Please try again.");
     } finally {
       setSignOutPending(false);
     }
@@ -60,7 +66,7 @@ export default function SettingsPage() {
       await deleteAccount();
       clear();
       setDeleteAccountSheetOpen(false);
-      router.dismissTo("/(tabs)/home");
+      router.dismissTo(tabDestinations.home);
     } catch {
       setActionError("We couldn't delete this account right now. Try again in a moment.");
       setDeleteAccountSheetOpen(false);
@@ -88,10 +94,12 @@ export default function SettingsPage() {
     return (
       <View style={styles.screenShell}>
         <ScreenScroll
+          transparent={isSheet}
+          contentInsetAdjustmentBehavior={isSheet ? "never" : undefined}
           bottomInset={48}
           contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}
         >
-          <GlassCard style={styles.heroCard}>
+          <AccountGlassCard style={styles.heroCard}>
             <SectionLabel label="Settings" />
             <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>
               {recoveryCopy.title}
@@ -105,7 +113,7 @@ export default function SettingsPage() {
               onPress={() => router.push({ pathname: "/auth", params: { returnTo: "/account/settings" } })}
               style={styles.heroAction}
             />
-          </GlassCard>
+          </AccountGlassCard>
 
           {actionError ? (
             <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionError}>
@@ -114,27 +122,27 @@ export default function SettingsPage() {
           ) : null}
 
           <View style={styles.settingsSection}>
-            <SectionLabel label="Legal" />
-            <View style={styles.sectionList}>
+            <AccountGlassCard contentStyle={styles.groupContent}>
               <SettingsActionRow
                 label="Privacy Policy"
+                icon="shield-checkmark"
                 onPress={() => {
                   void handleOpenPrivacyPolicy();
                 }}
                 disabled={!privacyPolicyUrl}
                 isLast
               />
-            </View>
+            </AccountGlassCard>
           </View>
         </ScreenScroll>
 
-        <AccountFloatingHeader
+        {isSheet ? null : <AccountFloatingHeader
           title="Settings"
           insetTop={insets.top}
           onBack={goBack}
           backgroundColor={headerBackgroundColor}
           foregroundColor={headerForegroundColor}
-        />
+        />}
       </View>
     );
   }
@@ -142,24 +150,11 @@ export default function SettingsPage() {
   return (
     <View style={styles.screenShell}>
       <ScreenScroll
+        transparent={isSheet}
+        contentInsetAdjustmentBehavior={isSheet ? "never" : undefined}
         bottomInset={48}
         contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}
       >
-        <GlassCard style={styles.heroCard}>
-          <View style={styles.heroTopRow}>
-            <View style={styles.heroCopy}>
-              <SectionLabel label="Preferences" />
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>
-                Account settings
-              </Text>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroBody}>
-                Manage the account-level settings tied to this device and store profile.
-              </Text>
-            </View>
-            <Chip label="Active" active />
-          </View>
-        </GlassCard>
-
         {actionError ? (
           <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionError}>
             {actionError}
@@ -167,32 +162,31 @@ export default function SettingsPage() {
         ) : null}
 
         <View style={styles.settingsSection}>
-          <SectionLabel label="App" />
-          <View style={styles.sectionList}>
-            <SettingsInfoRow label="Location" value={locationName} />
-            <SettingsInfoRow label="Alerts" value={pushEnabled ? "Enabled" : "Disabled"} />
-            <SettingsInfoRow label="Loyalty" value={loyaltyEnabled ? "Enabled" : "Disabled"} isLast />
-          </View>
+          <AccountGlassCard contentStyle={styles.groupContent}>
+            <SettingsInfoRow label="Location" icon="location" value={locationName} />
+            <SettingsInfoRow label="Alerts" icon="notifications" value={pushEnabled ? "Enabled" : "Disabled"} />
+            <SettingsInfoRow label="Loyalty" icon="gift" value={loyaltyEnabled ? "Enabled" : "Disabled"} isLast />
+          </AccountGlassCard>
         </View>
 
         <View style={styles.settingsSection}>
-          <SectionLabel label="Legal" />
-          <View style={styles.sectionList}>
+          <AccountGlassCard contentStyle={styles.groupContent}>
             <SettingsActionRow
               label="Privacy Policy"
+              icon="shield-checkmark"
               onPress={() => {
                 void handleOpenPrivacyPolicy();
               }}
               disabled={!privacyPolicyUrl}
               isLast
             />
-          </View>
+          </AccountGlassCard>
         </View>
 
         <View style={styles.settingsSection}>
-          <SectionLabel label="Account" />
-          <View style={styles.sectionList}>
+          <AccountGlassCard contentStyle={styles.groupContent}>
             <SettingsActionRow
+              icon="trash"
               label={deleteAccountPending ? "Deleting Account…" : "Delete Account"}
               onPress={() => {
                 setDeleteAccountSheetOpen(true);
@@ -201,6 +195,8 @@ export default function SettingsPage() {
               tone="danger"
             />
             <SettingsActionRow
+              icon="log-out"
+              disclosure={false}
               label={signOutPending ? "Signing Out…" : "Sign Out"}
               onPress={() => {
                 void handleSignOut();
@@ -208,17 +204,17 @@ export default function SettingsPage() {
               disabled={signOutPending || deleteAccountPending}
               isLast
             />
-          </View>
+          </AccountGlassCard>
         </View>
       </ScreenScroll>
 
-      <AccountFloatingHeader
+      {isSheet ? null : <AccountFloatingHeader
         title="Settings"
         insetTop={insets.top}
         onBack={goBack}
         backgroundColor={headerBackgroundColor}
         foregroundColor={headerForegroundColor}
-      />
+      />}
       <DeleteAccountSheet
         open={deleteAccountSheetOpen}
         bottomInset={insets.bottom}
@@ -243,15 +239,6 @@ const styles = StyleSheet.create({
   heroCard: {
     marginTop: 18
   },
-  heroTopRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 16
-  },
-  heroCopy: {
-    flex: 1
-  },
   heroTitle: {
     marginTop: 10,
     fontSize: 30,
@@ -272,7 +259,7 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start"
   },
   settingsSection: {
-    marginTop: 28
+    marginTop: 14
   },
   sectionError: {
     marginTop: 10,
@@ -280,11 +267,7 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     color: uiPalette.danger
   },
-  sectionList: {
-    marginTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: uiPalette.border,
-    borderBottomWidth: 1,
-    borderBottomColor: uiPalette.border
+  groupContent: {
+    padding: 0
   }
 });

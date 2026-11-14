@@ -1,6 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
 import { type LoyaltyLedgerEntry } from "./data";
-import { Chip, uiPalette, uiTypography } from "../ui/system";
+import { uiPalette, uiTypography } from "../ui/system";
 import { formatDateTime } from "./presentation";
 
 function formatLedgerType(type: LoyaltyLedgerEntry["type"]) {
@@ -25,7 +25,11 @@ export function RewardActivityRow({ entry, showDivider }: { entry: LoyaltyLedger
   return (
     <View style={[styles.activityRow, showDivider ? styles.activityRowDivider : null]}>
       <View style={styles.activityLeft}>
-        <Chip label={formatLedgerType(entry.type)} active={entry.points >= 0} />
+        <View style={styles.activityType}>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.activityTypeLabel}>
+            {formatLedgerType(entry.type)}
+          </Text>
+        </View>
         {entry.orderId ? (
           <Text
             allowFontScaling={false}
@@ -67,6 +71,20 @@ const styles = StyleSheet.create({
   activityLeft: {
     flex: 1,
     gap: 8
+  },
+  activityType: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: uiPalette.accentSoft
+  },
+  activityTypeLabel: {
+    color: uiPalette.text,
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: "600",
+    fontFamily: uiTypography.bodyFamily
   },
   activityOrder: {
     fontSize: 12,

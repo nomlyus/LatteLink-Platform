@@ -9,13 +9,15 @@ export function CartLineItem({
   imageUrl,
   isLast,
   onSetQuantity,
-  onRemove
+  onRemove,
+  disabled = false
 }: {
   item: CartItem;
   imageUrl?: string;
   isLast: boolean;
   onSetQuantity: (quantity: number) => void;
   onRemove: () => void;
+  disabled?: boolean;
 }) {
   const customizationSummary = describeCustomization(item, { fallback: "Standard build" });
   const notes = item.customization.notes.trim();
@@ -54,6 +56,7 @@ export function CartLineItem({
 
                 <View style={styles.lineFooter}>
                   <CartQuantityControl
+                    disabled={disabled}
                     quantity={item.quantity}
                     canDecrease={item.quantity > 1}
                     onDecrease={() => {
@@ -83,7 +86,7 @@ const styles = StyleSheet.create({
   },
   lineTopRow: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "stretch",
     gap: 12,
     width: "100%"
   },

@@ -2,27 +2,35 @@ import { useRouter } from "expo-router";
 import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthSession } from "../../src/auth/session";
-import { getLoyaltyQueryErrorMessage, useLoyaltyBalanceQuery, useLoyaltyLedgerQuery } from "../../src/account/data";
+import { useLoyaltyBalanceQuery, useLoyaltyLedgerQuery } from "../../src/account/data";
 import { AccountFloatingHeader, ACCOUNT_HEADER_HEIGHT } from "../../src/account/AccountFloatingHeader";
 import { isMobileLoyaltyVisible, resolveAppConfigData, useAppConfigQuery } from "../../src/menu/catalog";
-import { Button, Card, GlassCard, ScreenScroll, SectionLabel, uiPalette, uiTypography } from "../../src/ui/system";
-import { RewardActivityRow } from "../../src/account/RewardActivityRow";
+import { Button, ScreenScroll, SectionLabel, uiPalette, uiTypography } from "../../src/ui/system";
+import { AccountGlassCard } from "../../src/account/AccountGlassCard";
+import { RewardsOverview } from "../../src/account/RewardsOverview";
+import { useNativeScrollEdge } from "../../src/navigation/useNativeScrollEdge";
+import { nativeAppleHeaderCapabilities } from "../../src/navigation/nativeAppleHeader";
+import { tabDestinations } from "../../src/navigation/destinations";
 
-export default function RewardsPage() {
+export default function RewardsPage({ presentation = "screen", contentTopInset = 0 }: { presentation?: "screen" | "sheet" | "tab"; contentTopInset?: number } = {}) {
+  const isSheet = presentation === "sheet";
+  const isTab = presentation === "tab";
+  const nativeHeader = isSheet || isTab;
+  const registerScrollEdge = useNativeScrollEdge(isTab && nativeAppleHeaderCapabilities().available);
   const router = useRouter();
-  const insets = useSafeAreaInsets();
+  const safeInsets = useSafeAreaInsets();
+  const insets = { ...safeInsets, top: isSheet ? 16 : safeInsets.top };
   const { isAuthenticated } = useAuthSession();
   const appConfigQuery = useAppConfigQuery();
   const appConfig = resolveAppConfigData(appConfigQuery.data);
   const loyaltyEnabled = isMobileLoyaltyVisible(appConfigQuery.data);
-  const headerBackgroundColor = appConfig?.header.background ?? uiPalette.background;
-  const headerForegroundColor = appConfig?.header.foreground ?? uiPalette.text;
+  const headerBackgroundColor = isSheet ? "transparent" : appConfig?.header.background ?? uiPalette.background;
+  const headerForegroundColor = isSheet ? uiPalette.text : appConfig?.header.foreground ?? uiPalette.text;
   const loyaltyBalanceQuery = useLoyaltyBalanceQuery(isAuthenticated && loyaltyEnabled);
   const loyaltyLedgerQuery = useLoyaltyLedgerQuery(isAuthenticated && loyaltyEnabled);
-  const headerOffset = insets.top + ACCOUNT_HEADER_HEIGHT;
-  const loyaltyBalance = loyaltyBalanceQuery.data;
-  const loyaltyLedger = loyaltyLedgerQuery.data ?? [];
-  const loyaltyError = loyaltyBalanceQuery.error ?? loyaltyLedgerQuery.error;
+  const headerOffset = nativeHeader ? contentTopInset + 16 : insets.top + ACCOUNT_HEADER_HEIGHT;
+  const loyaltyBalance = loyaltyBalanceQuery.isError ? undefined : loyaltyBalanceQuery.data;
+  const loyaltyLedger = loyaltyLedgerQuery.isError ? [] : loyaltyLedgerQuery.data ?? [];
 
   function goBack() {
     if (router.canGoBack()) {
@@ -37,10 +45,13 @@ export default function RewardsPage() {
     return (
       <View style={styles.screenShell}>
         <ScreenScroll
+          onLayout={isTab ? registerScrollEdge : undefined}
+          transparent={nativeHeader}
+          contentInsetAdjustmentBehavior={nativeHeader ? "never" : undefined}
           bottomInset={48}
           contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}
         >
-          <GlassCard style={styles.heroCard}>
+          <AccountGlassCard style={styles.heroCard}>
             <SectionLabel label="Rewards" />
             <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>
               Sign in to view rewards.
@@ -51,19 +62,19 @@ export default function RewardsPage() {
             <Button
               label="Sign In"
               variant="secondary"
-              onPress={() => router.push({ pathname: "/auth", params: { returnTo: "/account/rewards" } })}
+              onPress={() => router.push({ pathname: "/auth", params: { returnTo: isTab ? tabDestinations.rewards : "/account/rewards" } })}
               style={styles.heroAction}
             />
-          </GlassCard>
+          </AccountGlassCard>
         </ScreenScroll>
 
-        <AccountFloatingHeader
+        {nativeHeader ? null : <AccountFloatingHeader
           title="Rewards"
           insetTop={insets.top}
           onBack={goBack}
           backgroundColor={headerBackgroundColor}
           foregroundColor={headerForegroundColor}
-        />
+        />}
       </View>
     );
   }
@@ -71,80 +82,25 @@ export default function RewardsPage() {
   return (
     <View style={styles.screenShell}>
       <ScreenScroll
+        onLayout={isTab ? registerScrollEdge : undefined}
+        transparent={nativeHeader}
+        contentInsetAdjustmentBehavior={nativeHeader ? "never" : undefined}
         bottomInset={48}
         contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}
       >
-        <GlassCard style={styles.heroCard}>
-          <SectionLabel label="Balance" />
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>
-            {loyaltyEnabled
-              ? loyaltyBalance
-                ? `${loyaltyBalance.availablePoints} pts`
-                : loyaltyError
-                  ? "Unavailable"
-                  : "Loading"
-              : "Off"}
-          </Text>
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroBody}>
-            {loyaltyEnabled
-              ? loyaltyError
-                ? getLoyaltyQueryErrorMessage(loyaltyError)
-                : "Available points ready for future visits."
-              : "Loyalty is disabled for this client."}
-          </Text>
-          {loyaltyEnabled ? (
-            <View style={styles.balanceMetaWrap}>
-              <Text
-                allowFontScaling={false}
-                maxFontSizeMultiplier={1}
-                style={styles.balanceMeta}
-              >{`Pending ${loyaltyBalance ? loyaltyBalance.pendingPoints : "--"} pts`}</Text>
-              <Text
-                allowFontScaling={false}
-                maxFontSizeMultiplier={1}
-                style={styles.balanceMeta}
-              >{`Lifetime ${loyaltyBalance ? loyaltyBalance.lifetimeEarned : "--"} pts`}</Text>
-            </View>
-          ) : null}
-          {loyaltyEnabled && loyaltyError ? (
-            <Button
-              label="Retry rewards"
-              variant="secondary"
-              onPress={() => {
-                void Promise.allSettled([loyaltyBalanceQuery.refetch(), loyaltyLedgerQuery.refetch()]);
-              }}
-              style={styles.heroAction}
-            />
-          ) : null}
-        </GlassCard>
-
-        <Card style={styles.sectionCard}>
-          <SectionLabel label="Activity" />
-          {!loyaltyEnabled ? (
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.bodyText}>
-              Loyalty is disabled for this client.
-            </Text>
-          ) : loyaltyLedger.length === 0 ? (
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.bodyText}>
-              Your next paid order will show up here once points post.
-            </Text>
-          ) : (
-            <View style={styles.activityList}>
-              {loyaltyLedger.map((entry, index) => (
-                <RewardActivityRow key={entry.id} entry={entry} showDivider={index < loyaltyLedger.length - 1} />
-              ))}
-            </View>
-          )}
-        </Card>
+        <RewardsOverview enabled={loyaltyEnabled} balance={loyaltyBalance} entries={loyaltyLedger}
+          balanceState={loyaltyBalanceQuery.isError ? "error" : loyaltyBalanceQuery.isLoading ? "loading" : "ready"}
+          activityState={loyaltyLedgerQuery.isError ? "error" : loyaltyLedgerQuery.isLoading ? "loading" : "ready"}
+          onRetry={() => { void Promise.allSettled([loyaltyBalanceQuery.refetch(), loyaltyLedgerQuery.refetch()]); }} />
       </ScreenScroll>
 
-      <AccountFloatingHeader
+      {nativeHeader ? null : <AccountFloatingHeader
         title="Rewards"
         insetTop={insets.top}
         onBack={goBack}
         backgroundColor={headerBackgroundColor}
         foregroundColor={headerForegroundColor}
-      />
+      />}
     </View>
   );
 }

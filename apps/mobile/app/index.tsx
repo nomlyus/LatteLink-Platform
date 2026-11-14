@@ -1,3 +1,4 @@
+import { tabDestinations } from "../src/navigation/destinations";
 import { View } from "react-native";
 import { Redirect } from "expo-router";
 import { useCustomerProfileQuery, isCustomerProfileComplete } from "../src/auth/profile";
@@ -19,8 +20,8 @@ export default function IndexScreen() {
       return <Redirect href="/profile-setup" />;
     }
 
-    return <Redirect href="/(tabs)/home" />;
+    return <Redirect href={tabDestinations.home} />;
   }
 
-  return <Redirect href="/(tabs)/home" />;
+  return <Redirect href={tabDestinations.home} />;
 }

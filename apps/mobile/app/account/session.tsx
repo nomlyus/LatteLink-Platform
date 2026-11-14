@@ -1,185 +1,34 @@
 import { useRouter } from "expo-router";
-import { formatDateTime } from "../../src/account/presentation";
-import { StyleSheet, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { getSessionRecoveryCopy } from "../../src/auth/recovery";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useAuthSession } from "../../src/auth/session";
-import { AccountFloatingHeader, ACCOUNT_HEADER_HEIGHT } from "../../src/account/AccountFloatingHeader";
+import { formatDateTime } from "../../src/account/presentation";
 import { resolveAppConfigData, useAppConfigQuery } from "../../src/menu/catalog";
-import {
-  Button,
-  Card,
-  Chip,
-  GlassCard,
-  ScreenScroll,
-  SectionLabel,
-  uiPalette,
-  uiTypography
-} from "../../src/ui/system";
-
-function DetailRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.detailRow}>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.detailLabel}>
-        {label}
-      </Text>
-      <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.detailValue}>
-        {value}
-      </Text>
-    </View>
-  );
-}
+import { ScreenState } from "../../src/ui/ScreenState";
+import { uiPalette } from "../../src/ui/system";
+import { ResultField, ResultGroup } from "../../src/orders/PaymentResultView";
 
 export default function SessionPage() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const { isAuthenticated, session, authRecoveryState } = useAuthSession();
-  const appConfig = resolveAppConfigData(useAppConfigQuery().data);
-  const headerOffset = insets.top + ACCOUNT_HEADER_HEIGHT;
-  const recoveryCopy = getSessionRecoveryCopy(authRecoveryState);
-  const locationName = appConfig?.brand.locationName ?? "Location unavailable";
-
-  function goBack() {
-    if (router.canGoBack()) {
-      router.back();
-      return;
-    }
-
-    router.replace("/(tabs)/account");
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <View style={styles.screenShell}>
-        <ScreenScroll
-          bottomInset={48}
-          contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}
-        >
-          <GlassCard style={styles.heroCard}>
-            <SectionLabel label="Session" />
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>
-              {recoveryCopy.title}
-            </Text>
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroBody}>
-              {recoveryCopy.body}
-            </Text>
-            <Button
-              label={recoveryCopy.actionLabel}
-              variant="secondary"
-              onPress={() => router.push({ pathname: "/auth", params: { returnTo: "/account/session" } })}
-              style={styles.heroAction}
-            />
-          </GlassCard>
-        </ScreenScroll>
-
-        <AccountFloatingHeader title="Session" insetTop={insets.top} onBack={goBack} />
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.screenShell}>
-      <ScreenScroll
-        bottomInset={48}
-        contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}
-      >
-        <GlassCard style={styles.heroCard}>
-          <View style={styles.heroTopRow}>
-            <View style={styles.heroCopy}>
-              <SectionLabel label="Secure session" />
-              <Text
-                allowFontScaling={false}
-                maxFontSizeMultiplier={1}
-                style={styles.heroTitle}
-              >{`Member ${session?.userId.slice(0, 8).toUpperCase()}`}</Text>
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroBody}>
-                {locationName}
-              </Text>
-            </View>
-            <Chip label="Secure" active />
-          </View>
-        </GlassCard>
-
-        <Card style={styles.sectionCard}>
-          <SectionLabel label="Details" />
-          <View style={styles.detailGroup}>
-            <DetailRow label="User ID" value={session?.userId.slice(0, 8).toUpperCase() ?? "--"} />
-            <DetailRow label="Expires" value={formatDateTime(session?.expiresAt ?? "")} />
-            <DetailRow label="Location" value={locationName} />
-          </View>
-        </Card>
-      </ScreenScroll>
-
-      <AccountFloatingHeader title="Session" insetTop={insets.top} onBack={goBack} />
-    </View>
-  );
+  const { isAuthenticated, session } = useAuthSession();
+  const config = resolveAppConfigData(useAppConfigQuery().data);
+  return <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
+    {!isAuthenticated ? <ScreenState title="Sign in to your account" message="Your session has ended. Sign in again to see your orders and rewards."
+      actionLabel="Open account" onAction={() => router.push("/(tabs)/account")} />
+      : <>
+        <View style={styles.hero}>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.title}>You’re signed in</Text>
+          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.body}>Your account is securely connected on this device.</Text>
+        </View>
+        <ResultGroup>
+          <ResultField label="Brand" value={config?.brand.brandName ?? "Unavailable"} />
+          <ResultField label="Location" value={config?.brand.locationName ?? "Unavailable"} />
+          <ResultField label="Session expires" value={session?.expiresAt ? formatDateTime(session.expiresAt) : "Unavailable"} />
+        </ResultGroup>
+      </>}
+  </ScrollView>;
 }
-
 const styles = StyleSheet.create({
-  screenShell: {
-    flex: 1
-  },
-  screenContentNoTopPadding: {
-    paddingTop: 0
-  },
-  heroCard: {
-    marginTop: 18
-  },
-  heroTopRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 16
-  },
-  heroCopy: {
-    flex: 1
-  },
-  heroTitle: {
-    marginTop: 10,
-    fontSize: 30,
-    lineHeight: 34,
-    letterSpacing: -0.8,
-    color: uiPalette.text,
-    fontFamily: uiTypography.displayFamily,
-    fontWeight: "700"
-  },
-  heroBody: {
-    marginTop: 8,
-    fontSize: 14,
-    lineHeight: 21,
-    color: uiPalette.textSecondary
-  },
-  heroAction: {
-    marginTop: 18,
-    alignSelf: "flex-start"
-  },
-  sectionCard: {
-    marginTop: 14
-  },
-  detailGroup: {
-    marginTop: 14
-  },
-  detailRow: {
-    minHeight: 50,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: uiPalette.border
-  },
-  detailLabel: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: uiPalette.textSecondary
-  },
-  detailValue: {
-    flexShrink: 1,
-    textAlign: "right",
-    fontSize: 14,
-    lineHeight: 20,
-    color: uiPalette.text,
-    fontFamily: uiTypography.displayFamily,
-    fontWeight: "600"
-  }
+  content: { padding: 20, paddingBottom: 40, gap: 24 }, hero: { gap: 10 },
+  title: { color: uiPalette.text, fontSize: 28, fontWeight: "700" },
+  body: { color: uiPalette.textSecondary, fontSize: 16, lineHeight: 23 }
 });

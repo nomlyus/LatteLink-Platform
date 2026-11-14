@@ -24,7 +24,7 @@ describe("auth recovery copy", () => {
 
   it("uses default sign-in copy when there is no expired session", () => {
     expect(getAuthScreenRecoveryCopy("idle").title).toBe("Sign in.");
-    expect(getAccountRecoveryCopy("idle", "LatteLink Flagship").body).toContain("LatteLink Flagship");
+    expect(getAccountRecoveryCopy("idle", "LatteLink Flagship").body).toBe("Sign in to collect points, enjoy rewards, and view your past orders.");
     expect(getOrdersRecoveryCopy("idle").actionLabel).toBe("Sign In");
     expect(getCheckoutRecoveryActionLabel("idle")).toBe("Sign In to Checkout");
   });

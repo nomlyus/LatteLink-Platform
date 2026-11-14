@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View, type ColorValue } from "react-native";
 import { uiPalette, uiTypography } from "../ui/system";
 
 export const ACCOUNT_HEADER_HEIGHT = 52;
@@ -8,14 +8,16 @@ export function AccountFloatingHeader({
   title,
   insetTop,
   onBack,
+  dismiss = false,
   backgroundColor,
   foregroundColor
 }: {
   title: string;
   insetTop: number;
   onBack?: () => void;
-  backgroundColor?: string;
-  foregroundColor?: string;
+  dismiss?: boolean;
+  backgroundColor?: ColorValue;
+  foregroundColor?: Exclude<ColorValue, number | null | undefined>;
 }) {
   const bg = backgroundColor ?? uiPalette.background;
   const fg = foregroundColor ?? uiPalette.text;
@@ -30,8 +32,17 @@ export function AccountFloatingHeader({
           <View style={styles.pageMetaSpacer} />
           <View style={styles.pageTitleRow}>
             {onBack ? (
-              <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={onBack} style={({ pressed }) => [styles.backButton, pressed ? styles.backButtonPressed : null]}>
-                <Ionicons name="arrow-back" size={16} color={fg} />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={dismiss ? "Close account" : "Go back"}
+                onPress={onBack}
+                style={({ pressed }) => [
+                  styles.backButton,
+                  dismiss ? styles.closeButton : null,
+                  pressed ? styles.backButtonPressed : null
+                ]}
+              >
+                <Ionicons name={dismiss ? "close" : "arrow-back"} size={dismiss ? 22 : 16} color={fg} />
               </Pressable>
             ) : null}
             <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={[styles.pageTitle, { color: fg }]}>{title}</Text>
@@ -84,6 +95,11 @@ const styles = StyleSheet.create({
   },
   backButtonPressed: {
     opacity: 0.72
+  },
+  closeButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22
   },
   pageTabsSpacer: {
     height: 0,

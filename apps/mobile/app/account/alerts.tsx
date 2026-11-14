@@ -12,7 +12,9 @@ import { customerProfileQueryKey, useCustomerProfileQuery } from "../../src/auth
 import { apiClient } from "../../src/api/client";
 import { GlassActionPill } from "../../src/cart/GlassActionPill";
 import { runAfterKeyboardDismiss } from "../../src/ui/keyboard";
-import { Button, Card, GlassCard, ScreenScroll, SectionLabel, uiPalette, uiTypography } from "../../src/ui/system";
+import { Button, ScreenScroll, SectionLabel, uiPalette, uiTypography } from "../../src/ui/system";
+import { AccountGlassCard } from "../../src/account/AccountGlassCard";
+import { profileBirthdayValue } from "../../src/account/profileDate";
 import {
   COUNTRY_CODES,
   CountryEntry,
@@ -21,18 +23,20 @@ import {
   DateSheet
 } from "../../src/account/ProfileSheets";
 
-export default function ProfilePage() {
+export default function ProfilePage({ presentation = "screen", contentTopInset = 0 }: { presentation?: "screen" | "sheet"; contentTopInset?: number } = {}) {
+  const isSheet = presentation === "sheet";
   const router = useRouter();
-  const insets = useSafeAreaInsets();
+  const safeInsets = useSafeAreaInsets();
+  const insets = { ...safeInsets, top: isSheet ? 16 : safeInsets.top };
   const queryClient = useQueryClient();
   const { isAuthenticated } = useAuthSession();
   const appConfigQuery = useAppConfigQuery();
   const appConfig = resolveAppConfigData(appConfigQuery.data);
-  const headerBackgroundColor = appConfig?.header.background ?? uiPalette.background;
-  const headerForegroundColor = appConfig?.header.foreground ?? uiPalette.text;
+  const headerBackgroundColor = isSheet ? "transparent" : appConfig?.header.background ?? uiPalette.background;
+  const headerForegroundColor = isSheet ? uiPalette.text : appConfig?.header.foreground ?? uiPalette.text;
   const profileQuery = useCustomerProfileQuery(isAuthenticated);
   const profile = profileQuery.data;
-  const headerOffset = insets.top + ACCOUNT_HEADER_HEIGHT;
+  const headerOffset = isSheet ? contentTopInset + 16 : insets.top + ACCOUNT_HEADER_HEIGHT;
 
   const [name, setName] = useState("");
   const [dialCode, setDialCode] = useState<CountryEntry>(COUNTRY_CODES[0]);
@@ -65,7 +69,7 @@ export default function ProfilePage() {
       return apiClient.saveCustomerProfile({
         name: name.trim(),
         phoneNumber: phone,
-        birthday: birthday ? birthday.toISOString().slice(0, 10) : undefined
+        birthday: profileBirthdayValue(birthday)
       });
     },
     onSuccess: (updated) => {
@@ -94,10 +98,12 @@ export default function ProfilePage() {
     return (
       <View style={styles.screenShell}>
         <ScreenScroll
+          transparent={isSheet}
+          contentInsetAdjustmentBehavior={isSheet ? "never" : undefined}
           bottomInset={48}
           contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}
         >
-          <GlassCard style={styles.heroCard}>
+          <AccountGlassCard style={styles.heroCard}>
             <SectionLabel label="Profile" />
             <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>
               Sign in to edit your profile.
@@ -111,15 +117,15 @@ export default function ProfilePage() {
               onPress={() => router.push({ pathname: "/auth", params: { returnTo: "/account/alerts" } })}
               style={styles.heroAction}
             />
-          </GlassCard>
+          </AccountGlassCard>
         </ScreenScroll>
-        <AccountFloatingHeader
+        {isSheet ? null : <AccountFloatingHeader
           title="Profile"
           insetTop={insets.top}
           onBack={goBack}
           backgroundColor={headerBackgroundColor}
           foregroundColor={headerForegroundColor}
-        />
+        />}
       </View>
     );
   }
@@ -129,20 +135,12 @@ export default function ProfilePage() {
   return (
     <View style={styles.screenShell}>
       <ScreenScroll
+        transparent={isSheet}
+        contentInsetAdjustmentBehavior={isSheet ? "never" : undefined}
         bottomInset={100}
         contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}
       >
-        <GlassCard style={styles.heroCard}>
-          <SectionLabel label="Profile" />
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroTitle}>
-            Your info.
-          </Text>
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.heroBody}>
-            Update your name, phone number, and birthday.
-          </Text>
-        </GlassCard>
-
-        <Card style={styles.formCard}>
+        <AccountGlassCard style={styles.formCard}>
           <View style={styles.fieldGroup}>
             <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.fieldLabel}>
               Full name
@@ -153,7 +151,7 @@ export default function ProfilePage() {
               autoCapitalize="words"
               autoComplete="name"
               autoCorrect={false}
-              placeholder="Avery Quinn"
+              placeholder="Your name"
               placeholderTextColor={uiPalette.textMuted}
               style={styles.textInput}
               value={name}
@@ -225,7 +223,7 @@ export default function ProfilePage() {
               </Text>
             </View>
           ) : null}
-        </Card>
+        </AccountGlassCard>
       </ScreenScroll>
 
       <View pointerEvents="box-none" style={[styles.bottomDock, { bottom: Math.max(insets.bottom, 16) }]}>
@@ -237,7 +235,7 @@ export default function ProfilePage() {
         <GlassActionPill
           label={saveMutation.isPending ? "Saving…" : saved ? "Saved" : "Save changes"}
           onPress={() => {
-            void saveMutation.mutateAsync();
+            saveMutation.mutate();
           }}
           tone="dark"
           disabled={!canSave}
@@ -262,7 +260,7 @@ export default function ProfilePage() {
         }}
       />
 
-      <AccountFloatingHeader title="Profile" insetTop={insets.top} onBack={goBack} />
+      {isSheet ? null : <AccountFloatingHeader title="Profile" insetTop={insets.top} onBack={goBack} backgroundColor={headerBackgroundColor} foregroundColor={headerForegroundColor} />}
     </View>
   );
 }

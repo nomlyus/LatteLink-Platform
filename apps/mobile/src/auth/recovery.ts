@@ -6,8 +6,8 @@ type RecoveryCopy = {
   actionLabel: string;
 };
 
-function withLocationSuffix(locationName: string) {
-  return locationName ? ` at ${locationName}` : "";
+function withBrandSuffix(brandName: string) {
+  return brandName ? ` at ${brandName}` : "";
 }
 
 export function getAuthScreenRecoveryCopy(state: AuthRecoveryState): RecoveryCopy {
@@ -26,18 +26,18 @@ export function getAuthScreenRecoveryCopy(state: AuthRecoveryState): RecoveryCop
   };
 }
 
-export function getAccountRecoveryCopy(state: AuthRecoveryState, locationName: string): RecoveryCopy {
+export function getAccountRecoveryCopy(state: AuthRecoveryState, brandName: string): RecoveryCopy {
   if (state === "expired") {
     return {
       title: "Your session expired.",
-      body: `Sign in again to reconnect rewards, past orders, alerts, and settings${withLocationSuffix(locationName)}.`,
+      body: `Sign in again to see your rewards and orders${withBrandSuffix(brandName)}.`,
       actionLabel: "Sign In Again"
     };
   }
 
   return {
     title: "Keep every visit in one account.",
-    body: `Sign in to keep rewards, past orders, alerts, and settings attached to the same customer account${withLocationSuffix(locationName)}.`,
+    body: "Sign in to collect points, enjoy rewards, and view your past orders.",
     actionLabel: "Sign In"
   };
 }

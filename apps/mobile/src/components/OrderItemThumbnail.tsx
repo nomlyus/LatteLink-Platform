@@ -1,5 +1,6 @@
 import { useMenuImage } from "../menu/useMenuImage";
 import { Ionicons } from "@expo/vector-icons";
+import { SymbolView, type SymbolViewProps } from "expo-symbols";
 import { Image, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
 import type { ComponentProps } from "react";
 
@@ -23,9 +24,10 @@ export type OrderItemThumbnailProps = {
   size?: "small" | "medium";
   style?: StyleProp<ViewStyle>;
   fallbackIcon?: ComponentProps<typeof Ionicons>["name"];
+  fallbackSymbol?: SymbolViewProps["name"];
 };
 
-export function OrderItemThumbnail({ label, imageUrl, size = "medium", style, fallbackIcon }: OrderItemThumbnailProps) {
+export function OrderItemThumbnail({ label, imageUrl, size = "medium", style, fallbackIcon, fallbackSymbol }: OrderItemThumbnailProps) {
   const { activeImageUrl, imageFailed, onImageError } = useMenuImage(imageUrl, "list");
 
   const imageStyle = size === "small" ? styles.smallImage : styles.mediumImage;
@@ -33,6 +35,8 @@ export function OrderItemThumbnail({ label, imageUrl, size = "medium", style, fa
     <View style={[size === "small" ? styles.small : styles.medium, style]}>
       {activeImageUrl && !imageFailed ? (
         <Image source={{ uri: activeImageUrl }} style={imageStyle} resizeMode="cover" onError={onImageError} />
+      ) : fallbackSymbol ? (
+        <SymbolView name={fallbackSymbol} size={size === "small" ? 20 : 26} tintColor={uiPalette.accent} />
       ) : (
         <Ionicons
           name={fallbackIcon ?? resolveOrderItemIcon(label)}

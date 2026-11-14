@@ -3,12 +3,12 @@ import "../global.css";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import Constants from "expo-constants";
 import * as SplashScreen from "expo-splash-screen";
-import { Stack, usePathname, useRootNavigationState } from "expo-router";
+import { Stack } from "expo-router";
 import * as Sentry from "@sentry/react-native";
 import { handleURLCallback } from "@stripe/stripe-react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef } from "react";
-import { InteractionManager, Linking, StatusBar } from "react-native";
+import { Linking } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { MOBILE_API_ENVIRONMENT } from "../src/api/client";
@@ -22,6 +22,11 @@ import { prefetchCatalogQueries } from "../src/menu/catalog";
 import { LocationProvider, useLocationContext } from "../src/location/LocationProvider";
 import { canStartLocationSensitiveQueries } from "../src/location/model";
 import { StartupCatalogGate } from "../src/startup/StartupGate";
+import { SystemAppearance } from "../src/ui/SystemAppearance";
+import { menuCustomizeHeaderOptions } from "../src/menu/MenuCustomizeHeader";
+import { cartHeaderOptions } from "../src/cart/CartNavigation";
+import { accountSheetOptions, accountSignInHeaderOptions } from "../src/account/accountSheetOptions";
+import { modalHeaderOptions } from "../src/navigation/modalHeaderOptions";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -34,9 +39,7 @@ const queryClient = new QueryClient({
   }
 });
 
-const MIN_SPLASH_DURATION_MS = 650;
 const SPLASH_FADE_DURATION_MS = 180;
-const splashStartedAt = Date.now();
 const sentryDsn = process.env.EXPO_PUBLIC_SENTRY_DSN?.trim();
 
 if (sentryDsn) {
@@ -57,10 +60,15 @@ void SplashScreen.preventAutoHideAsync();
 
 function AppInitializer() {
   const { isAuthenticated } = useAuthSession();
-  const location = useLocationContext();
-  const canStartLocationSensitiveData = canStartLocationSensitiveQueries(location);
   usePushNotificationRegistration(isAuthenticated);
   useOrdersRealtimeSync(isAuthenticated);
+
+  return null;
+}
+
+function CatalogWarmup() {
+  const location = useLocationContext();
+  const canStartLocationSensitiveData = canStartLocationSensitiveQueries(location);
 
   useEffect(() => {
     if (!canStartLocationSensitiveData) {
@@ -74,8 +82,6 @@ function AppInitializer() {
 }
 
 function RootLayout() {
-  const pathname = usePathname();
-  const navigationState = useRootNavigationState();
   const hasHiddenSplash = useRef(false);
   const hideSplash = useCallback(() => {
     if (hasHiddenSplash.current) {
@@ -83,25 +89,8 @@ function RootLayout() {
     }
 
     hasHiddenSplash.current = true;
-    const remainingDelay = Math.max(MIN_SPLASH_DURATION_MS - (Date.now() - splashStartedAt), 0);
-    InteractionManager.runAfterInteractions(() => {
-      setTimeout(() => {
-        void SplashScreen.hideAsync();
-      }, remainingDelay);
-    });
+    void SplashScreen.hideAsync();
   }, []);
-
-  useEffect(() => {
-    if (hasHiddenSplash.current) {
-      return;
-    }
-
-    if (!navigationState?.key || !pathname || pathname === "/") {
-      return;
-    }
-
-    hideSplash();
-  }, [hideSplash, navigationState?.key, pathname]);
 
   useEffect(() => {
     const handleStripeDeepLink = async (url: string | null) => {
@@ -117,7 +106,7 @@ function RootLayout() {
     };
 
     void Linking.getInitialURL()
-      .then((url) => handleStripeDeepLink(url))
+      .then((url) => handleStripeDeepLink(url ?? null))
       .catch(() => {
         // Some native launch contexts cannot provide an initial URL.
       });
@@ -133,13 +122,15 @@ function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <StatusBar barStyle="dark-content" backgroundColor={uiPalette.background} />
+        <SystemAppearance>
         <QueryClientProvider client={queryClient}>
           <BottomSheetModalProvider>
             <AuthSessionProvider>
               <CartProvider>
                 <CheckoutFlowProvider>
                   <LocationProvider>
+                    {/* Warm independent data before app-config finishes; query keys deduplicate screen requests. */}
+                    <CatalogWarmup />
                     <StartupCatalogGate onReadyToDisplay={hideSplash}>
                       <AppInitializer />
                       <Stack
@@ -149,29 +140,40 @@ function RootLayout() {
                         }}
                       >
                         <Stack.Screen name="(tabs)" options={{ animation: "none" }} />
+                        <Stack.Screen name="dev" options={{ presentation: "formSheet", sheetAllowedDetents: [1], sheetGrabberVisible: false }} />
+                        <Stack.Screen name="account/session" options={({ navigation }) => modalHeaderOptions("Session", () => navigation.goBack())} />
                         <Stack.Screen
                           name="cart"
                           options={{
-                            presentation: "modal",
-                            animation: "slide_from_bottom",
+                            ...cartHeaderOptions,
+                            presentation: "formSheet",
+                            sheetAllowedDetents: [1],
+                            sheetGrabberVisible: false,
+                            gestureEnabled: true,
                             contentStyle: { backgroundColor: "transparent" }
                           }}
+                        />
+                        <Stack.Screen
+                          name="cart-sign-in"
+                          options={{ ...accountSheetOptions(false), ...accountSignInHeaderOptions }}
                         />
                         <Stack.Screen
                           name="auth"
-                          options={{
+                          options={({ navigation }) => ({
+                            ...modalHeaderOptions("Sign in", () => navigation.goBack()),
                             presentation: "modal",
                             animation: "slide_from_bottom",
                             contentStyle: { backgroundColor: "transparent" }
-                          }}
+                          })}
                         />
                         <Stack.Screen
                           name="profile-setup"
-                          options={{
+                          options={({ navigation }) => ({
+                            ...modalHeaderOptions("Your profile", () => navigation.goBack()),
                             presentation: "modal",
                             animation: "slide_from_bottom",
-                            contentStyle: { backgroundColor: "transparent" }
-                          }}
+                            contentStyle: { backgroundColor: uiPalette.backgroundAlt }
+                          })}
                         />
                         <Stack.Screen
                           name="checkout"
@@ -184,42 +186,50 @@ function RootLayout() {
                         <Stack.Screen
                           name="menu-customize"
                           options={{
-                            presentation: "modal",
-                            animation: "slide_from_bottom",
+                            ...menuCustomizeHeaderOptions,
+                            presentation: "formSheet",
+                            sheetAllowedDetents: [1],
+                            sheetGrabberVisible: false,
+                            sheetExpandsWhenScrolledToEdge: true,
+                            gestureEnabled: true,
                             contentStyle: { backgroundColor: "transparent" }
                           }}
                         />
                         <Stack.Screen
                           name="checkout-success"
-                          options={{
+                          options={({ navigation }) => ({
+                            ...modalHeaderOptions("Your order", () => navigation.goBack()),
                             presentation: "modal",
                             animation: "slide_from_bottom",
                             contentStyle: { backgroundColor: uiPalette.surfaceStrong }
-                          }}
+                          })}
                         />
                         <Stack.Screen
                           name="checkout-failure"
-                          options={{
+                          options={({ navigation }) => ({
+                            ...modalHeaderOptions("Payment", () => navigation.goBack()),
                             presentation: "modal",
                             animation: "slide_from_bottom",
                             contentStyle: { backgroundColor: uiPalette.surfaceStrong }
-                          }}
+                          })}
                         />
                         <Stack.Screen
                           name="refunds/[orderId]"
-                          options={{
+                          options={({ navigation }) => ({
+                            ...modalHeaderOptions("Order", () => navigation.goBack()),
                             presentation: "modal",
                             animation: "slide_from_bottom",
                             contentStyle: { backgroundColor: uiPalette.surfaceStrong }
-                          }}
+                          })}
                         />
                         <Stack.Screen
                           name="orders/[orderId]"
-                          options={{
+                          options={({ navigation }) => ({
+                            ...modalHeaderOptions("Order", () => navigation.goBack()),
                             presentation: "modal",
                             animation: "slide_from_bottom",
                             contentStyle: { backgroundColor: "transparent" }
-                          }}
+                          })}
                         />
                       </Stack>
                     </StartupCatalogGate>
@@ -229,6 +239,7 @@ function RootLayout() {
             </AuthSessionProvider>
           </BottomSheetModalProvider>
         </QueryClientProvider>
+        </SystemAppearance>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

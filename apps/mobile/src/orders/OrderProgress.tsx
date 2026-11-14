@@ -1,14 +1,14 @@
-import { Ionicons } from "@expo/vector-icons";
+import { SymbolView } from "expo-symbols";
 import { useEffect } from "react";
-import { StyleSheet, View, type ViewStyle } from "react-native";
+import { StyleSheet, Text, View, type ViewStyle } from "react-native";
 import Animated, {
   Easing,
-  interpolateColor,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
   type SharedValue
 } from "react-native-reanimated";
+import { useReducedMotion } from "react-native-reanimated";
 import { type OrderHistoryEntry } from "../account/data";
 import { uiPalette } from "../ui/system";
 
@@ -41,27 +41,19 @@ function OrderProgressStep({
     const activation = clampUnit(progressValue.value - (index - 1));
     const completion = clampUnit(progressValue.value - index);
 
-    const backgroundColor =
-      activation < 1
-        ? interpolateColor(activation, [0, 1], [uiPalette.background, uiPalette.surfaceStrong])
-        : interpolateColor(completion, [0, 1], [uiPalette.surfaceStrong, uiPalette.primary]);
-
-    const borderColor = interpolateColor(activation, [0, 1], [uiPalette.borderStrong, uiPalette.primary]);
     const scale = activation < 1 ? 0.88 + activation * 0.12 : 1 + completion * 0.06;
 
     return {
-      backgroundColor,
-      borderColor,
       transform: [{ scale }]
     };
   });
 
+  // Crossfade native-colored layers rather than trying to interpolate opaque PlatformColor objects.
+  const activeDotStyle = useAnimatedStyle(() => ({ opacity: clampUnit(progressValue.value - (index - 1)) }));
+  const completeDotStyle = useAnimatedStyle(() => ({ opacity: clampUnit(progressValue.value - index) }));
   const labelAnimatedStyle = useAnimatedStyle(() => {
     const activation = clampUnit(progressValue.value - (index - 1));
-
-    return {
-      color: interpolateColor(activation, [0, 1], [uiPalette.textMuted, uiPalette.text])
-    };
+    return { opacity: activation };
   });
 
   const checkAnimatedStyle = useAnimatedStyle((): ViewStyle => {
@@ -105,33 +97,42 @@ function OrderProgressStep({
           </View>
         ) : null}
         <Animated.View style={[styles.progressDot, dotAnimatedStyle]}>
+          <Animated.View pointerEvents="none" style={[styles.dotLayer, styles.activeDot, activeDotStyle]} />
+          <Animated.View pointerEvents="none" style={[styles.dotLayer, styles.completeDot, completeDotStyle]} />
           <Animated.View style={checkAnimatedStyle}>
-            <Ionicons name="checkmark" size={11} color="#FFFFFF" />
+            <SymbolView name={{ ios: "checkmark", android: "check" }} size={11} tintColor={uiPalette.primaryText} />
           </Animated.View>
         </Animated.View>
       </View>
-      <Animated.Text
-        allowFontScaling={false}
-        maxFontSizeMultiplier={1}
-        style={[styles.progressLabel, labelAnimatedStyle]}
-      >
-        {label}
-      </Animated.Text>
+      <View style={styles.labelWrap}>
+        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.progressLabel}>
+          {label}
+        </Text>
+        <Animated.Text
+          accessible={false}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          allowFontScaling={false}
+          maxFontSizeMultiplier={1}
+          style={[styles.progressLabel, styles.activeLabel, labelAnimatedStyle]}
+        >{label}</Animated.Text>
+      </View>
     </View>
   );
 }
 
 export function OrderProgress({ status }: { status: OrderHistoryEntry["status"] }) {
+  const reduceMotion = useReducedMotion();
   const activeIndex = ACTIVE_PROGRESS_STEPS.findIndex((step) => step.status === status);
   const targetIndex = activeIndex === -1 ? 0 : activeIndex + 1;
   const progressValue = useSharedValue(targetIndex);
 
   useEffect(() => {
     progressValue.value = withTiming(targetIndex, {
-      duration: PROGRESS_ANIMATION_MS,
+      duration: reduceMotion ? 0 : PROGRESS_ANIMATION_MS,
       easing: Easing.out(Easing.cubic)
     });
-  }, [progressValue, targetIndex]);
+  }, [progressValue, targetIndex, reduceMotion]);
 
   return (
     <View style={styles.progressWrap}>
@@ -181,6 +182,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center"
   },
+  dotLayer: { ...StyleSheet.absoluteFill, borderRadius: 11, borderWidth: 1 },
+  activeDot: { backgroundColor: uiPalette.surfaceStrong, borderColor: uiPalette.primary },
+  completeDot: { backgroundColor: uiPalette.primary, borderColor: uiPalette.primary },
+  labelWrap: { marginTop: 10 },
+  activeLabel: { ...StyleSheet.absoluteFill, color: uiPalette.text },
   progressLine: {
     position: "absolute",
     top: 10.5,
@@ -207,11 +213,10 @@ const styles = StyleSheet.create({
     marginLeft: 19
   },
   progressLabel: {
-    marginTop: 10,
     maxWidth: 80,
     fontSize: 12,
     lineHeight: 16,
     textAlign: "center",
-    color: uiPalette.textMuted
+    color: uiPalette.textSecondary
   }
 });

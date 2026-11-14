@@ -1,30 +1,29 @@
 import { usePillTabSelection } from "./usePillTabSelection";
-import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { useEffect, type ReactNode } from "react";
 
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, withSpring } from "react-native-reanimated";
 
-import { uiPalette, uiTypography } from "../ui/system";
 import { TAB_BAR_HEIGHT } from "./tabBarMetrics";
-import { iconMap, iconSizeMap, labelMap, type PillTabBarProps } from "./pillTabBarShared";
+import type { PillTabBarProps } from "./pillTabBarShared";
+import { PillTabButtons, PillTabIcons } from "./PillTabItems";
+import { TabBarCartButton } from "./TabBarCartButton";
+import { uiPalette } from "../ui/systemColors";
 
 function renderDockSurface(children: ReactNode) {
   const chrome = <View style={styles.dockInner}>{children}</View>;
 
   return (
-    <BlurView tint="light" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.blurShell}>
+    <BlurView tint="systemMaterial" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.blurShell}>
       {chrome}
     </BlurView>
   );
 }
 
-export function ClassicPillTabBar({ state, descriptors, navigation }: PillTabBarProps) {
+export function ClassicPillTabBar({ state, descriptors, emitter, navigateToTab }: PillTabBarProps) {
   const {
-    router,
-    itemCount,
     tabRowWidth,
     setTabRowWidth,
     indicatorTranslateX,
@@ -43,7 +42,7 @@ export function ClassicPillTabBar({ state, descriptors, navigation }: PillTabBar
     syncIndicatorToIndex,
     navigateToIndex,
     dragSpringConfig
-  } = usePillTabSelection({ state, navigation });
+  } = usePillTabSelection({ state, emitter, navigateToTab });
   const indicatorStyle = useAnimatedStyle(
     () => ({
       width: indicatorWidth,
@@ -65,39 +64,6 @@ export function ClassicPillTabBar({ state, descriptors, navigation }: PillTabBar
     }),
     [tabRowWidth]
   );
-
-  const renderIconSlots = (useActiveIcons: boolean) =>
-    state.routes.map((route) => {
-      const descriptor = descriptors[route.key];
-      const label =
-        typeof descriptor.options.title === "string" ? descriptor.options.title : (labelMap[route.name] ?? route.name);
-      const iconNames = iconMap[route.name] ?? { default: "ellipse-outline", active: "ellipse" };
-      const iconSize = iconSizeMap[route.name] ?? 24;
-
-      return (
-        <View key={`${useActiveIcons ? "active" : "base"}-${route.key}`} style={styles.tabSlot}>
-          <View pointerEvents="none" style={styles.tabVisualButton}>
-            <View style={styles.tabContent}>
-              <View style={styles.tabIconBox}>
-                <Ionicons
-                  name={useActiveIcons ? iconNames.active : iconNames.default}
-                  size={iconSize}
-                  color={useActiveIcons ? "rgba(18, 18, 18, 0.96)" : "rgba(60, 60, 67, 0.72)"}
-                />
-              </View>
-              <Text
-                allowFontScaling={false}
-                maxFontSizeMultiplier={1}
-                numberOfLines={1}
-                style={[styles.tabLabel, useActiveIcons ? styles.tabLabelActive : null]}
-              >
-                {label}
-              </Text>
-            </View>
-          </View>
-        </View>
-      );
-    });
 
   useEffect(() => {
     if (slotWidth <= 0) return;
@@ -160,7 +126,7 @@ export function ClassicPillTabBar({ state, descriptors, navigation }: PillTabBar
                 }}
               >
                 <View pointerEvents="none" style={styles.baseIconRow}>
-                  {renderIconSlots(false)}
+                  <PillTabIcons state={state} descriptors={descriptors} active={false} variant="classic" />
                 </View>
                 {indicatorWidth > 0 ? (
                   <Animated.View pointerEvents="none" style={[styles.activeIndicator, indicatorStyle]} />
@@ -168,7 +134,7 @@ export function ClassicPillTabBar({ state, descriptors, navigation }: PillTabBar
                 {indicatorWidth > 0 ? (
                   <Animated.View pointerEvents="none" style={[styles.activeIconWindow, indicatorStyle]}>
                     <Animated.View style={[styles.activeIconTrack, activeIconTrackStyle]}>
-                      {renderIconSlots(true)}
+                      <PillTabIcons state={state} descriptors={descriptors} active variant="classic" />
                     </Animated.View>
                   </Animated.View>
                 ) : null}
@@ -178,74 +144,19 @@ export function ClassicPillTabBar({ state, descriptors, navigation }: PillTabBar
                   </GestureDetector>
                 ) : null}
 
-                {state.routes.map((route, index) => {
-                  const descriptor = descriptors[route.key];
-                  const isFocused = activeIndex === index;
-                  const label =
-                    typeof descriptor.options.title === "string"
-                      ? descriptor.options.title
-                      : (labelMap[route.name] ?? route.name);
-
-                  const onPress = () => {
-                    const event = navigation.emit({
-                      type: "tabPress",
-                      target: route.key,
-                      canPreventDefault: true
-                    });
-
-                    if (!isFocused && !event.defaultPrevented) {
-                      navigation.navigate(route.name, route.params);
-                    }
-                  };
-
-                  return (
-                    <View key={route.key} style={styles.tabSlot}>
-                      <Pressable
-                        onPress={onPress}
-                        style={({ pressed }) => [styles.tabButton, pressed ? styles.tabPressed : null]}
-                        hitSlop={{ top: 2, bottom: 2, left: 14, right: 14 }}
-                        accessibilityRole="tab"
-                        accessibilityState={isFocused ? { selected: true } : {}}
-                        accessibilityLabel={descriptor.options.tabBarAccessibilityLabel ?? label}
-                      >
-                        <View style={styles.tabContent}>
-                          <View style={styles.tabIconBox} />
-                          <Text
-                            allowFontScaling={false}
-                            maxFontSizeMultiplier={1}
-                            numberOfLines={1}
-                            style={[styles.tabLabel, styles.tabLabelPlaceholder]}
-                          >
-                            {label}
-                          </Text>
-                        </View>
-                      </Pressable>
-                    </View>
-                  );
-                })}
+                <PillTabButtons
+                  state={state}
+                  descriptors={descriptors}
+                  emitter={emitter}
+                  navigateToTab={navigateToTab}
+                  activeIndex={activeIndex}
+                />
               </View>
             )}
           </View>
         </View>
 
-        {itemCount > 0 ? (
-          <Pressable
-            accessibilityLabel="Open cart"
-            style={styles.cartPillPressable}
-            onPress={() => router.push("/cart")}
-          >
-            <BlurView tint="light" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.cartBlurShell}>
-              <View style={styles.cartPillInner}>
-                <Ionicons name="bag-handle-outline" size={21} color={uiPalette.text} />
-                <View style={styles.cartCountBadge}>
-                  <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.cartCountLabel}>
-                    {itemCount > 99 ? "99+" : String(itemCount)}
-                  </Text>
-                </View>
-              </View>
-            </BlurView>
-          </Pressable>
-        ) : null}
+        <TabBarCartButton variant="classic" />
       </View>
     </View>
   );
@@ -264,47 +175,6 @@ const styles = StyleSheet.create({
   dockWrap: {
     flex: 1
   },
-  cartPillPressable: {
-    width: 58,
-    minWidth: 58,
-    height: 58,
-    borderRadius: 999
-  },
-  cartBlurShell: {
-    flex: 1,
-    borderRadius: 999,
-    overflow: "hidden"
-  },
-  cartPillInner: {
-    flex: 1,
-    borderRadius: 999,
-    overflow: "hidden",
-    backgroundColor: "rgba(244, 240, 232, 0.92)",
-    borderWidth: 1,
-    borderColor: "rgba(236, 228, 216, 0.82)",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  cartCountBadge: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    minWidth: 18,
-    height: 18,
-    paddingHorizontal: 4,
-    borderRadius: 9,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(23, 21, 19, 0.92)"
-  },
-  cartCountLabel: {
-    fontSize: 10,
-    lineHeight: 10,
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontFamily: uiTypography.bodyFamily
-  },
   container: {
     borderRadius: 999,
     shadowColor: "#000000",
@@ -320,9 +190,9 @@ const styles = StyleSheet.create({
   dockInner: {
     borderRadius: 999,
     overflow: "hidden",
-    backgroundColor: "rgba(244, 240, 232, 0.92)",
+    backgroundColor: uiPalette.surfaceStrong,
     borderWidth: 1,
-    borderColor: "rgba(236, 228, 216, 0.82)"
+    borderColor: uiPalette.border
   },
   tabRow: {
     minHeight: TAB_BAR_HEIGHT,
@@ -338,8 +208,8 @@ const styles = StyleSheet.create({
     zIndex: 1,
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255, 251, 244, 0.78)",
-    backgroundColor: "rgba(255, 252, 246, 0.84)",
+    borderColor: uiPalette.border,
+    backgroundColor: uiPalette.card,
     shadowColor: "#000000",
     shadowOpacity: 0.04,
     shadowRadius: 10,
@@ -378,58 +248,5 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: 999,
     zIndex: 4
-  },
-  tabSlot: {
-    flex: 1,
-    zIndex: 3,
-    alignItems: "stretch",
-    justifyContent: "center"
-  },
-  tabVisualButton: {
-    width: "100%",
-    minHeight: 58,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 6
-  },
-  tabButton: {
-    width: "100%",
-    minHeight: 58,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 6
-  },
-  tabContent: {
-    width: "100%",
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  tabIconBox: {
-    width: 28,
-    height: 28,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  tabPressed: {
-    opacity: 0.78
-  },
-  tabLabel: {
-    width: "100%",
-    marginTop: 0,
-    fontSize: 12,
-    lineHeight: 14,
-    color: "rgba(60, 60, 67, 0.72)",
-    fontWeight: "500",
-    letterSpacing: 0.1,
-    textAlign: "center",
-    fontFamily: uiTypography.bodyFamily
-  },
-  tabLabelPlaceholder: {
-    opacity: 0
-  },
-  tabLabelActive: {
-    color: "rgba(18, 18, 18, 0.96)"
   }
 });

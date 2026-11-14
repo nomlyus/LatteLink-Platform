@@ -43,6 +43,21 @@ const espressoGroups = normalizeCustomizationGroups([
 ]);
 
 describe("checkout helpers", () => {
+  it("does not reuse a checkout quoted for a different discount code", async () => {
+    const item = createCartItem({ menuItemId: "coffee", itemName: "Coffee", basePriceCents: 500, quantity: 1, customizationGroups: [] });
+    const existingCheckout: CheckoutDraftSnapshot = {
+      checkoutId: "123e4567-e89b-12d3-a456-426614174000", quoteId: "123e4567-e89b-12d3-a456-426614174001",
+      quoteHash: "hash", locationId: "northside-01", status: "OPEN", items: [], total: { currency: "USD", amountCents: 500 },
+      expiresAt: "2030-03-10T00:00:00.000Z", quoteItems: toQuoteItems([item]), discountCode: "OLD"
+    };
+    expect(isRetryableCheckoutForCart(existingCheckout, existingCheckout.quoteItems, "northside-01", "northside-01", "NEW")).toBe(false);
+    const api = { quoteOrder: vi.fn(), createCheckoutDraft: vi.fn(), createStripeMobilePaymentSession: vi.fn() };
+    await expect(prepareStripeCheckout({ cartLocationId: "northside-01", selectedLocationId: "northside-01", items: [item], discountCode: "NEW", existingCheckout }, api)).rejects.toThrow("no longer matches");
+    expect(api.createStripeMobilePaymentSession).not.toHaveBeenCalled();
+    api.createStripeMobilePaymentSession.mockResolvedValue({ checkoutId: existingCheckout.checkoutId });
+    const retry = await prepareStripeCheckout({ cartLocationId: "northside-01", selectedLocationId: "northside-01", items: [item], discountCode: "OLD", existingCheckout }, api);
+    expect(retry.checkout.discountCode).toBe("OLD");
+  });
   it("requires cart and selected locations to match before creating a quote", async () => {
     const checkoutApi = {
       quoteOrder: vi.fn(),

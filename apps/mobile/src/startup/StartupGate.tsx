@@ -86,43 +86,19 @@ export function StartupCatalogGate({
     );
   }
 
-  return <StartupAppConfigGate onReadyToDisplay={onReadyToDisplay}>{children}</StartupAppConfigGate>;
+  return <StartupAppConfigGate>{children}</StartupAppConfigGate>;
 }
 
-function StartupAppConfigGate({ children, onReadyToDisplay }: { children: ReactNode; onReadyToDisplay: () => void }) {
+function StartupAppConfigGate({ children }: { children: ReactNode }) {
   const appConfigQuery = useAppConfigQuery();
   const apiConfigurationError = MOBILE_API_ENVIRONMENT.apiConfigurationError;
   const hasBlockingError = Boolean(apiConfigurationError);
   const liveDataUnavailable = Boolean(appConfigQuery.error && !appConfigQuery.data);
-  const isInitialLoading = appConfigQuery.isLoading && !appConfigQuery.data && !apiConfigurationError;
   const errorMessage = apiConfigurationError
     ? "This app is not configured correctly. Please contact the app provider."
     : isBackendReachabilityError(appConfigQuery.error)
       ? UNABLE_TO_REACH_BACKEND_MESSAGE
       : "Live store configuration could not be loaded. Retry before continuing.";
-
-  useEffect(() => {
-    if (!isInitialLoading) {
-      onReadyToDisplay();
-    }
-  }, [isInitialLoading, onReadyToDisplay]);
-
-  if (isInitialLoading) {
-    return (
-      <View style={styles.startupScreen}>
-        <ScreenBackdrop />
-        <View style={styles.startupCard}>
-          <ActivityIndicator color={uiPalette.primary} />
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.startupTitle}>
-            Loading live store data
-          </Text>
-          <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.startupBody}>
-            Connecting to the configured backend before showing the app.
-          </Text>
-        </View>
-      </View>
-    );
-  }
 
   if (hasBlockingError) {
     return (
@@ -152,6 +128,8 @@ function StartupAppConfigGate({ children, onReadyToDisplay }: { children: ReactN
     );
   }
 
+  // Discovery still gates location access. Screens can load independently while
+  // checkout retains its own requirement for validated app/payment configuration.
   return (
     <View style={styles.appContainer}>
       {children}

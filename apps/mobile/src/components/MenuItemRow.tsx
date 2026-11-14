@@ -89,7 +89,7 @@ const styles = StyleSheet.create({
   menuImage: {
     width: 108,
     height: 132,
-    backgroundColor: "#D5D4CE",
+    backgroundColor: uiPalette.surfaceMuted,
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden"

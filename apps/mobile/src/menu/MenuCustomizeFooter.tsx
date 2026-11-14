@@ -1,5 +1,5 @@
 import { canUseLiquidGlass } from "../ui/glass";
-import { Ionicons } from "@expo/vector-icons";
+import { SymbolView } from "expo-symbols";
 import { BlurView } from "expo-blur";
 import { GlassView } from "expo-glass-effect";
 import { Platform, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
@@ -22,7 +22,7 @@ export function FooterPill({ children, style }: { children: ReactNode; style?: S
           {content}
         </GlassView>
       ) : (
-        <BlurView tint="light" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.footerPillFrame}>
+        <BlurView tint="systemMaterial" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.footerPillFrame}>
           {content}
         </BlurView>
       )}
@@ -78,12 +78,12 @@ export function FooterQuantityPill({
           </>
         ) : (
           <>
-            <BlurView tint="light" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.footerQuantityBaseGlass}>
+            <BlurView tint="systemMaterial" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.footerQuantityBaseGlass}>
               <View style={styles.footerQuantityBaseFallbackInner} />
             </BlurView>
             <View style={[styles.footerQuantityOrbGlassShell, styles.footerQuantityOrbGlassLeft]}>
               <BlurView
-                tint="light"
+                tint="systemMaterial"
                 intensity={Platform.OS === "ios" ? 24 : 20}
                 style={styles.footerQuantityOrbGlassView}
               >
@@ -92,7 +92,7 @@ export function FooterQuantityPill({
             </View>
             <View style={[styles.footerQuantityOrbGlassShell, styles.footerQuantityOrbGlassRight]}>
               <BlurView
-                tint="light"
+                tint="systemMaterial"
                 intensity={Platform.OS === "ios" ? 24 : 20}
                 style={styles.footerQuantityOrbGlassView}
               >
@@ -118,7 +118,7 @@ export function FooterQuantityPill({
           onPress={onDecrease}
           disabled={!canDecrease}
         >
-          <Ionicons name="remove" size={18} color={!canDecrease ? uiPalette.textMuted : uiPalette.text} />
+          <SymbolView name={{ ios: "minus", android: "remove" }} size={18} tintColor={!canDecrease ? uiPalette.textMuted : uiPalette.text} />
         </Pressable>
         <Pressable
           accessibilityRole="button"
@@ -132,7 +132,7 @@ export function FooterQuantityPill({
           onPress={onIncrease}
           disabled={!canIncrease}
         >
-          <Ionicons name="add" size={18} color={!canIncrease ? uiPalette.textMuted : uiPalette.text} />
+          <SymbolView name={{ ios: "plus", android: "add" }} size={18} tintColor={!canIncrease ? uiPalette.textMuted : uiPalette.text} />
         </Pressable>
       </View>
     </View>
@@ -158,11 +158,11 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     justifyContent: "center"
   },
-  footerPillInnerGlass: { backgroundColor: "transparent", borderWidth: 1, borderColor: "rgba(255,255,255,0.3)" },
+  footerPillInnerGlass: { backgroundColor: "transparent", borderWidth: 1, borderColor: uiPalette.border },
   footerPillInnerFallback: {
-    backgroundColor: "rgba(248, 244, 236, 0.98)",
+    backgroundColor: uiPalette.surfaceStrong,
     borderWidth: 1,
-    borderColor: "rgba(230, 221, 208, 0.94)"
+    borderColor: uiPalette.border
   },
   footerQuantityShell: {
     minHeight: 60,
@@ -179,16 +179,16 @@ const styles = StyleSheet.create({
   footerQuantityBaseGlassInner: {
     flex: 1,
     borderRadius: 999,
-    backgroundColor: "rgba(255, 255, 255, 0.003)",
+    backgroundColor: "transparent",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.11)"
+    borderColor: uiPalette.border
   },
   footerQuantityBaseFallbackInner: {
     flex: 1,
     borderRadius: 999,
-    backgroundColor: "rgba(248, 244, 236, 0.98)",
+    backgroundColor: uiPalette.surfaceStrong,
     borderWidth: 1,
-    borderColor: "rgba(230, 221, 208, 0.94)"
+    borderColor: uiPalette.border
   },
   footerQuantityOrbGlassShell: {
     position: "absolute",
@@ -209,9 +209,9 @@ const styles = StyleSheet.create({
   footerMiniPillFallbackSurface: {
     flex: 1,
     borderRadius: 999,
-    backgroundColor: "rgba(248, 244, 236, 0.98)",
+    backgroundColor: uiPalette.surfaceStrong,
     borderWidth: 1,
-    borderColor: "rgba(230, 221, 208, 0.94)",
+    borderColor: uiPalette.border,
     padding: 2,
     justifyContent: "center"
   },

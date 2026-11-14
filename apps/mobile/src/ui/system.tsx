@@ -12,39 +12,15 @@ import {
   Text,
   View,
   type StyleProp,
+  type ScrollViewProps,
   type TextStyle,
   type ViewStyle
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getTabBarBottomOffset } from "../navigation/tabBarMetrics";
-
-export const uiPalette = {
-  background: "#F7F4ED",
-  backgroundAlt: "#F0ECE4",
-  surfaceStrong: "#FFFDF8",
-  surfaceMuted: "#F3EFE7",
-  surfaceGlass: "rgba(255, 253, 248, 0.84)",
-  card: "#FFFDF8",
-  cardMuted: "#F7F2EA",
-  text: "#171513",
-  textSecondary: "#605B55",
-  textMuted: "#9B9389",
-  border: "rgba(23, 21, 19, 0.08)",
-  borderStrong: "rgba(23, 21, 19, 0.14)",
-  primary: "#1E1B18",
-  primaryText: "#FFFFFF",
-  accent: "#2D2823",
-  accentSoft: "rgba(30, 27, 24, 0.06)",
-  brass: "#8E7761",
-  walnut: "#31261F",
-  charcoal: "#1D1A17",
-  glow: "rgba(255, 255, 255, 0.56)",
-  warning: "#A46C2C",
-  danger: "#B45B4F",
-  success: "#4F7A63",
-  chromeText: "#171513",
-  chromeMuted: "#605B55"
-} as const;
+import { useTabContentLayout } from "../navigation/tabContentLayout";
+import { uiPalette } from "./systemColors";
+export { uiPalette } from "./systemColors";
 
 export const uiTypography = {
   displayFamily: Platform.select({ ios: undefined, android: "sans-serif-medium", default: undefined }),
@@ -79,27 +55,34 @@ export const uiShadow = {
 
 type ScreenProps = {
   children: ReactNode;
+  transparent?: boolean;
   bottomInset?: number;
   contentContainerStyle?: StyleProp<ViewStyle>;
   refreshing?: boolean;
   onRefresh?: () => void;
   stickyHeaderIndices?: number[];
+  contentInsetAdjustmentBehavior?: ScrollViewProps["contentInsetAdjustmentBehavior"];
+  onLayout?: ScrollViewProps["onLayout"];
 };
 
 export function ScreenScroll({
   children,
+  transparent = false,
   bottomInset = 132,
   contentContainerStyle,
   refreshing = false,
   onRefresh,
-  stickyHeaderIndices
+  stickyHeaderIndices,
+  contentInsetAdjustmentBehavior,
+  onLayout
 }: ScreenProps) {
   const insets = useSafeAreaInsets();
+  const tabLayout = useTabContentLayout();
 
-  return (
-    <View style={styles.screen}>
-      <ScreenBackdrop />
+  const scrollContent = (
       <ScrollView
+        onLayout={onLayout}
+        contentInsetAdjustmentBehavior={contentInsetAdjustmentBehavior ?? (tabLayout ? "never" : undefined)}
         showsVerticalScrollIndicator={false}
         stickyHeaderIndices={stickyHeaderIndices}
         refreshControl={
@@ -118,31 +101,38 @@ export function ScreenScroll({
           styles.screenContent,
           {
             paddingTop: insets.top + 18,
-            paddingBottom: insets.bottom + bottomInset
+            paddingBottom: tabLayout ? bottomInset : insets.bottom + bottomInset
           },
           contentContainerStyle
         ]}
       >
         {children}
       </ScrollView>
-      <TabBarDepthBackdrop />
+  );
+
+  return (
+    <View style={[styles.screen, transparent ? { backgroundColor: "transparent" } : undefined]}>
+      {transparent ? null : <ScreenBackdrop />}
+      {scrollContent}
+      {transparent ? null : <TabBarDepthBackdrop />}
     </View>
   );
 }
 
 type ScreenStaticProps = {
   children: ReactNode;
+  transparent?: boolean;
   style?: StyleProp<ViewStyle>;
 };
 
-export function ScreenStatic({ children, style }: ScreenStaticProps) {
+export function ScreenStatic({ children, style, transparent = false }: ScreenStaticProps) {
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={styles.screen}>
-      <ScreenBackdrop />
+    <View style={[styles.screen, transparent ? { backgroundColor: "transparent" } : undefined]}>
+      {transparent ? null : <ScreenBackdrop />}
       <View style={[styles.screenContent, { paddingTop: insets.top + 18 }, style]}>{children}</View>
-      <TabBarDepthBackdrop />
+      {transparent ? null : <TabBarDepthBackdrop />}
     </View>
   );
 }
@@ -157,6 +147,9 @@ export function ScreenBackdrop() {
 
 export function TabBarDepthBackdrop() {
   const insets = useSafeAreaInsets();
+  const tabLayout = useTabContentLayout();
+  // System tabs supply their own material/shadow; retain the custom fade only on JS layouts.
+  if (tabLayout) return null;
   const dockBottom = getTabBarBottomOffset(insets.bottom > 0);
 
   return (
@@ -200,7 +193,7 @@ export function GlassCard({ children, style, contentStyle }: GlassCardProps) {
           <View style={styles.cardGlassInner} />
         </GlassView>
       ) : (
-        <BlurView tint="light" intensity={30} style={styles.cardFrame}>
+        <BlurView tint="systemMaterial" intensity={30} style={styles.cardFrame}>
           <View style={styles.cardFallbackInner} />
         </BlurView>
       )}

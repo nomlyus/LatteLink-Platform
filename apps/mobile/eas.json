@@ -6,7 +6,7 @@
   "build": {
     "base": {
       "ios": {
-        "image": "macos-tahoe-26.5-xcode-26.6",
+        "image": "macos-tahoe-26.6-xcode-27.0",
         "resourceClass": "m-medium"
       }
     },
@@ -21,6 +21,8 @@
       "env": {
         "APP_VARIANT": "beta",
         "EXPO_PUBLIC_APP_VARIANT": "beta",
+        "APP_VERSION": "1.4.0",
+        "APP_RUNTIME_VERSION": "1.4.0",
         "APP_DISPLAY_NAME": "Rawaq Dev",
         "EXPO_PUBLIC_APP_DISPLAY_NAME": "Rawaq Dev"
       }

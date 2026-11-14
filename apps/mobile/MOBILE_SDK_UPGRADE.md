@@ -1,4 +1,215 @@
-# Rawaq mobile SDK 57 upgrade
+# Rawaq mobile SDK upgrades
+
+## SDK 58 upgrade — October 19, 2026
+
+This checkpoint supersedes the SDK 57 version inventory below. Existing uncommitted
+navigation, cart accessory, Home and startup work on `develop` was preserved. No
+backend/dashboard source, shared contract schema, production environment, identifier,
+entitlement or payment-submission logic was changed.
+
+### Resolved mobile runtime
+
+| Dependency | SDK 57 baseline | SDK 58 installed |
+| --- | --- | --- |
+| Expo | 57.0.29 | 58.0.16 |
+| Expo Router | 57.0.27 | 58.0.24 |
+| React Native | 0.86.3 | 0.88.0 |
+| React / React DOM | 19.2.3 | 19.3.1 |
+| Screens | 4.26.2 | 4.30.0 |
+| Reanimated | 4.5.1 | 4.7.1 |
+| Worklets | 0.10.1 | 0.13.0 |
+| Gesture Handler | 2.32.0 | 3.4.0 |
+| Safe Area Context | 5.7.0 | 5.10.1 |
+| DateTimePicker | 9.1.0 | 9.2.1 |
+| React Query | 5.104.3 | 5.104.4 |
+| Stripe RN | 0.82.0 | 0.82.0 (latest stable queried) |
+| Sentry RN | 8.31.0 | 8.31.0 (latest stable queried) |
+| Development client | 57.0.20 | 58.0.14 |
+| Haptics | Not installed | 58.0.7 |
+| Hermes compiler/native | 250829098.0.17 | 260318099.0.4 |
+
+All directly used Expo modules now use their current stable SDK 58 versions.
+`expo-symbols` is explicit because SDK 58 makes Android native-tab symbol support
+optional. Explicit `@expo/dom-webview` 58.0.2 and `@react-native/metro-config` 0.88.0
+resolve demonstrated strict-peer conflicts with old auto-installed peers. Mobile
+ESLint is 10.13.0; React/DOM types are 19.3.0. Registry `latest` tags and peers were
+checked, not inferred from old documentation. No prereleases were installed.
+
+Not every package can safely take its newest major independently:
+
+- TypeScript remains 6.0.3: shared typescript-eslint 8.71.2 explicitly supports
+  `<6.1.0`; TypeScript 7.0.2 is outside its supported range.
+- Babel stays on 7.29.7 / JSX transform 7.29.7, as required by the existing Expo,
+  NativeWind and workspace Babel-7 toolchain/security override. No global Babel-8
+  override or unrelated web migration was attempted.
+- NativeWind 4.2.7 and css-interop 0.2.7 are the latest stable releases queried;
+  css-interop requires Tailwind `~3`, so Tailwind remains 3.4.19 rather than 4.3.3.
+- Zod stays 3.25.76 with the shared backend/mobile contracts. Zod 4 adoption would
+  be a separate cross-contract migration, not a native navigation upgrade.
+- Repository-wide pnpm 10.5.2, Node 22.23.3 and unrelated app tooling were retained.
+
+### Required migration changes
+
+- Native tabs use the stable `expo-router/native-tabs` entry point. Existing route
+  paths, Account stack, cart store and regular/inline accessory lifetimes remain.
+  SDK 58's JS-tab interface uses `emitter`/`navigateToTab(routeKey)` instead of a
+  `navigation` prop; retained legacy presentation helpers follow that interface.
+- RN 0.88's ScrollView refs use `ScrollViewInstance`. Removed the deleted StatusBar
+  background-color prop; the existing screen background remains authoritative.
+  Initial deep links normalize the newly optional `undefined` URL to `null`.
+- Explicit `expo/tsconfig.base.json` fixes Vite's resolution through Expo's new
+  package exports. No strict-API opt-out, typecheck suppression or skipped tests.
+- Adopted Expo's scene lifecycle in the hand-maintained iOS project. AppDelegate
+  provides the React factory; SceneDelegate (in the same registered source file)
+  creates the window and starts React once through `ExpoAppSceneDelegate`. Info.plist
+  declares the scene. Expo handles cold/warm URLs and user activities; old manual
+  LinkingManager forwarding was removed to avoid double delivery. See the
+  [official migration](https://github.com/expo/fyi/blob/main/ios-scene-lifecycle.md).
+- Real CocoaPods installation regenerated Podfile.lock and Xcode integration for
+  SDK 58: 131 pods. Dynamic Stripe frameworks, source-built Expo modules, Apple Pay
+  Swift/ObjC bridge, all deployment targets (16.4), schemes and ReleaseProduction
+  configuration remain. Stripe SwiftPM still resolves 26.14.0. Privacy reason
+  aggregation only reordered existing entries; the original order was retained.
+- Default version/runtime are now 1.4.0; native Expo.plist matches. Development
+  profile explicitly selects 1.4.0 so preview environment's old runtime cannot
+  silently identify this client as SDK 57. EAS image now uses documented stable
+  `macos-tahoe-26.6-xcode-27.0`. No remote build/environment change was made.
+  Ignored local `.env.local` version/runtime overrides were advanced from 1.3.0
+  to 1.4.0 without modifying other values. Beta/production explicit runtime inputs still require release review before a
+  build/update. Never publish SDK 58 updates to SDK 57 runtime 1.3.0 or SDK 54.
+
+### Verification and remaining findings
+
+- Strict-peer install and subsequent frozen-lockfile strict-peer installation
+  both passed. An initial frozen attempt correctly refused changed manifest
+  specifiers; lockfile regeneration was intentional. Non-mobile lockfile importers
+  were compared programmatically: no dependency version or specifier changes.
+- Mobile TypeScript and ESLint passed. Final mobile/dependency lint/typecheck/test
+  graph passed **35/35 tasks** (final forced run: zero cache hits), with **212 mobile tests / 37 files
+  passed**, zero failures/skips, after native lockfile resolution and the additional
+  runtime regression tests. Earlier intermediate tests correctly detected the old
+  lockfile while CocoaPods was still running; no assertion was weakened.
+- `pod install` and `pod install --deployment` passed, 131 pods. SwiftPM resolution
+  passed with the existing Stripe 26.14.0 lock. iOS native codegen passed during
+  installation; these are not full native compilation results.
+- Autolinking verification passed: 43 modules, no duplicates. Expo config
+  introspection and native plist/project syntax validation passed.
+- Android codegen passed into `/tmp/nomly-sdk58-android-codegen`. This is not
+  Android binary compilation; JDK 8 and missing Android SDK/project still block it.
+- Production Hermes exports passed for both platforms, 53 assets, output
+  `/tmp/nomly-sdk58-export`: iOS `index-18d8c064f3f6d7b330aa6767ca816c44.hbc`
+  (7.7 MB), Android `index-b7ea5e0d4f26ab7c64e699075bdf44df.hbc` (7.9 MB).
+  These are bytecode exports, not native builds or device acceptance.
+- Expo Doctor 1.21.5: **18/20 passed**, exit 1. Findings remain visible: checked-in
+  customized-native/config synchronization, and six version recommendations.
+  Expo recommends older Sentry 8.28, Stripe 0.81, Gesture Handler 3.3, React/DOM
+  19.3.0 and DOM types 19.2.3. Latest stable peers install successfully; this does
+  not establish native/device compatibility. `expo install --check` exits 1 for
+  these same recommendations. No exclusions/forced-peer installs were added.
+- Latest Sentry probes removed `expo-router/build/global-state/router-store`;
+  Metro warns while bundling. Its guarded lookup returns null when unavailable;
+  baseline error capture remains wired, but automatic Router-specific route
+  attribution may be degraded. Do not claim this integration is fully verified.
+- CocoaPods reports the existing multiple-entitlement warning and a new upstream
+  generated-provider warning for internal Expo `CoreModule`. Neither was hidden
+  or patched. Native launch/signing must verify module/entitlement behavior.
+- Local Xcode is still 26.3; supported-Xcode/full native compilation and physical
+  device behavior are not established by passing JS checks. Android lacks modern
+  JDK/SDK and a checked-in native project; no Android identity was invented.
+
+### Actual native compilation attempt
+
+Ran unsigned `Release` / beta compilation with the existing workspace/scheme,
+`-destination 'generic/platform=iOS'`, two jobs, source packages in
+`/tmp/nomly-sdk58-spm`, and derived data in `/tmp/nomly-sdk58-ios-build`.
+Process-scoped local identity, app version 1.4.0, disabled signing and disabled
+Sentry uploads were used. No device/simulator destination or production identity
+was selected. Log: `/tmp/nomly-sdk58-ios-build.log`.
+
+The build progressed through native dependency compilation, then **failed with
+exit 65** because the selected Xcode 26.3 path became incomplete during the run:
+`unable to spawn process .../Xcode.app/Contents/Developer/usr/bin/actool
+(No such file or directory)` in StripePaymentsUI. A subsequent check also found
+`xcrun` absent at the selected Downloads/Xcode.app path. The cause of those missing
+toolchain files is unknown; no system toolchain selection was changed here.
+Xcode 16.4 remains under Applications but is not a valid replacement for SDK 58.
+SDK 58 documents Xcode 26.4+; the configured cloud image is Xcode 27.0.
+
+This is **not a successful native build and not evidence of a Stripe source
+defect**. ReleaseProduction was not redundantly attempted against the broken
+toolchain. A complete supported toolchain/new development-client build and device
+QA remain required. No compiler/concurrency/linkage checks were suppressed.
+
+Metro's SDK 57 process was stopped before dependency replacement to prevent the
+installed SDK 57 client from receiving SDK 58 JS. A new SDK 58 development binary
+must be built and installed before resuming Fast Refresh. No simulator/emulator,
+push, deployment, OTA publication, build submission, real charge or notification
+send was performed. Existing physical-device acceptance checklist below still
+applies, especially auth persistence, location isolation, gestures/sheets, images,
+notifications, Stripe/Apple Pay, orders/loyalty and scene-based payment deep links.
+
+### Account concentric glass and haptics — October 19, 2026
+
+Added app-local `NomlyGlass` 1.0.0 for native iOS 26+ container-concentric
+Account-summary corners, without patching Expo or hardcoding the sheet radius.
+The old-client/older-iOS/Android fallback remains the existing GlassCard. Added
+SDK-matched `expo-haptics` 58.0.7 with an optional best-effort helper; no controls
+automatically vibrate. See `modules/nomly-glass/README.md` for ownership and QA.
+
+Verification: **260 tests / 44 files passed**, mobile typecheck and scoped lint
+passed, `git diff --check` passed, local podspec Ruby syntax passed, Apple
+autolinking verification passed. Apple resolution detects NomlyGlass and
+ExpoHaptics; Android resolution detects ExpoHaptics and excludes the Apple-only
+glass module. These checks do not prove native compilation or device behavior.
+
+Internal `development` / `preview` EAS build:
+[332c8246](https://expo.dev/accounts/yazandaoud/projects/lattelink-mobile/builds/332c8246-7729-4b5e-9fa5-17e1261a37f9).
+The build **finished successfully** with an installable internal iOS artifact.
+Cloud CocoaPods installed NomlyGlass 1.0.0 and ExpoHaptics 58.0.7; native
+compilation and signing passed. This supersedes the local-toolchain blocker for
+this development build, but does not prove physical-device acceptance. Signed
+installation, concentric corner appearance and physical haptics still require
+verification. No local native build, simulator/emulator, push, production
+deployment, store submission or OTA ran.
+
+EAS preflight required loading existing ignored local preview identity variables
+into the CLI process and the already-documented process-scoped bundle-identifier
+override. The three native configurations were checked to reference the same
+environment-provided identifier, matching the configured beta identity. No
+identity, signing setting, production configuration or environment file changed.
+
+#### Physical corner regression correction
+
+Physical feedback after installing build 332c8246 identified square Account
+summary corners: the native concentric radius could resolve to zero across RN
+wrapper views. Compilation/signing success did not validate the visual result.
+NomlyGlass 1.0.1 now provides corner API version 2, a positive configurable
+minimum and public UIKit ancestor-radius resolution. JS bypasses the first
+implementation, restoring the existing rounded native Expo GlassCard on that
+installed client. Haptics are unchanged.
+
+Correction [development build f46e73d3](https://expo.dev/accounts/yazandaoud/projects/lattelink-mobile/builds/f46e73d3-19c0-4001-a3fb-adc48e61b88c)
+was submitted; native compilation and physical acceptance are pending at this
+checkpoint. **263 tests in 45 files**, typecheck, scoped lint and diff checks
+passed. Native-source contract assertions protect the positive-minimum wiring
+but are not UIKit geometry tests. No local native build or simulator ran.
+
+#### Inset correction after API 2 device feedback
+
+Build f46e73d3 completed and the connected physical client reported corner API
+version 2. The supplied screenshot showed the summary card looking more rounded
+than its sheet. The ancestor-radius minimum copied the sheet radius without
+subtracting the card inset. NomlyGlass 1.0.2 / API 3 now converts the card frame
+to the rounded ancestor's coordinates and subtracts its horizontal inset; the
+32-point fallback no longer clamps a valid smaller concentric radius. Sheet
+configuration, content layout and haptics are unchanged.
+
+Validation: **264 tests in 45 files**, mobile typecheck, focused source-contract
+lint, podspec Ruby syntax and diff checks passed. Source assertions do not prove
+UIKit geometry. A new EAS dev client and physical review at both detents are
+required; API 2 clients cannot receive the Swift correction through Metro.
+
+## Historical SDK 57 upgrade
 
 The original cloud checkpoints below are historical. See **macOS native
 acceptance follow-up — October 15, 2026** for the recovered local results and

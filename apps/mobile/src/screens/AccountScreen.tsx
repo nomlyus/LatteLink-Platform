@@ -1,32 +1,40 @@
-import { useRefresh } from "../ui/useRefresh";
-import * as Sentry from "@sentry/react-native";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getLoyaltyQueryErrorMessage, useLoyaltyBalanceQuery, useLoyaltyLedgerQuery } from "../account/data";
 import { AccountFloatingHeader, ACCOUNT_HEADER_HEIGHT } from "../account/AccountFloatingHeader";
-import { MOBILE_API_ENVIRONMENT, apiClient } from "../api/client";
+import { apiClient } from "../api/client";
 import { customerProfileQueryKey } from "../auth/profile";
 import { getAccountRecoveryCopy } from "../auth/recovery";
 import { useAuthSession } from "../auth/session";
-import { useLocationContext } from "../location/LocationProvider";
 import { isMobileLoyaltyVisible, resolveAppConfigData, useAppConfigQuery } from "../menu/catalog";
 import { TAB_BAR_HEIGHT, getTabBarBottomOffset } from "../navigation/tabBarMetrics";
-import { Chip, GlassCard, ScreenScroll, ScreenStatic, SectionLabel, uiPalette, uiTypography } from "../ui/system";
-import { AccountPageRow, GuestSignInPill } from "../account/AccountPrimitives";
+import { ScreenScroll, ScreenStatic, SectionLabel, uiPalette, uiTypography } from "../ui/system";
+import { AccountGlassCard } from "../account/AccountGlassCard";
+import { AccountPageRow } from "../account/AccountPrimitives";
+import { AccountAppleSignIn } from "../account/AccountAppleSignIn";
+import { useAccountSignInCompletion } from "../account/useAccountSignInCompletion";
+import { useAppleSignIn } from "../auth/useAppleSignIn";
+import { useTabContentLayout } from "../navigation/tabContentLayout";
+import type { ReturnToPath } from "../auth/presentation";
 
 type AccountIdentity = Awaited<ReturnType<typeof apiClient.me>> & {
   name?: string;
   displayName?: string;
 };
 
-export function AccountScreen() {
+export function AccountScreen({
+  onBack,
+  presentation = "screen",
+  returnTo = "/(tabs)/account",
+  onSignInComplete
+}: { onBack?: () => void; presentation?: "screen" | "sheet"; returnTo?: ReturnToPath; onSignInComplete?: () => void } = {}) {
+  const isSheet = presentation === "sheet";
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const tabLayout = useTabContentLayout();
   const { isAuthenticated, authRecoveryState } = useAuthSession();
-  const location = useLocationContext();
   const appConfigQuery = useAppConfigQuery();
   const appConfig = resolveAppConfigData(appConfigQuery.data);
   const loyaltyEnabled = isMobileLoyaltyVisible(appConfigQuery.data);
@@ -35,32 +43,39 @@ export function AccountScreen() {
     enabled: isAuthenticated,
     queryFn: async (): Promise<AccountIdentity> => apiClient.me()
   });
+  const appleSignIn = useAppleSignIn();
+  useAccountSignInCompletion({
+    didSignIn: appleSignIn.didSignIn,
+    profile: identityQuery.data,
+    isPending: identityQuery.isPending,
+    isSuccess: identityQuery.isSuccess,
+    isError: identityQuery.isError,
+    returnTo,
+    onComplete: onSignInComplete
+  });
   const loyaltyBalanceQuery = useLoyaltyBalanceQuery(isAuthenticated && loyaltyEnabled);
   const loyaltyLedgerQuery = useLoyaltyLedgerQuery(isAuthenticated && loyaltyEnabled);
-  const { refreshing: isManualRefresh, refresh: handleRefresh } = useRefresh([
-    appConfigQuery.refetch,
-    identityQuery.refetch,
-    loyaltyBalanceQuery.refetch,
-    loyaltyLedgerQuery.refetch
-  ]);
-  const [sentryDiagnosticState, setSentryDiagnosticState] = useState<"idle" | "sending" | "sent" | "failed">("idle");
 
   const loyaltyBalance = loyaltyBalanceQuery.data;
   const loyaltyError = loyaltyBalanceQuery.error ?? loyaltyLedgerQuery.error;
   const identity = identityQuery.data;
   const accountGreeting = identity?.name?.trim() || identity?.displayName?.trim() || "Welcome back";
-  const headerOffset = insets.top + ACCOUNT_HEADER_HEIGHT;
-  const contentBottomInset = Math.max(
-    getTabBarBottomOffset(insets.bottom > 0) + TAB_BAR_HEIGHT + 24 - insets.bottom,
-    24
-  );
-  const staticBottomInset = getTabBarBottomOffset(insets.bottom > 0) + TAB_BAR_HEIGHT + 12;
-  const locationName = appConfig?.brand.locationName ?? "this store";
-  const headerBackgroundColor = appConfig?.header.background ?? uiPalette.background;
-  const headerForegroundColor = appConfig?.header.foreground ?? uiPalette.text;
-  const recoveryCopy = getAccountRecoveryCopy(authRecoveryState, locationName);
+  const headerOffset = isSheet ? 20 : insets.top + ACCOUNT_HEADER_HEIGHT;
+  const contentBottomInset = isSheet
+    ? 24
+    : tabLayout?.contentBottomInset ??
+      Math.max(getTabBarBottomOffset(insets.bottom > 0) + TAB_BAR_HEIGHT + 24 - insets.bottom, 24);
+  const staticBottomInset = isSheet
+    ? Platform.OS === "ios" && Number.parseInt(String(Platform.Version), 10) >= 26
+      ? 20
+      : Math.max(insets.bottom, 12)
+    : tabLayout?.contentBottomInset ?? getTabBarBottomOffset(insets.bottom > 0) + TAB_BAR_HEIGHT + 12;
+  const brandName = appConfig?.brand.brandName ?? "";
+  const headerBackgroundColor = isSheet ? "transparent" : appConfig?.header.background ?? uiPalette.background;
+  const headerForegroundColor = isSheet ? uiPalette.text : appConfig?.header.foreground ?? uiPalette.text;
+  const recoveryCopy = getAccountRecoveryCopy(authRecoveryState, brandName);
 
-  function openAccountRoute(pathname: "/account/rewards" | "/account/alerts" | "/account/settings") {
+  function openAccountRoute(pathname: "/(tabs)/account/details/rewards" | "/(tabs)/account/details/profile" | "/(tabs)/account/details/settings") {
     if (!isAuthenticated) {
       router.push({ pathname: "/auth", params: { returnTo: "/(tabs)/account" } });
       return;
@@ -69,31 +84,11 @@ export function AccountScreen() {
     router.push(pathname);
   }
 
-  function sendSentryDiagnosticEvent() {
-    if (sentryDiagnosticState === "sending") return;
-
-    setSentryDiagnosticState("sending");
-    Sentry.withScope((scope) => {
-      scope.setTag("diagnostic", "mobile-sentry-validation");
-      scope.setTag("app_variant", MOBILE_API_ENVIRONMENT.variant ?? "unknown");
-      scope.setContext("mobile_environment", {
-        apiBaseUrl: MOBILE_API_ENVIRONMENT.apiBaseUrl,
-        bundleIdentifier: MOBILE_API_ENVIRONMENT.bundleIdentifier,
-        locationId: location.selectedLocationId
-      });
-      Sentry.captureException(new Error("Mobile app Sentry diagnostic event"));
-    });
-
-    void Sentry.flush().then(
-      () => setSentryDiagnosticState("sent"),
-      () => setSentryDiagnosticState("failed")
-    );
-  }
-
   if (!isAuthenticated) {
     return (
       <View style={styles.screenShell}>
         <ScreenStatic
+          transparent={isSheet}
           style={[styles.loggedOutStaticPage, { paddingTop: headerOffset, paddingBottom: staticBottomInset }]}
         >
           <View style={styles.loggedOutStaticBody}>
@@ -105,18 +100,21 @@ export function AccountScreen() {
             </Text>
           </View>
 
-          <GuestSignInPill
-            label={recoveryCopy.actionLabel}
-            onPress={() => router.push({ pathname: "/auth", params: { returnTo: "/(tabs)/account" } })}
+          <AccountAppleSignIn
+            signIn={appleSignIn}
+            onAlternativeSignIn={() => router.push({ pathname: "/auth", params: { returnTo } })}
           />
         </ScreenStatic>
 
-        <AccountFloatingHeader
-          title="Account"
-          insetTop={insets.top}
-          backgroundColor={headerBackgroundColor}
-          foregroundColor={headerForegroundColor}
-        />
+        {isSheet ? null : (
+          <AccountFloatingHeader
+            title="Account"
+            onBack={onBack}
+            insetTop={insets.top}
+            backgroundColor={headerBackgroundColor}
+            foregroundColor={headerForegroundColor}
+          />
+        )}
       </View>
     );
   }
@@ -124,12 +122,11 @@ export function AccountScreen() {
   return (
     <View style={styles.screenShell}>
       <ScreenScroll
+        transparent={isSheet}
         bottomInset={contentBottomInset}
-        refreshing={isAuthenticated && isManualRefresh}
-        onRefresh={isAuthenticated ? handleRefresh : undefined}
         contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}
       >
-        <GlassCard style={styles.heroCard}>
+        <AccountGlassCard style={styles.summaryCard}>
           <View style={styles.heroTopRow}>
             <View style={styles.heroCopy}>
               <SectionLabel label="Account" />
@@ -137,7 +134,6 @@ export function AccountScreen() {
                 {accountGreeting}
               </Text>
             </View>
-            <Chip label={loyaltyEnabled ? "Loyalty On" : "Loyalty Off"} active={loyaltyEnabled} />
           </View>
 
           <View style={styles.pointsWrap}>
@@ -180,45 +176,26 @@ export function AccountScreen() {
               </View>
             ) : null}
           </View>
-        </GlassCard>
+        </AccountGlassCard>
 
         <View style={styles.listSection}>
-          <View style={styles.pageList}>
-            <AccountPageRow label="Rewards activity" onPress={() => openAccountRoute("/account/rewards")} />
-            <AccountPageRow label="Profile" onPress={() => openAccountRoute("/account/alerts")} />
-            <AccountPageRow label="Settings" isLast onPress={() => openAccountRoute("/account/settings")} />
-          </View>
-          {MOBILE_API_ENVIRONMENT.variant === "beta" ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Send Sentry diagnostic"
-              onPress={sendSentryDiagnosticEvent}
-              disabled={sentryDiagnosticState === "sending"}
-              style={({ pressed }) => [
-                styles.diagnosticButton,
-                pressed && sentryDiagnosticState !== "sending" ? styles.diagnosticButtonPressed : null
-              ]}
-            >
-              <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.diagnosticLabel}>
-                {sentryDiagnosticState === "sending"
-                  ? "Sending Sentry diagnostic…"
-                  : sentryDiagnosticState === "sent"
-                    ? "Sentry diagnostic sent"
-                    : sentryDiagnosticState === "failed"
-                      ? "Sentry diagnostic failed"
-                      : "Send Sentry diagnostic"}
-              </Text>
-            </Pressable>
-          ) : null}
+          <AccountGlassCard contentStyle={styles.pageListContent}>
+            <AccountPageRow label="Rewards activity" icon="gift" onPress={() => openAccountRoute("/(tabs)/account/details/rewards")} />
+            <AccountPageRow label="Profile" icon="person" onPress={() => openAccountRoute("/(tabs)/account/details/profile")} />
+            <AccountPageRow label="Settings" icon="settings" isLast onPress={() => openAccountRoute("/(tabs)/account/details/settings")} />
+          </AccountGlassCard>
         </View>
       </ScreenScroll>
 
-      <AccountFloatingHeader
-        title="Account"
-        insetTop={insets.top}
-        backgroundColor={headerBackgroundColor}
-        foregroundColor={headerForegroundColor}
-      />
+      {isSheet ? null : (
+        <AccountFloatingHeader
+          title="Account"
+          onBack={onBack}
+          insetTop={insets.top}
+          backgroundColor={headerBackgroundColor}
+          foregroundColor={headerForegroundColor}
+        />
+      )}
     </View>
   );
 }
@@ -227,11 +204,11 @@ const styles = StyleSheet.create({
   screenShell: {
     flex: 1
   },
+  summaryCard: {
+    marginTop: 18
+  },
   screenContentNoTopPadding: {
     paddingTop: 0
-  },
-  heroCard: {
-    marginTop: 18
   },
   loggedOutStaticPage: {
     flex: 1,
@@ -335,32 +312,9 @@ const styles = StyleSheet.create({
     fontWeight: "700"
   },
   listSection: {
-    marginTop: 28
+    marginTop: 24
   },
-  pageList: {
-    marginTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: uiPalette.border,
-    borderBottomWidth: 1,
-    borderBottomColor: uiPalette.border
-  },
-  diagnosticButton: {
-    alignSelf: "flex-start",
-    marginTop: 18,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: uiPalette.border,
-    paddingHorizontal: 14,
-    paddingVertical: 10
-  },
-  diagnosticButtonPressed: {
-    opacity: 0.72
-  },
-  diagnosticLabel: {
-    color: uiPalette.textSecondary,
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 0.7,
-    textTransform: "uppercase"
+  pageListContent: {
+    padding: 0
   }
 });

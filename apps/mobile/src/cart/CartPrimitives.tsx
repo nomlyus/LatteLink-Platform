@@ -3,10 +3,11 @@ import { canUseLiquidGlass } from "../ui/glass";
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { GlassView } from "expo-glass-effect";
-import { type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Image, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { uiPalette, uiTypography } from "../ui/system";
+import { NativeCornerView } from "../ui/NativeCornerView";
 
 export function CartSummaryRow({
   label,
@@ -87,7 +88,7 @@ export function CartStickyActionPill({
           {content}
         </GlassView>
       ) : (
-        <BlurView tint="light" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.stickyPillFrame}>
+        <BlurView tint="systemMaterial" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.stickyPillFrame}>
           {content}
         </BlurView>
       )}
@@ -131,7 +132,7 @@ export function CartHeaderActionChip({
           {content}
         </GlassView>
       ) : (
-        <BlurView tint="light" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.headerActionChipFrame}>
+        <BlurView tint="systemMaterial" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.headerActionChipFrame}>
           {content}
         </BlurView>
       )}
@@ -144,13 +145,15 @@ export function CartQuantityControl({
   canDecrease,
   onDecrease,
   onIncrease,
-  onRemove
+  onRemove,
+  disabled = false
 }: {
   quantity: number;
   canDecrease: boolean;
   onDecrease: () => void;
   onIncrease: () => void;
   onRemove: () => void;
+  disabled?: boolean;
 }) {
   const useLiquidGlass = canUseLiquidGlass();
   const content = (
@@ -158,6 +161,7 @@ export function CartQuantityControl({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Increase quantity"
+        disabled={disabled}
         style={[styles.stepperButton, useLiquidGlass ? styles.stepperButtonGlass : null]}
         onPress={onIncrease}
       >
@@ -169,8 +173,8 @@ export function CartQuantityControl({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Decrease quantity"
-        accessibilityState={{ disabled: !canDecrease }}
-        disabled={!canDecrease}
+        accessibilityState={{ disabled: disabled || !canDecrease }}
+        disabled={disabled || !canDecrease}
         style={[
           styles.stepperButton,
           useLiquidGlass ? styles.stepperButtonGlass : null,
@@ -184,6 +188,7 @@ export function CartQuantityControl({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Remove item"
+        disabled={disabled}
         style={[styles.stepperButton, useLiquidGlass ? styles.stepperButtonGlass : null]}
         onPress={onRemove}
       >
@@ -197,19 +202,16 @@ export function CartQuantityControl({
       {content}
     </GlassView>
   ) : (
-    <BlurView tint="light" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.stepperShell}>
+    <BlurView tint="systemMaterial" intensity={Platform.OS === "ios" ? 24 : 20} style={styles.stepperShell}>
       {content}
     </BlurView>
   );
 }
 
-export function CartSectionHeading({ eyebrow, title, action }: { eyebrow: string; title: string; action?: ReactNode }) {
+export function CartSectionHeading({ title, action }: { title: string; action?: ReactNode }) {
   return (
     <View style={styles.sectionHeader}>
       <View style={styles.sectionCopy}>
-        <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionEyebrow}>
-          {eyebrow}
-        </Text>
         <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionTitle}>
           {title}
         </Text>
@@ -229,42 +231,39 @@ function resolveItemIcon(name: string): keyof typeof Ionicons.glyphMap {
 
 export function CartItemArtwork({ itemName, imageUrl }: { itemName: string; imageUrl?: string }) {
   const { activeImageUrl, imageFailed, onImageError } = useMenuImage(imageUrl, "list");
+  const [rowHeight, setRowHeight] = useState(132);
+  const [imageSize, setImageSize] = useState({ uri: "", ratio: 2 / 3 });
+  const ratio = imageSize.uri === activeImageUrl ? imageSize.ratio : 2 / 3;
 
   return (
-    <View style={styles.itemIconWrap}>
+    <NativeCornerView style={[styles.itemIconWrap, { width: rowHeight * ratio }]}
+      onLayout={({ nativeEvent }) => setRowHeight(nativeEvent.layout.height)} cornerMode="fixed" fallbackRadius={10}>
       {activeImageUrl && !imageFailed ? (
         <Image
           source={{ uri: activeImageUrl }}
           style={styles.itemArtwork}
           resizeMode="contain"
+          onLoad={({ nativeEvent }) => {
+            const { width, height } = nativeEvent.source;
+            if (width > 0 && height > 0) setImageSize({ uri: activeImageUrl, ratio: width / height });
+          }}
           onError={onImageError}
         />
       ) : (
         <Ionicons name={resolveItemIcon(itemName)} size={18} color={uiPalette.accent} />
       )}
-    </View>
+    </NativeCornerView>
   );
 }
 
 const styles = StyleSheet.create({
   sectionHeader: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", gap: 12 },
   sectionCopy: { flex: 1 },
-  sectionEyebrow: {
-    fontSize: 11,
-    lineHeight: 14,
-    textTransform: "uppercase",
-    letterSpacing: 1.15,
-    color: uiPalette.textMuted,
-    fontWeight: "700"
-  },
   sectionTitle: {
-    marginTop: 4,
-    fontSize: 20,
-    lineHeight: 24,
-    fontWeight: "700",
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: "600",
     color: uiPalette.text,
-    letterSpacing: -0.3,
-    fontFamily: uiTypography.displayFamily
   },
   headerActionChipShell: { borderRadius: 999 },
   headerActionChipPressed: { opacity: 0.8 },
@@ -278,18 +277,27 @@ const styles = StyleSheet.create({
     borderRadius: 999
   },
   headerActionChipInnerGlass: {
-    backgroundColor: "rgba(255,255,255,0.025)",
+    backgroundColor: "transparent",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)"
+    borderColor: "transparent"
   },
   headerActionChipInnerFallback: {
-    backgroundColor: "rgba(255,255,255,0.46)",
+    backgroundColor: uiPalette.surfaceStrong,
     borderWidth: 1,
     borderColor: uiPalette.border
   },
   headerActionChipText: { fontSize: 12, lineHeight: 16, fontWeight: "600", color: uiPalette.textSecondary },
-  itemIconWrap: { width: 88, height: 132, alignItems: "center", justifyContent: "center" },
-  itemArtwork: { width: "100%", height: "100%" },
+  itemIconWrap: {
+    maxWidth: "35%",
+    flexShrink: 0,
+    alignSelf: "stretch",
+    marginVertical: 10,
+    overflow: "hidden",
+    backgroundColor: uiPalette.surfaceStrong,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  itemArtwork: { ...StyleSheet.absoluteFill },
   stepperShell: { height: 40, borderRadius: 999, overflow: "hidden" },
   stepperInner: {
     flexDirection: "row",
@@ -300,9 +308,9 @@ const styles = StyleSheet.create({
     borderRadius: 999
   },
   stepperInnerGlass: {
-    backgroundColor: "rgba(255, 255, 255, 0.01)",
+    backgroundColor: "transparent",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.11)"
+    borderColor: "transparent"
   },
   stepperInnerFallback: {
     borderRadius: 999,
@@ -318,7 +326,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: uiPalette.surfaceMuted
   },
-  stepperButtonGlass: { backgroundColor: "rgba(255, 255, 255, 0.18)" },
+  stepperButtonGlass: { backgroundColor: "transparent" },
   stepperButtonDisabled: { opacity: 0.55 },
   stepperValue: {
     minWidth: 16,
@@ -333,9 +341,9 @@ const styles = StyleSheet.create({
     height: 24,
     marginHorizontal: 3,
     borderRadius: 999,
-    backgroundColor: "rgba(23, 21, 19, 0.20)"
+    backgroundColor: uiPalette.border
   },
-  stepperDividerGlass: { backgroundColor: "rgba(23, 21, 19, 0.18)" },
+  stepperDividerGlass: { backgroundColor: uiPalette.border },
   summaryRow: { flexDirection: "row", justifyContent: "space-between", gap: 12 },
   summaryText: { fontSize: 14, lineHeight: 22, color: uiPalette.textSecondary },
   summaryStrong: { fontWeight: "700", color: uiPalette.text },
@@ -358,11 +366,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "rgba(255,255,255,0.01)",
+    backgroundColor: "transparent",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)"
+    borderColor: "transparent"
   },
-  stickyPillInnerDisabled: { backgroundColor: "rgba(255,255,255,0.02)" },
+  stickyPillInnerDisabled: { backgroundColor: uiPalette.accentSoft },
   stickyPillLead: { flexDirection: "row", alignItems: "center", gap: 10, flexShrink: 1 },
   stickyPillLabel: { fontSize: 15, lineHeight: 18, fontWeight: "600", color: uiPalette.text },
   stickyPillLabelDisabled: { color: uiPalette.textMuted },

@@ -1,24 +1,26 @@
 import { useRefresh } from "../ui/useRefresh";
+import { ScreenState } from "../ui/ScreenState";
+import { tabDestinations } from "../navigation/destinations";
 import { useInitialReveal } from "../ui/useInitialReveal";
-import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { useHeaderHeight } from "expo-router/react-navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Animated as RNAnimated, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { findActiveOrder, useCancelOrderMutation, useOrderHistoryQuery, type OrderHistoryEntry } from "../account/data";
-import { formatUsd, resolveAppConfigData, useAppConfigQuery } from "../menu/catalog";
-import { OrderStatusPill, SectionHeader } from "../components";
+import { formatUsd } from "../menu/catalog";
+import { OrderStatusPill } from "../components";
 import { getOrdersRecoveryCopy } from "../auth/recovery";
 import { useAuthSession } from "../auth/session";
 import { resolveMenuData, useMenuQuery } from "../menu/catalog";
-import { getTabBarBottomOffset, TAB_BAR_HEIGHT } from "../navigation/tabBarMetrics";
 import { useCheckoutFlow } from "../orders/flow";
 import { OrdersLoadingState } from "../orders/OrdersLoadingState";
-import { ActiveOrderPill, HistoryRow, OrderItemStrip } from "../orders/OrdersHistoryPrimitives";
+import { ActiveOrderPill, OrderItemStrip } from "../orders/OrdersHistoryPrimitives";
+import { OrdersArchive } from "../orders/OrdersArchive";
 import { Button, ScreenScroll, ScreenStatic, uiPalette, uiTypography } from "../ui/system";
 import { OrderProgress } from "../orders/OrderProgress";
-
-const ORDERS_HEADER_HEIGHT = 52;
+import { nativeAppleHeaderCapabilities } from "../navigation/nativeAppleHeader";
+import { useNativeScrollEdge } from "../navigation/useNativeScrollEdge";
 
 function getActiveOrderTitle(status: OrderHistoryEntry["status"]) {
   switch (status) {
@@ -50,31 +52,13 @@ function getActiveOrderBody(status: OrderHistoryEntry["status"]) {
   }
 }
 
-function OrdersHeader({ title, foregroundColor }: { title: string; foregroundColor?: string }) {
-  return (
-    <>
-      <View style={styles.pageHeader}>
-        <View style={styles.pageCopy}>
-          <View style={styles.pageMetaSpacer} />
-          <Text
-            allowFontScaling={false}
-            maxFontSizeMultiplier={1}
-            style={[styles.pageTitle, foregroundColor ? { color: foregroundColor } : null]}
-          >
-            {title}
-          </Text>
-        </View>
-      </View>
-      <View style={styles.pageTabsSpacer} />
-    </>
-  );
-}
-
 export function OrdersScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const nativeHeaderHeight = useHeaderHeight();
+  const nativeScrollingHeader = nativeAppleHeaderCapabilities().available;
+  const registerScrollEdge = useNativeScrollEdge(nativeScrollingHeader);
   const { isAuthenticated, isHydrating, authRecoveryState } = useAuthSession();
-  const appConfig = resolveAppConfigData(useAppConfigQuery().data);
   const { clearFailure, clearRetryOrder } = useCheckoutFlow();
   const ordersQuery = useOrderHistoryQuery(isAuthenticated);
   const cancelOrderMutation = useCancelOrderMutation();
@@ -83,10 +67,10 @@ export function OrdersScreen() {
     isHydrating || (isAuthenticated && ordersQuery.isLoading && !ordersQuery.data),
     { initiallyVisible: false }
   );
-  const { refreshing: isManualRefresh, refresh: refreshOrders } = useRefresh([ordersQuery.refetch]);
+  const { refresh: refreshOrders } = useRefresh([ordersQuery.refetch]);
   const [pendingCancelError, setPendingCancelError] = useState<string | null>(null);
 
-  const orders = ordersQuery.data ?? [];
+  const orders = ordersQuery.error ? [] : ordersQuery.data ?? [];
   const menu = resolveMenuData(menuQuery.data);
   const menuItemsById = useMemo(
     () => new Map((menu?.categories ?? []).flatMap((category) => category.items).map((item) => [item.id, item])),
@@ -96,15 +80,11 @@ export function OrdersScreen() {
   const activeOrder = realActiveOrder;
   const activeOrderStatus = activeOrder?.status;
   const orderHistory = activeOrder ? orders.filter((order) => order.id !== activeOrder.id) : orders;
-  const headerOffset = insets.top + ORDERS_HEADER_HEIGHT;
-  const contentBottomInset = Math.max(
-    getTabBarBottomOffset(insets.bottom > 0) + TAB_BAR_HEIGHT + 24 - insets.bottom,
-    24
-  );
-  const staticBottomInset = getTabBarBottomOffset(insets.bottom > 0) + TAB_BAR_HEIGHT + 12;
+  const headerOffset = nativeHeaderHeight + 12;
+  // The sheet owns its safe area; there is no bottom tab bar inside this surface.
+  const contentBottomInset = 24;
+  const staticBottomInset = insets.bottom + 24;
   const recoveryCopy = getOrdersRecoveryCopy(authRecoveryState);
-  const headerBackgroundColor = appConfig?.header.background ?? uiPalette.background;
-  const headerForegroundColor = appConfig?.header.foreground ?? uiPalette.text;
 
   useEffect(() => {
     if ((activeOrderStatus ?? activeOrder?.status) !== "PENDING_PAYMENT") {
@@ -136,8 +116,9 @@ export function OrdersScreen() {
 
   if (!isAuthenticated) {
     return (
-      <View style={styles.screenShell}>
+      <View style={styles.screenShell} collapsable={false}>
         <ScreenStatic
+          transparent
           style={[styles.loggedOutStaticPage, { paddingTop: headerOffset, paddingBottom: staticBottomInset }]}
         >
           <View style={styles.loggedOutStaticBody}>
@@ -147,26 +128,13 @@ export function OrdersScreen() {
             <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.loggedOutStaticText}>
               {recoveryCopy.body}
             </Text>
+            <Button label="Sign in" onPress={() => router.push(tabDestinations.account)} style={{ marginTop: 20 }} />
           </View>
         </ScreenStatic>
 
-        <View
-          pointerEvents="none"
-          style={[
-            styles.pageHeaderFloating,
-            {
-              paddingTop: insets.top,
-              height: insets.top + ORDERS_HEADER_HEIGHT,
-              backgroundColor: headerBackgroundColor
-            }
-          ]}
-        >
-          <OrdersHeader title="Orders" foregroundColor={headerForegroundColor} />
-        </View>
-
         {showLoadingOverlay ? (
           <RNAnimated.View pointerEvents="auto" style={[styles.loadingOverlay, { opacity: loadingOpacity }]}>
-            <OrdersLoadingState headerHeight={ORDERS_HEADER_HEIGHT} contentBottomInset={contentBottomInset} />
+            <OrdersLoadingState contentTopInset={headerOffset} contentBottomInset={contentBottomInset} />
           </RNAnimated.View>
         ) : null}
       </View>
@@ -174,15 +142,16 @@ export function OrdersScreen() {
   }
 
   return (
-    <View style={styles.screenShell}>
+    <View style={styles.screenShell} collapsable={false}>
       <ScreenScroll
+        onLayout={registerScrollEdge}
+        transparent
+        contentInsetAdjustmentBehavior={nativeScrollingHeader ? "automatic" : "never"}
         bottomInset={contentBottomInset}
-        refreshing={isManualRefresh}
-        onRefresh={refreshOrders}
-        contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: headerOffset }]}
+        contentContainerStyle={[styles.screenContentNoTopPadding, { paddingTop: nativeScrollingHeader ? 12 : headerOffset }]}
       >
         {activeOrder ? (
-          <View style={styles.sectionBlock}>
+          <View style={[styles.sectionBlock, styles.firstSection]}>
             <ActiveOrderPill>
               <View style={styles.activeTopRow}>
                 <OrderStatusPill status={activeOrderStatus ?? activeOrder.status} glassStyle="clear" />
@@ -217,7 +186,6 @@ export function OrdersScreen() {
                     label="Complete Payment"
                     onPress={() => router.push("/cart")}
                     style={styles.paymentButton}
-                    left={<Ionicons name="logo-apple" size={16} color={uiPalette.primaryText} />}
                   />
                   <Button
                     label={cancelOrderMutation.isPending ? "Canceling…" : "Cancel Order"}
@@ -239,22 +207,7 @@ export function OrdersScreen() {
           </View>
         ) : null}
 
-        <View style={styles.sectionBlock}>
-          <View style={styles.sectionHeader}>
-            <SectionHeader
-              label="Recent orders"
-              action={
-                !ordersQuery.isLoading && !ordersQuery.error ? (
-                  <Text
-                    allowFontScaling={false}
-                    maxFontSizeMultiplier={1}
-                    style={styles.sectionMeta}
-                  >{`${orderHistory.length} total`}</Text>
-                ) : undefined
-              }
-            />
-          </View>
-
+        <View style={[styles.sectionBlock, !activeOrder ? styles.firstSection : null]}>
           {ordersQuery.error ? (
             <View style={styles.sectionMessageBlock}>
               <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionMessage}>
@@ -264,44 +217,18 @@ export function OrdersScreen() {
             </View>
           ) : null}
           {!ordersQuery.isLoading && !ordersQuery.error && orderHistory.length === 0 ? (
-            <Text allowFontScaling={false} maxFontSizeMultiplier={1} style={styles.sectionMessage}>
-              Completed pickups and older orders will collect here.
-            </Text>
+            !activeOrder ? <ScreenState title="No orders yet" message="Your first order will appear here." actionLabel="Browse menu" onAction={() => router.dismissTo(tabDestinations.menu)} /> : null
           ) : null}
 
           {!ordersQuery.isLoading && !ordersQuery.error && orderHistory.length > 0 ? (
-            <View style={styles.historyList}>
-              {orderHistory.map((order, index) => (
-                <View key={order.id}>
-                  <HistoryRow
-                    order={order}
-                    menuItemsById={menuItemsById}
-                    onPress={() => router.push({ pathname: "/orders/[orderId]", params: { orderId: order.id } })}
-                  />
-                  {index < orderHistory.length - 1 ? <View style={styles.historyDivider} /> : null}
-                </View>
-              ))}
-            </View>
+            <OrdersArchive orders={orderHistory} />
           ) : null}
         </View>
       </ScreenScroll>
 
-      <View
-        pointerEvents="none"
-        style={[
-          styles.pageHeaderFloating,
-          { paddingTop: insets.top, height: insets.top + ORDERS_HEADER_HEIGHT, backgroundColor: headerBackgroundColor }
-        ]}
-      >
-        <OrdersHeader
-          title={activeOrder ? "Track your order" : "Past Orders"}
-          foregroundColor={headerForegroundColor}
-        />
-      </View>
-
       {showLoadingOverlay ? (
         <RNAnimated.View pointerEvents="auto" style={[styles.loadingOverlay, { opacity: loadingOpacity }]}>
-          <OrdersLoadingState headerHeight={ORDERS_HEADER_HEIGHT} contentBottomInset={contentBottomInset} />
+          <OrdersLoadingState contentTopInset={headerOffset} contentBottomInset={contentBottomInset} />
         </RNAnimated.View>
       ) : null}
     </View>
@@ -310,50 +237,12 @@ export function OrdersScreen() {
 
 const styles = StyleSheet.create({
   screenShell: {
-    flex: 1
+    flex: 1,
+    backgroundColor: "transparent"
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFill,
     zIndex: 30
-  },
-  pageHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 16,
-    paddingBottom: 11
-  },
-  pageHeaderFloating: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: 20,
-    overflow: "hidden",
-    justifyContent: "flex-end",
-    zIndex: 10
-  },
-  pageCopy: {
-    flex: 1
-  },
-  pageMetaSpacer: {
-    height: 0,
-    marginBottom: 0,
-    overflow: "hidden"
-  },
-  pageTabsSpacer: {
-    height: 0,
-    marginTop: 0
-  },
-  pageTitle: {
-    marginTop: 3,
-    fontSize: 17,
-    lineHeight: 18,
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-    color: uiPalette.text,
-    fontFamily: uiTypography.headerFamily,
-    fontWeight: "600"
   },
   screenContentNoTopPadding: {
     paddingTop: 0
@@ -387,19 +276,8 @@ const styles = StyleSheet.create({
   sectionBlock: {
     marginTop: 28
   },
-  sectionHeader: {
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: uiPalette.border,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12
-  },
-  sectionMeta: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: uiPalette.textMuted
+  firstSection: {
+    marginTop: 0
   },
   activeTopRow: {
     flexDirection: "row",
@@ -481,12 +359,4 @@ const styles = StyleSheet.create({
   sectionMessageAction: {
     alignSelf: "flex-start"
   },
-  historyList: {
-    marginTop: 8
-  },
-  historyDivider: {
-    height: 1,
-    marginVertical: 10,
-    backgroundColor: uiPalette.border
-  }
 });

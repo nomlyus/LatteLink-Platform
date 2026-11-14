@@ -1,0 +1,238 @@
+diff --git a/android/src/main/java/com/swmansion/rnscreens/ScreenStackHeaderConfigViewManager.kt b/android/src/main/java/com/swmansion/rnscreens/ScreenStackHeaderConfigViewManager.kt
+index fa1b77317f609983ae2434764174072e51130550..14701ea83741f92582b87a00e1e92db13c419674 100644
+--- a/android/src/main/java/com/swmansion/rnscreens/ScreenStackHeaderConfigViewManager.kt
++++ b/android/src/main/java/com/swmansion/rnscreens/ScreenStackHeaderConfigViewManager.kt
+@@ -256,6 +256,17 @@ class ScreenStackHeaderConfigViewManager :
+         value: Boolean,
+     ) = Unit
+ 
++    // Nomly UIKit-only controls: satisfy the generated interface without changing Android.
++    override fun setLargeTitleDisplayMode(view: ScreenStackHeaderConfig?, value: String?) = Unit
++    override fun setNavigationItemStyle(view: ScreenStackHeaderConfig?, value: String?) = Unit
++    override fun setNavigationBarMinimizationBehavior(view: ScreenStackHeaderConfig?, value: String?) = Unit
++    override fun setNavigationBarRestorationBehavior(view: ScreenStackHeaderConfig?, value: String?) = Unit
++    override fun setNavigationBarSafeAreaAdjustment(view: ScreenStackHeaderConfig?, value: String?) = Unit
++    override fun setHidesBarsOnSwipe(view: ScreenStackHeaderConfig?, value: Boolean) = Unit
++    override fun setHidesBarsOnTap(view: ScreenStackHeaderConfig?, value: Boolean) = Unit
++    override fun setHidesBarsWhenKeyboardAppears(view: ScreenStackHeaderConfig?, value: Boolean) = Unit
++    override fun setHidesBarsWhenVerticallyCompact(view: ScreenStackHeaderConfig?, value: Boolean) = Unit
++
+     override fun setLargeTitleFontFamily(
+         view: ScreenStackHeaderConfig?,
+         value: String?,
+diff --git a/ios/RNSScreenStackHeaderConfig.h b/ios/RNSScreenStackHeaderConfig.h
+index 8f99f5b5b9d3f184f36613d51174cb9393d2cdd6..1710e2c4339ba570697e76587ae820173e4dbedf 100644
+--- a/ios/RNSScreenStackHeaderConfig.h
++++ b/ios/RNSScreenStackHeaderConfig.h
+@@ -35,6 +35,15 @@ NS_ASSUME_NONNULL_BEGIN
+ @property (nonatomic, retain) UIColor *backgroundColor;
+ @property (nonatomic, retain) UIColor *color;
+ @property (nonatomic) BOOL largeTitle;
++@property (nonatomic, copy, nullable) NSString *largeTitleDisplayMode;
++@property (nonatomic, copy, nullable) NSString *navigationItemStyle;
++@property (nonatomic, copy, nullable) NSString *navigationBarMinimizationBehavior;
++@property (nonatomic, copy, nullable) NSString *navigationBarRestorationBehavior;
++@property (nonatomic, copy, nullable) NSString *navigationBarSafeAreaAdjustment;
++@property (nonatomic) BOOL hidesBarsOnSwipe;
++@property (nonatomic) BOOL hidesBarsOnTap;
++@property (nonatomic) BOOL hidesBarsWhenKeyboardAppears;
++@property (nonatomic) BOOL hidesBarsWhenVerticallyCompact;
+ @property (nonatomic, retain) NSString *largeTitleFontFamily;
+ @property (nonatomic, retain) NSNumber *largeTitleFontSize;
+ @property (nonatomic, retain) NSString *largeTitleFontWeight;
+diff --git a/ios/RNSScreenStackHeaderConfig.mm b/ios/RNSScreenStackHeaderConfig.mm
+index e217b2411d20c85db3ec84bb87765c1e9407fd3b..38ca5d1f494c8ae27e202e80c0fd8b949bbca71b 100644
+--- a/ios/RNSScreenStackHeaderConfig.mm
++++ b/ios/RNSScreenStackHeaderConfig.mm
+@@ -420,7 +420,10 @@ + (UINavigationBarAppearance *)buildAppearance:(UIViewController *)vc withConfig
+ 
+   // set background color if specified
+   if (config.backgroundColor) {
+-    appearance.backgroundColor = config.backgroundColor;
++    // Match the scroll-edge transparent appearance: an explicit clear color can
++    // retain UIKit's bar background view during minimization/restoration.
++    appearance.backgroundColor =
++        CGColorGetAlpha(config.backgroundColor.CGColor) == 0. ? nil : config.backgroundColor;
+   }
+ 
+   switch (config.blurEffect) {
+@@ -562,12 +565,70 @@ + (void)updateViewController:(UIViewController *)vc
+   navitem.largeTitleDisplayMode =
+       config.largeTitle ? UINavigationItemLargeTitleDisplayModeAlways : UINavigationItemLargeTitleDisplayModeNever;
+ 
++  // Public UIKit modes are not reducible to the upstream large-title boolean.
++  // Apply on every header update so route changes cannot leave a stale mode behind.
++  if ([config.largeTitleDisplayMode isEqualToString:@"automatic"]) {
++    navitem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeAutomatic;
++  } else if ([config.largeTitleDisplayMode isEqualToString:@"always"]) {
++    navitem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeAlways;
++  } else if ([config.largeTitleDisplayMode isEqualToString:@"never"]) {
++    navitem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
++  } else if ([config.largeTitleDisplayMode isEqualToString:@"inline"]) {
++#if RNS_IPHONE_OS_VERSION_AVAILABLE(17_0)
++    if (@available(iOS 17.0, *)) {
++      navitem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeInline;
++    } else {
++      navitem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeAlways;
++    }
++#endif
++  }
++  if (navitem.largeTitleDisplayMode != UINavigationItemLargeTitleDisplayModeNever) {
++    navctr.navigationBar.prefersLargeTitles = YES;
++  }
++
++  navctr.hidesBarsOnSwipe = config.hidesBarsOnSwipe;
++  navctr.hidesBarsOnTap = config.hidesBarsOnTap;
++  navctr.hidesBarsWhenKeyboardAppears = config.hidesBarsWhenKeyboardAppears;
++  navctr.hidesBarsWhenVerticallyCompact = config.hidesBarsWhenVerticallyCompact;
++
++#if RNS_IPHONE_OS_VERSION_AVAILABLE(16_0)
++  if (@available(iOS 16.0, *)) {
++    navitem.style = UINavigationItemStyleNavigator;
++    if ([config.navigationItemStyle isEqualToString:@"browser"]) {
++      navitem.style = UINavigationItemStyleBrowser;
++    } else if ([config.navigationItemStyle isEqualToString:@"editor"]) {
++      navitem.style = UINavigationItemStyleEditor;
++    }
++  }
++#endif
++
+ #if RNS_IPHONE_OS_VERSION_AVAILABLE(27_0)
+   if (@available(iOS 27.0, *)) {
+     // Due to native limitations related to opaque header and minimization behavior, we disable it for opaque headers.
+     UIBarMinimization *minimization = [UIBarMinimization new];
+     minimization.minimizationBehavior =
+         config.translucent ? UIBarMinimizationBehaviorAutomatic : UIBarMinimizationBehaviorNever;
++    if ([config.navigationBarMinimizationBehavior isEqualToString:@"automatic"]) {
++      minimization.minimizationBehavior = UIBarMinimizationBehaviorAutomatic;
++    } else if ([config.navigationBarMinimizationBehavior isEqualToString:@"never"]) {
++      minimization.minimizationBehavior = UIBarMinimizationBehaviorNever;
++    } else if ([config.navigationBarMinimizationBehavior isEqualToString:@"onScrollDown"]) {
++      minimization.minimizationBehavior = UIBarMinimizationBehaviorOnScrollDown;
++    } else if ([config.navigationBarMinimizationBehavior isEqualToString:@"onScrollUp"]) {
++      minimization.minimizationBehavior = UIBarMinimizationBehaviorOnScrollUp;
++    }
++    if ([config.navigationBarRestorationBehavior isEqualToString:@"atScrollEdge"]) {
++      minimization.restorationBehavior = UIBarMinimizationRestorationBehaviorAtScrollEdge;
++    } else if ([config.navigationBarRestorationBehavior isEqualToString:@"automatic"]) {
++      minimization.restorationBehavior = UIBarMinimizationRestorationBehaviorAutomatic;
++    }
++    if ([config.navigationBarSafeAreaAdjustment isEqualToString:@"enabled"]) {
++      minimization.safeAreaAdjustment = UIBarMinimizationSafeAreaAdjustmentEnabled;
++    } else if ([config.navigationBarSafeAreaAdjustment isEqualToString:@"disabled"]) {
++      minimization.safeAreaAdjustment = UIBarMinimizationSafeAreaAdjustmentDisabled;
++    } else if ([config.navigationBarSafeAreaAdjustment isEqualToString:@"automatic"]) {
++      minimization.safeAreaAdjustment = UIBarMinimizationSafeAreaAdjustmentAutomatic;
++    }
+     navitem.navigationBarMinimization = minimization;
+   }
+ #endif // RNS_IPHONE_OS_VERSION_AVAILABLE(27_0)
+@@ -602,6 +663,7 @@ + (void)updateViewController:(UIViewController *)vc
+     scrollEdgeAppearance.shadowColor = nil;
+   }
+   navitem.scrollEdgeAppearance = scrollEdgeAppearance;
++  navitem.compactScrollEdgeAppearance = scrollEdgeAppearance;
+ #if !TARGET_OS_TV
+   navitem.hidesBackButton = config.hideBackButton;
+   navitem.leftItemsSupplementBackButton = config.backButtonInCustomView;
+@@ -1086,6 +1148,15 @@ - (void)updateProps:(react::Props::Shared const &)props oldProps:(react::Props::
+   _hideShadow = newScreenProps.hideShadow;
+ 
+   _largeTitle = newScreenProps.largeTitle;
++  _largeTitleDisplayMode = RCTNSStringFromStringNilIfEmpty(newScreenProps.largeTitleDisplayMode);
++  _navigationItemStyle = RCTNSStringFromStringNilIfEmpty(newScreenProps.navigationItemStyle);
++  _navigationBarMinimizationBehavior = RCTNSStringFromStringNilIfEmpty(newScreenProps.navigationBarMinimizationBehavior);
++  _navigationBarRestorationBehavior = RCTNSStringFromStringNilIfEmpty(newScreenProps.navigationBarRestorationBehavior);
++  _navigationBarSafeAreaAdjustment = RCTNSStringFromStringNilIfEmpty(newScreenProps.navigationBarSafeAreaAdjustment);
++  _hidesBarsOnSwipe = newScreenProps.hidesBarsOnSwipe;
++  _hidesBarsOnTap = newScreenProps.hidesBarsOnTap;
++  _hidesBarsWhenKeyboardAppears = newScreenProps.hidesBarsWhenKeyboardAppears;
++  _hidesBarsWhenVerticallyCompact = newScreenProps.hidesBarsWhenVerticallyCompact;
+   if (newScreenProps.largeTitleFontFamily != oldScreenProps.largeTitleFontFamily) {
+     _largeTitleFontFamily = RCTNSStringFromStringNilIfEmpty(newScreenProps.largeTitleFontFamily);
+   }
+diff --git a/lib/typescript/fabric/ScreenStackHeaderConfigNativeComponent.d.ts b/lib/typescript/fabric/ScreenStackHeaderConfigNativeComponent.d.ts
+index ec39792c39420be57cc2a26f1c0f69efb417c4ca..6154eafe582165b0d117e0a79493d8d1ac98e1dd 100644
+--- a/lib/typescript/fabric/ScreenStackHeaderConfigNativeComponent.d.ts
++++ b/lib/typescript/fabric/ScreenStackHeaderConfigNativeComponent.d.ts
+@@ -24,6 +24,15 @@ export interface NativeProps extends ViewProps {
+     hidden?: boolean | undefined;
+     hideShadow?: boolean | undefined;
+     largeTitle?: boolean | undefined;
++    largeTitleDisplayMode?: string | undefined;
++    navigationItemStyle?: string | undefined;
++    navigationBarMinimizationBehavior?: string | undefined;
++    navigationBarRestorationBehavior?: string | undefined;
++    navigationBarSafeAreaAdjustment?: string | undefined;
++    hidesBarsOnSwipe?: boolean | undefined;
++    hidesBarsOnTap?: boolean | undefined;
++    hidesBarsWhenKeyboardAppears?: boolean | undefined;
++    hidesBarsWhenVerticallyCompact?: boolean | undefined;
+     largeTitleFontFamily?: string | undefined;
+     largeTitleFontSize?: CT.Int32 | undefined;
+     largeTitleFontWeight?: string | undefined;
+diff --git a/lib/typescript/types.d.ts b/lib/typescript/types.d.ts
+index e0d252421edab7a289efc8b7287343b509c721a5..1710ee790f9ddc5aecea8c9ebcc179d1a713f79e 100644
+--- a/lib/typescript/types.d.ts
++++ b/lib/typescript/types.d.ts
+@@ -685,6 +685,17 @@ export interface ScreenStackHeaderConfigProps extends ViewProps {
+      * @platform ios
+      */
+     largeTitle?: boolean | undefined;
++    /** Nomly public UIKit extension. Omit to retain upstream largeTitle semantics. */
++    largeTitleDisplayMode?: 'inherit' | 'automatic' | 'always' | 'never' | 'inline' | undefined;
++    navigationItemStyle?: 'navigator' | 'browser' | 'editor' | undefined;
++    /** iOS 27+. Whole navigation-bar minimization, independent of bottom tabs. */
++    navigationBarMinimizationBehavior?: 'inherit' | 'automatic' | 'never' | 'onScrollDown' | 'onScrollUp' | undefined;
++    navigationBarRestorationBehavior?: 'automatic' | 'atScrollEdge' | undefined;
++    navigationBarSafeAreaAdjustment?: 'automatic' | 'enabled' | 'disabled' | undefined;
++    hidesBarsOnSwipe?: boolean | undefined;
++    hidesBarsOnTap?: boolean | undefined;
++    hidesBarsWhenKeyboardAppears?: boolean | undefined;
++    hidesBarsWhenVerticallyCompact?: boolean | undefined;
+     /**
+      * Controls the color of the navigation header when the edge of any scrollable content reaches the matching edge of the navigation bar.
+      */
+diff --git a/src/fabric/ScreenStackHeaderConfigNativeComponent.ts b/src/fabric/ScreenStackHeaderConfigNativeComponent.ts
+index da28c51c6ffd29b996c876742a11cfdf322db969..8e0084da06b7d5f6e326196801a8ef0381a936c4 100644
+--- a/src/fabric/ScreenStackHeaderConfigNativeComponent.ts
++++ b/src/fabric/ScreenStackHeaderConfigNativeComponent.ts
+@@ -58,6 +58,16 @@ export interface NativeProps extends ViewProps {
+   hidden?: boolean | undefined;
+   hideShadow?: boolean | undefined;
+   largeTitle?: boolean | undefined;
++  // Nomly: optional UIKit controls; empty strings retain the upstream behavior.
++  largeTitleDisplayMode?: string | undefined;
++  navigationItemStyle?: string | undefined;
++  navigationBarMinimizationBehavior?: string | undefined;
++  navigationBarRestorationBehavior?: string | undefined;
++  navigationBarSafeAreaAdjustment?: string | undefined;
++  hidesBarsOnSwipe?: boolean | undefined;
++  hidesBarsOnTap?: boolean | undefined;
++  hidesBarsWhenKeyboardAppears?: boolean | undefined;
++  hidesBarsWhenVerticallyCompact?: boolean | undefined;
+   largeTitleFontFamily?: string | undefined;
+   largeTitleFontSize?: CT.Int32 | undefined;
+   largeTitleFontWeight?: string | undefined;
+diff --git a/src/types.tsx b/src/types.tsx
+index 3ec38fa0c19fc3aa444394e22737d23d4220e978..454e14a38e6e36231f77e6fdea2928a570384952 100644
+--- a/src/types.tsx
++++ b/src/types.tsx
+@@ -791,6 +791,17 @@ export interface ScreenStackHeaderConfigProps extends ViewProps {
+    * @platform ios
+    */
+   largeTitle?: boolean | undefined;
++  /** Nomly public UIKit extension. Omit to retain upstream largeTitle semantics. */
++  largeTitleDisplayMode?: 'inherit' | 'automatic' | 'always' | 'never' | 'inline' | undefined;
++  navigationItemStyle?: 'navigator' | 'browser' | 'editor' | undefined;
++  /** iOS 27+. Whole navigation-bar minimization, independent of bottom tabs. */
++  navigationBarMinimizationBehavior?: 'inherit' | 'automatic' | 'never' | 'onScrollDown' | 'onScrollUp' | undefined;
++  navigationBarRestorationBehavior?: 'automatic' | 'atScrollEdge' | undefined;
++  navigationBarSafeAreaAdjustment?: 'automatic' | 'enabled' | 'disabled' | undefined;
++  hidesBarsOnSwipe?: boolean | undefined;
++  hidesBarsOnTap?: boolean | undefined;
++  hidesBarsWhenKeyboardAppears?: boolean | undefined;
++  hidesBarsWhenVerticallyCompact?: boolean | undefined;
+   /**
+    * Controls the color of the navigation header when the edge of any scrollable content reaches the matching edge of the navigation bar.
+    */

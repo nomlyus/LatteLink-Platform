@@ -147,7 +147,6 @@ export function DateSheet({
             onValueChange={(_, date) => onChange(date)}
             onDismiss={() => onChange(defaultDate)}
             style={styles.datePicker}
-            textColor={uiPalette.text}
           />
         </View>
       </BottomSheetView>
