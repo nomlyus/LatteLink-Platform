@@ -45,6 +45,16 @@ test("deployed checkout E2E receives both brand and location scope", async () =>
   assert.match(checkoutE2E, /DEV_E2E_LOCATION_ID:/);
 });
 
+test("dev checkout smoke sends brandId on brand-scoped customer endpoints", async () => {
+  const script = await readFile(checkoutScriptUrl, "utf8");
+  for (const path of ["/orders/quote", "/orders/checkouts", "/payments/stripe/mobile-session", "/orders"]) {
+    assert.ok(
+      script.includes(`requestApi(\`${path}?\${customerBrandQuery}\``),
+      `${path} must carry the customer brandId query`,
+    );
+  }
+});
+
 test("dev checkout smoke validates unavailable public locations before creating a test customer", async () => {
   const script = await readFile(checkoutScriptUrl, "utf8");
   const bootstrapIndex = script.indexOf('requestApi(`/mobile/bootstrap?');

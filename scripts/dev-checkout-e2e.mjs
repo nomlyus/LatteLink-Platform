@@ -20,6 +20,7 @@ if (!brandId) {
 
 const apiRootUrl = apiBaseUrl.replace(/\/v1\/?$/, "");
 const publicLocationQuery = new URLSearchParams({ brandId, locationId });
+const customerBrandQuery = new URLSearchParams({ brandId });
 const testRunId = Date.now();
 const customerEmail = `dev-e2e-${testRunId}@rawaq.local`;
 const customerName = "Dev Checkout E2E";
@@ -73,7 +74,7 @@ async function run() {
   const authHeaders = { Authorization: `Bearer ${session.accessToken}` };
   console.log(`[dev-checkout-e2e] customer=${session.userId}`);
 
-  const quote = await requestApi("/orders/quote", {
+  const quote = await requestApi(`/orders/quote?${customerBrandQuery}`, {
     method: "POST",
     headers: authHeaders,
     body: JSON.stringify({
@@ -93,7 +94,7 @@ async function run() {
   });
   console.log(`[dev-checkout-e2e] quote=${quote.quoteId} total=${quote.total?.amountCents}`);
 
-  const checkout = await requestApi("/orders/checkouts", {
+  const checkout = await requestApi(`/orders/checkouts?${customerBrandQuery}`, {
     method: "POST",
     headers: authHeaders,
     body: JSON.stringify({
@@ -104,7 +105,7 @@ async function run() {
   assert(checkout.status === "OPEN", `Checkout status was ${checkout.status}, expected OPEN.`);
   console.log(`[dev-checkout-e2e] checkout=${checkout.checkoutId} status=${checkout.status}`);
 
-  const paymentSession = await requestApi("/payments/stripe/mobile-session", {
+  const paymentSession = await requestApi(`/payments/stripe/mobile-session?${customerBrandQuery}`, {
     method: "POST",
     headers: authHeaders,
     body: JSON.stringify({
@@ -115,7 +116,7 @@ async function run() {
   assert(paymentSession.paymentIntentId, "Payment session did not return a payment intent.");
   console.log(`[dev-checkout-e2e] paymentIntent=${paymentSession.paymentIntentId} amount=${paymentSession.amountCents}`);
 
-  const orders = await requestApi("/orders", { headers: authHeaders });
+  const orders = await requestApi(`/orders?${customerBrandQuery}`, { headers: authHeaders });
   const prematureOrder = orders.find((order) => order.id === checkout.checkoutId);
   assert(!prematureOrder, "Checkout was promoted to an order before payment finalization.");
   console.log(`[dev-checkout-e2e] ordersAfterPaymentSheetInit=${orders.length} matchingCheckoutOrder=false`);
