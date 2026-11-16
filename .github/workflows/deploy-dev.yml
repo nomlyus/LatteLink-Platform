@@ -263,7 +263,16 @@ jobs:
           fi
 
           git push --force "https://git.heroku.com/${HEROKU_APP_NAME}.git" "${DEPLOY_SHA}:refs/heads/main"
-          remote_sha="$(git ls-remote "https://git.heroku.com/${HEROKU_APP_NAME}.git" refs/heads/main | cut -f1)"
+          # Heroku can return from the push while the release phase is still
+          # running and only moves refs/heads/main once the release finishes.
+          for attempt in $(seq 1 60); do
+            remote_sha="$(git ls-remote "https://git.heroku.com/${HEROKU_APP_NAME}.git" refs/heads/main | cut -f1)"
+            if [ "${remote_sha}" = "${DEPLOY_SHA}" ]; then
+              break
+            fi
+            echo "Waiting for the Heroku Git ref to reach ${DEPLOY_SHA} (${attempt}/60)..."
+            sleep 10
+          done
           if [ "${remote_sha}" != "${DEPLOY_SHA}" ]; then
             echo "Heroku Git ref does not match the exact deployment SHA." >&2
             exit 1
