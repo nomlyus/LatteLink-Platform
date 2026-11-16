@@ -265,7 +265,16 @@ jobs:
           printf 'https://heroku:%s@git.heroku.com\n' "${HEROKU_API_KEY}" > "$HOME/.git-credentials"
           chmod 600 "$HOME/.git-credentials"
           git push --force "https://git.heroku.com/${HEROKU_APP_NAME}.git" "${TARGET_SHA}:refs/heads/main"
-          remote_sha="$(git ls-remote "https://git.heroku.com/${HEROKU_APP_NAME}.git" refs/heads/main | cut -f1)"
+          # Heroku can return from the push while the release phase is still
+          # running and only moves refs/heads/main once the release finishes.
+          for attempt in $(seq 1 60); do
+            remote_sha="$(git ls-remote "https://git.heroku.com/${HEROKU_APP_NAME}.git" refs/heads/main | cut -f1)"
+            if [ "${remote_sha}" = "${TARGET_SHA}" ]; then
+              break
+            fi
+            echo "Waiting for the Heroku Git ref to reach ${TARGET_SHA} (${attempt}/60)..."
+            sleep 10
+          done
           if [ "${remote_sha}" != "${TARGET_SHA}" ]; then
             echo "Heroku Git ref does not match the exact release SHA." >&2
             exit 1
