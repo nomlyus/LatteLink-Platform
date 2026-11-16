@@ -59,7 +59,7 @@ START_NOTIFICATIONS_DISPATCH_WORKER=1 pnpm dev:services
 Optional DB-backed payments persistence:
 
 ```bash
-DATABASE_URL=postgres://user:password@127.0.0.1:5432/gazelle pnpm dev:services
+DATABASE_URL=postgres://user:password@127.0.0.1:5432/nomly pnpm dev:services
 ```
 
 Explicit non-durable in-memory mode when you do not have Postgres running:
@@ -123,8 +123,8 @@ DEV_MACHINE_IP=192.168.1.25 pnpm dev:mobile:lan
 
 For profile-driven pilot/TestFlight builds, use:
 
-- [mobile-eas-builds.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/mobile-eas-builds.md)
-- [apps/mobile/.env.example](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/.env.example)
+- [mobile-eas-builds.md](mobile-eas-builds.md)
+- [apps/mobile/.env.example](../../apps/mobile/.env.example)
 
 ## Quick Health Checks
 

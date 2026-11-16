@@ -1,179 +1,96 @@
 # Architecture
 
-Last verified: 2026-04-27 (from code, not from documentation)
+Last verified: 2026-11-16, from `develop` code, workflows, and ADR 0002.
+Replaces the April architecture doc, `docs/PROJECT_STATE.md`, and `docs/architecture/architecture-overview.md`. Those are kept in [docs/archive/state-snapshots](docs/archive/state-snapshots) for history.
 
 ## Overview
 
-LatteLink is a TypeScript monorepo built with pnpm + Turborepo. The backend is a set of Fastify microservices behind a gateway, all sharing a single Postgres database with table-prefix namespacing per service. The event bus is Redis pub/sub via Valkey. Production deployment is Docker Compose on a single Linux host with Caddy for TLS termination.
+Nomly is a TypeScript monorepo (pnpm + Turborepo). The backend is a set of Fastify domain services behind a gateway. In deployed environments, all of them run inside **one Heroku process** (`services/backend-runtime`); locally they can run as separate processes. All services share one external Supabase Postgres database per environment, with tables namespaced by service.
 
-## Monorepo Structure
+## Surfaces
 
-```
-apps/
-  mobile/              Expo iOS ordering app (customer-facing)
-  client-dashboard/    Merchant operator dashboard (Next.js App Router)
-  admin-console/       Internal Nomly control plane (Next.js)
-  lattelink-web/       Public marketing site (Next.js)
+| Surface | Path | Stack | Hosting | Users |
+|---|---|---|---|---|
+| Customer app | `apps/mobile` | Expo / React Native, Expo Router, Stripe RN SDK | App Store (one branded build per merchant brand), EAS Update | Café customers |
+| Merchant dashboard | `apps/client-dashboard` | Next.js (React) | Vercel | Owners, managers, store staff |
+| Admin console | `apps/admin-console` | Next.js | Vercel (Git integration) | Nomly internal |
+| Marketing site | `apps/lattelink-web` | Next.js | Vercel | Prospective merchants |
 
-services/
-  gateway/             Public API gateway + auth enforcement (Fastify)
-  identity/            Auth: Apple, passkey, operator, internal admin (Fastify)
-  catalog/             Menu, app config, store config, home cards (Fastify)
-  orders/              Quote → create → pay → fulfillment lifecycle (Fastify)
-  payments/            Clover + Stripe + Apple Pay (Fastify)
-  loyalty/             Points balance + ledger (Fastify)
-  notifications/       Push token registration + outbox (Fastify)
-  workers/
-    menu-sync/         Periodic external menu import
-    notifications-dispatch/ Outbox trigger
-
-packages/
-  contracts/           Zod API contracts (auth, catalog, orders, loyalty, notifications, core)
-  persistence/         Kysely + Postgres, 29 migrations as of 2026-04-27
-  event-bus/           Redis pub/sub for order events (ioredis)
-  sdk-mobile/          Generated TypeScript client from gateway OpenAPI
-  design-tokens/       Shared visual tokens
-  config-eslint/       Shared ESLint config
-  config-typescript/   Shared TypeScript config
-
-infra/
-  free/                Docker Compose single-host deployment (ACTIVE)
-  terraform/           AWS modules (dev/staging/prod) — defined, not yet deployed
-  docker/              Shared Node.js service Dockerfile
-```
-
-## Runtime Architecture
+## Runtime
 
 ```
-Customer iOS app
-  │ HTTPS (Caddy TLS)
-  ▼
-gateway :8080
-  ├── JWT auth middleware
-  ├── Rate limiting (per-IP via Valkey)
-  ├── CORS enforcement
-  └── Reverse proxy to downstream services
-       ├── identity  :3000
-       ├── orders    :3001
-       ├── catalog   :3002
-       ├── payments  :3003
-       ├── loyalty   :3004
-       └── notifications :3005
-
-Operator dashboard (Next.js App Router) → gateway (same path)
-Admin console (Next.js on Vercel) → gateway (internal-admin token)
-
-Event bus: Valkey (Redis-compatible pub/sub)
-  - Orders service publishes to order_status:{orderId} and order_events:{locationId}
-  - Gateway subscribes for order SSE streams
-
-Postgres (shared, one DB, prefix-per-service namespacing):
-  identity_*, operator_*, catalog_*, orders*, payments_*, loyalty_*, notifications_*
-
-Workers (polling, not event-driven):
-  menu-sync: Polls external URL → PUT /v1/catalog/internal/locations/:id/menu
-  notifications-dispatch: Polls notifications service outbox every 5s
+Customer app ─┐
+Dashboard ────┼──► https://api.nomly.us (prod) / api-dev.nomly.us (dev)
+Admin console ┘        │  Heroku TLS
+                       ▼
+          Heroku app: nomly-api-prod (Basic dyno) / nomly-api-dev (Eco dyno)
+          ┌────────────────────────────────────────────────────────────┐
+          │ services/backend-runtime (one Node process)                │
+          │   gateway  ← only listener on Heroku $PORT                 │
+          │     ├─ identity   ├─ catalog   ├─ orders                   │
+          │     ├─ payments   ├─ loyalty   ├─ notifications            │
+          │     └─ reporting           (loopback ports)                │
+          │   in-process workers: notifications-dispatch,              │
+          │     payment-reconciler, menu-sync (optional)               │
+          └────────────────────────────────────────────────────────────┘
+                       │ session pooler (IPv4)
+                       ▼
+          External Supabase Postgres (separate dev and prod projects)
 ```
+
+- **Migrations** run in Heroku's release phase (`node dist/migrate.js`, see `heroku.yml`) before a new release takes traffic.
+- **No Valkey/Redis on Heroku.** With one dyno, order streams use their polling fallback and rate limits are process-local (ADR 0002).
+- **The dev dyno sleeps when idle** (Eco). The first request after a sleep can take more than 10 s.
+- **The mobile release worker** (`services/workers/mobile-release`) is not in the Heroku process. Building App Store binaries needs a separate EAS-capable environment.
+- **Terraform** in `infra/terraform` (AWS ECS/RDS) is defined but not deployed. Scaling triggers are in ADR 0002 and issue #455.
+
+## Tenancy model
+
+- **Brand** = a merchant business (e.g. Rawaq, Hazel). **Location** = one of its stores.
+- Each brand gets its own branded iOS app, with location selection inside it.
+- Catalog, orders, store config, operator access, and push tokens are scoped by location and/or brand. Public and customer endpoints require a `brandId` (and `locationId` where relevant).
+- **Loyalty is brand-wide** (migration 0059): balances and programs belong to a brand and apply across its participating locations.
+- **Customer identity is global** (`identity_users`). Per-brand customer accounts (one person, separate account per merchant) are **not built yet**. See #536; it's required before a second merchant goes live.
 
 ## Authentication
 
-Three distinct auth populations:
-
-| Population | Auth method | Token type |
+| Population | Method | Tokens |
 |---|---|---|
-| Customers | Apple Sign In (prod), dev-access (dev) | JWT HS256 (access + refresh) |
-| Operators | Email/password + Google SSO | JWT HS256 (access + refresh) |
-| Internal admin | Email/password only | JWT HS256 (access + refresh) |
+| Customers | Sign in with Apple (prod); `dev-access` on dev only | JWT access + fixed-length random refresh tokens, absolute session TTL |
+| Operators | Email/password, Google SSO | Same |
+| Internal admin | Email/password | Same |
 
-The gateway decodes JWT access tokens and forwards user identity to downstream services via `x-user-id` and `x-gateway-token` headers. Internal service-to-service calls use static `x-internal-token` secrets.
+The gateway verifies access tokens and forwards identity to services (`x-user-id`, `x-gateway-token`). Service-to-service calls use internal tokens. Passkey routes exist server-side, but customer enrollment is disabled pending security review (TD-16). Operator Apple sign-in and passkeys are open issues #360–#362.
 
-Passkey (WebAuthn) route implementation exists, but customer enrollment is intentionally unavailable in Nomly 1.2.0 pending authenticated account binding and security review. Mobile UI is not built; route presence does not mean the feature is exposed to customers.
+## Payments
 
-## Payment Architecture
+- **Stripe Connect** is the only live payment path. Each merchant has a Connect account; the app creates a checkout draft, opens Stripe PaymentSheet (card + Apple Pay), and the draft becomes an order only after payment is verified. A background reconciler recovers drafts whose webhooks were missed. Operator refunds are supported (full refunds; partial refunds are #511).
+- **Clover** code remains but is unavailable. Its only planned future is a read-only reporting import (#290).
 
-Payment capabilities and product status:
+## Order lifecycle
 
-- **Stripe Connect**: Per-merchant Connect accounts. Mobile PaymentIntent session → Stripe PaymentSheet → webhook reconciliation → Nomly order PAID. Apple Pay is part of Stripe PaymentSheet. This is the customer mobile-ordering payment path in Nomly 1.2.0; Nomly owns the order lifecycle.
-- **Clover**: Legacy OAuth/POS paths exist in source but are unavailable in Nomly 1.2.0. Clover is not the destination for app orders. The intended future integration is read-only full-day reporting that combines Nomly orders with Clover in-store sales; that reporting capability is not implemented yet.
+Fulfillment mode is per location. The default is **`staff`**: orders advance only when the dashboard moves them. `time_based` (auto-advance on a timer) exists for testing only. See [docs/order-lifecycle.md](docs/order-lifecycle.md) and [docs/payment-order-flow.md](docs/payment-order-flow.md).
 
-Payment profile per location is stored in `catalog_payment_profiles`. The payments service reads this to route charges to the correct Stripe Connected Account.
+## Shared packages
 
-## Multi-Tenancy State (2026-04-27)
-
-The platform supports multiple merchants via `location_id` keyed data:
-
-- `catalog_*` tables: keyed by `location_id` ✓
-- `orders` table: captures `locationId` in `order_json` ✓
-- `operator_users`: keyed by `location_id` ✓
-- `operator_location_access`: added for multi-location operator access ✓
-- `loyalty_balances`: NOT scoped by location — uses only `user_id` as PK ✗ (TD-02)
-- `identity_users`: shared pool (intentional — customers are platform-wide)
-- Mobile app: single-tenant per EAS build (brand/theme baked at build time)
-
-One live tenant as of audit date: `rawaqcoffee` / `rawaqcoffee01`.
-
-## Data Ownership
-
-All services read and write to the same Postgres instance. Data ownership by table prefix:
-
-| Service | Tables |
+| Package | Purpose |
 |---|---|
-| identity | identity_users, identity_sessions, identity_passkey_*, operator_users, operator_sessions, operator_location_access, internal_admin_* |
-| catalog | catalog_menu_categories, catalog_menu_items, catalog_store_configs, catalog_app_configs, catalog_home_news_cards, catalog_payment_profiles |
-| orders | orders, orders_quotes, orders_create_idempotency, orders_payment_idempotency |
-| payments | payments_charges, payments_refunds, payments_stripe_webhook_events, payments_clover_* |
-| loyalty | loyalty_balances, loyalty_ledger_entries, loyalty_idempotency_keys |
-| notifications | notifications_push_tokens, notifications_order_state_dispatches, notifications_outbox |
+| `packages/contracts/*` | Zod API contracts (core, auth, catalog, orders, loyalty, notifications). The single source for request and response shapes |
+| `packages/sdk-mobile` | Typed client generated from the gateway OpenAPI, used by the mobile app |
+| `packages/persistence` | Kysely + Postgres repositories and numbered migrations |
+| `packages/observability` | Structured logging and Sentry |
+| `packages/event-bus` | Order event pub/sub (used when Valkey is present) |
+| `packages/design-tokens` | Shared UI tokens |
 
-## Fulfillment Modes
+## Delivery
 
-The platform supports two order fulfillment modes, configured per location via `app_config`:
+- **CI** (`ci.yml`): lint, typecheck, tests, contract drift, build, release-policy tests. Security: CodeQL, secret scan, dependency review.
+- **Dev**: a push to `develop`, then CI, then `deploy-dev.yml` pushes the commit to `nomly-api-dev`, verifies release and migration provenance, smoke-checks, and runs a deployed checkout E2E.
+- **Prod**: promote `develop` to `main`, publish a GitHub Release `vX.Y.Z`, and `deploy-prod.yml` deploys `nomly-api-prod` behind the release-policy gate. See [docs/runbooks/development-flow.md](docs/runbooks/development-flow.md).
+- **Web apps** deploy through Vercel. **Mobile** ships as EAS builds (binary) or EAS Update (OTA).
+- **Monitoring**: Sentry, plus `uptime-monitor.yml`, which opens and closes GitHub issues for failing health checks.
 
-- `staff`: Order progresses only when a dashboard operator manually advances the status. Recommended for all real merchants.
-- `time_based`: Order auto-progresses on a timer from payment. Used for testing only. **Must not be used in production.**
+## Decisions
 
-## Observability (Current Gaps)
-
-Services expose `GET /health` and `GET /ready`. There is no `/metrics` endpoint. There is no structured log aggregation, no error tracking (Sentry), and no uptime monitoring. This is a known gap (TD-06).
-
-## API Surface
-
-Gateway base path: `https://{API_DOMAIN}/v1`
-
-Key route groups:
-- `/auth/*` — customer authentication
-- `/operator/auth/*` — operator authentication
-- `/internal-admin/auth/*` — internal admin authentication
-- `/menu`, `/app-config`, `/store/config`, `/store/cards` — public catalog reads
-- `/orders/*` — customer order lifecycle
-- `/admin/orders/*`, `/admin/menu/*`, `/admin/cards/*`, `/admin/store/*`, `/admin/staff/*` — operator management
-- `/internal/*` — internal admin / platform operations
-- `/payments/*` — payment sessions and webhooks
-- `/loyalty/*` — loyalty balance and ledger
-- `/devices/push-token` — push notification registration
-
-All routes are defined in `services/gateway/src/routes.ts` and typed against contracts in `packages/contracts/*`.
-
-## Infrastructure
-
-### Current (active)
-- Single Ubuntu host
-- Docker Compose with Caddy, gateway, all services, workers, Postgres, Valkey
-- GHCR for container images
-- Vercel for Next.js apps (admin-console, client-dashboard, lattelink-web)
-
-### Planned (not deployed)
-- Terraform modules for AWS (ECS/RDS/ElastiCache) in `infra/terraform/`
-- dev/staging/prod Terraform environments defined
-
-## CI/CD
-
-GitHub Actions:
-- `ci.yml`: lint, typecheck, unit tests, contract drift check, build — runs on all PRs and main pushes
-- `publish-free-images.yml`: builds and pushes GHCR container images on main push
-- `deploy-free.yml`: deploys to single-host via SSH
-- `client-dashboard-vercel.yml`: deploys client dashboard to Vercel
-- `admin-console-vercel.yml`: deploys admin console to Vercel
-- `lattelink-vercel.yml`: deploys marketing site to Vercel
-- `codeql.yml`: static analysis
-- `secret-scan.yml`: secret scanning
+- [ADR 0001: Monorepo architecture](docs/adr/0001-monorepo-architecture.md)
+- [ADR 0002: Heroku backend runtime](docs/adr/0002-heroku-backend-runtime.md)

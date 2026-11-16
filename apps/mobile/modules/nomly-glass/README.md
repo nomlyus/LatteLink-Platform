@@ -9,7 +9,7 @@ by Screens/UIKit, not an additional view/controller in this module. Its pnpm
 patch extends Fabric props/public types and uses Android no-op setters for the
 iOS-only additions. It adds no permission, identifier or payment changes.
 
-See `../../NATIVE_HEADER_REQUIREMENTS.md` and `../../NATIVE_UI_CAPABILITIES.md`
+See [`NATIVE_HEADER_REQUIREMENTS.md`](../../docs/NATIVE_HEADER_REQUIREMENTS.md) and [`NATIVE_UI_CAPABILITIES.md`](../../docs/NATIVE_UI_CAPABILITIES.md)
 for the explicit scope, API inventory, one-stack title/Account scroll requirement,
 availability limitations and physical-device acceptance gates. Earlier build
 notes below are historical, not verification of this header extension.

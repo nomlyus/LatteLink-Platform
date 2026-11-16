@@ -1,37 +1,41 @@
-# LatteLink Platform
+# Nomly Platform (`LatteLink-Platform`)
 
-LatteLink is Nomly/Gazelle's commerce platform for mobile ordering, storefront ordering, client operations, admin operations, payments, loyalty, notifications, and merchant onboarding.
+Nomly gives independent cafés their own branded ordering app, merchant dashboard, payments, and loyalty. This monorepo is the whole Nomly system. `LatteLink` survives only as the repository and `@lattelink/*` package names.
+
+**Where things stand right now: [docs/STATUS.md](docs/STATUS.md).** The roadmap is [ROADMAP.md](ROADMAP.md) (source of truth: issue #466).
 
 This is a private production monorepo. It contains the customer apps, operator/admin surfaces, API gateway, domain services, shared contracts, workers, deployment automation, and infrastructure configuration.
 
 ## Current Operating Model
 
-- `develop` is the integration branch and deploys to the shared `dev` stack after images publish successfully.
-- `main` is production-ready history.
+- `develop` is where all work lands. Every push runs CI, then `deploy-dev` deploys it to the `dev` Heroku app (`api-dev.nomly.us`).
+- `main` is production. It only moves when `develop` is promoted for a public release.
 - Production backend/API deploys are gated by a published GitHub Release, not by a plain push to `main`.
 - GitHub Release tags use semantic versions: `vX.Y.Z`.
 - The iOS App Store marketing version is kept aligned with the platform release when a native binary is shipped.
-- Deployed Postgres data lives in external Supabase databases. The Compose Postgres service is local-only and must not be treated as deployed data.
+- The backend runs on Heroku: one app per environment (`nomly-api-dev`, `nomly-api-prod`), each a single dyno running `services/backend-runtime`. Deployed Postgres data lives in external Supabase databases. The Compose Postgres service is local-only and must not be treated as deployed data.
 - Admin console deployment is handled by Vercel Git integration. GitHub Actions verifies the admin console but does not run a token-based Vercel CLI deploy.
 
 ## Repository Map
 
 ```text
 apps/
-  mobile/             Expo iOS customer ordering app
-  client-dashboard/   Client/operator dashboard
-  admin-console/      Internal admin console
-  lattelink-web/      Customer storefront web app
+  mobile/             Expo iOS app, one branded build per merchant brand
+  client-dashboard/   Merchant (operator) dashboard, Next.js
+  admin-console/      Internal Nomly admin console, Next.js
+  lattelink-web/      Public Nomly marketing site, Next.js
 
 services/
   gateway/            Public API gateway and OpenAPI surface
   identity/           Customer, operator, owner, and internal-admin identity
   catalog/            Menu, catalog, media, availability, and location APIs
   orders/             Cart checkout, order draft/finalization, and lifecycle APIs
-  payments/           Stripe/Clover integration and payment reconciliation
-  loyalty/            Loyalty balance and ledger APIs
+  payments/           Stripe Connect checkout and refunds (Clover code is legacy)
+  loyalty/            Brand-wide loyalty programs, balances, and ledger
   notifications/      Push devices, receipts, and notification outbox APIs
-  workers/            Menu sync, notification dispatch, payment reconciliation
+  reporting/          Owner Home metrics
+  backend-runtime/    Runs gateway + services + workers in one Heroku process
+  workers/            Menu sync, notification dispatch, payment reconciler, mobile release
 
 packages/
   contracts/          Shared API contract packages
@@ -43,20 +47,24 @@ packages/
   config-*/           Shared TypeScript and ESLint config
 
 infra/
-  free/               Compose deploy bundle and host scripts
-  terraform/          Cloud infrastructure modules and environment config
+  free/               Local Compose stack and the smoke-check script used by deploys
+  terraform/          AWS modules, defined but not deployed (see ADR 0002)
 
 docs/
+  STATUS.md           Where the product stands right now
+  adr/                Architecture decision records
   architecture/       Architecture and API contract notes
+  implementation/     Design notes for specific features
   runbooks/           Operational, release, QA, and deploy runbooks
-  roadmaps/           Product and engineering roadmap documents
+  archive/            Superseded plans and snapshots, kept for history
 ```
 
 ## Prerequisites
 
 - Node.js `>=22`
 - pnpm `10.5.2`
-- Docker, for local Compose and deploy-bundle work
+- Docker, only for the optional local Compose stack
+- Heroku CLI access for backend operations
 - Expo/EAS access for native mobile builds and OTA updates
 - Terraform CLI for infrastructure work
 - GitHub CLI for release/deploy operations
@@ -256,7 +264,7 @@ Normal development:
 3. Run relevant local validation.
 4. Commit clearly.
 5. Push to `origin/develop`.
-6. Wait for GitHub Actions to publish images and deploy the SHA to `dev`.
+6. Wait for CI and then `deploy-dev` to deploy the SHA to the `dev` Heroku app. If an automatic deploy fails at the Heroku Git ref check, rerun it with `gh workflow run deploy-dev.yml --ref develop` (automatic runs use `main`'s copy of the workflow).
 7. Verify the deployed dev stack.
 
 Production release:
@@ -311,11 +319,15 @@ Rules:
 
 ## Key Docs
 
-- [Architecture Overview](docs/architecture/architecture-overview.md)
+- [Status](docs/STATUS.md)
+- [Roadmap](ROADMAP.md)
+- [Architecture](ARCHITECTURE.md)
+- [Tech Debt](TECH_DEBT.md)
+- [Changelog](CHANGELOG.md)
+- [Heroku Backend Deployment](docs/runbooks/heroku-backend-deployment.md)
 - [API Contracts](docs/architecture/api-contracts.md)
 - [Development Flow](docs/runbooks/development-flow.md)
 - [Release Runbook](docs/runbooks/release-runbook.md)
-- [Production Prerequisites](docs/runbooks/production-prerequisites.md)
 - [Launch Readiness Checklist](docs/runbooks/launch-readiness-checklist.md)
 - [Contract Drift Guardrails](docs/runbooks/contract-drift-guardrails.md)
 - [Payment And Order Flow](docs/payment-order-flow.md)

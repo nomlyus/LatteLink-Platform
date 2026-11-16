@@ -10,7 +10,7 @@ The current V1 starting point is a scaffolded `Next.js` shell with the product a
 
 That means the roadmap begins with turning the scaffold into a usable internal control plane, not with deciding whether the app should exist.
 
-Detailed V1 build target: [admin-console-v1-spec.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/admin-console-v1-spec.md)
+Detailed V1 build target: [admin-console-v1-spec.md](../admin-console-v1-spec.md)
 
 This surface is for LatteLink internal admins, not client store staff.
 

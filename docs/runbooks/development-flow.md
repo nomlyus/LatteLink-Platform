@@ -97,7 +97,7 @@ Versioning happens from `main`.
 - Release tags use semantic versioning and must advance beyond the latest `vX.Y.Z` tag.
 - A GitHub Release must already exist and be published for the current `main`
   commit before production deploy starts.
-- Update [CHANGELOG.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/CHANGELOG.md) when you want a formal release record.
+- Update [CHANGELOG.md](../../CHANGELOG.md) when you want a formal release record.
 
 Typical release steps:
 

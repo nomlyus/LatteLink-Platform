@@ -119,7 +119,7 @@ Optional secrets depending on enabled features:
 - `CATALOG_MEDIA_R2_ACCESS_KEY_ID`
 - `CATALOG_MEDIA_R2_SECRET_ACCESS_KEY`
 
-Menu-image uploads require a real Cloudflare R2 bucket in each environment. See [menu-image-upload-r2.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/menu-image-upload-r2.md) for bucket CORS, public URL, and end-to-end validation.
+Menu-image uploads require a real Cloudflare R2 bucket in each environment. See [menu-image-upload-r2.md](menu-image-upload-r2.md) for bucket CORS, public URL, and end-to-end validation.
 
 ## App environment mapping
 
@@ -169,9 +169,9 @@ Never share the same database or payment credentials between `dev` and
   port `5432`; the production endpoint remains to be verified during release
   readiness. The pooler supports Heroku's IPv4 runtime, whereas Supabase direct
   endpoints require IPv6 unless the project has the IPv4 add-on.
-- the bundled `postgres` service in [`infra/free/docker-compose.yml`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/infra/free/docker-compose.yml) remains local-only
+- the bundled `postgres` service in [`infra/free/docker-compose.yml`](../../infra/free/docker-compose.yml) remains local-only
 
-Backup and restore operations are covered in [`database-backup-restore.md`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/database-backup-restore.md).
+Backup and restore operations are covered in [`database-backup-restore.md`](database-backup-restore.md).
 
 ## Postgres Pool Budget
 
@@ -258,5 +258,5 @@ the Heroku capacity plan.
 6. GitHub waits for `/health`, runs `infra/free/bin/smoke-check.sh`, and, in
    development, runs the deployed checkout E2E.
 
-See [`heroku-backend-deployment.md`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/heroku-backend-deployment.md)
+See [`heroku-backend-deployment.md`](heroku-backend-deployment.md)
 for provisioning, domain, rollback, and scaling procedures.

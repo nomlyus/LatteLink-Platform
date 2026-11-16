@@ -1,6 +1,6 @@
 # Mobile source audit inventory
 
-Static audit of every runtime module in `app/` and `src/` on `develop`. TypeScript/TSX/CommonJS implementation files are counted; declaration files, tests, generated/native files and assets are not included in source LOC. LOC includes whitespace and comments, excluding final empty lines. Directory findings, retained responsibilities, dynamic integration checks and verification limits are in [MOBILE_REFACTOR_PROGRESS.md](../../MOBILE_REFACTOR_PROGRESS.md).
+Static audit of every runtime module in `app/` and `src/` on `develop`. TypeScript/TSX/CommonJS implementation files are counted; declaration files, tests, generated/native files and assets are not included in source LOC. LOC includes whitespace and comments, excluding final empty lines. Directory findings, retained responsibilities, dynamic integration checks and verification limits are in [MOBILE_REFACTOR_PROGRESS.md](../../../docs/archive/misc/MOBILE_REFACTOR_PROGRESS.md).
 
 105 source files; 17,645 physical lines; 3 files over 500 lines; no files over 1,000 lines. Relative static import/re-export tracing found 0 cycles. No unreferenced StyleSheet property definitions found (references checked before removing styles; no dynamic style indexing present). Import count includes external and type-only imports and does not represent runtime bundle cost.
 

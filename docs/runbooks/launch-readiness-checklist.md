@@ -2,7 +2,7 @@
 
 Last reviewed: `2026-04-04`
 
-Use [development-flow.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/development-flow.md) for the release and rollback rules. Use [merchant-onboarding-pilot.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/merchant-onboarding-pilot.md) for the full merchant onboarding sequence. Use [pilot-incident-response.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/pilot-incident-response.md) if any launch or live support check fails.
+Use [development-flow.md](development-flow.md) for the release and rollback rules. Use [merchant-onboarding-pilot.md](merchant-onboarding-pilot.md) for the full merchant onboarding sequence. Use [pilot-incident-response.md](pilot-incident-response.md) if any launch or live support check fails.
 
 This checklist only covers launch go/no-go validation.
 

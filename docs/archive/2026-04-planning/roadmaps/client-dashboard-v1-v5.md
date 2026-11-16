@@ -25,9 +25,9 @@ Key current gaps:
 
 Primary inputs:
 
-- [operator-dashboard.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/operator-dashboard.md)
-- [client-dashboard-vercel-deployment.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/client-dashboard-vercel-deployment.md)
-- [client-dashboard-google-sso.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/client-dashboard-google-sso.md)
+- [operator-dashboard.md](../client-dashboard-v1-product-spec.md)
+- [client-dashboard-vercel-deployment.md](../../../runbooks/client-dashboard-vercel-deployment.md)
+- [client-dashboard-google-sso.md](../../../runbooks/client-dashboard-google-sso.md)
 
 ## V1
 

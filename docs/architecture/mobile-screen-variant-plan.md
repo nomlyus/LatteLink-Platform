@@ -39,27 +39,27 @@ The current repo already has the beginnings of tenant-aware runtime config, but 
 
 ### Existing Config Split
 
-- `storeConfig` is operational state such as hours, ETA, tax, and pickup instructions in [`packages/contracts/catalog/src/index.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/packages/contracts/catalog/src/index.ts#L271)
-- `appConfig` is presentation/runtime capability state such as brand, theme, tabs, payment capabilities, and store capabilities in [`packages/contracts/catalog/src/index.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/packages/contracts/catalog/src/index.ts#L565)
+- `storeConfig` is operational state such as hours, ETA, tax, and pickup instructions in [`packages/contracts/catalog/src/index.ts`](../../packages/contracts/catalog/src/index.ts#L271)
+- `appConfig` is presentation/runtime capability state such as brand, theme, tabs, payment capabilities, and store capabilities in [`packages/contracts/catalog/src/index.ts`](../../packages/contracts/catalog/src/index.ts#L565)
 
 ### Existing Tenant Foundations
 
-- catalog already supports internal multi-location provisioning and listing in [`services/catalog/src/repository.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/services/catalog/src/repository.ts#L1062)
-- app config defaults are resolved in [`services/catalog/src/tenant.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/services/catalog/src/tenant.ts)
+- catalog already supports internal multi-location provisioning and listing in [`services/catalog/src/repository.ts`](../../services/catalog/src/repository.ts#L1062)
+- app config defaults are resolved in [`services/catalog/src/tenant.ts`](../../services/catalog/src/tenant.ts)
 
 ### Current Mobile and Public API Limits
 
-- the mobile SDK fetches public config without client build metadata in [`packages/sdk-mobile/src/index.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/packages/sdk-mobile/src/index.ts#L152)
-- public `getAppConfig()` still resolves the default location only in [`services/catalog/src/repository.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/services/catalog/src/repository.ts#L1047)
-- public `getStoreConfig()` also resolves the default location only in [`services/catalog/src/repository.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/services/catalog/src/repository.ts#L1812)
-- the mobile UI uses static palette values in [`apps/mobile/src/ui/system.tsx`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/src/ui/system.tsx#L20)
+- the mobile SDK fetches public config without client build metadata in [`packages/sdk-mobile/src/index.ts`](../../packages/sdk-mobile/src/index.ts#L152)
+- public `getAppConfig()` still resolves the default location only in [`services/catalog/src/repository.ts`](../../services/catalog/src/repository.ts#L1047)
+- public `getStoreConfig()` also resolves the default location only in [`services/catalog/src/repository.ts`](../../services/catalog/src/repository.ts#L1812)
+- the mobile UI uses static palette values in [`apps/mobile/src/ui/system.tsx`](../../apps/mobile/src/ui/system.tsx#L20)
 
 ### Current Build and Versioning Shape
 
-- Expo config exposes app version in [`apps/mobile/app.config.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/app.config.ts#L73)
-- iOS runtime version is currently fixed at `1.0.0` in [`apps/mobile/app.config.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/app.config.ts#L96)
-- EAS uses separate `internal`, `beta`, and `production` build profiles in [`apps/mobile/eas.json`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/eas.json)
-- iOS build number currently exists as `CFBundleVersion` in [`apps/mobile/ios/LatteLinkBeta/Info.plist`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/ios/LatteLinkBeta/Info.plist#L37)
+- Expo config exposes app version in [`apps/mobile/app.config.ts`](../../apps/mobile/app.config.ts#L73)
+- iOS runtime version is currently fixed at `1.0.0` in [`apps/mobile/app.config.ts`](../../apps/mobile/app.config.ts#L96)
+- EAS uses separate `internal`, `beta`, and `production` build profiles in [`apps/mobile/eas.json`](../../apps/mobile/eas.json)
+- iOS build number currently exists as `CFBundleVersion` in [`apps/mobile/ios/LatteLinkBeta/Info.plist`](../../apps/mobile/ios/LatteLinkBeta/Info.plist#L37)
 
 ## High-Level Design
 
@@ -130,7 +130,7 @@ This is not client fallback. It is explicit server-side compatibility targeting.
 
 ## Why Build Track Matters
 
-`minBuildNumber` alone is not enough. This repo already ships separate `internal`, `beta`, and `production` profiles in [`apps/mobile/eas.json`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/eas.json). Different tracks may carry different variant packs, and build numbers are not guaranteed to be globally comparable across those tracks.
+`minBuildNumber` alone is not enough. This repo already ships separate `internal`, `beta`, and `production` profiles in [`apps/mobile/eas.json`](../../apps/mobile/eas.json). Different tracks may carry different variant packs, and build numbers are not guaranteed to be globally comparable across those tracks.
 
 Because of that, rollout rules must be keyed by both:
 
@@ -224,8 +224,8 @@ Recommended structure:
 
 The current screen files should become thin selectors or containers. For example:
 
-- [`apps/mobile/src/screens/HomeScreen.tsx`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/src/screens/HomeScreen.tsx) becomes the resolver entry point for home
-- [`apps/mobile/app/checkout.tsx`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/app/checkout.tsx) becomes the resolver entry point for checkout
+- [`apps/mobile/src/screens/HomeScreen.tsx`](../../apps/mobile/src/screens/HomeScreen.tsx) becomes the resolver entry point for home
+- [`apps/mobile/app/checkout.tsx`](../../apps/mobile/app/checkout.tsx) becomes the resolver entry point for checkout
 
 ### Client Resolution Flow
 
@@ -268,7 +268,7 @@ The client should also log structured telemetry for this event.
 
 Files:
 
-- [`packages/contracts/catalog/src/index.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/packages/contracts/catalog/src/index.ts)
+- [`packages/contracts/catalog/src/index.ts`](../../packages/contracts/catalog/src/index.ts)
 
 Changes:
 
@@ -328,16 +328,16 @@ Why a separate table is preferred over raw JSON in `catalog_app_configs.app_conf
 
 Files:
 
-- [`packages/persistence/src/index.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/packages/persistence/src/index.ts)
-- [`services/catalog/src/repository.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/services/catalog/src/repository.ts)
+- [`packages/persistence/src/index.ts`](../../packages/persistence/src/index.ts)
+- [`services/catalog/src/repository.ts`](../../services/catalog/src/repository.ts)
 
 ### 3. Catalog Service
 
 Files:
 
-- [`services/catalog/src/tenant.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/services/catalog/src/tenant.ts)
-- [`services/catalog/src/repository.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/services/catalog/src/repository.ts)
-- [`services/catalog/src/routes.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/services/catalog/src/routes.ts)
+- [`services/catalog/src/tenant.ts`](../../services/catalog/src/tenant.ts)
+- [`services/catalog/src/repository.ts`](../../services/catalog/src/repository.ts)
+- [`services/catalog/src/routes.ts`](../../services/catalog/src/routes.ts)
 
 Changes:
 
@@ -361,9 +361,9 @@ getAppConfig(client: {
 
 Files:
 
-- [`services/gateway/src/routes.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/services/gateway/src/routes.ts)
-- [`packages/sdk-mobile/src/index.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/packages/sdk-mobile/src/index.ts)
-- [`apps/mobile/src/api/client.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/src/api/client.ts)
+- [`services/gateway/src/routes.ts`](../../services/gateway/src/routes.ts)
+- [`packages/sdk-mobile/src/index.ts`](../../packages/sdk-mobile/src/index.ts)
+- [`apps/mobile/src/api/client.ts`](../../apps/mobile/src/api/client.ts)
 
 Changes:
 
@@ -385,15 +385,15 @@ The mobile client will likely need `expo-application` added so it can read:
 - native build number
 - native app version
 
-`appVariant` can continue to come from Expo `extra` in [`apps/mobile/app.config.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/app.config.ts#L106).
+`appVariant` can continue to come from Expo `extra` in [`apps/mobile/app.config.ts`](../../apps/mobile/app.config.ts#L106).
 
 ### 5. Mobile Build Pipeline
 
 Files:
 
-- [`apps/mobile/app.config.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/app.config.ts)
-- [`apps/mobile/eas.json`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/eas.json)
-- [`apps/mobile/package.json`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/package.json)
+- [`apps/mobile/app.config.ts`](../../apps/mobile/app.config.ts)
+- [`apps/mobile/eas.json`](../../apps/mobile/eas.json)
+- [`apps/mobile/package.json`](../../apps/mobile/package.json)
 - new `apps/mobile/scripts/generate-screen-registry.mjs`
 
 Changes:
@@ -408,13 +408,13 @@ Changes:
 
 Files:
 
-- [`apps/mobile/app/_layout.tsx`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/app/_layout.tsx)
+- [`apps/mobile/app/_layout.tsx`](../../apps/mobile/app/_layout.tsx)
 - new `apps/mobile/src/experience/*`
 - affected screen files such as:
-  - [`apps/mobile/src/screens/HomeScreen.tsx`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/src/screens/HomeScreen.tsx)
-  - [`apps/mobile/app/checkout.tsx`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/app/checkout.tsx)
-  - [`apps/mobile/src/screens/MenuScreen.tsx`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/src/screens/MenuScreen.tsx)
-  - [`apps/mobile/src/screens/AccountScreen.tsx`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/src/screens/AccountScreen.tsx)
+  - [`apps/mobile/src/screens/HomeScreen.tsx`](../../apps/mobile/src/screens/HomeScreen.tsx)
+  - [`apps/mobile/app/checkout.tsx`](../../apps/mobile/app/checkout.tsx)
+  - [`apps/mobile/src/screens/MenuScreen.tsx`](../../apps/mobile/src/screens/MenuScreen.tsx)
+  - [`apps/mobile/src/screens/AccountScreen.tsx`](../../apps/mobile/src/screens/AccountScreen.tsx)
 
 Changes:
 
@@ -428,8 +428,8 @@ Changes:
 
 Files:
 
-- [`services/catalog/src/routes.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/services/catalog/src/routes.ts)
-- [`services/catalog/src/repository.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/services/catalog/src/repository.ts)
+- [`services/catalog/src/routes.ts`](../../services/catalog/src/routes.ts)
+- [`services/catalog/src/repository.ts`](../../services/catalog/src/repository.ts)
 - any future admin-console client paths that edit tenant config
 
 Changes:
@@ -502,7 +502,7 @@ Why start here:
 
 ### Phase 4: Runtime Theme and Assets
 
-- replace static palette assumptions in [`apps/mobile/src/ui/system.tsx`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/src/ui/system.tsx#L20) with runtime theme resolution
+- replace static palette assumptions in [`apps/mobile/src/ui/system.tsx`](../../apps/mobile/src/ui/system.tsx#L20) with runtime theme resolution
 - allow variant families to share tenant-specific colors and typography more cleanly
 
 ### Phase 5: Public Tenant-Aware Config
@@ -552,7 +552,7 @@ This plan does not complete the multi-tenant platform on its own.
 
 Remaining gaps:
 
-- public mobile config still resolves default location today in [`services/catalog/src/repository.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/services/catalog/src/repository.ts#L1047) and [`services/catalog/src/repository.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/services/catalog/src/repository.ts#L1812)
+- public mobile config still resolves default location today in [`services/catalog/src/repository.ts`](../../services/catalog/src/repository.ts#L1047) and [`services/catalog/src/repository.ts`](../../services/catalog/src/repository.ts#L1812)
 - the mobile app does not yet identify a tenant/location on public config reads
 - runtime theme is still mostly static
 - native shell identity is still build-time
@@ -580,7 +580,7 @@ That larger goal still requires:
 
 This plan interacts directly with Expo Updates.
 
-Because the set of included screen variants becomes build-dependent, runtime versioning must be treated more carefully than it is today. iOS currently uses a fixed runtime version in [`apps/mobile/app.config.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/app.config.ts#L96).
+Because the set of included screen variants becomes build-dependent, runtime versioning must be treated more carefully than it is today. iOS currently uses a fixed runtime version in [`apps/mobile/app.config.ts`](../../apps/mobile/app.config.ts#L96).
 
 Before relying on build-specific variant packs with OTA delivery, one of the following must happen:
 

@@ -160,7 +160,7 @@ Required behavior:
 Current state:
 
 - the current dashboard in `apps/client-dashboard` uses a browser-stored API base URL plus staff token
-- gateway admin routes currently rely on `x-staff-token` in [`services/gateway/src/routes.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/services/gateway/src/routes.ts)
+- gateway admin routes currently rely on `x-staff-token` in [`services/gateway/src/routes.ts`](../../../services/gateway/src/routes.ts)
 
 Gap:
 
@@ -229,7 +229,7 @@ The product should explicitly support menu source modes:
 - `external`
   - a synced external system such as Clover is authoritative
 
-This should align with the broader menu-source work tracked in [`add-client-feature-config-and-menu-source-routing.md`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/issues/add-client-feature-config-and-menu-source-routing.md).
+This should align with the broader menu-source work tracked in [`add-client-feature-config-and-menu-source-routing.md`](../converted-to-issues/add-client-feature-config-and-menu-source-routing.md).
 
 #### If menu source is `platform`
 
@@ -307,7 +307,7 @@ The current app config contract already exposes:
 
 Current contract reference:
 
-- [`packages/contracts/catalog/src/index.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/packages/contracts/catalog/src/index.ts)
+- [`packages/contracts/catalog/src/index.ts`](../../../packages/contracts/catalog/src/index.ts)
 
 Recommended future additions:
 
@@ -333,9 +333,9 @@ Adopt the same high-level visual language as LatteLink:
 
 The dashboard should feel like it belongs to the same product family as:
 
-- [`apps/lattelink-web/src/app/globals.css`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/lattelink-web/src/app/globals.css)
-- [`apps/lattelink-web/src/components/Nav.tsx`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/lattelink-web/src/components/Nav.tsx)
-- [`apps/lattelink-web/src/components/Hero.tsx`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/lattelink-web/src/components/Hero.tsx)
+- [`apps/lattelink-web/src/app/globals.css`](../../../apps/lattelink-web/src/app/globals.css)
+- [`apps/lattelink-web/src/components/Nav.tsx`](../../../apps/lattelink-web/src/components/Nav.tsx)
+- [`apps/lattelink-web/src/components/Hero.tsx`](../../../apps/lattelink-web/src/components/Hero.tsx)
 
 ### UX Principles
 
@@ -369,7 +369,7 @@ It should include:
 
 Current app location:
 
-- [`apps/client-dashboard`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/client-dashboard)
+- [`apps/client-dashboard`](../../../apps/client-dashboard)
 
 Current sections:
 
@@ -380,10 +380,10 @@ Current sections:
 Current implementation shape:
 
 - Next.js App Router application with a client-only operator runtime boundary
-- App Router shell in [`src/app`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/client-dashboard/src/app)
-- operator bootstrap entry in [`main.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/client-dashboard/src/main.ts)
-- API access via [`api.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/client-dashboard/src/api.ts)
-- current styles in [`styles.css`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/client-dashboard/src/styles.css)
+- App Router shell in [`src/app`](../../../apps/client-dashboard/src/app)
+- operator bootstrap entry in `main.ts` (`apps/client-dashboard/src/main.ts`, no longer exists)
+- API access via [`api.ts`](../../../apps/client-dashboard/src/api.ts)
+- current styles in [`styles.css`](../../../apps/client-dashboard/src/styles.css)
 
 This is a reasonable frontend foundation, but the product model and polish are not finished.
 

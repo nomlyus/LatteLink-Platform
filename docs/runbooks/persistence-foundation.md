@@ -96,7 +96,7 @@ It provides:
 Set for DB-backed mode:
 
 ```bash
-DATABASE_URL=postgres://user:password@host:5432/gazelle
+DATABASE_URL=postgres://user:password@host:5432/nomly
 ```
 
 Set for explicit non-durable local simulation mode:

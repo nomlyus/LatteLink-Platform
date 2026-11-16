@@ -2,7 +2,7 @@
 
 Last reviewed: `2026-04-27`
 
-The authoritative workflow policy for this repo lives in [development-flow.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/development-flow.md). The deployment model lives in [two-environment-deploy.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/two-environment-deploy.md). Use this checklist only to configure GitHub so it matches those docs.
+The authoritative workflow policy for this repo lives in [development-flow.md](../../runbooks/development-flow.md). The deployment model lives in [two-environment-deploy.md](../../runbooks/two-environment-deploy.md). Use this checklist only to configure GitHub so it matches those docs.
 
 ## Repository
 
@@ -53,7 +53,7 @@ Merge methods may stay enabled, but they are not required for normal delivery.
 - [ ] `dev`
 - [ ] `production`
 
-Each environment should define its own vars and secrets. See [two-environment-deploy.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/two-environment-deploy.md) for the exact matrix.
+Each environment should define its own vars and secrets. See [two-environment-deploy.md](../../runbooks/two-environment-deploy.md) for the exact matrix.
 
 ## Core Variables
 
@@ -107,7 +107,7 @@ Each environment should define its own vars and secrets. See [two-environment-de
 - [ ] `CATALOG_MEDIA_R2_ACCESS_KEY_ID`
 - [ ] `CATALOG_MEDIA_R2_SECRET_ACCESS_KEY`
 
-Validate R2 bucket CORS and public asset URLs with [menu-image-upload-r2.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/menu-image-upload-r2.md) before enabling merchant uploads.
+Validate R2 bucket CORS and public asset URLs with [menu-image-upload-r2.md](../../runbooks/menu-image-upload-r2.md) before enabling merchant uploads.
 
 ## Frontend Deploy State
 

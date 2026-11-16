@@ -1,9 +1,9 @@
 # Architecture Overview
 
-> **Note**: This file is superseded by [ARCHITECTURE.md](../../ARCHITECTURE.md) at the repo root, which was written from code on 2026-04-27.  
+> **Note**: This file is superseded by [ARCHITECTURE.md](../../../ARCHITECTURE.md) at the repo root, which was written from code on 2026-04-27.  
 > The content below was previously inaccurate (wrong domain name, non-existent `/metrics` route, outdated notifications description). It has been replaced with a pointer to the authoritative document.
 
-See [ARCHITECTURE.md](../../ARCHITECTURE.md) for the current architecture.
+See [ARCHITECTURE.md](../../../ARCHITECTURE.md) for the current architecture.
 
 ---
 

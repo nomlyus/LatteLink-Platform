@@ -8,7 +8,7 @@ This repo now exposes a runtime app-config contract so the mobile app and backen
 
 Related architecture plan:
 
-- [`docs/architecture/mobile-screen-variant-plan.md`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/architecture/mobile-screen-variant-plan.md)
+- [`docs/architecture/mobile-screen-variant-plan.md`](architecture/mobile-screen-variant-plan.md)
 
 The current implementation is additive:
 
@@ -21,7 +21,7 @@ The current implementation is additive:
 
 Shared schema:
 
-- [`packages/contracts/catalog/src/index.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/packages/contracts/catalog/src/index.ts)
+- [`packages/contracts/catalog/src/index.ts`](../packages/contracts/catalog/src/index.ts)
 
 Current response shape:
 
@@ -85,7 +85,7 @@ The catalog persistence layer now carries additive tenant fields:
 
 Persistence schema:
 
-- [`packages/persistence/src/index.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/packages/persistence/src/index.ts)
+- [`packages/persistence/src/index.ts`](../packages/persistence/src/index.ts)
 
 Catalog defaults currently resolve to:
 
@@ -99,9 +99,9 @@ Catalog defaults currently resolve to:
 
 Mobile config helpers:
 
-- [`apps/mobile/src/menu/catalog.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/src/menu/catalog.ts)
-- [`apps/mobile/src/api/client.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/src/api/client.ts)
-- [`apps/client-dashboard/src/api.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/client-dashboard/src/api.ts)
+- [`apps/mobile/src/menu/catalog.ts`](../apps/mobile/src/menu/catalog.ts)
+- [`apps/mobile/src/api/client.ts`](../apps/mobile/src/api/client.ts)
+- [`apps/client-dashboard/src/api.ts`](../apps/client-dashboard/src/api.ts)
 
 Behavior:
 
@@ -138,7 +138,7 @@ The default tenant brand still resolves from static catalog tenant values. The n
 
 If the deployment wants a different brand or location, the catalog defaults should be changed in:
 
-- [`services/catalog/src/tenant.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/services/catalog/src/tenant.ts)
+- [`services/catalog/src/tenant.ts`](../services/catalog/src/tenant.ts)
 
 ## Verification
 

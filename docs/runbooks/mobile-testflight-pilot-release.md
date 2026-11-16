@@ -8,8 +8,8 @@ Use this runbook to prepare, build, validate, and hand off the first controlled 
 
 This is the release wrapper around:
 
-- [mobile-eas-builds.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/mobile-eas-builds.md)
-- [mobile-pilot-purchase-flow-qa.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/mobile-pilot-purchase-flow-qa.md)
+- [mobile-eas-builds.md](mobile-eas-builds.md)
+- [mobile-pilot-purchase-flow-qa.md](mobile-pilot-purchase-flow-qa.md)
 
 ## Preconditions
 
@@ -31,8 +31,8 @@ Use:
 
 Reference values are defined in:
 
-- [apps/mobile/eas.json](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/eas.json)
-- [apps/mobile/.env.example](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/.env.example)
+- [apps/mobile/eas.json](../../apps/mobile/eas.json)
+- [apps/mobile/.env.example](../../apps/mobile/.env.example)
 
 ## Release Checklist
 
@@ -49,7 +49,7 @@ Reference values are defined in:
 
 Run the full checklist in:
 
-- [mobile-pilot-purchase-flow-qa.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/mobile-pilot-purchase-flow-qa.md)
+- [mobile-pilot-purchase-flow-qa.md](mobile-pilot-purchase-flow-qa.md)
 
 Do not submit a build if:
 
@@ -69,7 +69,7 @@ These values must line up across Expo, Apple, and the pilot environment before t
 
 | Surface | Value | Notes |
 | --- | --- | --- |
-| Expo/EAS | `APP_VARIANT=beta` | comes from the `beta` profile in [apps/mobile/eas.json](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/apps/mobile/eas.json) |
+| Expo/EAS | `APP_VARIANT=beta` | comes from the `beta` profile in [apps/mobile/eas.json](../../apps/mobile/eas.json) |
 | Expo/EAS | `IOS_BUNDLE_IDENTIFIER` | should match the App Store Connect pilot app record |
 | Expo/EAS | `EXPO_PUBLIC_API_BASE_URL` | must be the public pilot backend URL ending in `/v1` |
 | Expo/EAS | `EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID` | must match the Apple Pay merchant configured for the pilot |

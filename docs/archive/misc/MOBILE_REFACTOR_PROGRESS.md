@@ -83,7 +83,7 @@ Production-mode Hermes export completed for iOS (8.06 MB) and Android (8.08 MB),
 
 ## Final source metrics
 
-Comparison is against the recovered uncommitted state at the start of this autonomous run, not against the older pre-session application. Source definition is recorded in [the per-file audit inventory](apps/mobile/MOBILE_SOURCE_AUDIT.md).
+Comparison is against the recovered uncommitted state at the start of this autonomous run, not against the older pre-session application. Source definition is recorded in [the per-file audit inventory](../../../apps/mobile/docs/MOBILE_SOURCE_AUDIT.md).
 
 | Metric | Recovered | Final |
 | --- | ---: | ---: |
@@ -122,7 +122,7 @@ Linux cannot provide Xcode signing, native iOS/Android simulator interaction or 
 
 ## Independent regression review after `7556e15`
 
-Reviewed both refactor commits against `341d304` on the existing clean `develop` branch. All 88 changed paths were inventoried, with baseline structural/style comparison, lifecycle and JSX wiring review, repository reference tracing and the complete customer journey traced. See [the independent review](apps/mobile/MOBILE_REGRESSION_REVIEW.md) for findings, per-path inventory and device/live-integration QA priorities. Earlier completion statements and metrics above describe the original checkpoint, not this follow-up.
+Reviewed both refactor commits against `341d304` on the existing clean `develop` branch. All 88 changed paths were inventoried, with baseline structural/style comparison, lifecycle and JSX wiring review, repository reference tracing and the complete customer journey traced. See [the independent review](../../../apps/mobile/docs/MOBILE_REGRESSION_REVIEW.md) for findings, per-path inventory and device/live-integration QA priorities. Earlier completion statements and metrics above describe the original checkpoint, not this follow-up.
 
 - Confirmed/fixed P2: changing customization item params during a loading-overlay fade could stop the animation permanently because the reveal effect omitted `resetKey`. A new dependency/state/animation lifecycle regression test failed before the fix and passes afterward; added initial/refresh/skip/reset/unmount coverage.
 - Confirmed/fixed P3: shared thumbnails changed the history fallback icon for a bare Cortado. Restored history-specific classification through a typed optional icon prop without changing receipt/refund artwork; added classification and rendered-element tests.

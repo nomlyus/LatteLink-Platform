@@ -1,6 +1,6 @@
 # Versioning
 
-The authoritative versioning policy for this repo lives in [development-flow.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/development-flow.md).
+The authoritative versioning policy for this repo lives in [development-flow.md](development-flow.md).
 
 Use that document as the only source of truth for:
 
@@ -9,4 +9,4 @@ Use that document as the only source of truth for:
 - `CHANGELOG.md` update timing
 - rollback lookup by tag or SHA
 
-If this file ever conflicts with [development-flow.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/development-flow.md), [development-flow.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/development-flow.md) wins.
+If this file ever conflicts with [development-flow.md](development-flow.md), [development-flow.md](development-flow.md) wins.

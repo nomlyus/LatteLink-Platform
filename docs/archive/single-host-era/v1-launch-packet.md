@@ -8,9 +8,9 @@ This is the compact rollout packet for the current V1 launch model.
 
 If this file conflicts with another older V1 document, defer to:
 
-- [two-environment-deploy.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/two-environment-deploy.md)
-- [development-flow.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/development-flow.md)
-- [github-setup-checklist.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/github/github-setup-checklist.md)
+- [two-environment-deploy.md](../../runbooks/two-environment-deploy.md)
+- [development-flow.md](../../runbooks/development-flow.md)
+- [github-setup-checklist.md](../repo-setup/github-setup-checklist.md)
 
 ## Current Deployment Model
 
@@ -53,27 +53,27 @@ V1 is live-ready only when all of the following are true:
 
 Backend:
 
-- [two-environment-deploy.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/two-environment-deploy.md)
-- [free-first-smoke-check.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/free-first-smoke-check.md)
-- [database-backup-restore.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/database-backup-restore.md)
+- [two-environment-deploy.md](../../runbooks/two-environment-deploy.md)
+- [free-first-smoke-check.md](free-first-smoke-check.md)
+- [database-backup-restore.md](../../runbooks/database-backup-restore.md)
 
 Frontend:
 
-- [admin-console-vercel-deployment.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/admin-console-vercel-deployment.md)
-- [client-dashboard-vercel-deployment.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/client-dashboard-vercel-deployment.md)
-- [lattelink-vercel-deployment.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/lattelink-vercel-deployment.md)
+- [admin-console-vercel-deployment.md](../../runbooks/admin-console-vercel-deployment.md)
+- [client-dashboard-vercel-deployment.md](../../runbooks/client-dashboard-vercel-deployment.md)
+- [lattelink-vercel-deployment.md](../../runbooks/lattelink-vercel-deployment.md)
 
 Mobile:
 
-- [mobile-eas-builds.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/mobile-eas-builds.md)
-- [mobile-testflight-pilot-release.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/mobile-testflight-pilot-release.md)
-- [mobile-pilot-purchase-flow-qa.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/mobile-pilot-purchase-flow-qa.md)
+- [mobile-eas-builds.md](../../runbooks/mobile-eas-builds.md)
+- [mobile-testflight-pilot-release.md](../../runbooks/mobile-testflight-pilot-release.md)
+- [mobile-pilot-purchase-flow-qa.md](../../runbooks/mobile-pilot-purchase-flow-qa.md)
 
 Provider setup:
 
-- [production-prerequisites.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/production-prerequisites.md)
-- [clover-payment-integration.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/clover-payment-integration.md)
-- [client-dashboard-google-sso.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/client-dashboard-google-sso.md)
+- [production-prerequisites.md](../2026-04-planning/production-prerequisites.md)
+- [clover-payment-integration.md](../../runbooks/clover-payment-integration.md)
+- [client-dashboard-google-sso.md](../../runbooks/client-dashboard-google-sso.md)
 
 ## External Setup Still Required
 

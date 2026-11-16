@@ -4,7 +4,7 @@ Last reviewed: `2026-04-28`
 
 This runbook only applies when the bundled Docker Compose Postgres container is the active database.
 
-Deployed `dev` and `production` now use Supabase Postgres via `DATABASE_URL`. Use [`database-backup-restore.md`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/database-backup-restore.md) for pilot backup and restore operations.
+Deployed `dev` and `production` now use Supabase Postgres via `DATABASE_URL`. Use [`database-backup-restore.md`](../../runbooks/database-backup-restore.md) for pilot backup and restore operations.
 
 ## Goal
 

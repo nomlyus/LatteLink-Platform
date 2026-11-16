@@ -34,10 +34,10 @@ Key current gaps:
 
 Primary inputs:
 
-- [architecture-overview.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/architecture/architecture-overview.md)
-- [delivery-milestones.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/architecture/delivery-milestones.md)
-- [add-client-feature-config-and-menu-source-routing.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/issues/add-client-feature-config-and-menu-source-routing.md)
-- [replace-temporary-time-based-order-fulfillment-progression-with-authoritative-fulfillment-state-transitions.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/issues/replace-temporary-time-based-order-fulfillment-progression-with-authoritative-fulfillment-state-transitions.md)
+- [architecture-overview.md](../../state-snapshots/architecture-overview.md)
+- [delivery-milestones.md](../delivery-milestones.md)
+- [add-client-feature-config-and-menu-source-routing.md](../../converted-to-issues/add-client-feature-config-and-menu-source-routing.md)
+- [replace-temporary-time-based-order-fulfillment-progression-with-authoritative-fulfillment-state-transitions.md](../../converted-to-issues/replace-temporary-time-based-order-fulfillment-progression-with-authoritative-fulfillment-state-transitions.md)
 
 ## V1
 

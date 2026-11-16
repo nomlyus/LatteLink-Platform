@@ -1,166 +1,63 @@
 # Roadmap
 
-Last updated: 2026-04-27  
-Basis: code audit + product vision  
-See PRODUCT_STAGE.md for current classification and ARCHITECTURE.md for system map.
+**Source of truth: GitHub issue #466.** This page summarizes it; if they disagree, #466 wins, so update this page. Current progress is in [docs/STATUS.md](docs/STATUS.md).
+The April 2026 roadmap (Gates 1–3: pilot safety / polish / Growth OS) is retired and archived in [docs/archive/2026-04-planning](docs/archive/2026-04-planning). Its gate numbers do **not** match the ones below.
 
-## Vision
+## Product direction
 
-LatteLink begins as a branded mobile ordering platform for independent coffee shops. The long-term goal is to become a **Growth OS**: a platform that helps merchants own customer relationships, understand order patterns, identify revenue opportunities, and run targeted campaigns that drive repeat business.
+- Nomly serves independent cafés. Rawaq is the live merchant; Hazel is planned as client #2.
+- Nomly owns the full order lifecycle. Fulfillment is pickup-first and run from the Nomly dashboard.
+- Each merchant brand gets its own branded iOS app, with location selection inside it.
+- Loyalty is brand-wide.
+- Merchants pay a subscription only.
+- Client #2 is onboarded concierge-style, with the full branded iOS system.
+- Clover is deferred; at most a read-only reporting import later.
 
-## Current State Summary
+## Two release trains
 
-- One active merchant (`rawaqcoffee01`) in a pre-production state
-- Full ordering, payment, and loyalty flow implemented
-- Merchant dashboard functional for orders, menu, store config, team
-- Internal admin console for merchant onboarding
-- Single-host Docker Compose deployment
-- Development, testing, and deployed runtime are not properly separated yet
-- Three blocking issues before any live pilot: fulfillment mode, loyalty scoping, stale payment reconciliation
+"V3" means two different things in this repo:
 
----
+- **Operator Dashboard V3**: the third design of the merchant dashboard. **It ships in Nomly V2.**
+- **Nomly V3**: the product release *after* V2 (#533).
 
-## How This Roadmap Works
+## Nomly V2
 
-This roadmap is organized as **execution gates**, not dates.
+| Gate | Goal | Exit issue | State |
+|---|---|---|---|
+| G0 | Verified baseline | #406 | Done |
+| G1 | Trustworthy Rawaq journey on live dev | #421 | Done |
+| G2 | Complete V2 product candidate, incl. Dashboard V3 | #432 | In progress |
+| G3 | Repeatable client onboarding and release factory | #440 | Not started |
+| **V2-RELEASE** | Promote `develop` → `main` and release to production | #532 | Blocked on G2, G3 |
+| G4 | Client #2 live and stable on V2 | #465 | After release |
 
-- **Gate 1** must be completed before live pilot operations are considered safe.
-- **Gate 2** starts once the platform is safe enough to sell and onboard while the rest of the startup focuses on client acquisition.
-- **Gate 3** starts only after launch dates, merchant count, and real usage justify building Growth OS capabilities.
+**G2 work:** Dashboard V3 shell/Home/Orders/Menu/Team/Settings (#423, #422, #426, #425, #431, #427), discounts (#429), brand-wide loyalty programs (#215), branded-app management (#424), customer-app quality (#430), per-brand customer accounts (#536).
 
-The rule is simple: do not start Gate 3 work just because there is time. Start it only when Gate 1 is closed, Gate 2 is in a healthy state, and real client demand and data justify it.
+**G3 work:** onboarding playbook (#434), zero-to-ready merchant bootstrap (#437), menu intake (#435), Stripe Connect onboarding (#436), iOS identity/assets/metadata (#433), automated iOS build and submission (#356), release approvals and rollback (#441), disposable second-brand rehearsal (#439), client #2 sales package (#438), onboarding tracking (#294).
 
----
+**Release gate (#532):** record the exact candidate SHA, approvals, prerequisites, migration provenance (benchmark catalog migrations, #531), Postgres TLS (#516), and the rollback point before promoting.
 
-## Gate 1 — Pilot Safety, Environment Separation, and Merchant Readiness
-**Goal**: Make the system safe to operate for live pilot merchants.
+## Nomly V3 (after #532 closes)
 
-### Scope
-- Set `staff` fulfillment mode as the default for all real merchant deployments
-- Add stale `PENDING_PAYMENT` order reconciliation against Stripe
-- Fix loyalty `location_id` scoping before any second merchant
-- Audit and enforce tenant isolation on admin/operator routes
-- Honor requested operator location context at sign-in and clean up multi-location session handling
-- Add structured JSON logging with request IDs
-- Add Sentry and basic error visibility
-- Enforce absolute session TTL
-- Validate and harden the existing R2 media upload pipeline in a deployed environment
-- Remove unconditional order-stream polling when event-bus SSE subscription succeeds
-- Add launch-readiness checklist in the admin console
-- Run backup/restore drill and document recovery steps
-- Add basic support tooling needed for early merchants
-- Write a clear merchant onboarding runbook
-- Create proper environment separation so development and testing no longer happen against the live deployed stack
+| Gate | Goal | Exit issue |
+|---|---|---|
+| G5 | Five-brand proof and V3 capabilities: launch template, clients #3–5, Android, ops console, tenant re-verification, billing, customer profiles, campaigns, analytics, segments | #448 |
+| G6 | Public launch: positioning, pricing, legal, onboarding entry, accessibility, security review, drills, launch story | #461 |
+| NOMLY-V3-RELEASE | Release | #533 |
 
-### Environment Separation Requirements
-- Separate **development** and **production** environments
-- Separate runtime config and secrets per environment
-- Safe deployment path to `dev` before `production`
-- No direct day-to-day development against the production deployment
+## Rules
 
-### Exit Criteria
-- No known cross-merchant loyalty contamination remains
-- No paid order can silently remain unresolved after webhook failure
-- Operators cannot cross tenant boundaries through known admin-route gaps
-- Logs and alerts are good enough to investigate real incidents quickly
-- Backup/restore has been exercised, not just documented
-- A merchant can be onboarded through a repeatable checklist and runbook
-- Development and testing are isolated from production
+- All work lands on `develop`. `main` moves only for a release.
+- A later gate can be explored early, but can't be approved before its dependencies.
+- Safety, security, data-loss, or production-readiness findings can be pulled into the active release when evidence requires it.
+- Every production change needs a release issue and a recorded rollback plan.
 
-### Representative Work
-- fulfillment defaults
-- stale-payment reconciliation
-- loyalty scoping migration
-- tenant-isolation audit
-- operator session/location cleanup
-- structured logging and Sentry
-- launch-readiness checklist
-- support tooling
-- onboarding runbook
-- dev/prod environment split
+## Not yet
 
----
+Carried forward from the April roadmap; still valid unless real demand changes it.
 
-## Gate 2 — Surface Polish and Small Operational Features
-**Goal**: Improve the mobile app and operator surfaces while sales and onboarding are happening.
-
-### Scope
-- Mobile UX cleanup and copy fixes
-- Client dashboard UX cleanup and faster daily workflows
-- Search/filter improvements for operator order management
-- Remove misleading hardcoded fallback data from customer-facing mobile surfaces
-- Support-driven small features that reduce onboarding or operating friction
-- Merchant-facing polish that materially helps demos, onboarding, or daily service
-
-### Exit Criteria
-- Operator workflows feel reliable in day-to-day store use
-- The mobile app no longer has obvious demo-breaking or merchant-embarrassing UX issues
-- Support and sales feedback is producing incremental polish rather than exposing fundamental gaps
-
-### Representative Work
-- pickup ETA copy polish
-- dashboard order search/filter
-- mobile fallback-data removal
-- small dashboard/mobile workflow improvements
-
----
-
-## Gate 3 — Growth OS Buildout
-**Goal**: Build analytics, campaigns, and Growth OS architecture only after there are enough committed/live merchants and enough real usage data to justify it.
-
-### Entry Conditions
-- Gate 1 is fully complete
-- Gate 2 is healthy enough that onboarding/sales are not blocked by obvious product friction
-- Real merchants are committed or live
-- Operational support load is under control
-- Enough real order/customer data exists to justify analytics and campaign tooling
-
-### Scope
-
-#### Data Foundation
-- `merchant_customer_profiles`
-- `behavioral_events`
-- KPI summary endpoints
-- analytics-ready support tables
-
-#### Merchant Growth Tools
-- loyalty program configurability
-- promo codes
-- manual campaigns
-- push receipt polling
-- analytics dashboard
-- attribution
-- segments and exports
-
-#### Growth OS / Automation
-- event-triggered campaigns
-- AI copy suggestions
-- Growth Score / merchant digests
-
-#### Later Scale Hardening
-- managed containers
-- capacity-driven database pooling review (live dev already uses Supabase
-  Supavisor session pooling; PgBouncer is not a current requirement)
-- SaaS billing
-- RBAC
-- richer support tooling
-- read replicas when justified
-
-### Exit Criteria
-- Merchants are actively using analytics/campaign tooling, not just asking for it abstractly
-- Attribution and segmentation are backed by real usage data
-- Additional Growth OS architecture is justified by operating reality rather than roadmap ambition
-
----
-
-## What Not To Build Yet
-
-- Email campaigns (no provider, no templates, no compliance infra)
-- SMS (TCPA complexity, high cost)
-- POS integration (wait for merchant demand signal)
-- Web ordering app (mobile is primary; add complexity only when justified)
-- Multi-region deployment (single host is fine for <20 merchants)
-- Kubernetes (Docker Compose → managed containers first)
-- New microservices (extend existing service boundaries)
-- A/B testing framework (premature without campaign volume)
-- AI recommendations (need 3+ months of real data first)
+- Email or SMS campaigns (no provider, compliance, or volume yet)
+- POS integrations (Toast/Square: #291, #292) without a merchant asking
+- Kubernetes, multi-region, read replicas: Heroku single dyno until the triggers in ADR 0002 / #455
+- New microservices: extend the existing service boundaries
+- A/B testing, AI recommendations: need months of real data first

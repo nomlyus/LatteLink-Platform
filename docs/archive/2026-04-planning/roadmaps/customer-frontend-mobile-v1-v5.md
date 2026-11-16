@@ -26,9 +26,9 @@ Key current gaps:
 
 Primary inputs:
 
-- [mobile-menu-cart.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/mobile-menu-cart.md)
-- [apple-pay-checkout.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/apple-pay-checkout.md)
-- [replace-mobile-orders-polling-with-real-time-order-state-updates.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/issues/replace-mobile-orders-polling-with-real-time-order-state-updates.md)
+- [mobile-menu-cart.md](../../../runbooks/mobile-menu-cart.md)
+- [apple-pay-checkout.md](../../../runbooks/apple-pay-checkout.md)
+- [replace-mobile-orders-polling-with-real-time-order-state-updates.md](../../converted-to-issues/replace-mobile-orders-polling-with-real-time-order-state-updates.md)
 
 ## V1
 

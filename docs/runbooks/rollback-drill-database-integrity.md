@@ -2,7 +2,7 @@
 
 Last reviewed: `2026-04-03`
 
-This runbook validates rollback using the manual `deploy-free` workflow dispatch path described in [development-flow.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/development-flow.md).
+This runbook validates rollback using the manual `deploy-free` workflow dispatch path described in [development-flow.md](development-flow.md).
 
 ## Objective
 

@@ -12,9 +12,9 @@ It used to describe the older single-lane `deploy-free` / `publish-free-images` 
 
 Use these docs instead:
 
-- [two-environment-deploy.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/two-environment-deploy.md)
-- [development-flow.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/development-flow.md)
-- [github-setup-checklist.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/github/github-setup-checklist.md)
+- [two-environment-deploy.md](../../runbooks/two-environment-deploy.md)
+- [development-flow.md](../../runbooks/development-flow.md)
+- [github-setup-checklist.md](../repo-setup/github-setup-checklist.md)
 
 ## Current Deployment Model
 

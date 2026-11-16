@@ -4,7 +4,7 @@ Historical first-cut reference. See [payment and order flow](../payment-order-fl
 
 ## Base URL
 
-`https://api.gazellecoffee.com/v1`
+`https://api.nomly.us/v1` (dev: `https://api-dev.nomly.us/v1`)
 
 ## Auth
 

@@ -15,7 +15,7 @@ Enable Google sign-in for client dashboard accounts that already exist in the pl
 
 Create the owner account first with:
 
-- [client-dashboard-owner-provisioning.md](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/docs/runbooks/client-dashboard-owner-provisioning.md)
+- [client-dashboard-owner-provisioning.md](client-dashboard-owner-provisioning.md)
 
 ## Required Google Console Setup
 

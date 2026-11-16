@@ -46,7 +46,7 @@ Dead-letter record shape:
 ```json
 {
   "occurredAt": "2026-03-10T00:00:00.000Z",
-  "sourceUrl": "https://webapp.gazellecoffee.com/api/content/public",
+  "sourceUrl": "https://menu-source.example.com/api/content/public",
   "locationId": "location-01",
   "attempts": 4,
   "error": "Menu source responded with 503"

@@ -41,7 +41,7 @@ Invalid regressions are rejected. Skipping ahead multiple states in a single dir
 
 The orders service now uses reusable transition helpers in:
 
-- [`services/orders/src/lifecycle.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/services/orders/src/lifecycle.ts)
+- [`services/orders/src/lifecycle.ts`](../services/orders/src/lifecycle.ts)
 
 Important helpers:
 
@@ -87,7 +87,7 @@ Order progression now supports two runtime modes:
 
 The current time-based reconciler lives in:
 
-- [`services/orders/src/fulfillment.ts`](/Users/yazan/Documents/Gazelle/Dev/GazelleMobilePlatform/services/orders/src/fulfillment.ts)
+- [`services/orders/src/fulfillment.ts`](../services/orders/src/fulfillment.ts)
 
 Behavior by mode:
 
