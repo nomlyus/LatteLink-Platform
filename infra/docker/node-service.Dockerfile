@@ -12,6 +12,7 @@ FROM base AS build
 ARG SERVICE_PACKAGE
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
+COPY patches ./patches
 COPY services ./services
 COPY packages ./packages
 
